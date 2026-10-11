@@ -213,6 +213,62 @@ public sealed class PlaybackEngine : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// The song time heard at a clock time, for the audio engine (ADR 0032): like <see cref="TryGetTickAt"/>, but in song
+    /// time (not rounded to ticks), with loop wraps applied, and before the start position during a count-in (negative
+    /// before the song's start). Lock-free and allocation-free; safe on an audio thread.
+    /// </summary>
+    /// <returns>False when the transport is stopped.</returns>
+    public bool TryGetSongTimeAt(TimeSpan time, out SongPosition position)
+    {
+        Anchor anchor;
+        var spinner = default(SpinWait);
+        while (true)
+        {
+            var version = Volatile.Read(ref _anchorVersion);
+            if ((version & 1) == 0)
+            {
+                anchor = _anchor;
+                Interlocked.MemoryBarrier();
+                if (Volatile.Read(ref _anchorVersion) == version)
+                {
+                    break;
+                }
+            }
+
+            spinner.SpinOnce();
+        }
+
+        if (!anchor.Playing || anchor.Tempo is not { } tempo)
+        {
+            position = default;
+            return false;
+        }
+
+        var song = anchor.SongTime + (time - anchor.Time);
+        TimeSpan loopStart = TimeSpan.Zero, loopEnd = TimeSpan.Zero;
+        if (anchor.LoopEnd > anchor.LoopStart)
+        {
+            loopStart = tempo.TimeAt(new Tick(anchor.LoopStart));
+            loopEnd = tempo.TimeAt(new Tick(anchor.LoopEnd));
+            if (song >= loopEnd && loopEnd > loopStart)
+            {
+                song = loopStart + TimeSpan.FromTicks((song - loopEnd).Ticks % (loopEnd - loopStart).Ticks);
+            }
+        }
+
+        var bpm = (song > TimeSpan.Zero ? tempo.TempoAt(tempo.TickAt(song)) : tempo.Changes[0].Tempo).BeatsPerMinute;
+        position = new SongPosition(song, loopStart, loopEnd, bpm);
+        return true;
+    }
+
+    /// <summary>
+    /// Moves the transport's time mapping by <paramref name="amount"/>: positive makes the song position at any later
+    /// moment that much further on. The audio engine uses it to keep MIDI aligned with the audio device's clock, a few
+    /// microseconds at a time. Nothing is resent or skipped. Any thread; ignored while stopped.
+    /// </summary>
+    public void Nudge(TimeSpan amount) => Enqueue(new NudgeCommand(amount));
+
     /// <summary>Moves the playhead. While playing, sounding notes are released and controller state is chased; a count-in ends.</summary>
     public void Seek(Tick position)
     {
@@ -392,6 +448,11 @@ public sealed class PlaybackEngine : IDisposable
             case PanicCommand:
                 ReleaseAll(now);
                 SweepAllChannels();
+                break;
+            case NudgeCommand nudge when _playing:
+                _immediate.AnchorTime -= nudge.Amount;
+                _scheduled.AnchorTime -= nudge.Amount;
+                PublishAnchor(playing: true);
                 break;
         }
     }
@@ -828,4 +889,9 @@ public sealed class PlaybackEngine : IDisposable
     private sealed record LoopCommand(LoopRegion? Loop, ChaseMessage[] WrapChase) : Command;
 
     private sealed record PanicCommand : Command;
+
+    private sealed record NudgeCommand(TimeSpan Amount) : Command;
 }
+
+/// <summary>A song position heard at some moment: song time, the engaged loop's bounds (equal when none), and the tempo there.</summary>
+public readonly record struct SongPosition(TimeSpan SongTime, TimeSpan LoopStart, TimeSpan LoopEnd, double BeatsPerMinute);

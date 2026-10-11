@@ -35,7 +35,7 @@ public sealed class ClipPlaybackTests : IDisposable
     {
         var samples = TestAudioFiles.Sine(48_000, 1, 1000, 48_000);
         var path = TestAudioFiles.Wave(_directory, "b.wav", "pcm24", 48_000, 1, samples);
-        var (engine, driver) = Play(48_000, new AudioClipRegion(path, 0, 2000, 30_000));
+        var (engine, driver) = Play(48_000, new AudioClipRegion(path, 0, 2000, 30_000 / 48_000.0));
 
         var output = driver.Render(3000, 256);
 
@@ -181,7 +181,12 @@ public sealed class ClipPlaybackTests : IDisposable
         driver.ServiceStreamsBeforeEachBlock = false;
         var buffer = new float[256 * 2];
         engine.ServiceStreams();
-        driver.Render(buffer, 256);
+
+        // Warm-up: first calls and tiered compilation of the render path allocate; steady state must not.
+        for (var i = 0; i < 50; i++)
+        {
+            driver.Render(buffer, 256);
+        }
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 100; i++)

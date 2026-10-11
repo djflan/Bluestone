@@ -1,5 +1,11 @@
+using Bluestone.Application.Audio;
+using Bluestone.Application.Sessions;
 using Bluestone.Audio;
 using Bluestone.Audio.Devices;
+using Bluestone.Domain.Time;
+using Bluestone.Midi.Endpoints;
+using Bluestone.Midi.Timing;
+using Bluestone.Profiles;
 
 namespace Bluestone.Tests.Integration.Audio;
 
@@ -76,6 +82,60 @@ public sealed class AudioDeviceTests
 
         Assert.Equal(after, engine.Statistics.Callbacks);
         Assert.Throws<ObjectDisposedException>(() => output.Status);
+    }
+
+    [Fact]
+    public void BufferedOutput_KeepsItsQueueFilled_WithoutUnderruns()
+    {
+        RequireDevices();
+        using var engine = new AudioEngine(48_000, 128);
+        using var output = Open(engine, new AudioStreamRequest(SampleRate: 48_000, BufferFrames: 128, QueuedFrames: 1024));
+
+        output.Start();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (output.Status.Callbacks < 100 && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(20);
+        }
+
+        var status = output.Status;
+        output.Stop();
+
+        Assert.True(status.Callbacks >= 100, $"Only {status.Callbacks} callbacks arrived.");
+        Assert.Equal(1024, output.QueuedFrames);
+        Assert.True(status.QueueCapacity >= 1024);
+        Assert.InRange(status.QueuedFrames, 0, status.QueueCapacity);
+        Assert.Equal(0, status.QueueUnderrunFrames);
+        Assert.True(engine.Statistics.Callbacks > 0);
+    }
+
+    [Fact]
+    public async Task AudioPlayback_OpensTheDevice_FollowsTheMidiTransport_AndCloses()
+    {
+        RequireDevices();
+        using var endpoints = new EndpointDirectory([]);
+        var session = new ProjectSession();
+        await using var playback = new PlaybackController(session, endpoints, ProfileCatalog.Empty, SystemMonotonicClock.Instance);
+        using var audio = new AudioPlayback(playback, session, _ => null);
+
+        if (!audio.Start(new AudioSettings(Enabled: true, SampleRate: 48_000, BufferFrames: 256)))
+        {
+            Assert.Skip($"The audio device could not be opened: {audio.Problem}");
+        }
+
+        await playback.PlayAsync(Tick.Zero, TestContext.Current.CancellationToken);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (!audio.Engine!.Transport.IsPlaying && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(audio.Engine.Transport.IsPlaying);
+        Assert.True(audio.IsRunning);
+        playback.Stop();
+        audio.Stop();
+        Assert.False(audio.IsRunning);
+        Assert.Null(audio.Engine);
     }
 
     private static AudioOutput Open(AudioEngine engine, AudioStreamRequest request)

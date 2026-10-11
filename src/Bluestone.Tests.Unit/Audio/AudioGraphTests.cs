@@ -232,7 +232,10 @@ public sealed class AudioGraphTests
         engine.Transport.Play(0);
         var driver = new OfflineAudioDriver(engine, serviceStreams: false);
         var buffer = new float[512 * 2];
-        driver.Render(buffer, 512);
+        for (var i = 0; i < 50; i++)
+        {
+            driver.Render(buffer, 512);
+        }
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 200; i++)

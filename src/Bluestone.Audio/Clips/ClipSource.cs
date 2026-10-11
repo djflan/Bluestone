@@ -9,8 +9,8 @@ namespace Bluestone.Audio.Clips;
 /// <param name="Path">The audio file.</param>
 /// <param name="SongStartFrame">First song frame of the clip, at the engine's rate.</param>
 /// <param name="SongEndFrame">Song frame after the clip's last.</param>
-/// <param name="SourceFrameAtStart">Source frame (at the file's rate, may be fractional) heard at <paramref name="SongStartFrame"/>.</param>
-public sealed record AudioClipRegion(string Path, long SongStartFrame, long SongEndFrame, double SourceFrameAtStart);
+/// <param name="SourceSecondsAtStart">Position in the file, in seconds, heard at <paramref name="SongStartFrame"/>.</param>
+public sealed record AudioClipRegion(string Path, long SongStartFrame, long SongEndFrame, double SourceSecondsAtStart);
 
 /// <summary>
 /// One clip's audio, ready for the audio thread: the first part of the region decoded in memory (so starting at the
@@ -24,6 +24,7 @@ internal sealed class ClipSource : IDisposable
     private readonly AudioFileReader _reader;
     private readonly ResamplingKernel _kernel;
     private readonly bool _direct;
+    private readonly double _sourceStart;
     private readonly float[] _preloadLeft;
     private readonly float[] _preloadRight;
     private readonly long _preloadStart;
@@ -43,7 +44,11 @@ internal sealed class ClipSource : IDisposable
         var format = reader.Format;
         SourceFrames = format.Frames;
         _kernel = ResamplingKernel.For(format.SampleRate, outputRate);
-        _direct = format.SampleRate == outputRate && region.SourceFrameAtStart == Math.Floor(region.SourceFrameAtStart);
+        var start = region.SourceSecondsAtStart * format.SampleRate;
+
+        // A start within a millionth of a frame of a whole frame is that frame (seconds do not hold frames exactly).
+        _sourceStart = Math.Abs(start - Math.Round(start)) < 1e-6 ? Math.Round(start) : start;
+        _direct = format.SampleRate == outputRate && _sourceStart == Math.Floor(_sourceStart);
         var halo = _direct ? 0 : _kernel.HalfTaps;
         var scratch = (int)Math.Ceiling(blockFrames * _kernel.Ratio) + (2 * halo) + 2;
         _scratchLeft = new float[scratch];
@@ -52,7 +57,7 @@ internal sealed class ClipSource : IDisposable
         _readLeft = new float[ReadChunkFrames];
         _readRight = new float[ReadChunkFrames];
 
-        _preloadStart = Math.Clamp((long)Math.Floor(region.SourceFrameAtStart) - halo, 0, SourceFrames);
+        _preloadStart = Math.Clamp((long)Math.Floor(_sourceStart) - halo, 0, SourceFrames);
         _preloadEnd = Math.Min(SourceFrames, _preloadStart + (long)(preload.TotalSeconds * format.SampleRate));
         var preloadFrames = (int)(_preloadEnd - _preloadStart);
         _preloadLeft = new float[preloadFrames];
@@ -112,7 +117,7 @@ internal sealed class ClipSource : IDisposable
         }
 
         var ratio = _kernel.Ratio;
-        var x0 = Region.SourceFrameAtStart + ((from - Region.SongStartFrame) * ratio);
+        var x0 = _sourceStart + ((from - Region.SongStartFrame) * ratio);
         var xLast = x0 + ((to - from - 1) * ratio);
         var halo = _direct ? 0 : _kernel.HalfTaps;
         var first = (long)Math.Floor(x0) - halo + (_direct ? 0 : 1);
