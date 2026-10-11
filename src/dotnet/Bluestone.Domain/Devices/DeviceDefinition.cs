@@ -129,6 +129,20 @@ public sealed record DeviceDefinition
     /// <summary>The event classes the device takes in and may change or drop. Unlisted classes pass through.</summary>
     public EventClass Handles { get; init; }
 
+    /// <summary>
+    /// Of the classes in <see cref="Handles"/>, those that also continue past the device unchanged, or null for the
+    /// usual behavior (<see cref="PassesThrough"/>). A device that must end the note path (a specialized sink) sets
+    /// <see cref="EventClass.None"/>; a note effect that should mix its input with its output names the classes.
+    /// </summary>
+    public EventClass? EventThru { get; init; }
+
+    /// <summary>
+    /// The handled classes that continue past the device (ADR 0037). Signals travel through a chain as a parallel
+    /// bundle, so an instrument plays the notes it handles and passes them on, and the next instrument can layer on
+    /// the same notes; a note effect replaces what it handles with what it puts out.
+    /// </summary>
+    public EventClass PassesThrough => (EventThru ?? (Category == DeviceCategory.Instrument ? Handles : EventClass.None)) & Handles;
+
     public ImmutableArray<ParameterDescriptor> Parameters
     {
         get => _parameters;

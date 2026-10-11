@@ -351,16 +351,37 @@ public static class SignalGraph
                 sent = true;
             }
 
-            var hasInstrument = chain is not null && chain.Devices.Any(d => !d.IsBypassed && runners[chain.Id].KindOf(d.Id) == StageKind.Instrument);
+            // The classes the chain's instruments play. Notes they pass on (ADR 0037) have been heard, so only events no
+            // instrument took in (such as SysEx) count as going nowhere.
+            var played = EventClass.None;
+            var hasInstrument = false;
+            foreach (var device in chain?.Devices ?? [])
+            {
+                if (!device.IsBypassed && runners[chain!.Id].KindOf(device.Id) == StageKind.Instrument)
+                {
+                    hasInstrument = true;
+                    played |= catalog.Find(device.Definition.Id)?.Handles ?? EventClass.None;
+                }
+            }
+
             if (track is not null && _playing.Contains(track.Id) && !sent)
             {
+                var unheard = 0;
+                foreach (var e in output)
+                {
+                    if ((EventClassification.Of(e.Event) & played) == EventClass.None)
+                    {
+                        unheard++;
+                    }
+                }
+
                 if (!hasInstrument)
                 {
                     Report(SignalDiagnosticCode.Unrouted, track, "The track is not routed to an output and will not play.");
                 }
-                else if (!output.IsEmpty)
+                else if (unheard > 0)
                 {
-                    Report(SignalDiagnosticCode.Unrouted, track, string.Create(CultureInfo.InvariantCulture, $"{output.Length} events that pass the track's instrument (such as SysEx) are not routed anywhere."));
+                    Report(SignalDiagnosticCode.Unrouted, track, string.Create(CultureInfo.InvariantCulture, $"{unheard} events that pass the track's instrument (such as SysEx) are not routed anywhere."));
                 }
             }
         }

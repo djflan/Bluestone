@@ -4,6 +4,7 @@ using Bluestone.Domain.Midi;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
 using Bluestone.Signal;
+using Bluestone.Signal.BuiltIn;
 using static Bluestone.Tests.Unit.Signal.SignalFixture;
 
 namespace Bluestone.Tests.Unit.Signal;
@@ -149,7 +150,7 @@ public sealed class ChainRunnerTests
     }
 
     [Fact]
-    public void AnInstrument_TakesTheClassesItHandles_AndSysExGoesOnPastIt()
+    public void AnInstrument_PlaysTheClassesItHandles_AndPassesTheWholeBundleOn()
     {
         var synth = Instance(TestDevices.Synth);
         var events = Keyed(0, XgOn(), Program(0, 1), Volume(0, 90), Note(0));
@@ -158,7 +159,82 @@ public sealed class ChainRunnerTests
         var output = Run(Chain(synth), events, observer: observer);
 
         Assert.Equal([events[1], events[2], events[3]], observer.Instruments[synth.Id]);
+        Assert.Equal(events, output);
+    }
+
+    [Fact]
+    public void TwoInstrumentsInARow_BothPlayTheNotes_SoTheyLayer()
+    {
+        var first = Instance(TestDevices.Synth);
+        var second = Instance(TestDevices.Synth);
+        var events = Keyed(0, Note(0, 60), Note(0, 64));
+        var observer = new CollectingObserver();
+
+        Run(Chain(first, second), events, observer: observer);
+
+        Assert.Equal(events, observer.Instruments[first.Id]);
+        Assert.Equal(events, observer.Instruments[second.Id]);
+    }
+
+    [Fact]
+    public void ANoteEffectAfterAnInstrument_TransformsTheNotesTheInstrumentPassedOn()
+    {
+        var synth = Instance(TestDevices.Synth);
+        var second = Instance(TestDevices.Synth);
+        var events = Keyed(0, Note(0, 60));
+        var observer = new CollectingObserver();
+
+        Run(Chain(synth, BuiltInDevices.CreateTranspose(12), second), events, observer: observer);
+
+        Assert.Equal(60, Assert.Single(observer.Instruments[synth.Id]).Event is NoteEvent n ? n.Note.Value : -1);
+        Assert.Equal(72, Assert.Single(observer.Instruments[second.Id]).Event is NoteEvent m ? m.Note.Value : -1);
+    }
+
+    [Fact]
+    public void AnAudioEffect_BetweenInstruments_PassesTheNotesOn()
+    {
+        var first = Instance(TestDevices.Synth);
+        var second = Instance(TestDevices.Synth);
+        var events = Keyed(0, Note(0, 60));
+        var observer = new CollectingObserver();
+
+        Run(Chain(first, Instance(TestDevices.Filter), second), events, observer: observer);
+
+        Assert.Equal(events, observer.Instruments[second.Id]);
+    }
+
+    [Fact]
+    public void AnInstrumentThatEndsTheNotePath_PassesOnlyWhatItDoesNotHandle()
+    {
+        var sink = TestDevices.Synth with { Id = new DeviceDefinitionId("test.sink"), Name = "Sink", EventThru = EventClass.None };
+        var device = Instance(sink);
+        var events = Keyed(0, XgOn(), Note(0));
+        var observer = new CollectingObserver();
+
+        var output = Run(Chain(device), events, Catalog.With(sink), observer: observer);
+
+        Assert.Equal([events[1]], observer.Instruments[device.Id]);
         Assert.Equal([events[0]], output);
+    }
+
+    [Fact]
+    public void ThroughClasses_AreDerivedFromTheCategory_UnlessTheDefinitionSaysOtherwise()
+    {
+        Assert.Equal(TestDevices.Synth.Handles, TestDevices.Synth.PassesThrough);
+        Assert.Equal(EventClass.None, TestDevices.MidiFx.PassesThrough);
+        Assert.Equal(EventClass.None, TestDevices.Filter.PassesThrough);
+        Assert.Equal(EventClass.Notes, (TestDevices.Synth with { EventThru = EventClass.Notes | EventClass.SystemExclusive }).PassesThrough);
+    }
+
+    [Fact]
+    public void ANoteEffectWithThru_MixesItsInputWithItsOutput()
+    {
+        var octave = BuiltInDevices.Transpose with { EventThru = EventClass.Notes };
+        var catalog = Catalog.With(octave, _ => new TransposeProcessor());
+
+        var output = Run(Chain(BuiltInDevices.CreateTranspose(12)), Keyed(0, Note(0, 60)), catalog);
+
+        Assert.Equal([60, 72], output.Select(e => (int)((NoteEvent)e.Event).Note.Value).Order());
     }
 
     [Fact]
