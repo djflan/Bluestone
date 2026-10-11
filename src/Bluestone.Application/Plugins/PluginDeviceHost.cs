@@ -137,9 +137,10 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 continue;
             }
 
-            var before = (instance.WorkerKey, instance.Status.State);
+            // Every start in a worker takes a new generation, so a changed one means the instance was moved or restarted.
+            var generation = instance.Generation;
             await _manager.ChangeHostingAsync(instance, mode, cancellationToken).ConfigureAwait(false);
-            if ((instance.WorkerKey, instance.Status.State) != before || before.State != PluginInstanceState.Running)
+            if (instance.Generation != generation)
             {
                 moved.Add(device);
             }

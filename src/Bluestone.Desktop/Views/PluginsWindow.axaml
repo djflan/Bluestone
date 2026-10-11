@@ -24,7 +24,7 @@
 
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="6">
-        <StackPanel x:Name="HostingSection" Spacing="6" Margin="0,0,0,8" IsVisible="{Binding HasHosting}">
+        <StackPanel x:Name="HostingSection" Spacing="6" Margin="0,0,0,8" IsVisible="{Binding HasHosting}" IsEnabled="{Binding !IsBusy}">
           <TextBlock Text="HOSTING" Classes="overline" />
           <TextBlock Text="Plugins run in worker processes, never inside Bluestone. A crash takes down every plugin in the same process and nothing else. This is crash isolation, not a security sandbox."
                      Classes="muted" TextWrapping="Wrap" />
@@ -86,6 +86,7 @@
                   <TextBlock Text="{Binding Module}" Classes="muted" FontSize="10" HorizontalAlignment="Right" />
                   <ComboBox ItemsSource="{Binding $parent[ItemsControl].((vm:PluginsViewModel)DataContext).PluginHostingChoices, FallbackValue={x:Null}}"
                             SelectedItem="{Binding Hosting}" MinWidth="170" FontSize="11"
+                            IsEnabled="{Binding !$parent[ItemsControl].((vm:PluginsViewModel)DataContext).IsBusy, FallbackValue=False}"
                             IsVisible="{Binding $parent[ItemsControl].((vm:PluginsViewModel)DataContext).HasHosting, FallbackValue=False}"
                             AutomationProperties.Name="Plugin hosting mode" ToolTip.Tip="How this plugin shares a worker process" />
                 </StackPanel>
@@ -93,6 +94,7 @@
                   <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource Bluestone.Warning}" VerticalAlignment="Center" />
                   <TextBlock Text="{Binding CrashText}" Classes="muted" FontSize="10" TextWrapping="Wrap" MaxWidth="380" VerticalAlignment="Center" AutomationProperties.Name="Crashes" />
                   <Button Classes="raised" Content="Host individually" IsVisible="{Binding CanHostIndividually}" Command="{Binding HostIndividuallyCommand}" FontSize="11"
+                          IsEnabled="{Binding !$parent[ItemsControl].((vm:PluginsViewModel)DataContext).IsBusy, FallbackValue=False}"
                           ToolTip.Tip="Give every copy of this plugin a process of its own, so its crashes take nothing else down" AutomationProperties.Name="Host individually" />
                 </StackPanel>
               </Grid>
