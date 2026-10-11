@@ -5,16 +5,17 @@ worker process, `Bluestone.PluginWorker`, supervised by the main process. If a w
 Bluestone keeps running, the affected instances report a status, their audio output becomes exact silence, and the
 user can restart them without closing the project.
 
-**Scope today.** The worker hosts only Bluestone's built-in **reference plugins** (`reference.gain`,
-`reference.sine`, `reference.transpose`). It does not load any third-party plugin binary and Bluestone does not
-support any third-party plugin format yet. Real VST3 loading is deferred (see [Deferred](#deferred)); nothing in
-this package should be read as VST3 support.
+**Scope today.** The worker hosts Bluestone's built-in **reference plugins** (`reference.gain`, `reference.sine`,
+`reference.transpose`) and third-party **VST3** and **CLAP** plugins through a Rust plugin host loaded only in the
+worker (ADR 0033). Scanning, loading, parameters, state, processing, MIDI effects at plan time, crash recovery, and
+editor windows work; exactly what was verified on which plugin and machine is in
+[Third-party plugins](#third-party-plugins-vst3-and-clap). Bluestone has no audio engine yet, so plugins process
+blocks when asked (as the tests do) but nothing drives them from playback.
 
 **Process isolation is crash isolation, not a security sandbox.** See [Security limitations](#security-limitations).
 
-Everything here is C#. The language policy (`docs/daw-epic-handoff.md`, decision 17) allows Rust for a part of
-this only with a measured performance reason or a native ABI constraint. Neither exists yet: no native plugin
-binary is loaded, and the data plane has not been measured to need it.
+Everything here is C# except the plugin host, which is Rust because it loads native plugin binaries (ADR 0026's
+native-interface reason; ADR 0033). The data plane stays C#: it has not been measured to need anything else.
 
 ## Projects
 
@@ -22,7 +23,9 @@ binary is loaded, and the data plane has not been measured to need it.
 | ------- | ------- | ---------- | ---- |
 | `Bluestone.Plugins.Protocol` | both | BCL only | Control-plane frames and messages, the handshake, the memory-mapped block exchange |
 | `Bluestone.Plugins` | Bluestone | Protocol | Worker launching and supervision, instance lifecycle and recovery, the real-time processing API, scanning |
-| `Bluestone.PluginWorker` | worker process | Protocol | Instance-host mode and scan mode; the reference plugins |
+| `Bluestone.PluginWorker` | worker process | Protocol, `bluestone_plugin_host` | Instance-host mode and scan mode; the reference plugins; `NativePlugin` over the Rust host |
+| `native/crates/bluestone_plugin_host` | worker process | (Rust) `vst3`, `clap-sys` | Loads VST3 and CLAP modules; instances, parameters, state, processing, host callbacks, editor windows; C ABI version 1 |
+| `native/crates/bluestone_test_plugins` | tests only | (Rust) `vst3`, `clap-sys` | Test Gain, Test Sine, Test Transpose as a `.vst3` bundle and a `.clap` module, packaged by `src/NativeTestPlugins.targets` |
 
 `Bluestone.Plugins` does not reference `Bluestone.PluginWorker`, so the plugin code cannot even be loaded into the
 host (`DependencyDirectionTests.Plugins_DoesNotReferenceTheWorker_SoNoPluginCanRunInTheHostProcess`).
@@ -35,9 +38,10 @@ Bluestone process                                     Worker process (one per in
 PluginHostManager                                   Bluestone.PluginWorker --mode host --pipe NAME
   WorkerProcess  --- named pipe (control plane) ---  InstanceHostSession (one request at a time)
   PluginInstance --- mapped file (data plane)   ---  HostedInstance (one processing thread each)
-                                                       IHostedPlugin (reference plugins only)
+                                                       IHostedPlugin: reference plugins, or NativePlugin
+                                                         → bluestone_plugin_host (VST3, CLAP)
 PluginScanner                                       Bluestone.PluginWorker --mode scan --pipe NAME
-  one scanner process per module file               ModuleScanner (reads one manifest, then exits)
+  one scanner process per module                    ModuleScanner (reads one manifest or loads one module, then exits)
 ```
 
 Launching a worker:
@@ -80,8 +84,12 @@ reports `ProtocolError`.
 
 Messages: `Hello`/`HelloAck`, `Ping`/`Pong`, `CreateInstance`/`InstanceCreated`, `DestroyInstance`,
 `CaptureState`/`StateResult`, `RestoreState`/`RestoreStateResult`, `SetParameter`, `GetParameters`/`ParameterValues`,
-`Ack`, `Error`, `Shutdown`, `ScanModule`/`ScanResult`, `RenderEvents`/`RenderedEvents` (protocol version 2; see
-"Plugin MIDI effects in the plan"), and the test-only `InduceTestFault`.
+`Ack`, `Error`, `Shutdown`, `ScanModule`/`ScanResult`, `RenderEvents`/`RenderedEvents` (see "Plugin MIDI effects in
+the plan"), `OpenEditor`/`CloseEditor`, `PluginNotification`, and the test-only `InduceTestFault`. Protocol version 3
+added the module path to `CreateInstance` and `RenderEvents`, units and traits to parameter descriptors, the editor
+messages, the `Unsupported` scan result, and `PluginNotification`: the only frame a worker sends unasked (request id 0),
+for an edit the plugin made itself, a latency change, state the plugin marked dirty, a closed editor, or a changed
+parameter list. Its values are checked per kind like every other field.
 
 Plugin identity (`PluginIdentity`: format, module id, plugin id, display name, vendor, kind, version) and instance
 identity (`PluginInstanceId`, a GUID that stays the same across restarts) are different types. Parameters are
@@ -194,6 +202,11 @@ A real wake-up primitive (futex, eventfd, or a Windows event) would remove both 
   raised there, in order, one at a time, never on the audio thread.
 - In the worker, the control loop and each instance's processing thread share the plugin under a lock. The worker
   may block; the host's real-time path never does.
+- **The worker's main thread** (`WorkerMainThread`) belongs to plugins: it runs the operating system's event loop
+  (an accessory NSApplication on macOS, so the worker has no Dock icon), plugin timers, and each native instance's
+  idle work. The control loop runs on the thread pool and hands every request to the main thread, which both plugin
+  formats require for creating, configuring, saving, and showing a plugin. The native library is loaded only when a
+  third-party plugin is first used; a worker with only reference plugins never loads it.
 
 ## Failure policies
 
@@ -280,10 +293,15 @@ launch, handshake, and the scan. Nothing about a module is read in the Bluestone
 descriptors or a `ScanFailure`: `Crashed`, `TimedOut`, `Malformed`, or `ProtocolError`. Scanning never throws
 because of a bad module.
 
-- **Modules**: in scan mode, a file ending `.bluestone-reference-plugin` is a module, a small JSON manifest listing
-  plugins. Every other file is `Malformed`. The scanner never loads a file as code.
-- **Cache**: `scan-cache.json`, keyed by path plus file size and last-write time, written atomically (temporary
-  file, then rename). A changed fingerprint triggers a rescan. An unreadable cache is treated as empty and
+- **Modules**: a VST3 bundle (`.vst3`, or a single-file module on Windows) or a CLAP module (`.clap`, a bundle on
+  macOS and a file elsewhere) is loaded by the plugin host in the scanner process and asked for its plugins. A file
+  ending `.bluestone-reference-plugin` is a small JSON manifest listing reference plugins and is never loaded as code.
+  Every other file is `Malformed`.
+- **Architecture**: before loading, the scanner reads the binary's headers (Mach-O, including universal binaries;
+  PE; ELF). A module without code for the worker's architecture is `Unsupported` ("built for x86_64 only; this worker
+  runs on arm64"), cached, and not quarantined. There is no Rosetta or second-architecture worker.
+- **Cache**: `scan-cache.json`, keyed by path plus file size and last-write time (for a bundle, the total size and
+  latest write time of its binaries and Info.plist), written atomically (temporary file, then rename). A changed fingerprint triggers a rescan. An unreadable cache is treated as empty and
   reported in `PluginScanner.Diagnostics`.
 - **Quarantine**: `scan-quarantine.json`. A module that crashed or hung its scanner is quarantined and skipped on
   later scans **without launching a scanner**, until `RescanAsync(path, ignoreQuarantine: true)` or
@@ -301,9 +319,14 @@ them, timeout, fingerprint change) and `ScanCacheTests`.
 `Bluestone.Application/Plugins/PluginLibrary` holds the list of scan folders and what the last scan found in them. It
 scans through `IPluginScanner`, which `PluginScanner` implements (view-model tests use a fake that launches nothing).
 
-- **Folders**: a list, in order. The desktop app passes `<application data>/Bluestone/plugins` (`App.PluginFolders`);
-  formats with operating-system folders add theirs there. `FindModules` lists every file directly in each folder, by
-  name, leaving out hidden files such as `.DS_Store`. Missing folders are skipped.
+- **Folders**: a list, in order. The desktop app passes `<application data>/Bluestone/plugins` and then
+  `PluginLibrary.StandardFolders()` (`App.PluginFolders`): on macOS `~/Library/Audio/Plug-Ins/VST3`,
+  `/Library/Audio/Plug-Ins/VST3`, and the same for `CLAP`; on Windows `%LocalAppData%\Programs\Common\VST3`,
+  `%CommonProgramFiles%\VST3`, and the same for `CLAP`; on Linux `~/.vst3`, `/usr/local/lib/vst3`, `/usr/lib/vst3`,
+  `~/.clap`, `/usr/local/lib/clap`, `/usr/lib/clap`. `FindModules` lists, by name, every file directly in each folder
+  (leaving out hidden files such as `.DS_Store`), every `.vst3` and `.clap` bundle, and `.vst3` and `.clap` modules in
+  subfolders up to three levels down (vendors often install into one); a bundle is never searched inside. Missing
+  folders are skipped. The first module that provides a plugin wins when two provide the same definition ID.
 - **Scan** (at start): every module, through the cache, skipping quarantined modules.
 - **Rescan all**: every module again, ignoring the cache, so new, changed, and removed modules are found. Quarantined
   modules stay skipped.
@@ -326,6 +349,70 @@ a module that crashes its scanner is quarantined, a retry that crashes again kee
 is fixed takes it out, and its plugin is added from the strip and runs in a worker, all without a restart), and
 `PluginsViewTests` (headless: the view opened from the File menu and from the macOS Window menu, Rescan all and Retry
 clicked with the mouse, real scanner processes).
+
+## Third-party plugins (VST3 and CLAP)
+
+`native/crates/bluestone_plugin_host` (Rust, ADR 0033) loads VST3 modules (through the MIT-licensed `vst3` bindings)
+and CLAP modules (through `clap-sys`) in the worker. `NativePlugin` implements `IHostedPlugin` over its C ABI
+(`Native/NativeMethods.cs`, the worker's only unsafe code). The data plane, failure policies, supervision, and
+recovery are the same as for the reference plugins.
+
+- **Identity**: format `vst3` or `clap`, module ID the module's file name without its extension, plugin ID the VST3
+  class ID (32 hex digits) or the CLAP plugin ID. The device definition ID is `plugin:<format>:<module>/<plugin>`, for
+  example `plugin:vst3:LegendHZ/255BF0CB0F9A419992C1A715E3C58F48`. `PluginLibrary.ModulePaths` gives the module each
+  plugin is loaded from.
+- **Kind**: CLAP `instrument` and `note-effect` features; for VST3, `Instrument` in the subcategories or the plugin's
+  buses (no audio outputs with event input and output: a MIDI effect). MIDI generators that also make audio (Scaler 3,
+  Melody Sauce 3) are instruments.
+- **Parameters**: normalized to [0, 1], with units, step counts, and traits (`ParameterTraits`). Hidden, read-only, and
+  VST3 MIDI-mapping stand-ins are reported but not shown or automated (`ParameterDescriptor.IsUserFacing`); a plugin
+  with more than 4096 keeps the shown ones first. Edits made in the project reach the running plugin; edits the plugin
+  makes itself (in its editor) come back as `PluginNotification`s and are stored in the project as undoable parameter
+  changes (merged per parameter, as for the strip's sliders).
+- **Events in and out**: notes, polyphonic and channel pressure, controllers, pitch bend, and program changes, with
+  sample offsets. VST3 controllers, channel pressure, pitch bend, and program changes go through the plugin's MIDI
+  mapping as parameter changes (unmapped ones are dropped) and come out as legacy MIDI CC events. CLAP gets notes as
+  note events (or MIDI, if its note port prefers it) and the rest as MIDI. System exclusive is not passed to native
+  plugins.
+- **State**: VST3 component and controller state in one versioned container (format `bluestone.vst3-state`); CLAP
+  state from its state extension, in a versioned container (format `bluestone.clap-state`). State a plugin rejects is
+  reported in `LastStateRestoreError`; unlike the reference plugins, what the plugin then holds is up to the plugin.
+- **Processing**: the host side always sees the channels it asked for. A plugin's own layout is adapted: a mono
+  output feeds both host channels, side inputs get silence, extra outputs are dropped. Transport (position, tempo,
+  playing) goes with every block.
+- **Latency**: reported at creation; a change the plugin announces updates `PluginLatencyFrames`.
+
+### Editors
+
+**Open editor** in the device strip (for a running VST3 or CLAP plugin) asks the worker to open the plugin's editor
+in a top-level window of its own: an NSWindow on macOS (VST3 `NSView`, CLAP `cocoa`), a Win32 window on Windows
+(`HWND`, `win32`), an X11 window on Linux (`X11EmbedWindowID`, `x11`, with the plugin's timers and file descriptors
+served by the worker's run loop). A CLAP plugin that can only show a floating window shows its own. The window
+follows the plugin's resize requests and passes user resizes to the plugin; content scale is given on Windows and
+Linux (macOS sizes are points). Closing the window or `CloseEditorAsync` destroys the view; a window closed by the
+user is reported (`EditorClosed`). A worker that dies takes its window with it: the device shows Crashed, and after
+Restart the editor opens again. Keyboard focus is whatever the operating system gives the worker's window.
+
+### What was verified
+
+| Where | Plugins | What |
+| ----- | ------- | ---- |
+| CI (Linux x64, macOS arm64, Windows x64) | Bluestone's test plugins, VST3 and CLAP (`NativePluginTests`, `ThirdPartyPluginDeviceTests`) | Scan, kinds, parameters, sample-accurate parameter changes, sine pitch, transpose events, offline rendering into the plan, state in and out, corrupt state, kill and restart, project save and reopen, automation feeds, an editor refused for a plugin without one |
+| macOS arm64, this machine | The Legend HZ, REVERSIDE (VST3); Airwindows Consolidated, Surge XT (CLAP) (`InstalledPluginTests`) | Scan, load, audio out (a note for instruments, a sine through effects), a parameter set and state captured, worker killed while processing: Crashed, silence, restart restores the parameter and audio |
+| macOS arm64, this machine | REVERSIDE (VST3), Airwindows Consolidated (CLAP) (`PluginEditorTests`) | Editor opens, closes, opens again; worker killed with the editor open; editor opens again after restart |
+| macOS arm64, this machine | The Legend HZ (VST3), Airwindows Consolidated (CLAP), with a development probe | Editor windows appear on screen at the plugin's size (checked through the window list; the screen was locked, so not by eye); Airwindows sent parameter edits from its editor |
+| macOS arm64, this machine | SuperClassic, Scaler 3, Scaler 3 Audio, Melody Sauce 3 (VST3) | Scanned by the app at start and loaded, processed, and saved by the probe; not covered by tests |
+
+Not verified: editors on Windows and Linux (the code compiles and runs headless in CI; no window was opened on
+those systems), closing or resizing an editor window by hand (no one was at the machine), plugin MIDI output from a
+third-party MIDI effect (none of the installed plugins is a VST3 or CLAP MIDI effect; Scaler 3 and Melody Sauce 3
+are instruments that also put out MIDI, which Bluestone does not route from an instrument), Intel-only plugins on
+Apple silicon (refused as `Unsupported`, by a unit test on synthetic headers), real-time behaviour under an audio
+device (there is no audio engine).
+
+The installed-plugin and editor tests skip with a reason when the plugin is missing (and the editor tests on CI and
+outside macOS). Test subjects downloaded for this: Airwindows Consolidated (MIT) and Surge XT 1.3.4 (GPL-3.0), from
+their GitHub releases, installed in `~/Library/Audio/Plug-Ins/CLAP`; neither is part of Bluestone.
 
 ## Test hooks
 
@@ -362,12 +449,16 @@ Operating-system sandboxing (App Sandbox, seccomp, AppContainer, and so on) is d
 - **Control plane**: .NET named pipes, which are Unix domain sockets in the temporary directory on macOS and Linux
   (`CoreFxPipe_<name>`) and real named pipes on Windows.
 - **Architectures**: a worker must have the same architecture as the plugin binaries it loads; x64 and ARM64 plugin
-  binaries cannot be mixed in one process. Hosting both would need one worker build per architecture (on macOS,
-  an x64 worker under Rosetta). Not needed for the reference plugins, and not built.
+  binaries cannot be mixed in one process. Modules without code for the worker's architecture are reported as
+  `Unsupported` when scanned. Hosting both would need one worker build per architecture (on macOS, an x64 worker
+  under Rosetta); not built.
+- **Bundles**: macOS VST3 and CLAP bundles are loaded with CFBundle (VST3 `bundleEntry` gets the bundle); Windows
+  VST3 bundles load `Contents/<arch>-win/<name>.vst3`; Linux VST3 bundles load `Contents/<arch>-linux/<name>.so`; CLAP
+  modules on Windows and Linux are plain shared libraries.
 - **Crash reports**: on macOS every `Environment.FailFast` (the FailFast test and the scanner crash test) leaves a
   report in `~/Library/Logs/DiagnosticReports`.
-- **Verified on**: macOS ARM64 only. The code is cross-platform C#, but nothing here has been run on Linux or
-  Windows yet; the CI matrix will be the first to do so.
+- **Verified on**: macOS ARM64 by hand and in tests; Linux x64, macOS arm64, and Windows x64 in CI (workflow runs on
+  this branch), including the VST3 and CLAP test plugins.
 
 ## The application bridge
 
@@ -387,9 +478,15 @@ authority (ADR 0025):
 - The desktop app scans its plugin folders at start, one scanner process per module, and the bridge follows later
   rescans and retries from the Plugins view (see [The plugin library and the Plugins view](#the-plugin-library-and-the-plugins-view)).
 
+- Values changed in the project go to running plugins on the next sync (only those that differ); `RecordEdit` stores
+  an edit the plugin made itself; `OpenEditorAsync` and `CloseEditorAsync` show and hide its editor, and the status
+  says "Running, editor open".
+
 Tests: `PluginDeviceHostTests` (scenarios 11 to 13 through the project: save, reopen, kill, restart, automation still
-valid; one of two workers killed; a missing plugin; removing a device stops its worker) and
-`PluginDeviceStripTests` (the strip shows `[Reference Gain: Crashed]` with Restart after a real kill).
+valid; one of two workers killed; a missing plugin; removing a device stops its worker),
+`PluginDeviceStripTests` (the strip shows `[Reference Gain: Crashed]` with Restart after a real kill), and
+`ThirdPartyPluginDeviceTests` (the same through VST3 and CLAP test plugins, plus edits both ways and a MIDI effect
+rendered into the plan).
 
 ### Plugin MIDI effects in the plan
 
@@ -422,8 +519,8 @@ unchanged with a reason, and a restart brings the transposition back.
 | 13 | Several workers; one fails, the others keep working | `PluginCrashRecoveryTests.KillingOneOfSeveralWorkers_LeavesTheOthersProducingCorrectAudio`, `PluginDeviceHostTests.Scenarios11And13_*` |
 | 15 | A module crashes the scanner; Bluestone carries on, reports it, and skips it next time | `PluginScannerProcessTests.ACrashingModule_IsQuarantined_SkippedNextTime_AndRetriedOnRequest_WhileOthersStillScan` |
 
-These use the reference plugins in `Bluestone.PluginWorker`, not third-party plugins: the crash, recovery, and
-isolation machinery is real, the plugins are Bluestone's own.
+These use the reference plugins in `Bluestone.PluginWorker`. The same scenarios with VST3 and CLAP plugins (11 and 12)
+are covered by `NativePluginTests`, `ThirdPartyPluginDeviceTests`, and, with installed plugins, `InstalledPluginTests`.
 
 ## Implemented and tested
 
@@ -444,6 +541,9 @@ isolation machinery is real, the plugins are Bluestone's own.
 | In-process hosting refused; bypass rules | `PluginHostManagerTests` |
 | Scanning, cache, quarantine | `PluginScannerProcessTests`, `ScanCacheTests`, `ModuleScannerTests` |
 | Rescan and retry from the Plugins view; the device catalog follows | `PluginLibraryProcessTests`, `PluginsViewModelTests`, `PluginLibraryTests`, `PluginsViewTests` |
+| VST3 and CLAP through the test plugins: scan, process, state, render, crash and restart, project devices | `NativePluginTests`, `ThirdPartyPluginDeviceTests` |
+| Installed VST3 and CLAP plugins (skipped when absent); editors with installed plugins (macOS) | `InstalledPluginTests`, `PluginEditorTests` |
+| Protocol version 3 fields and notifications, architecture checks, bundle discovery, bundle fingerprints, only the worker loads the native host | `FrameCodecTests`, `BinaryArchitectureTests`, `PluginLibraryTests`, `ScanCacheTests`, `DependencyDirectionTests` |
 
 Unit tests are in `src/Bluestone.Tests.Unit/Plugins/`; process tests are in `src/Bluestone.Tests.Integration/Plugins/`
 and run as one non-parallel collection. The integration project references the worker with
@@ -451,11 +551,10 @@ and run as one non-parallel collection. The integration project references the w
 
 ## Deferred
 
-- **Real VST3 loading and parameter enumeration.** No third-party plugin format is supported. The worker's
-  `IHostedPlugin` is the seam where a native hosting layer would go (that is where the language policy allows
-  Rust, given a native-ABI reason).
-- **Plugin editors**: separate windows versus embedding, focus and keyboard handling, DPI scaling, and what happens
-  to an open editor when its worker dies.
+- **More of VST3 and CLAP**: workers for a second architecture (Rosetta), system exclusive to native plugins, VST3
+  note expression, CLAP note expressions and parameter modulation, MPE, audio-port configurations, side-chain
+  inputs, routing the MIDI output of an instrument plugin, reloading a VST3 component on `kReloadComponent`.
+- **Editors embedded in Bluestone's own window**, and editors on Windows and Linux verified on hardware.
 - **Plugin delay compensation across a graph.** Instances report their latency; nothing compensates for it yet.
 - **Operating-system sandboxing** of workers.
 - **Wake-up primitives** (futex, eventfd, Windows events) for the data plane.

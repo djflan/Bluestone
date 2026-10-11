@@ -408,8 +408,10 @@ Built as boundaries and tested where cheap, but not finished:
 - **Audio engine**: playing audio clips and software instruments, the mixer's gain and pan, plugin audio driven
   by playback, and plugin delay compensation across the graph. Feeds, parameter feeds, and audio connections are
   produced and validated so the engine has a defined input.
-- **Third-party plugin formats** (VST3 loading, parameter enumeration) and **plugin editors** (windows, focus,
-  DPI, a worker dying with its editor open). The worker hosts Bluestone's reference plugins today.
+- **Third-party plugins beyond the first slice**: VST3 and CLAP load, process, keep state, recover, and show editors
+  (ADR 0033, docs/plugin-hosting.md), but editors on Windows and Linux are not verified on hardware, editors are
+  separate windows (not embedded), and there are no second-architecture workers, SysEx to native plugins, note
+  expressions, or MPE.
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
 - **Operating-system sandboxing** of plugin workers.
@@ -445,8 +447,14 @@ Built as boundaries and tested where cheap, but not finished:
 C# is the default for all code (ADR 0026). Rust is used for a component only when a measurement shows
 managed code cannot meet a real-time or throughput requirement after tuning, or when a native interface
 (such as plugin binaries) requires it; it replaces C or C++ for new Bluestone-owned native code. C and C++
-appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Today there is no Rust
-and no Bluestone-owned native code.
+appear only as third-party libraries, vendor SDK requirements, or thin ABI shims.
+
+Rust code lives in a Cargo workspace, `native/`, one crate per component (`native/crates/*`), each a cdylib with a
+small, versioned C ABI; `dotnet build` builds the crates a project names (`src/Native.targets`) and copies the
+library beside the assemblies. The first component is the plugin host, `bluestone_plugin_host` (ADR 0033): it loads
+VST3 and CLAP plugin binaries, which is ADR 0026's native-interface reason, and only `Bluestone.PluginWorker` loads
+it, so no plugin code ever runs in Bluestone's process. `bluestone_test_plugins` builds small VST3 and CLAP plugins
+for the tests. The data plane, supervision, and everything else in plugin hosting stay C#.
 
 ## Acceptance scenarios and their tests
 

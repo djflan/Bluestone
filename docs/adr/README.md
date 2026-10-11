@@ -35,6 +35,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0028](0028-plugin-midi-effects-at-plan-time.md) | Plugin MIDI effects run in their worker when the plan is compiled | Accepted; amends 0022 and 0025 |
 | [0029](0029-rename-to-bluestone.md) | The project is renamed Bluestone, with no compatibility for Cadence files | Accepted |
 | [0030](0030-group-tracks.md) | Group tracks: mute and solo reach members, membership routes, folding is saved | Accepted; amends 0021 |
+| [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
 
 ## Template
 

@@ -14,7 +14,7 @@ Read the [architectural principle](README.md#architectural-principle), the [arch
 
 ## Development setup
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (see `global.json` for the required feature band), then from the repository root:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (see `global.json` for the required feature band) and a stable [Rust toolchain](https://rustup.rs) (`cargo` on the path; `dotnet build` builds the crates in `native/`), then from the repository root:
 
 ```sh
 dotnet restore src/Bluestone.slnx
@@ -26,6 +26,15 @@ dotnet format src/Bluestone.slnx --verify-no-changes
 Packages are restored only from nuget.org: the repository's `nuget.config` clears inherited sources and maps every package to it, as central package management requires. Add a mapping there if a package ever needs another source.
 
 Warnings are treated as errors and code style is enforced during the build; `.editorconfig` defines the style. Build conventions are described in [ADR 0002](docs/adr/0002-build-and-test-conventions.md).
+
+Rust is used only where [ADR 0026](docs/adr/0026-native-technology-policy.md) allows it. `native/Cargo.lock` is committed and builds use `--locked`: after changing a crate's dependencies, run `cargo build` in `native/` once. Before a pull request that touches Rust, run in `native/`:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+```
+
+Rust dependencies must be MIT-compatible (MIT, Apache-2.0, BSD, ISC, Zlib); GPL crates such as `vst3-sys` are not used. Plugins used for testing are installed locally and never committed.
 
 ## Pull requests
 

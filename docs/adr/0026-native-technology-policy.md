@@ -1,6 +1,6 @@
 # 0026. Native technology policy: C# first, Rust where measurements or native interfaces demand it
 
-- Status: Accepted
+- Status: Accepted; the first Rust component is the plugin host (0033)
 - Date: 2026-10-10
 
 ## Context
