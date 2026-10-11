@@ -183,7 +183,7 @@ public sealed class LatencyCompensationTests
         Assert.Equal(30, graph.LatencyFrames);
         Assert.Equal([30, 70], Impulses(left));
         Assert.Equal(2f, left[30]);
-        Assert.Equal(0, graph.CompensationOf(graph.Nodes.OfType<LatentNode>().Single(n => n.Latency == 70)));
+        Assert.Equal(0, graph.DelayToMasterOf(graph.Nodes.OfType<LatentNode>().Single(n => n.Latency == 70)));
     }
 
     [Fact]
@@ -218,6 +218,33 @@ public sealed class LatencyCompensationTests
         // The instrument through B and R; T's clip through B and R, V's clip, and U's plugin and clip, direct and through R.
         Assert.Equal(2f, left[128]);
         Assert.Equal(7f, left[480]);
+    }
+
+    [Theory]
+    [InlineData(false, 236)]
+    [InlineData(true, 50)]
+    public void DelayToMasterOf_AnInstrument_IsEverythingBetweenItsOutputAndTheMaster(bool monitor, int expected)
+    {
+        // Instrument (64) → effect (50) → channel → master, and a slower path (300) through another channel. Unmonitored,
+        // the instrument is heard 300 frames after its input: 64 its own, 50 the effect's, 186 compensation.
+        var builder = new AudioGraphBuilder();
+        var channel = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var other = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var instrument = Path(builder, latency: 64);
+        var effect = builder.AddNode(new LatentNode(50));
+        builder.Connect(instrument, effect);
+        builder.ConnectToStrip(effect, channel);
+        builder.ConnectToStrip(Path(builder, latency: 300), other);
+        if (monitor)
+        {
+            builder.Monitor(instrument);
+        }
+
+        var graph = builder.Build(Block, new MixerStripState());
+        var node = graph.Nodes.OfType<LatentNode>().Single(n => n.Latency == 64);
+
+        Assert.Equal(expected, graph.DelayToMasterOf(node));
+        Assert.Equal(64 + expected, Impulses(Left(Render(graph, 1024)))[0]);
     }
 
     [Fact]

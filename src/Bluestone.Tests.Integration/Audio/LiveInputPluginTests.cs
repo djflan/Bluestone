@@ -200,7 +200,7 @@ public sealed class LiveInputPluginTests
         var result = graphs.Build(session.Project, SignalGraph.Evaluate(session.Project, devices), devices, null);
         engine.Publish(result.Graph);
         live.Update(session.Project, devices, (_, _) => null, new Dictionary<EndpointId, IMidiOutput>());
-        live.UseInstruments(graphs.PluginNodes, node => result.Graph.CompensationOf(node) ?? 0);
+        live.UseInstruments(graphs.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);
         var channel = MidiChannel.FromIndex(0);
         float Peak() => Left(driver.Render(8 * Block, Block))[(4 * Block)..].Max();
         float Play(TrackId track, int note, int velocity)
@@ -306,7 +306,7 @@ public sealed class LiveInputPluginTests
             var result = _graphs.Build(project, SignalGraph.Evaluate(project, Devices), Devices, null);
             Engine.Publish(result.Graph);
             Live.Update(project, Devices, (_, _) => null, new Dictionary<EndpointId, IMidiOutput>());
-            Live.UseInstruments(_graphs.PluginNodes, node => result.Graph.CompensationOf(node) ?? 0);
+            Live.UseInstruments(_graphs.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);
         }
 
         public async ValueTask DisposeAsync()

@@ -87,7 +87,10 @@ built-in devices, and plugin delay compensation, in scope for this epic.
   (`LiveInputPluginTests`: a key played 5 ms before the next block is heard sounds two pipeline blocks after that
   block, through a real plugin MIDI effect and instrument, and the latency meter reports exactly that).
 - `LiveInput.Latency` measures every live note into a plugin instrument (input timestamp to heard, the plugins'
-  latency and compensation included); the Audio window shows it.
+  latency and compensation included); the Audio window shows it. After the instrument it counts everything on the
+  way to the master (`AudioGraph.DelayToMasterOf`): compensation delays at every channel and bus, and the latency of
+  plugin effects after the instrument (before 2026-10-11 it counted only the delay on the instrument's own output
+  and under-reported).
 
 ### Plugin delay compensation
 

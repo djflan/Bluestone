@@ -69,7 +69,7 @@ public sealed class LiveInput : IDisposable
     private Func<DeviceId, PluginInstance?> _plugins = _ => null;
     private IReadOnlyDictionary<DeviceId, PluginInstance> _instances = new Dictionary<DeviceId, PluginInstance>();
     private IReadOnlyDictionary<DeviceId, PluginNode>? _nodes;
-    private Func<PluginNode, int> _compensation = _ => 0;
+    private Func<PluginNode, int> _delayToMaster = _ => 0;
     private TrackId? _monitored;
     private DeviceId? _monitoredInstrument;
     private long _lastSoftwareInput;
@@ -130,15 +130,16 @@ public sealed class LiveInput : IDisposable
     }
 
     /// <summary>
-    /// The nodes the audio engine plays plugin instruments with, and the compensation delay after each, or null while no
-    /// audio device is open (routes to plugin instruments are then silent).
+    /// The nodes the audio engine plays plugin instruments with, and the frames from each one's output until the master
+    /// puts it out (<see cref="Bluestone.Audio.AudioGraph.DelayToMasterOf"/>, for the latency meter), or null while no audio
+    /// device is open (routes to plugin instruments are then silent).
     /// </summary>
-    public void UseInstruments(IReadOnlyDictionary<DeviceId, PluginNode>? nodes, Func<PluginNode, int>? compensation = null)
+    public void UseInstruments(IReadOnlyDictionary<DeviceId, PluginNode>? nodes, Func<PluginNode, int>? delayToMaster = null)
     {
         lock (_gate)
         {
             _nodes = nodes;
-            _compensation = compensation ?? (_ => 0);
+            _delayToMaster = delayToMaster ?? (_ => 0);
             RebuildLocked();
         }
     }
@@ -353,7 +354,7 @@ public sealed class LiveInput : IDisposable
             }
             else if (current.Node is { } node)
             {
-                current.CompensationFrames = _compensation(node);
+                current.DelayToMasterFrames = _delayToMaster(node);
             }
         }
 
@@ -385,7 +386,7 @@ public sealed class LiveInput : IDisposable
     {
         if (runner.Node is { } node)
         {
-            runner.CompensationFrames = _compensation(node);
+            runner.DelayToMasterFrames = _delayToMaster(node);
             if (!_players.TryGetValue(node, out var players))
             {
                 _players[node] = players = new LiveSourceSet();

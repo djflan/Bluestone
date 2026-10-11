@@ -72,8 +72,8 @@ internal sealed class LiveRunner : ILiveEventSource
 
     public EndpointDescriptor? ExternalEndpoint => _external?.Endpoint;
 
-    /// <summary>The delay compensation after the instrument in the graph playing it (0 with low-latency monitoring). Any thread.</summary>
-    public int CompensationFrames { get; set; }
+    /// <summary>Frames from the instrument's output until the master puts it out (see <see cref="AudioGraph.DelayToMasterOf"/>). Any thread.</summary>
+    public int DelayToMasterFrames { get; set; }
 
     /// <summary>Tempo while the transport is stopped (the tempo at the playhead). Any thread.</summary>
     public double StoppedTempo { get; set; } = 120;
@@ -217,7 +217,7 @@ internal sealed class LiveRunner : ILiveEventSource
         var block = Advance((double)context.Frames / context.SampleRate * TicksPerSecond(tempo), context.Frames);
         if (_latency is { } meter && context.HeardTimestamp != 0 && Node is { } node)
         {
-            // What follows the block's start: the effects' and the instrument's latency, and the compensation after it.
+            // What follows the block's start: the effects' and the instrument's latency, and its way to the master.
             var heard = Stopwatch.GetElapsedTime(0, context.HeardTimestamp);
             var effects = 0;
             foreach (var stage in PluginStages)
@@ -225,7 +225,7 @@ internal sealed class LiveRunner : ILiveEventSource
                 effects += stage.Instance.ReportedLatencyFrames;
             }
 
-            var after = TimeSpan.FromSeconds((double)(effects + node.LatencyFrames + CompensationFrames) / context.SampleRate);
+            var after = TimeSpan.FromSeconds((double)(effects + node.LatencyFrames + DelayToMasterFrames) / context.SampleRate);
             Run(block, heard + after, meter);
         }
         else

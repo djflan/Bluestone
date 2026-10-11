@@ -51,14 +51,18 @@ public sealed class AudioGraph
         }
     }
 
-    /// <summary>The delay compensation applied after <paramref name="node"/> on its way to a mixer channel or the master, in frames, or null when the node is not in this graph.</summary>
-    public int? CompensationOf(AudioNode node)
+    /// <summary>
+    /// Frames from <paramref name="node"/>'s output until the master puts it out: the compensation delays and the latency
+    /// of the plugin nodes after it on its way there (along the slowest way, when there are several), or null when the
+    /// node is not in this graph.
+    /// </summary>
+    public int? DelayToMasterOf(AudioNode node)
     {
         foreach (var entry in _nodes)
         {
             if (ReferenceEquals(entry.Node, node))
             {
-                return entry.Compensation;
+                return entry.DelayToMaster;
             }
         }
 
@@ -163,7 +167,7 @@ public sealed class AudioGraph
 
     internal readonly record struct EdgeDelay(DelayLine? Line, int Frames);
 
-    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int Compensation);
+    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int DelayToMaster);
 
     internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends, EdgeDelay OutputDelay);
 
@@ -331,6 +335,17 @@ public sealed class AudioGraphBuilder
         // When a signal must have reached a strip: the strip's own alignment, or the graph's latency for a monitored strip.
         int Due(int s) => monitoredStrip[s] ? latency : strip[s];
 
+        // From a node's output to the master: an unmonitored node is aligned with everything at the graph's latency; a
+        // monitored one goes through the nodes it feeds undelayed, and then on undelayed.
+        var delayToMaster = new int[_nodes.Count];
+        for (var i = nodeOrder.Count - 1; i >= 0; i--)
+        {
+            var index = nodeOrder[i];
+            delayToMaster[index] = monitored[index]
+                ? _nodeEdges.Where(e => e.From == index).Select(e => built[e.To] + delayToMaster[e.To]).DefaultIfEmpty(0).Max()
+                : latency - nodeOutput[index];
+        }
+
         AudioGraph.EdgeDelay Edge(object source, object destination, int kind, int frames)
         {
             var line = compensation.LineFor(source, destination, kind, frames, blockFrames);
@@ -347,7 +362,6 @@ public sealed class AudioGraphBuilder
             AudioGraph.EdgeDelay[] stripDelays = [.. strips.Select(s => Edge(node, _strips[s].State, 0, monitored[index] ? 0 : Due(s) - nodeOutput[index]))];
             var toMaster = _toMaster.Contains(index);
             var masterDelay = toMaster ? Edge(node, master, 0, monitored[index] ? 0 : latency - nodeOutput[index]) : default;
-            var compensated = stripDelays.Select(d => d.Frames).Append(masterDelay.Frames).Max();
             return new AudioGraph.NodeEntry(
                 node,
                 inputs,
@@ -359,7 +373,7 @@ public sealed class AudioGraphBuilder
                 toMaster,
                 masterDelay,
                 built[index],
-                compensated);
+                delayToMaster[index]);
         }).ToArray();
 
         var audible = Audible();

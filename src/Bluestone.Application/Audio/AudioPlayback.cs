@@ -215,7 +215,7 @@ public sealed class AudioPlayback : IDisposable
             graph.Monitored = _wanted?.LowLatencyMonitoring == true && _playback.Live.MonitoredInstrument is { } monitored ? [monitored] : [];
             var result = graph.Build(_session.Project, routing.Graph, _playback.Devices, directory);
             engine.Publish(result.Graph);
-            _playback.Live.UseInstruments(graph.PluginNodes, node => result.Graph.CompensationOf(node) ?? 0);
+            _playback.Live.UseInstruments(graph.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);
             var changed = !result.Problems.SequenceEqual(GraphProblems);
             GraphProblems = result.Problems;
             if (changed)
