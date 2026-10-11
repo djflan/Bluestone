@@ -13,6 +13,7 @@ Warnings (unknown properties, unused template parameters) do not block loading.
 
 | Property | Required | Description |
 | -------- | -------- | ----------- |
+| `$schema` | no | Ignored; lets an editor find a JSON schema. |
 | `format` | yes | Always `"bluestone-device-profile"`. |
 | `schemaVersion` | yes | `1`. Newer versions are refused with a clear message. |
 | `id` | yes | Stable identifier: lowercase letters and digits separated by `.` or `-`, e.g. `community.vendor.model`. Projects refer to profiles by this ID. |
@@ -67,6 +68,7 @@ Program `number` is **one-based (1–128)**, as printed in most voice lists; Blu
 - `bytes` is space-separated: two-digit hex bytes or `{parameter}` placeholders. It must start with
   `F0`, end with `F7`, and every byte between must be a data byte (`00`–`7F`). At most 512 bytes.
 - Each placeholder is a declared 7-bit parameter with `min ≤ default ≤ max`.
+- `description` is optional display text.
 - `effect` is `parameter`, `reset`, or `bulk`. Resets and bulk transfers always require confirmation
   before sending. Opening a project never sends anything from a profile.
 
@@ -77,7 +79,8 @@ These templates do not compute checksums or split values across bytes. Parameter
 The parameter map names the parameters of the instrument's parts that automation can set (ADR 0031). An
 automation lane names a part (instrument, port, channel) and a parameter by its `id`. Lane values are normalized
 (0 to 1) and scaled to the parameter's range: `min + round(value × (max − min))`. They are translated into MIDI
-when playback is prepared and when a MIDI file is exported.
+when playback is prepared and when a MIDI file is exported ([architecture.md](architecture.md#automation)).
+Properties that do not belong to an entry's `kind` are warnings and are ignored.
 
 ```json
 "parameterMap": [
@@ -95,18 +98,18 @@ when playback is prepared and when a MIDI file is exported.
 
 | Property | Kinds | Description |
 | -------- | ----- | ----------- |
-| `id` | all | Key, unique in the map: lowercase letters, digits, `-`, `_`, `.`. Projects store it. |
+| `id` | all | Key, unique in the map, at most 64 characters: lowercase letters, digits, `-`, `_`, `.`, starting with a letter or digit. Projects store it. |
 | `name` | all | Display name (≤ 64 characters), shown in the add-lane menu. |
 | `kind` | all | `cc`, `rpn`, `nrpn`, or `sysex`. |
-| `min`, `max` | all | The integers sent for 0 and 1. Default to the full range (127, or 16383 for 14 bits; `max` 127 for SysEx, at most 65535). `min` must be less than `max`. |
+| `min`, `max` | all | The integers sent for 0 and 1. `min` defaults to 0; `max` to the full range (127, or 16383 for 14 bits; 127 for SysEx, where it may be up to 65535). `min` must be less than `max`. |
 | `default` | all | The instrument's own default, if known; between `min` and `max`. |
 | `bits` | `cc`, `rpn`, `nrpn` | `7` (default) or `14`. |
 | `controller` | `cc` | The controller. For 14 bits, the MSB controller 0–31; its LSB is that number plus 32. Bank select, LSB controllers, data entry and increment, RPN/NRPN selectors, and channel mode messages are refused. |
 | `msb`, `lsb` | `rpn`, `nrpn` | The parameter number. 127/127 (the null parameter) is refused. |
 | `nullAfter` | `rpn`, `nrpn` | Whether the RPN null (CC 101 and 100 at 127) follows each change, so a stray data entry changes nothing. Default `true`. |
-| `bytes` | `sysex` | The message, as for SysEx templates, with these placeholders: `{value}` (bits 6–0), `{value[high:low]}` (1 to 7 bits, within bits 15–0, for example nibbles), `{channel}` (the part's channel, 0–15), `{device}`, and `{checksum}`. The value placeholders must send every bit `max` needs. |
+| `bytes` | `sysex` | The message, as for SysEx templates (3 to 512 tokens, `F0` first and `F7` last, data bytes between), with these placeholders between them: `{value}` (bits 6–0), `{value[high:low]}` (1 to 7 bits, high bit first, within bits 15–0, for example nibbles), `{channel}` (the part's channel, 0–15), `{device}`, and `{checksum}` (at most once). At least one value placeholder is required, and together they must send every bit `max` needs. |
 | `device` | `sysex` | The byte `{device}` sends (0–127), required when it is used. |
-| `checksum` | `sysex` | Required when `{checksum}` is used: `convention` (`roland` or `yamaha`) and `start`, the position of the first byte summed (F0 is 0). The checksum is the 7-bit value that makes the bytes from `start` up to it sum to 0 (mod 128). Roland sums the address and data; Yamaha the byte count, address, and data. A convention that does not match the manufacturer ID is a warning. |
+| `checksum` | `sysex` | Required when `{checksum}` is used, and only then: `convention` (`roland` or `yamaha`) and `start`, the position of the first byte summed (F0 is 0; from 1 to the byte before `{checksum}`). The checksum is the 7-bit value that makes the bytes from `start` up to it sum to 0 (mod 128). Roland sums the address and data; Yamaha the byte count, address, and data. A convention that does not match the manufacturer ID is a warning. |
 
 What each kind sends, in order:
 

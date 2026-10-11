@@ -6,7 +6,9 @@ and a parameter map for automation). It never describes where the instrument is 
 routing decision.
 
 The format is documented in [docs/profiles.md](../docs/profiles.md). Files must be named
-`<something>.bluestone-profile.json`.
+`<something>.bluestone-profile.json`. Bluestone loads the profiles shipped here and any in
+`<application data>/Bluestone/profiles` (for example `~/Library/Application Support/Bluestone/profiles` on
+macOS).
 
 | Profile | ID | Verification |
 | ------- | -- | ------------ |

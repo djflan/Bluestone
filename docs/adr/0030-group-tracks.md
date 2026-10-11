@@ -1,6 +1,6 @@
 # 0030. Group tracks: mute and solo reach members, membership routes, folding is saved
 
-- Status: Accepted; amends 0021 and handoff decision 11 (for groups only)
+- Status: Accepted; amends 0021 and decision 11 in the [roadmap](../roadmap.md) (for groups only)
 - Date: 2026-10-11
 
 ## Context

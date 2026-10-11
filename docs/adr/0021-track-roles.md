@@ -1,6 +1,6 @@
 # 0021. Track roles: persisted, reconciled with content, never destructive
 
-- Status: Accepted; amended by 0030
+- Status: Accepted; amends 0020; amended by 0030
 - Date: 2026-10-10
 
 ## Context

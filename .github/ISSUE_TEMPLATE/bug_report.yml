@@ -21,6 +21,22 @@ body:
     validations:
       required: true
   - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Arrangement, piano roll, or event list
+        - Recording or MIDI thru
+        - MIDI input or output
+        - Device profiles
+        - Tracks, devices, racks, or routing
+        - Audio engine or mixer
+        - Plugins (scanning, hosting, editors)
+        - Project or MIDI files
+        - User interface or accessibility
+        - Other
+  - type: dropdown
     id: os
     attributes:
       label: Operating system
@@ -41,13 +57,16 @@ body:
       label: Bluestone version or commit
       placeholder: 822d257
   - type: textarea
-    id: midi-setup
+    id: setup
     attributes:
-      label: MIDI setup
-      description: Device profile, MIDI endpoint, and hardware or software instrument involved.
-      placeholder: Generic XG profile -> physical QY100 over USB MIDI interface
+      label: MIDI, audio, and plugin setup
+      description: Device profile, MIDI endpoint, and hardware or software instrument involved; the audio device and settings; plugins (name, format, version) and hosting mode.
+      placeholder: |
+        Generic XG profile -> physical QY100 over USB MIDI interface
+        Audio: built-in output, 48 kHz, buffer 256
+        Surge XT 1.3.4 (CLAP), hosted by plugin
   - type: textarea
     id: logs
     attributes:
-      label: Logs, MIDI monitor output, or screenshots
+      label: Logs, MIDI monitor or Messages output, or screenshots
       render: text

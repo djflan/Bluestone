@@ -1,17 +1,18 @@
 # Manual hardware test plan
 
-The automated suite covers everything that can be checked without instruments: virtual CoreMIDI
-ports, the built-in monitor, and (when enabled) the IAC bus. This checklist covers what needs a
-real instrument. The first target is a Yamaha QY100 or another XG module on a USB-MIDI interface.
-Record the date, macOS version, interface, and results for each run.
+The automated suite covers everything that can be checked without instruments, speakers, or a
+person watching: virtual CoreMIDI ports, the built-in monitor, (when enabled) the IAC bus, audio through
+a test backend, and plugins through Bluestone's test plugins. This checklist covers what needs real
+hardware or a person. The MIDI target is a Yamaha QY100 or another XG module on a USB-MIDI interface.
+Record the date, operating system and version, interface, audio device, plugins, and results for each run.
 
 > Yamaha, XG, and QY100 are trademarks of Yamaha Corporation; Bluestone is not affiliated with Yamaha.
 
 ## Setup
 
 1. Connect the interface's MIDI OUT to the instrument's MIDI IN (and MIDI OUT to MIDI IN for input tests).
-2. Confirm the interface appears in **Audio MIDI Setup → MIDI Studio**.
-3. Start Bluestone: `dotnet run --project src/dotnet/Bluestone.Desktop`.
+2. Confirm the interface appears in **Audio MIDI Setup → MIDI Studio** (macOS) or the system's device list.
+3. Start Bluestone: `dotnet run --project src/dotnet/Bluestone.Desktop` (needs the .NET SDK and a Rust toolchain).
 
 ## Checks
 
@@ -48,6 +49,55 @@ These need an instrument whose MIDI OUT is connected to the interface's MIDI IN.
 | 21 | Move the sustain pedal and pitch wheel while recording | Sustain (CC 64) and pitch bend appear in the event list and the controller lanes |
 | 22 | Open a MIDI file with program changes, select a track, and with thru on play the computer keyboard (`) without pressing play | You hear the track's instrument on its channel; the readout's **CH** matches the track |
 | 23 | Hold a computer-keyboard key, select a track on another channel, release | The note releases; nothing hangs |
+
+## Audio output
+
+Run these on each operating system: macOS (CoreAudio), Windows (WASAPI), and Linux (ALSA). Windows
+and Linux output is built and tested in CI but has not been heard. Audio Settings is under
+**Window ▸ Audio Settings…** on macOS and **File ▸ Audio Settings…** on Windows and Linux.
+
+| # | Step | Expected |
+| - | ---- | -------- |
+| 24 | In Audio Settings choose the device, press **Start audio**, then **Test tone** | A clean tone; the status shows the device, rate, buffer, and the render thread priority granted |
+| 25 | Open a project with WAVE and AIFF audio clips (add them by hand as in [project-format.md](project-format.md); there is no audio import yet) with gain and fades, and play | Clips play in time with MIDI; fades and gain are audible; no clicks at clip edges or loop wraps |
+| 26 | Unplug the chosen audio device (USB or Bluetooth) while playing | Audio moves to the default output with a message; nothing crashes |
+| 27 | Plug it back in | Audio returns to the chosen device |
+| 28 | Unplug the only output device, then plug it back in | Audio waits for a device, then opens it again without a restart |
+| 29 | With a plugin instrument playing, switch to a device running at another rate (44.1 kHz versus 48 kHz) | The plugin is silent briefly, then plays with the same settings; an open editor closes |
+
+## Plugins
+
+Install at least one VST3 and one CLAP instrument and effect in the default plugin folders (listed in
+**Plugins…**). The worker process is `Bluestone.PluginWorker`.
+
+| # | Step | Expected |
+| - | ---- | -------- |
+| 30 | Open **Plugins…** (Window menu on macOS, File menu elsewhere) | Installed plugins are listed with their kind, vendor, version, and module; modules that could not be read say why |
+| 31 | On a track, choose a VST3 instrument in **Add a device…**, press **Add**, play notes; repeat with CLAP | The instrument sounds through the master; the meters move |
+| 32 | Add a plugin audio effect after the instrument and turn one of its parameters | The effect is heard; the change is heard within a block |
+| 33 | Press **Open editor**; edit a control, resize the window, close it, open it again | The window appears at the plugin's size; edits change the sound; resizing and reopening work. Check Windows and Linux in particular: editors there have never been opened |
+| 34 | While playing, end the worker process (Activity Monitor, Task Manager, or `kill`) | Bluestone keeps running; the device shows **Crashed** and names the devices that went down with it; plugins in other workers keep playing |
+| 35 | Press **Restart** | The plugin plays again with its last saved settings |
+| 36 | Save, quit, reopen the project | Plugin settings are restored |
+| 37 | In **Plugins…**, change the hosting mode (for example from By plugin to Individually) while playing | Plugins move to their new workers and keep their settings |
+
+## Hardware parameter automation
+
+Route a track to the XG instrument with the **Generic XG** profile.
+
+| # | Step | Expected |
+| - | ---- | -------- |
+| 38 | Add automation lanes for Filter Cutoff (NRPN), Pitch Bend Range (RPN), Part Volume (SysEx), and Part Detune (SysEx in nibbles); draw ramps; play | Each parameter audibly follows its lane; the MIDI monitor shows the NRPN, RPN, and SysEx messages |
+| 39 | Stop in the middle of a ramp, seek, and loop across it | After each jump the instrument is at the lane's value; nothing is left at a stray value |
+| 40 | Export a MIDI file and play it from another sequencer to the same instrument | The same parameter changes are heard |
+
+## Live input latency
+
+| # | Step | Expected |
+| - | ---- | -------- |
+| 41 | Play a plugin instrument from a MIDI keyboard with **MIDI thru** on, with audio running | Notes sound without hanging; Audio Settings shows "Live notes heard after … ms": record it per operating system, device, and buffer size |
+| 42 | Put a plugin effect that reports latency (a look-ahead limiter) on another track, then play live with **Low-latency monitoring** off and on | Off: live notes are later by about the effect's latency; on: they are as quick as before the effect was added |
+| 43 | Put an Arpeggiator before the plugin instrument and hold a chord | The arpeggio follows the tempo; releasing the keys stops it |
 
 ## Timing measurement (optional)
 
