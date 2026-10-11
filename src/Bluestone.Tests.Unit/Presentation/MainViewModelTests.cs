@@ -33,6 +33,7 @@ public sealed class MainViewModelTests : IAsyncLifetime
               "provenance": { "sources": ["t"], "contributors": ["t"], "license": "MIT", "redistributionConfirmed": true, "verification": "unverified" },
               "banks": [ { "id": "main", "name": "Main", "msb": 0, "lsb": 0, "programs": [ { "number": 1, "name": "Piano" } ] } ],
               "sysex": [ { "id": "reset", "name": "Reset", "effect": "reset", "bytes": "F0 7E 7F 09 01 F7" } ],
+              "parameterMap": [ { "id": "cutoff", "name": "Filter Cutoff", "kind": "nrpn", "msb": 1, "lsb": 32 } ],
               "initialization": [ { "sysex": "reset" } ] }
             """u8));
         var playback = new PlaybackController(_session, _directoryOfEndpoints, catalog, _clock, startThread: false);
@@ -133,6 +134,32 @@ public sealed class MainViewModelTests : IAsyncLifetime
         Assert.Equal("Program 2", selection.Programs[1].Name);
         Assert.Equal(new ProgramNumber(0), selection.VoiceProgram!.Program);
         Assert.Equal("main", track.Route!.Voice!.BankId);
+    }
+
+    [Fact]
+    public async Task InstrumentParameters_FromTheProfile_CanBeAutomatedByName()
+    {
+        var track = await ImportAsync();
+        Assert.False(track.HasHardwareParameters);
+
+        _vm.Selection.Output = _vm.Selection.OutputChoices.Single(o => o.Name == "Synth");
+        await Settle();
+        _vm.Selection.Profile = _vm.Selection.ProfileChoices.Single(p => p.Name == "Test GM");
+        await Settle();
+        var current = _vm.Tracks.Single();
+        var option = Assert.Single(current.HardwareParameters);
+        option.Add.Execute(option);
+        await Settle();
+
+        Assert.Equal("Filter Cutoff", option.Name);
+        Assert.Equal(("A", 1, "cutoff"), (option.Target.Port, option.Target.Channel.Number, option.Target.InstrumentParameter));
+        var lane = Assert.Single(_vm.Tracks.Single().Lanes);
+        Assert.Equal("Filter Cutoff · ch 1", lane.Name);
+        Assert.Equal(option.Target, lane.Target);
+        Assert.True(_vm.Tracks.Single().IsAutomationExpanded);
+        _vm.UndoCommand.Execute(null);
+        await Settle();
+        Assert.Empty(_vm.Tracks.Single().Lanes);
     }
 
     [Fact]

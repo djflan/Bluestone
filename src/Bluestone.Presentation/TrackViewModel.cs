@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Routing;
+using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Midi.Endpoints;
@@ -73,6 +74,26 @@ public sealed partial class TrackViewModel : ObservableObject
 
     [RelayCommand]
     private void RemoveLane(AutomationLaneViewModel lane) => _owner.Execute(AutomationCommands.RemoveLane(Id, lane.Id));
+
+    /// <summary>The parameters of the track's external instrument part that its profile maps, for automation lanes (ADR 0031).</summary>
+    public IReadOnlyList<HardwareParameterOption> HardwareParameters { get; private set; } = [];
+
+    public bool HasHardwareParameters => HardwareParameters.Count > 0;
+
+    /// <summary>Adds a lane for a hardware parameter, and shows the lanes.</summary>
+    [RelayCommand]
+    private void AddHardwareLane(HardwareParameterOption option)
+    {
+        ArgumentNullException.ThrowIfNull(option);
+        _owner.Execute(AutomationCommands.AddLane(Id, AutomationLane.Create(option.Target)));
+        IsAutomationExpanded = true;
+    }
+
+    /// <summary>The profile's name for an instrument parameter target, or its key when the profile or parameter is missing.</summary>
+    internal string HardwareParameterName(AutomationTarget target) =>
+        _owner.Project.FindInstrument(target.Instrument)?.Profile is { } reference && _owner.FindProfile(reference.ProfileId)?.FindMapping(target.InstrumentParameter ?? string.Empty) is { } mapping
+            ? mapping.Name
+            : target.InstrumentParameter ?? string.Empty;
 
     /// <summary>One-based position in the track list.</summary>
     [ObservableProperty]
@@ -161,6 +182,7 @@ public sealed partial class TrackViewModel : ObservableObject
                 _ => RouteHealth.Ready,
             };
             Problems = resolved?.Problems ?? [];
+            SyncHardwareParameters(track, resolved);
             RouteText = $"{Profile.Name} → {Output.Name}";
             OnPropertyChanged(nameof(HealthText));
             OnPropertyChanged(nameof(StatusLine));
@@ -196,6 +218,23 @@ public sealed partial class TrackViewModel : ObservableObject
         if (!_syncing)
         {
             _owner.Execute(ProjectCommands.SetSoloed(Id, value));
+        }
+    }
+
+    private void SyncHardwareParameters(Track track, ResolvedTrackOutput? resolved)
+    {
+        IReadOnlyList<HardwareParameterOption> options = [];
+        if (resolved is { Instrument: { Profile.Profile: { ParameterMap.Length: > 0 } profile } instrument, Port: { } port })
+        {
+            var channel = Route.Channel ?? track.FirstChannel ?? MidiChannel.FromIndex(0);
+            options = [.. profile.ParameterMap.Select(m => new HardwareParameterOption(m.Name, AutomationTarget.ForInstrument(instrument.Instrument.Id, port.Port.Id, channel, m.Id), AddHardwareLaneCommand))];
+        }
+
+        if (!options.Select(o => (o.Name, o.Target)).SequenceEqual(HardwareParameters.Select(o => (o.Name, o.Target))))
+        {
+            HardwareParameters = options;
+            OnPropertyChanged(nameof(HardwareParameters));
+            OnPropertyChanged(nameof(HasHardwareParameters));
         }
     }
 
