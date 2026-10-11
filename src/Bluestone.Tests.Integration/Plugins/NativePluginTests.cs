@@ -114,6 +114,33 @@ public sealed class NativePluginTests
 
     [Theory]
     [MemberData(nameof(Formats))]
+    public async Task SettingAParameter_WhileBlocksStream_LeavesTheAudioUndisturbed(string format)
+    {
+        await using var host = new PluginTestHost();
+        var plugins = await ScanAsync(host, format);
+        var plain = await host.CreateRunningAsync(Request(plugins["Test Sine"], format, 0, 2, frames: 256));
+        var edited = await host.CreateRunningAsync(Request(plugins["Test Sine"], format, 0, 2, frames: 256));
+        var plainDriver = new BlockDriver(plain, 256);
+        var editedDriver = new BlockDriver(edited, 256);
+        plainDriver.Process([PluginEvent.NoteOn(0, 0, 69, 127)]);
+        editedDriver.Process([PluginEvent.NoteOn(0, 0, 69, 127)]);
+
+        for (var b = 0; b < 12; b++)
+        {
+            if (b is 4 or 7)
+            {
+                // The value it already has: only a disturbance of the stream (a skipped sample) could change the output.
+                await edited.SetParameterAsync(0, 0.5, Ct);
+            }
+
+            plainDriver.Process();
+            editedDriver.Process();
+            Assert.Equal(plainDriver.Output, editedDriver.Output);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Formats))]
     public async Task Transpose_TransposesNotes_AndTheNoteOffFollowsItsNoteOn(string format)
     {
         await using var host = new PluginTestHost();
