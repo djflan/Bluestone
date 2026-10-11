@@ -32,18 +32,74 @@ public readonly record struct MixerStripSettings(double GainDecibels = 0, double
 
 /// <summary>
 /// The part of a mixer strip that lives across graph snapshots: its meter (post-fader) and the gains last applied,
-/// so a gain change between snapshots is ramped over one block instead of clicking.
+/// so a gain change between snapshots is ramped over one block instead of clicking. The same for each of its sends.
 /// </summary>
 public sealed class MixerStripState
+{
+    private readonly Dictionary<MixerStripState, GainRamp> _sends = [];
+    private readonly GainRamp _gain = new();
+
+    public AudioMeter Meter { get; } = new();
+
+    /// <summary>Applies the gains, ramping from the previous block's; the first block starts at the target.</summary>
+    internal void Apply(StereoBuffer block, float left, float right) => _gain.Apply(block, left, right);
+
+    /// <summary>The ramp state of this strip's send to <paramref name="target"/>. Control thread (graph building).</summary>
+    internal GainRamp SendTo(MixerStripState target)
+    {
+        lock (_sends)
+        {
+            if (!_sends.TryGetValue(target, out var ramp))
+            {
+                ramp = new GainRamp();
+                _sends[target] = ramp;
+            }
+
+            return ramp;
+        }
+    }
+
+    /// <summary>Forgets the ramp state of sends that are gone. Control thread; graphs already built keep theirs.</summary>
+    internal void KeepSendsTo(IReadOnlySet<MixerStripState> targets)
+    {
+        lock (_sends)
+        {
+            foreach (var gone in _sends.Keys.Where(t => !targets.Contains(t)).ToList())
+            {
+                _sends.Remove(gone);
+            }
+        }
+    }
+}
+
+/// <summary>A stereo gain that moves from the last block's value to the new one across a block. Audio thread.</summary>
+internal sealed class GainRamp
 {
     private bool _started;
     private float _left;
     private float _right;
 
-    public AudioMeter Meter { get; } = new();
+    /// <summary>Multiplies <paramref name="block"/> in place.</summary>
+    public void Apply(StereoBuffer block, float left, float right)
+    {
+        Start(left, right);
+        Mix.Ramp(block.Left, _left, left);
+        Mix.Ramp(block.Right, _right, right);
+        _left = left;
+        _right = right;
+    }
 
-    /// <summary>Applies the gains, ramping from the previous block's; the first block starts at the target.</summary>
-    internal void Apply(StereoBuffer block, float left, float right)
+    /// <summary>Adds <paramref name="source"/> at the gains to <paramref name="destination"/>.</summary>
+    public void AddTo(StereoBuffer source, StereoBuffer destination, float left, float right)
+    {
+        Start(left, right);
+        Mix.AddRamped(source.Left, destination.Left, _left, left);
+        Mix.AddRamped(source.Right, destination.Right, _right, right);
+        _left = left;
+        _right = right;
+    }
+
+    private void Start(float left, float right)
     {
         if (!_started)
         {
@@ -51,10 +107,5 @@ public sealed class MixerStripState
             _right = right;
             _started = true;
         }
-
-        Mix.Ramp(block.Left, _left, left);
-        Mix.Ramp(block.Right, _right, right);
-        _left = left;
-        _right = right;
     }
 }

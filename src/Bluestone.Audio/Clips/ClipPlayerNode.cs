@@ -8,6 +8,9 @@ namespace Bluestone.Audio.Clips;
 public sealed class ClipPlayerNode : AudioNode, IStreamedSource, IDisposable
 {
     private readonly ClipSource[] _sources;
+    private readonly Lock _gate = new();
+    private bool _closed;
+    private long _readFailures;
 
     private ClipPlayerNode(string name, ClipSource[] sources)
     {
@@ -54,6 +57,23 @@ public sealed class ClipPlayerNode : AudioNode, IStreamedSource, IDisposable
         return new ClipPlayerNode(name, [.. sources]);
     }
 
+    /// <summary>
+    /// Takes the gain and fades of <paramref name="regions"/> for the clips that play the same streams, without reopening
+    /// anything. Control thread; the audio thread picks each one up at its next block.
+    /// </summary>
+    public void UpdateEnvelopes(IEnumerable<AudioClipRegion> regions)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        var list = regions.ToList();
+        foreach (var source in _sources)
+        {
+            if (list.Find(source.Region.SameStream) is { } region)
+            {
+                source.Envelope = region.Envelope;
+            }
+        }
+    }
+
     public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output)
     {
         if (!context.Playing)
@@ -67,22 +87,65 @@ public sealed class ClipPlayerNode : AudioNode, IStreamedSource, IDisposable
         }
     }
 
-    void IStreamedSource.Service()
+    /// <summary>Whether the files are closed: the node plays silence and must not be used in a new graph.</summary>
+    public bool IsClosed
     {
-        foreach (var source in _sources)
+        get
         {
-            source.Fill();
+            lock (_gate)
+            {
+                return _closed;
+            }
         }
     }
 
-    /// <summary>Closes the files. Only for a node that never joined an engine's graph; the engine closes the others.</summary>
+    /// <summary>Times reading a file failed (it was deleted, or the disk went away); those clips play silence.</summary>
+    public long ReadFailures => Interlocked.Read(ref _readFailures);
+
+    void IStreamedSource.Service()
+    {
+        lock (_gate)
+        {
+            if (_closed)
+            {
+                return;
+            }
+
+            foreach (var source in _sources)
+            {
+                try
+                {
+                    source.Fill();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Files.AudioFileException)
+                {
+                    // The data stays missing, so the clip plays silence and counts underruns; the disk thread carries on.
+                    Interlocked.Increment(ref _readFailures);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Closes the files. Any thread, any number of times: the engine's disk thread closes a node that leaves its graph,
+    /// and whoever built the node closes it when it is replaced or no longer wanted.
+    /// </summary>
     public void Dispose() => ((IStreamedSource)this).Close();
 
     void IStreamedSource.Close()
     {
-        foreach (var source in _sources)
+        lock (_gate)
         {
-            source.Dispose();
+            if (_closed)
+            {
+                return;
+            }
+
+            _closed = true;
+            foreach (var source in _sources)
+            {
+                source.Dispose();
+            }
         }
     }
 

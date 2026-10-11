@@ -145,6 +145,7 @@ public sealed class AudioPlayback : IDisposable
         {
             _engine?.Dispose();
             _engine = null;
+            _graph?.Dispose();
             _graph = null;
         }
 

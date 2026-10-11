@@ -81,6 +81,13 @@ public sealed class AudioGraph
         foreach (var strip in _strips)
         {
             var buffer = StereoBuffer.Of(strip.Storage, stride, frames);
+
+            // Sends read the strip's input; their gains include the fader and pan when they are post-fader.
+            foreach (var send in strip.Sends)
+            {
+                send.Ramp.AddTo(buffer, StereoBuffer.Of(_strips[send.Destination].Storage, stride, frames), send.Left, send.Right);
+            }
+
             strip.State.Apply(buffer, strip.Left, strip.Right);
             strip.State.Meter.Update(buffer, context.SampleRate);
             if (strip.Destination < 0)
@@ -99,12 +106,15 @@ public sealed class AudioGraph
 
     internal sealed record NodeEntry(AudioNode Node, int[] Inputs, float[]? InputStorage, float[] OutputStorage, int[] Strips, bool ToMaster);
 
-    internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage);
+    internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends);
+
+    internal sealed record SendEntry(GainRamp Ramp, int Destination, float Left, float Right);
 }
 
 /// <summary>
 /// Assembles an <see cref="AudioGraph"/>. Nodes may feed other nodes (an instrument into an effect), mixer strips,
-/// or the master; strips feed another strip (a bus) or the master. Feedback is refused.
+/// or the master; strips feed another strip (a bus) or the master, and send copies to other strips (returns).
+/// Feedback is refused.
 /// </summary>
 public sealed class AudioGraphBuilder
 {
@@ -114,6 +124,7 @@ public sealed class AudioGraphBuilder
     private readonly HashSet<int> _toMaster = [];
     private readonly List<(MixerStripState State, MixerStripSettings Settings)> _strips = [];
     private readonly Dictionary<int, int> _stripDestinations = [];
+    private readonly List<(int Strip, int Destination, double LevelDecibels, bool PreFader)> _sends = [];
     private readonly List<IStreamedSource> _streams = [];
 
     /// <returns>The node's index in this builder.</returns>
@@ -166,6 +177,29 @@ public sealed class AudioGraphBuilder
         _stripDestinations[strip] = destination;
     }
 
+    /// <summary>
+    /// Sends a copy of strip <paramref name="strip"/> to strip <paramref name="destination"/> at
+    /// <paramref name="levelDecibels"/>: before the strip's fader and pan (<paramref name="preFader"/>), or after both.
+    /// Mute silences a strip's sends too; see <see cref="Build"/> for solo.
+    /// </summary>
+    public void SendStrip(int strip, int destination, double levelDecibels, bool preFader)
+    {
+        CheckStrip(strip);
+        CheckStrip(destination);
+        if (strip == destination || _sends.Any(s => s.Strip == strip && s.Destination == destination))
+        {
+            throw new ArgumentException("A strip sends at most once to another strip, and never to itself.", nameof(destination));
+        }
+
+        _sends.Add((strip, destination, levelDecibels, preFader));
+    }
+
+    /// <summary>
+    /// Builds the graph. Mute silences a strip and its sends. While any strip is soloed, a strip sounds if it is soloed,
+    /// feeds a soloed strip through its output (a bus's members), or is reached from a soloed strip through outputs and
+    /// sends (its buses and returns); a send carries audio when its strip sounds or its target is soloed (so soloing a
+    /// return plays what is sent to it, without the dry channels).
+    /// </summary>
     public AudioGraph Build(int blockFrames, MixerStripState master, double masterGainDecibels = 0)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(blockFrames);
@@ -197,20 +231,29 @@ public sealed class AudioGraphBuilder
         }).ToArray();
 
         var audible = Audible();
+        var anySolo = _strips.Any(s => s.Settings.Soloed);
         var strips = stripOrder.Select(index =>
         {
             var (state, settings) = _strips[index];
-            var gain = audible[index] ? PanLaw.DecibelsToGain(settings.GainDecibels) : 0f;
+            var fader = PanLaw.DecibelsToGain(settings.GainDecibels);
             var (left, right) = PanLaw.Gains(settings.Pan);
+            var gain = audible[index] ? fader : 0f;
             var destination = _stripDestinations.TryGetValue(index, out var d) ? stripPosition[d] : -1;
-            return new AudioGraph.StripEntry(state, gain * left, gain * right, destination, new float[2 * blockFrames]);
+            var sends = _sends.Where(s => s.Strip == index).Select(send =>
+            {
+                var carries = !settings.Muted && (!anySolo || audible[index] || _strips[send.Destination].Settings.Soloed);
+                var level = carries ? PanLaw.DecibelsToGain(send.LevelDecibels) : 0f;
+                var (sendLeft, sendRight) = send.PreFader ? (level, level) : (level * fader * left, level * fader * right);
+                return new AudioGraph.SendEntry(state.SendTo(_strips[send.Destination].State), stripPosition[send.Destination], sendLeft, sendRight);
+            }).ToArray();
+            state.KeepSendsTo(_sends.Where(s => s.Strip == index).Select(s => _strips[s.Destination].State).ToHashSet());
+            return new AudioGraph.StripEntry(state, gain * left, gain * right, destination, new float[2 * blockFrames], sends);
         }).ToArray();
 
         return new AudioGraph(blockFrames, nodes, strips, master, PanLaw.DecibelsToGain(masterGainDecibels), [.. _streams]);
     }
 
-    // Mute silences a strip. While any strip is soloed, a strip sounds only if it is soloed, feeds a soloed strip
-    // (directly or through buses), or is a bus a soloed strip reaches.
+    // See Build for the rule.
     private bool[] Audible()
     {
         var audible = new bool[_strips.Count];
@@ -226,7 +269,7 @@ public sealed class AudioGraphBuilder
             {
                 if (_strips[i].Settings.Soloed)
                 {
-                    foreach (var downstream in Path(i))
+                    foreach (var downstream in Reached(i))
                     {
                         audible[downstream] = true;
                     }
@@ -249,6 +292,41 @@ public sealed class AudioGraphBuilder
         for (int? current = strip; current is { } at && seen.Add(at); current = _stripDestinations.TryGetValue(at, out var next) ? next : null)
         {
             yield return at;
+        }
+    }
+
+    // The strip and every strip its audio reaches through outputs and sends.
+    private HashSet<int> Reached(int strip)
+    {
+        var reached = new HashSet<int> { strip };
+        var pending = new Queue<int>([strip]);
+        while (pending.TryDequeue(out var at))
+        {
+            foreach (var next in Next(at))
+            {
+                if (reached.Add(next))
+                {
+                    pending.Enqueue(next);
+                }
+            }
+        }
+
+        return reached;
+    }
+
+    private IEnumerable<int> Next(int strip)
+    {
+        if (_stripDestinations.TryGetValue(strip, out var output))
+        {
+            yield return output;
+        }
+
+        foreach (var send in _sends)
+        {
+            if (send.Strip == strip)
+            {
+                yield return send.Destination;
+            }
         }
     }
 
@@ -277,23 +355,41 @@ public sealed class AudioGraphBuilder
         return order.Count == _nodes.Count ? order : throw new InvalidOperationException("The audio nodes are connected in a loop.");
     }
 
+    // Every strip renders before the strips it feeds or sends to; otherwise in the order they were added.
     private List<int> OrderStrips()
     {
-        var depth = new int[_strips.Count];
+        var pending = new int[_strips.Count];
         for (var i = 0; i < _strips.Count; i++)
         {
-            var hops = Path(i).Count();
-            var last = Path(i).Last();
-            if (_stripDestinations.ContainsKey(last))
+            foreach (var next in Next(i))
             {
-                throw new InvalidOperationException("The mixer strips are routed in a loop.");
+                pending[next]++;
             }
-
-            depth[i] = hops;
         }
 
-        // Deeper strips feed shallower ones, so they render first; ties keep the order they were added.
-        return [.. Enumerable.Range(0, _strips.Count).OrderByDescending(i => depth[i])];
+        var ready = new PriorityQueue<int, int>();
+        for (var i = 0; i < _strips.Count; i++)
+        {
+            if (pending[i] == 0)
+            {
+                ready.Enqueue(i, i);
+            }
+        }
+
+        var order = new List<int>(_strips.Count);
+        while (ready.TryDequeue(out var strip, out _))
+        {
+            order.Add(strip);
+            foreach (var next in Next(strip))
+            {
+                if (--pending[next] == 0)
+                {
+                    ready.Enqueue(next, next);
+                }
+            }
+        }
+
+        return order.Count == _strips.Count ? order : throw new InvalidOperationException("The mixer strips are routed in a loop.");
     }
 
     private void CheckNode(int node) => ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)node, (uint)_nodes.Count, nameof(node));
