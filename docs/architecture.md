@@ -346,6 +346,10 @@ stable ID, parameters, bypass, and plugin state; a `DeviceChain` is an ordered l
 track or a rack (ADR 0022). Processing is sequential, and passthrough is managed by the host: a device
 is given only the event classes it handles, and everything else (SysEx, controllers it does not
 declare) goes around it and is merged back in canonical order. Only an explicit filter removes events.
+A chain carries a parallel bundle of notes, other events, and audio (ADR 0037): an instrument plays the
+notes it handles and passes them on, so instruments in a row layer and a note effect after an instrument
+still has notes to work on; an audio effect replaces the audio and passes events on; a note effect leaves
+audio alone. `DeviceDefinition.EventThru` lets a definition end the note path or mix its input with its output.
 The built-in devices (Transpose, Event Filter, Arpeggiator) are MIDI effects; they run in
 `Bluestone.Signal` when the plan is compiled, and in a real-time form on live input. Instruments and
 audio effects are plugins, which run in worker processes, never in Bluestone's process. Presets are
@@ -463,6 +467,25 @@ same MIDI on the lane's track. A lane whose instrument, port, profile, parameter
 is kept and reported. There is no "external instrument device": the target names the part, as
 connections do.
 
+### Workspace and Device Views
+
+The window is a semantic workspace (ADR 0036): fixed transport chrome and arranger, a detail region of tabs
+below (Device Views, piano roll, event list, MIDI monitor, messages), a left and a right side region (inspector,
+Browser), and border rails with icons for collapsed views. `WorkspaceViewModel` owns the views and their
+placement (docked, collapsed, detached); the desktop layer reflects it and opens a `ViewWindow` per detached view.
+
+View state and model state are kept apart. A `DeviceViewViewModel` holds only what it shows (following the
+selection, or locked to a track or rack by ID) and its presentation (collapsed devices, selection, scroll); the
+chain and its devices are the project's and change only through project commands, so several Device Views over
+one chain share devices but not presentation. The Browser (`BrowserViewModel`) is a palette: dropping onto a
+Device View picks the chain and gap; Return inserts into the most recently active Device View that shows a chain,
+or nowhere.
+
+Layout is local state, never project state: `WorkspaceStore` keeps user defaults and per-project state as small
+versioned JSON in the settings folder, with window bounds per display configuration. `LayoutRecovery` never
+restores a window off-screen and shows a detached view whose monitor is missing as a rail icon while keeping its
+saved window. Colours, type, spacing, and device-panel geometry are design tokens in `Theme/Tokens.axaml`.
+
 ### Plugin workers
 
 Third-party plugins are hosted in separate worker processes (ADR 0025), never loaded into Bluestone's
@@ -508,6 +531,8 @@ Deliberate for now, each with a known cost:
   input goes through the device's running instance (ADR 0035). Each render is independent, so the plan
   cannot reflect what the live instance does.
 - **Live input ignores device automation** of built-in devices: they run live at their stored values.
+- **Live input sounds only the first plugin instrument of a chain.** At plan time instruments layer (ADR 0037),
+  but the live route (ADR 0035) still ends at the first instrument that takes the notes.
 
 ### Not verified on hardware
 
@@ -571,6 +596,8 @@ Not built; [roadmap.md](roadmap.md) keeps the full list:
   expressions, and routing the MIDI that plugin instruments put out.
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
+- **Workspace**: vertical device chains, auto-collapse of device panels, nested and container devices in the
+  Device View, modulators, windows holding several views, free docking, and a full-page Settings view.
 - **Groups**: drag and drop into a group, and a folded group's lane summarizing its members' clips.
 - **Operating-system sandboxing** of plugin workers is not planned: crash isolation with hosting modes
   instead (ADR 0034).
@@ -601,6 +628,8 @@ Not built; [roadmap.md](roadmap.md) keeps the full list:
 | VST3 and CLAP through a Rust plugin host loaded only in the worker | ADR 0033 |
 | Users choose how plugins share worker processes; by plugin by default | ADR 0034 |
 | Live input through every device on the live route; a live render-ahead queue; plugin delay compensation | ADR 0035 |
+| A semantic workspace; Device Views own presentation, the project owns devices; layout is local state | ADR 0036 |
+| A chain carries notes, events, and audio in parallel; instruments pass notes on and layer | ADR 0037 |
 
 ## Native technology
 

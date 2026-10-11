@@ -584,7 +584,7 @@ copies of one plugin share a worker and go down together, which `HostingModeProc
 | Scanning, cache, bundle fingerprints, quarantine, timeout, malformed modules, manifests | `PluginScannerProcessTests`, `ScanCacheTests`, `ModuleScannerTests` |
 | Architecture checks on Mach-O, PE, and ELF headers | `BinaryArchitectureTests` |
 | Folders, bundle discovery, rescan and retry; the device catalog follows | `PluginLibraryTests`, `PluginLibraryProcessTests` |
-| The Plugins view and device strip: listing, progress, retry, hosting choices, a shared crash, Host individually | `PluginsViewModelTests`, `PluginDeviceStripTests`, `PluginsViewTests` (headless, with the mouse) |
+| The Plugins view and Device View: listing, progress, retry, hosting choices, a shared crash, Host individually | `PluginsViewModelTests`, `PluginDeviceStripTests`, `PluginsViewTests` (headless, with the mouse) |
 | The bridge: save, reopen, kill, restart, automation still valid, a missing plugin, removing a device, rate changes | `PluginDeviceHostTests` |
 | VST3 and CLAP through the test plugins: scan, process, state, render, crash and restart, project devices, edits both ways | `NativePluginTests`, `ThirdPartyPluginDeviceTests` |
 | Installed VST3 and CLAP plugins; editors (macOS) | `InstalledPluginTests`, `PluginEditorTests` |
