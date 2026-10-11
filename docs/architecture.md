@@ -355,7 +355,11 @@ There is no "external instrument device": the target names the part, as connecti
 ### Plugin workers
 
 Third-party plugins are hosted in separate worker processes (ADR 0025), never loaded into Bluestone's own
-process. Process isolation is crash isolation, not a security sandbox. When the plan is compiled, a
+process. Process isolation is crash isolation, not a security sandbox. The user chooses how plugins share workers
+(ADR 0034): together, by manufacturer, by plugin (the default: one worker per plugin module), or individually, with a
+mode per plugin that overrides the global one. These are user settings (`PluginHostingSettings`), not project data;
+`PluginDeviceHost` applies them and moves running plugins with their state, and a worker crash marks every device in
+it Crashed and says which went down together. When the plan is compiled, a
 plugin MIDI effect runs in its worker over the arrangement and its output joins the chain like a
 built-in device's (ADR 0028). Modules are scanned in their own scanner processes from a list of plugin
 folders; the Plugins view (Window ▸ Plugins… on macOS, File ▸ Plugins… elsewhere) rescans them and retries
@@ -448,7 +452,7 @@ Built as boundaries and tested where cheap, but not finished:
   expressions, or MPE.
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
-- **Operating-system sandboxing** of plugin workers.
+- **Operating-system sandboxing** of plugin workers (not planned: crash isolation with hosting modes instead, ADR 0034).
 - **Groups**: drag and drop into a group, and a folded group's lane summarizing its members' clips. Grouping,
   routing members into their group, group mute and solo, and folding work (ADR 0030).
 
@@ -470,6 +474,7 @@ Built as boundaries and tested where cheap, but not finished:
 | One routing model of connections; external instruments and mixer channels are entities | ADR 0023 (supersedes 0008) |
 | Device automation targets parameters, separate from signal flow | ADR 0024 |
 | Plugins run out of process; isolation is not a sandbox | ADR 0025 |
+| Users choose how plugins share worker processes; by plugin by default | ADR 0034 |
 | C# first; Rust only for measured or native-interface needs | ADR 0026 |
 | Project format 4 and its migration | ADR 0027 |
 | Plugin MIDI effects run in their worker when the plan is compiled | ADR 0028 |

@@ -39,8 +39,8 @@ public sealed record PluginHostOptions
     /// <summary>Capture state from every running instance this often; null (the default) never does.</summary>
     public TimeSpan? PeriodicSnapshotInterval { get; init; }
 
-    /// <summary>Must be set to even ask for <see cref="IsolationPolicy.InProcessTrusted"/>, which is still not supported.</summary>
-    public bool AllowInProcessTrusted { get; init; }
+    /// <summary>Must be set to even ask for <see cref="HostingMode.WithinBluestone"/>, which is still not supported.</summary>
+    public bool AllowWithinBluestone { get; init; }
 
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
@@ -77,7 +77,11 @@ public sealed record PluginInstanceRequest
 
     public int OutputChannels { get; }
 
-    public IsolationPolicy Isolation { get; init; } = IsolationPolicy.PerInstance;
+    /// <summary>
+    /// How the instance shares a worker process. <see cref="HostingMode.Individually"/> here; the application chooses
+    /// its own default (ADR 0034). <see cref="PluginHostManager.ChangeHostingAsync"/> moves a live instance.
+    /// </summary>
+    public HostingMode Hosting { get; init; } = HostingMode.Individually;
 
     public FailurePolicy FailurePolicy { get; init; } = FailurePolicy.Silence;
 

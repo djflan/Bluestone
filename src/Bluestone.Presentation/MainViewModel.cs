@@ -13,6 +13,7 @@ using Bluestone.Infrastructure.Projects;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Files;
 using Bluestone.Playback;
+using Bluestone.Plugins;
 using Bluestone.Profiles;
 using Bluestone.Signal;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -134,6 +135,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             // A parameter the plugin changed itself (in its editor) is stored in the project, which stays the authority.
             _plugins.ParameterEdited += (_, edit) => _dispatcher.Post(() => _plugins.RecordEdit(edit));
 
+            // A worker process that ends takes every device in it down; say which ones went together.
+            _plugins.Crashed += (_, crash) => _dispatcher.Post(() =>
+            {
+                AddMessage(MessageSeverity.Warning, "Plugins", CrashMessage(crash));
+                SyncSelection();
+            });
+
             // A rescan that finds or loses plugins changes the catalog; devices whose plugin was found start.
             _plugins.AvailableChanged += (_, _) => _dispatcher.Post(() => _ = OnPluginsChangedAsync());
         }
@@ -201,8 +209,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>A device's status for the strip: a plugin's from its worker, otherwise from the catalog.</summary>
     internal DeviceStatus DeviceStatus(DeviceInstance device) =>
         _plugins?.StatusOf(device) is { } runtime
-            ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor)
+            ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
             : Presentation.DeviceStatus.Of(device, Devices);
+
+    private string CrashMessage(PluginCrash crash)
+    {
+        var names = crash.Devices.Select(d => Project.FindDevice(d)?.Device.DisplayName ?? "A plugin").ToList();
+        var what = crash.Reason switch
+        {
+            UnavailableReason.Hung => "stopped responding",
+            UnavailableReason.ProtocolError => "misbehaved",
+            _ => "crashed",
+        };
+        return names.Count == 1
+            ? $"{names[0]}'s plugin process {what}. Bluestone kept running; Restart starts it again from its last saved state."
+            : $"The plugin process shared by {string.Join(", ", names.Take(names.Count - 1))} and {names[^1]} {what}; all {names.Count} went down together. Restart on any of them starts them all again.";
+    }
 
     /// <summary>Restarts a crashed, hung, or quarantined plugin device and restores its last saved state.</summary>
     internal async Task RestartDeviceAsync(DeviceId device)

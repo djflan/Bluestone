@@ -107,7 +107,7 @@ public sealed class PluginDeviceHostTests
         await using var host = new PluginTestHost();
         var (session, _, first) = ProjectWithGainOn("Vocals");
         var (_, _, second) = ProjectWithGainOn("Guitar", session);
-        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames, hosting: new PluginHostingSettings { Mode = HostingMode.Individually });
         await bridge.SyncAsync(session.Project, Ct);
         var a = bridge.InstanceOf(first.Id)!;
         var b = bridge.InstanceOf(second.Id)!;

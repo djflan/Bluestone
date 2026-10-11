@@ -168,6 +168,116 @@ public sealed class PluginsViewModelTests : IDisposable
         Assert.Equal(0, manager.WorkerLaunchCount);
     }
 
+    [Fact]
+    public async Task WithoutTheDeviceHost_TheViewHasNoHostingSection()
+    {
+        await _library.ScanAsync(cancellationToken: Ct);
+
+        var vm = new PluginsViewModel(_library, new ImmediateDispatcher());
+
+        Assert.False(vm.HasHosting);
+        Assert.Null(vm.GlobalHosting);
+        Assert.All(vm.Plugins, p => Assert.Null(p.Hosting));
+    }
+
+    [Fact]
+    public async Task TheHostingSection_ShowsTheSavedSettings_ByPluginAndNoAutomaticRestartByDefault()
+    {
+        await _library.ScanAsync(cancellationToken: Ct);
+        await using var hosting = await HostingAsync();
+
+        var vm = hosting.ViewModel;
+
+        Assert.True(vm.HasHosting);
+        Assert.Equal(["Together", "By manufacturer", "By plugin", "Individually"], vm.HostingModes.Select(m => m.Name));
+        Assert.Equal(HostingMode.ByPlugin, vm.GlobalHosting!.Mode);
+        Assert.Equal("One process per plugin. A crash takes down every copy of that plugin.", vm.GlobalHostingText);
+        Assert.False(vm.AutoRestart);
+        Assert.Equal(["Global (By plugin)", "Together", "By manufacturer", "By plugin", "Individually"], vm.PluginHostingChoices.Select(c => c.Name));
+        Assert.All(vm.Plugins, p => Assert.Null(p.Hosting!.Mode));
+        Assert.All(vm.Plugins, p => Assert.False(p.HasCrashed));
+    }
+
+    [Fact]
+    public async Task ChoosingTheGlobalModeAndAutomaticRestart_SavesThem_AndAppliesThemToTheDeviceHost()
+    {
+        await _library.ScanAsync(cancellationToken: Ct);
+        await using var hosting = await HostingAsync();
+        var vm = hosting.ViewModel;
+
+        vm.GlobalHosting = vm.HostingModes.Single(m => m.Mode == HostingMode.Together);
+        await WaitIdleAsync(vm);
+        vm.AutoRestart = true;
+        await WaitIdleAsync(vm);
+
+        Assert.Equal(new PluginHostingSettings { Mode = HostingMode.Together, AutoRestart = true }, hosting.Bridge.Hosting);
+        Assert.Equal(hosting.Bridge.Hosting, hosting.Store.Load());
+        Assert.Equal("Crashed plugins now restart by themselves, up to 3 times in 5 minutes.", vm.StatusText);
+        Assert.Equal("Global (Together)", vm.PluginHostingChoices[0].Name);
+        Assert.Equal("Global (Together)", vm.Plugins[0].Hosting!.Name);
+    }
+
+    [Fact]
+    public async Task ChoosingAModeForOnePlugin_OverridesTheGlobalMode_AndGlobalClearsItAgain()
+    {
+        await _library.ScanAsync(cancellationToken: Ct);
+        await using var hosting = await HostingAsync();
+        var vm = hosting.ViewModel;
+        var bass = vm.Plugins.Single(p => p.Name == "Bass");
+
+        bass.Hosting = vm.PluginHostingChoices.Single(c => c.Mode == HostingMode.Individually);
+        await WaitIdleAsync(vm);
+
+        Assert.Equal(HostingMode.Individually, hosting.Bridge.Hosting.ModeFor(bass.Definition));
+        Assert.Equal(HostingMode.ByPlugin, hosting.Bridge.Hosting.ModeFor(vm.Plugins.Single(p => p.Name == "Lead").Definition));
+        Assert.Equal(HostingMode.Individually, hosting.Store.Load().Overrides[bass.Definition.Value]);
+        Assert.Equal("Bass is now hosted individually.", vm.StatusText);
+
+        bass.Hosting = vm.PluginHostingChoices[0];
+        await WaitIdleAsync(vm);
+
+        Assert.Empty(hosting.Store.Load().Overrides);
+        Assert.Equal("Bass is now hosted as the global mode says.", vm.StatusText);
+    }
+
+    [Theory]
+    [InlineData(1, 0, "Crashed once, hosted alone.")]
+    [InlineData(3, 3, "Crashed 3 times, each time sharing a process with other plugins (any of them may have caused it).")]
+    [InlineData(3, 1, "Crashed 3 times, 1 of them sharing a process with other plugins.")]
+    public void CrashText_SaysHowOftenAndWhetherThePluginWasAlone(int crashes, int shared, string expected) =>
+        Assert.Equal(expected, PluginsViewModel.CrashTextOf(new PluginCrashCount(crashes, shared)));
+
+    private static async Task WaitIdleAsync(PluginsViewModel vm)
+    {
+        for (var i = 0; vm.IsBusy && i < 500; i++)
+        {
+            await Task.Delay(10, Ct);
+        }
+
+        Assert.False(vm.IsBusy);
+    }
+
+    private async Task<HostingFixture> HostingAsync()
+    {
+        var data = new TestDirectory();
+        var manager = new PluginHostManager(new PluginHostOptions { DataDirectory = data.File("data") });
+        var store = new PluginHostingSettingsStore(data.File("plugin-hosting.json"));
+        var bridge = new PluginDeviceHost(manager, new ProjectSession(), _library, hosting: store.Load());
+        await bridge.SyncAsync(new ProjectSession().Project, Ct);
+        return new HostingFixture(data, manager, bridge, store, new PluginsViewModel(_library, new ImmediateDispatcher(), bridge, store));
+    }
+
+    private sealed record HostingFixture(TestDirectory Data, PluginHostManager Manager, PluginDeviceHost Bridge, PluginHostingSettingsStore Store, PluginsViewModel ViewModel) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await Bridge.DisposeAsync();
+            await Manager.DisposeAsync();
+            Assert.Equal(0, Manager.WorkerLaunchCount);
+            Data.Dispose();
+        }
+    }
+
     private sealed class ImmediateDispatcher : IUiDispatcher
     {
         public bool CheckAccess() => true;

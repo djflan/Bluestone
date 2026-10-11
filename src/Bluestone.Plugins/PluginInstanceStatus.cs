@@ -1,3 +1,6 @@
+using System.Runtime.InteropServices;
+using Bluestone.Plugins.Protocol;
+
 namespace Bluestone.Plugins;
 
 public enum PluginInstanceState
@@ -35,7 +38,7 @@ public enum UnavailableReason
 /// The user-visible state of a plugin instance. Allowed transitions (anything else is a bug and throws):
 /// <code>
 /// Starting    -> Running | Unavailable | Unloaded
-/// Running     -> Unavailable | Unloaded
+/// Running     -> Unavailable | Restarting (moved to another worker) | Unloaded
 /// Unavailable -> Restarting | Quarantined | Unloaded
 /// Restarting  -> Running | Unavailable | Unloaded
 /// Quarantined -> Restarting (manual restart only) | Unloaded
@@ -78,7 +81,7 @@ public sealed record PluginInstanceStatus
     public static bool IsAllowed(PluginInstanceState from, PluginInstanceState to) => (from, to) switch
     {
         (PluginInstanceState.Starting, PluginInstanceState.Running or PluginInstanceState.Unavailable or PluginInstanceState.Unloaded) => true,
-        (PluginInstanceState.Running, PluginInstanceState.Unavailable or PluginInstanceState.Unloaded) => true,
+        (PluginInstanceState.Running, PluginInstanceState.Unavailable or PluginInstanceState.Restarting or PluginInstanceState.Unloaded) => true,
         (PluginInstanceState.Unavailable, PluginInstanceState.Restarting or PluginInstanceState.Quarantined or PluginInstanceState.Unloaded) => true,
         (PluginInstanceState.Restarting, PluginInstanceState.Running or PluginInstanceState.Unavailable or PluginInstanceState.Unloaded) => true,
         (PluginInstanceState.Quarantined, PluginInstanceState.Restarting or PluginInstanceState.Unloaded) => true,
@@ -95,23 +98,54 @@ public sealed class PluginStatusChangedEventArgs(PluginInstanceStatus previous, 
     public PluginInstanceStatus Current { get; } = current;
 }
 
-/// <summary>How plugin instances are grouped into worker processes.</summary>
-public enum IsolationPolicy
+/// <summary>
+/// How plugin instances share worker processes (ADR 0034). A worker crash takes down every instance in it, so the mode
+/// sets the blast radius of a crash against the number of processes. Instances share a worker only when their
+/// <see cref="WorkerKeys">worker key</see> is equal, which also keeps plugins of different architectures apart.
+/// </summary>
+public enum HostingMode
 {
-    /// <summary>One worker process per instance. The default: a crash takes down exactly one instance.</summary>
-    PerInstance,
+    /// <summary>One worker per instance: a crash takes down exactly one instance.</summary>
+    Individually,
 
-    /// <summary>Instances of the same module share a worker; a crash takes down all of them.</summary>
-    PerModule,
+    /// <summary>One worker per plugin module (a VST3 bundle, a CLAP file): all instances of it, and of other plugins in the same module.</summary>
+    ByPlugin,
 
-    /// <summary>Opt-in: all instances with this policy share one worker. For plugins the user trusts.</summary>
-    SharedTrusted,
+    /// <summary>One worker per manufacturer (the vendor the scan reported); a plugin without a vendor is hosted by plugin.</summary>
+    ByManufacturer,
+
+    /// <summary>One worker for every instance in this mode.</summary>
+    Together,
 
     /// <summary>
     /// Hosting inside the Bluestone process. Not implemented: refused unless explicitly allowed by
-    /// <see cref="PluginHostOptions.AllowInProcessTrusted"/>, and even then it throws <see cref="NotSupportedException"/>.
+    /// <see cref="PluginHostOptions.AllowWithinBluestone"/>, and even then it throws <see cref="NotSupportedException"/>.
     /// </summary>
-    InProcessTrusted,
+    WithinBluestone,
+}
+
+/// <summary>The worker keys of <see cref="HostingMode"/>: instances with equal keys share one worker process.</summary>
+public static class WorkerKeys
+{
+    /// <summary>
+    /// The key for an instance of <paramref name="plugin"/> hosted in <paramref name="mode"/> by a worker of
+    /// <paramref name="architecture"/>. Every shared key names the architecture, because x64 and ARM64 plugin binaries
+    /// cannot be loaded into one process.
+    /// </summary>
+    public static string For(HostingMode mode, PluginIdentity plugin, PluginInstanceId instance, Architecture architecture)
+    {
+        ArgumentNullException.ThrowIfNull(plugin);
+        var arch = architecture.ToString().ToLowerInvariant();
+        var vendor = plugin.Vendor.Trim();
+        return mode switch
+        {
+            HostingMode.Individually => $"instance:{instance}",
+            HostingMode.ByManufacturer when vendor.Length > 0 => $"{arch}:vendor:{vendor.ToUpperInvariant()}",
+            HostingMode.ByPlugin or HostingMode.ByManufacturer => $"{arch}:module:{plugin.Format}:{plugin.ModuleId}",
+            HostingMode.Together => $"{arch}:together",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Plugins are hosted only in worker processes."),
+        };
+    }
 }
 
 /// <summary>What <see cref="PluginInstance.ProcessBlock"/> outputs when the plugin cannot deliver a block.</summary>

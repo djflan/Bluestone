@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Bluestone.Domain.Devices;
 using Bluestone.Plugins.Protocol;
 using Bluestone.Plugins.Scanning;
 
@@ -16,8 +17,8 @@ public enum PluginModuleState
     Quarantined,
 }
 
-/// <summary>A plugin a module provides, in words for the plugins view.</summary>
-public sealed record PluginSummary(string Name, string Vendor, string Kind, string Format, string Version);
+/// <summary>A plugin a module provides, in words for the plugins view, with its device definition ID.</summary>
+public sealed record PluginSummary(string Name, string Vendor, string Kind, string Format, string Version, DeviceDefinitionId Definition);
 
 /// <summary>One module file and what the last scan made of it. <see cref="Problem"/> says why it is not loaded.</summary>
 public sealed record PluginModuleSummary(string ModulePath, PluginModuleState State, ImmutableArray<PluginSummary> Plugins, string? Problem)
@@ -299,5 +300,5 @@ public sealed class PluginLibrary : IDisposable
             PluginKind.Instrument => "Instrument",
             PluginKind.MidiEffect => "MIDI effect",
             _ => "Audio effect",
-        }, plugin.Format, plugin.Version);
+        }, plugin.Format, plugin.Version, PluginDeviceHost.DefinitionIdOf(plugin));
 }

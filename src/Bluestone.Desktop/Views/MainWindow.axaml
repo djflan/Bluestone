@@ -42,7 +42,7 @@
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
                 <Separator />
                 <MenuItem Header="Mixer…" Click="OnShowMixer" ToolTip.Tip="The mixer console: strips, sends, and meters" />
-                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, modules that could not be read, and quarantined modules" />
+                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, how they share worker processes, modules that could not be read, and quarantined modules" />
                 <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" />
               </MenuFlyout>
             </DropDownButton.Flyout>
@@ -291,8 +291,11 @@
                             <ToggleButton Grid.Column="1" Content="Bypass" IsChecked="{Binding IsBypassed}" FontSize="10" Padding="6,1"
                                           ToolTip.Tip="A bypassed device passes everything through unchanged" AutomationProperties.Name="Bypass device" />
                           </Grid>
+                          <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" Classes="muted" FontSize="10" TextWrapping="Wrap" AutomationProperties.Name="Went down with" />
                           <Button Classes="raised" Content="Restart" IsVisible="{Binding CanRestart}" Command="{Binding RestartCommand}" HorizontalAlignment="Left"
-                                  ToolTip.Tip="Start the plugin again from its last saved state" AutomationProperties.Name="Restart plugin" />
+                                  ToolTip.Tip="Start the plugin again from its last saved state, with any devices that went down with it" AutomationProperties.Name="Restart plugin" />
+                          <TextBlock Text="{Binding Hosting}" IsVisible="{Binding HasHosting}" Classes="muted" FontSize="10" TextWrapping="Wrap"
+                                     ToolTip.Tip="The worker process this plugin runs in. Change how plugins share processes in Plugins…" AutomationProperties.Name="Plugin process" />
                           <Button Classes="raised" Content="Open editor" IsVisible="{Binding CanOpenEditor}" Command="{Binding OpenEditorCommand}" HorizontalAlignment="Left"
                                   ToolTip.Tip="Show the plugin's own editor in a separate window" AutomationProperties.Name="Open plugin editor" />
                           <Button Classes="link" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}" HorizontalAlignment="Left"
