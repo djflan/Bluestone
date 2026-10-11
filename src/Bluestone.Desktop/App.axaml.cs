@@ -74,11 +74,12 @@ public partial class App : Avalonia.Application
         var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread);
         var monitor = new MidiMonitor(builtIn.OpenInputAsync(monitorPort.InputId).AsTask().GetAwaiter().GetResult());
         ScanPlugins(library);
-        var devices = new PluginDeviceHost(plugins, session, library);
+        var hosting = new PluginHostingSettingsStore(PluginHostingSettingsPath);
+        var devices = new PluginDeviceHost(plugins, session, library, hosting: hosting.Load());
         var dispatcher = new AvaloniaDispatcher();
         var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices)
         {
-            Plugins = new PluginsViewModel(library, dispatcher),
+            Plugins = new PluginsViewModel(library, dispatcher, devices, hosting),
         };
         _ = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices);
@@ -97,6 +98,10 @@ public partial class App : Avalonia.Application
     /// <summary>Where the audio settings are kept, e.g. ~/Library/Application Support/Bluestone/audio-settings.json on macOS.</summary>
     public static string AudioSettingsPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "audio-settings.json");
+
+    /// <summary>How plugins share worker processes (ADR 0034), e.g. ~/Library/Application Support/Bluestone/plugin-hosting.json on macOS.</summary>
+    public static string PluginHostingSettingsPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-hosting.json");
 
     /// <summary>
     /// Stops playback (releasing sounding notes), closes MIDI ports, and releases platform providers.

@@ -4,7 +4,7 @@
         x:Class="Bluestone.Desktop.Views.PluginsWindow"
         x:DataType="vm:PluginsViewModel"
         Title="Plugins"
-        Width="560" Height="620" MinWidth="420" MinHeight="360"
+        Width="600" Height="680" MinWidth="460" MinHeight="400"
         WindowStartupLocation="CenterOwner">
   <!-- What the plugin scan found: available plugins, modules that could not be read, and quarantined modules. -->
   <Grid RowDefinitions="Auto,*,Auto" Margin="20">
@@ -24,6 +24,20 @@
 
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="6">
+        <StackPanel x:Name="HostingSection" Spacing="6" Margin="0,0,0,8" IsVisible="{Binding HasHosting}">
+          <TextBlock Text="HOSTING" Classes="overline" />
+          <TextBlock Text="Plugins run in worker processes, never inside Bluestone. A crash takes down every plugin in the same process and nothing else. This is crash isolation, not a security sandbox."
+                     Classes="muted" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+            <TextBlock Text="Share processes" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <ComboBox x:Name="GlobalHosting" Grid.Column="1" ItemsSource="{Binding HostingModes}" SelectedItem="{Binding GlobalHosting}" HorizontalAlignment="Stretch"
+                      AutomationProperties.Name="Global hosting mode" ToolTip.Tip="How plugins share worker processes, unless set for a plugin below" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding GlobalHostingText}" Classes="muted" FontSize="10" TextWrapping="Wrap" Margin="0,2,0,0" />
+          </Grid>
+          <CheckBox x:Name="AutoRestart" Content="Restart crashed plugins automatically (up to 3 times in 5 minutes)" IsChecked="{Binding AutoRestart}"
+                    AutomationProperties.Name="Restart crashed plugins automatically" />
+        </StackPanel>
+
         <StackPanel Spacing="6" IsVisible="{Binding HasQuarantined}">
           <TextBlock Text="QUARANTINED" Classes="overline" />
           <ItemsControl x:Name="QuarantinedList" ItemsSource="{Binding Quarantined}" AutomationProperties.Name="Quarantined modules">
@@ -63,12 +77,24 @@
         <ItemsControl x:Name="PluginList" ItemsSource="{Binding Plugins}" AutomationProperties.Name="Available plugins">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:PluginRow">
-              <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,6">
                 <StackPanel>
                   <TextBlock Text="{Binding Name}" />
                   <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="10" />
                 </StackPanel>
-                <TextBlock Grid.Column="1" Text="{Binding Module}" Classes="muted" FontSize="10" VerticalAlignment="Top" Margin="8,2,0,0" />
+                <StackPanel Grid.Column="1" Spacing="2" Margin="8,0,0,0">
+                  <TextBlock Text="{Binding Module}" Classes="muted" FontSize="10" HorizontalAlignment="Right" />
+                  <ComboBox ItemsSource="{Binding $parent[ItemsControl].((vm:PluginsViewModel)DataContext).PluginHostingChoices, FallbackValue={x:Null}}"
+                            SelectedItem="{Binding Hosting}" MinWidth="170" FontSize="11"
+                            IsVisible="{Binding $parent[ItemsControl].((vm:PluginsViewModel)DataContext).HasHosting, FallbackValue=False}"
+                            AutomationProperties.Name="Plugin hosting mode" ToolTip.Tip="How this plugin shares a worker process" />
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasCrashed}" Margin="0,2,0,0">
+                  <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource Bluestone.Warning}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding CrashText}" Classes="muted" FontSize="10" TextWrapping="Wrap" MaxWidth="380" VerticalAlignment="Center" AutomationProperties.Name="Crashes" />
+                  <Button Classes="raised" Content="Host individually" IsVisible="{Binding CanHostIndividually}" Command="{Binding HostIndividuallyCommand}" FontSize="11"
+                          ToolTip.Tip="Give every copy of this plugin a process of its own, so its crashes take nothing else down" AutomationProperties.Name="Host individually" />
+                </StackPanel>
               </Grid>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
