@@ -73,6 +73,27 @@ public static class ClipCommands
             t.FindClip(clip) is { } found && found.Name != trimmed ? t.WithClip(found with { Name = trimmed }) : t);
     }
 
+    /// <summary>
+    /// Sets an audio clip's gain, clamped to <see cref="AudioClip.MinGainDecibels"/> to <see cref="AudioClip.MaxGainDecibels"/>.
+    /// Changes in quick succession (a drag) are one undo step.
+    /// </summary>
+    public static IProjectCommand SetAudioClipGain(TrackId track, ClipId clip, double decibels)
+    {
+        var gain = Math.Clamp(decibels, AudioClip.MinGainDecibels, AudioClip.MaxGainDecibels);
+        return EditAudioClip("Change Clip Gain", track, clip, c => c.GainDecibels == gain ? c : c with { GainDecibels = gain }, $"clip-gain:{clip}");
+    }
+
+    /// <summary>
+    /// Sets an audio clip's fades, each kept within the clip (the fade-in first). Changes in quick succession (a drag)
+    /// are one undo step.
+    /// </summary>
+    public static IProjectCommand SetAudioClipFades(TrackId track, ClipId clip, TickSpan fadeIn, TickSpan fadeOut, FadeShape shape) =>
+        EditAudioClip("Change Clip Fades", track, clip, c =>
+        {
+            var inside = (c with { FadeIn = fadeIn, FadeOut = fadeOut }).EffectiveFades;
+            return inside.In == c.FadeIn && inside.Out == c.FadeOut && shape == c.FadeShape ? c : c with { FadeIn = inside.In, FadeOut = inside.Out, FadeShape = shape };
+        }, $"clip-fades:{clip}");
+
     /// <summary>Adds an empty note clip, within the free space around its start.</summary>
     public static IProjectCommand CreateClip(TrackId track, NoteClip clip) =>
         ProjectCommands.EditTrack("Create Clip", track, t =>
@@ -85,6 +106,21 @@ public static class ClipCommands
             var (_, until) = t.GapAt(clip.Start);
             return t.WithClip(until is { } next && next < clip.End ? clip.WithBounds(clip.Start, next) : clip);
         });
+
+    private static ProjectCommand EditAudioClip(string label, TrackId track, ClipId clip, Func<AudioClip, AudioClip> edit, string mergeKey) =>
+        new(label, ProjectCommands.EditTrack(label, track, t =>
+        {
+            if (t.FindClip(clip) is not AudioClip found)
+            {
+                return t;
+            }
+
+            var changed = edit(found);
+            return ReferenceEquals(changed, found) ? t : t.WithClip(changed);
+        }).Apply)
+        {
+            MergeKey = mergeKey,
+        };
 
     private static ProjectCommand Shift(string label, TrackId trackId, IReadOnlyCollection<ClipId> clipIds, long deltaTicks, TrackId? toTrack, bool copy) =>
         new(label, p =>

@@ -123,8 +123,8 @@ public sealed class ProjectAudioGraphTests : IDisposable
         Assert.Same(strip, graphs.StripOf(channel.Id));
         Assert.Same(first.Graph.Nodes.Single(), second.Graph.Nodes.Single());
 
-        // No engine served this node, so its files are closed here (Windows cannot delete an open file).
-        ((ClipPlayerNode)second.Graph.Nodes.Single()).Dispose();
+        // No engine served this node; the graph builder that opened it closes it (Windows cannot delete an open file).
+        graphs.Dispose();
     }
 
     [Fact]
@@ -144,11 +144,97 @@ public sealed class ProjectAudioGraphTests : IDisposable
         Assert.Equal(new ScheduledParameterChangeView(48_000, 3, 1.0), new ScheduledParameterChangeView(schedule.Parameters[0].Frame, schedule.Parameters[0].Parameter, schedule.Parameters[0].Value));
     }
 
+    [Fact]
+    public void APreFaderSendToAReturn_IsHeardAtTheSendLevel_WithTheChannelFaderDown()
+    {
+        var (project, _, channel) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var reverb = MixerChannel.Create("Reverb");
+        project = project with { Mixer = project.Mixer.With(channel with { GainDecibels = -120, Sends = [new MixerSend(reverb.Id, -6.0206, preFader: true)] }).With(reverb) };
+
+        var output = Render(project, Rate / 4, out var result);
+
+        Assert.Empty(result.Problems);
+        for (var n = 0; n < 12_000; n += 97)
+        {
+            Assert.Equal(0.5 * _tone[n], Left(output)[n], 4);
+        }
+    }
+
+    [Fact]
+    public void ASendLoopInAFile_IsLeftOut_WithAProblem_AndTheRestPlays()
+    {
+        var (project, _, channel) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var reverb = MixerChannel.Create("Reverb") with { Output = channel.Id };
+        project = project with { Mixer = project.Mixer.With(channel.WithSend(new MixerSend(reverb.Id))).With(reverb) };
+
+        var output = Render(project, Rate / 4, out var result);
+
+        Assert.Equal("Vocal: a send would feed back on itself, so it is silent.", Assert.Single(result.Problems));
+        Assert.Equal(_tone[100], Left(output)[100], 4);
+    }
+
+    [Fact]
+    public void ClipGainAndFades_FromTheProject_AreMeasuredInTicks()
+    {
+        // A fade-in of 240 ticks is a quarter second (12 000 frames) at 120 BPM; the clip is 6 dB down.
+        var (project, track, _) = ProjectWithClip(start: 0, length: 960, offset: 0);
+        var clip = (AudioClip)track.Clips[0] with { GainDecibels = -6.0206, FadeIn = new TickSpan(240), FadeOut = new TickSpan(480), FadeShape = FadeShape.EqualPower };
+        project = project with { Sequence = project.Sequence.WithTrack(track.WithClip(clip)) };
+
+        var output = Left(Render(project, Rate, out _));
+
+        Assert.Equal(0f, output[0]);
+        Assert.Equal(0.5 * _tone[6000] * Math.Sin(0.5 * Math.PI / 2), output[6000], 4);
+        Assert.Equal(0.5 * _tone[18_000], output[18_000], 4);
+        Assert.Equal(0.5 * _tone[36_000] * Math.Sin(((47_999 - 36_000) / 24_000.0) * Math.PI / 2), output[36_000], 4);
+    }
+
+    [Fact]
+    public void AGainChange_KeepsTheClipNode_AMove_ReplacesIt_AndTheReplacedNodeIsClosedAtTheNextBuild()
+    {
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        var first = Node(graphs.Build(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory));
+        var clip = (AudioClip)track.Clips[0];
+
+        var quieter = project with { Sequence = project.Sequence.WithTrack(track.WithClip(clip with { GainDecibels = -12 })) };
+        Assert.Same(first, Node(graphs.Build(quieter, SignalGraph.Evaluate(quieter, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory)));
+
+        var moved = project with { Sequence = project.Sequence.WithTrack(track.RemoveClip(clip.Id).WithClip(clip with { Start = new Tick(960) })) };
+        var second = Node(graphs.Build(moved, SignalGraph.Evaluate(moved, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory));
+        Assert.NotSame(first, second);
+        Assert.False(first.IsClosed);
+
+        graphs.Build(moved, SignalGraph.Evaluate(moved, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+        Assert.True(first.IsClosed);
+        Assert.False(second.IsClosed);
+
+        graphs.Dispose();
+        Assert.True(second.IsClosed);
+
+        static ClipPlayerNode Node(ProjectAudioGraphResult result) => Assert.IsType<ClipPlayerNode>(result.Graph.Nodes.Single());
+    }
+
+    [Fact]
+    public void ANodeTheEngineClosedWhileItsTrackWasMuted_IsOpenedAgainWhenTheTrackPlays()
+    {
+        var (project, _, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        var first = graphs.Build(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+        var node = Assert.IsType<ClipPlayerNode>(first.Graph.Nodes.Single());
+        node.Dispose();
+
+        var again = graphs.Build(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+
+        Assert.NotSame(node, again.Graph.Nodes.Single());
+        Assert.False(((ClipPlayerNode)again.Graph.Nodes.Single()).IsClosed);
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)
     {
-        var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
         result = graphs.Build(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
         using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
         engine.Publish(result.Graph);

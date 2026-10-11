@@ -279,6 +279,25 @@ public sealed class ProjectSerializer
             writer.WriteNumber("frames", audio.Source.Frames);
             writer.WriteNumber("channels", audio.Source.Channels);
             writer.WriteEndObject();
+            if (audio.GainDecibels != 0)
+            {
+                writer.WriteNumber("gain", audio.GainDecibels);
+            }
+
+            if (audio.FadeIn.Value > 0)
+            {
+                writer.WriteNumber("fadeIn", audio.FadeIn.Value);
+            }
+
+            if (audio.FadeOut.Value > 0)
+            {
+                writer.WriteNumber("fadeOut", audio.FadeOut.Value);
+            }
+
+            if (audio.FadeShape != FadeShape.Linear)
+            {
+                writer.WriteString("fadeShape", "equalPower");
+            }
         }
 
         writer.WriteEndObject();
@@ -636,6 +655,21 @@ public sealed class ProjectSerializer
                 writer.WriteString("output", output.Value.ToString("D"));
             }
 
+            if (channel.Sends.Length > 0)
+            {
+                writer.WriteStartArray("sends");
+                foreach (var send in channel.Sends)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("target", send.Target.Value.ToString("D"));
+                    writer.WriteNumber("level", send.LevelDecibels);
+                    writer.WriteBoolean("preFader", send.PreFader);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+            }
+
             writer.WriteEndObject();
         }
 
@@ -819,7 +853,16 @@ public sealed class ProjectSerializer
                     Int(source, "sampleRate", at, 1000, 768_000),
                     Long(source, "frames", at, 0, long.MaxValue),
                     Int(source, "channels", at, 1, 64)));
-                return Guard(path, () => new AudioClip(id, start, length, offset, audio, name));
+                var gain = json["gain"] is null ? 0 : Double(json, "gain", path, AudioClip.MinGainDecibels, AudioClip.MaxGainDecibels);
+                var fadeIn = new TickSpan(json["fadeIn"] is null ? 0 : Long(json, "fadeIn", path, 0, long.MaxValue));
+                var fadeOut = new TickSpan(json["fadeOut"] is null ? 0 : Long(json, "fadeOut", path, 0, long.MaxValue));
+                var shape = (OptionalString(json, "fadeShape", path, 16) ?? "linear") switch
+                {
+                    "linear" => FadeShape.Linear,
+                    "equalPower" => FadeShape.EqualPower,
+                    var other => throw new ProjectFormatException($"{path}.fadeShape", $"\"{other}\" is not a known fade shape."),
+                };
+                return Guard(path, () => new AudioClip(id, start, length, offset, audio, name) { GainDecibels = gain, FadeIn = fadeIn, FadeOut = fadeOut, FadeShape = shape });
             default:
                 throw new ProjectFormatException($"{path}.type", $"\"{type}\" is not a known clip type.");
         }
@@ -1088,6 +1131,15 @@ public sealed class ProjectSerializer
         {
             var at = $"{path}.channels[{i}]";
             var item = Object(node, at);
+            var sends = item["sends"] is null ? [] : Array(item, "sends", at, MixerChannel.MaxSends).Select((sendNode, j) =>
+            {
+                var sendAt = $"{at}.sends[{j}]";
+                var send = Object(sendNode, sendAt);
+                return Guard(sendAt, () => new MixerSend(
+                    new MixerChannelId(Guid(send, "target", sendAt)),
+                    Double(send, "level", sendAt, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels),
+                    Bool(send, "preFader", sendAt, false)));
+            }).ToList();
             return Guard(at, () => new MixerChannel
             {
                 Id = new MixerChannelId(Guid(item, "id", at)),
@@ -1097,6 +1149,7 @@ public sealed class ProjectSerializer
                 IsMuted = Bool(item, "muted", at, false),
                 IsSoloed = Bool(item, "soloed", at, false),
                 Output = item["output"] is null ? null : new MixerChannelId(Guid(item, "output", at)),
+                Sends = [.. sends],
             });
         }).ToList();
         var master = Double(json, "masterGain", path, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels);

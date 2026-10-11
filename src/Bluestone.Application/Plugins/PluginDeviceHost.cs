@@ -49,7 +49,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
-    private readonly double _sampleRate;
+    private readonly SemaphoreSlim _syncing = new(1, 1);
+    private double _sampleRate;
     private readonly int _maxBlockFrames;
 
     public PluginDeviceHost(PluginHostManager manager, ProjectSession session, IEnumerable<PluginIdentity> available, double sampleRate = 48_000, int maxBlockFrames = 256)
@@ -202,6 +203,63 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
     public PluginInstance? InstanceOf(DeviceId device) => _instances.GetValueOrDefault(device);
 
+    /// <summary>The rate plugin instances are created at (the audio device's, once audio runs).</summary>
+    public double SampleRate => _sampleRate;
+
+    /// <summary>
+    /// Runs every plugin instance at <paramref name="sampleRate"/> from now on: running instances are captured (their
+    /// state and parameters, not stored in the project), stopped, and created again at the new rate from what was
+    /// captured; others start again from their last snapshot or the project's stored state. Nothing happens when the
+    /// rate is unchanged. Plugins cannot change rate while running, so this is a restart; their status shows it.
+    /// </summary>
+    public async Task SetSampleRateAsync(double sampleRate, CancellationToken cancellationToken = default)
+    {
+        await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (sampleRate != _sampleRate)
+            {
+                _sampleRate = sampleRate;
+                await RecreateAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _syncing.Release();
+        }
+    }
+
+    private async Task RecreateAsync(CancellationToken cancellationToken)
+    {
+        var restore = new Dictionary<DeviceId, PluginStateSnapshot?>();
+        foreach (var (id, instance) in _instances.ToList())
+        {
+            var snapshot = instance.LastSnapshot;
+            if (instance.Status.State == PluginInstanceState.Running)
+            {
+                try
+                {
+                    snapshot = await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (PluginHostException)
+                {
+                    // A plugin that cannot report its state now starts again from the last state it did report.
+                }
+            }
+
+            restore[id] = snapshot;
+            if (_instances.TryRemove(id, out _))
+            {
+                instance.StatusChanged -= Handler(id);
+                instance.ParameterEdited -= EditHandler(id);
+                instance.Changed -= ChangeHandler(id);
+                await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        await SyncCoreAsync(_session.Project, restore, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Whether <paramref name="device"/> is a plugin MIDI effect, whose output is worked out in its worker when the plan
     /// is compiled: when its status changes, the plan should be compiled again.
@@ -256,6 +314,19 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     /// </summary>
     public async Task SyncAsync(Project project, CancellationToken cancellationToken = default)
     {
+        await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SyncCoreAsync(project, null, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _syncing.Release();
+        }
+    }
+
+    private async Task SyncCoreAsync(Project project, Dictionary<DeviceId, PluginStateSnapshot?>? restore, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(project);
         var available = _plugins;
         var wanted = project.Chains.SelectMany(c => c.Devices).Where(d => available.ContainsKey(d.Definition.Id)).ToDictionary(d => d.Id);
@@ -292,12 +363,13 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         {
             var plugin = available[device.Definition.Id];
             var parameters = device.Parameters.Select(p => new WorkerParameterValue(p.Id.Value, p.Value.ToFraction())).ToImmutableArray();
+            var captured = restore?.GetValueOrDefault(device.Id);
             var request = new PluginInstanceRequest(plugin, _sampleRate, _maxBlockFrames, plugin.Kind == PluginKind.AudioEffect ? 2 : 0, plugin.Kind == PluginKind.MidiEffect ? 0 : 2)
             {
                 ModulePath = _modulePaths.GetValueOrDefault(plugin),
-                RestoreFrom = device.State is { } saved
+                RestoreFrom = captured ?? (device.State is { } saved
                     ? new PluginStateSnapshot(plugin, new PluginStateData(saved.Format, [.. saved.Data.Span]), parameters, DateTimeOffset.UnixEpoch)
-                    : null,
+                    : null),
             };
             var instance = await _manager.CreateInstanceAsync(request, cancellationToken).ConfigureAwait(false);
             _instances[device.Id] = instance;
@@ -309,7 +381,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             instance.StatusChanged += Handler(device.Id);
             instance.ParameterEdited += EditHandler(device.Id);
             instance.Changed += ChangeHandler(device.Id);
-            if (device.State is null && instance.Status.State == PluginInstanceState.Running)
+            if (device.State is null && captured is null && instance.Status.State == PluginInstanceState.Running)
             {
                 // No saved state: the stored parameter values are the configuration to restore. Only values that differ
                 // from the plugin's own are sent (a plugin may have thousands of parameters).
@@ -379,6 +451,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         }
 
         _instances.Clear();
+        _syncing.Dispose();
     }
 
     // One handler per device, so the same delegate can be removed again.

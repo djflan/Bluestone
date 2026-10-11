@@ -85,6 +85,47 @@ internal static class Mix
         }
     }
 
+    /// <summary>Adds <paramref name="source"/> times <paramref name="gain"/> to <paramref name="destination"/>.</summary>
+    public static void AddScaled(ReadOnlySpan<float> source, Span<float> destination, float gain)
+    {
+        var i = 0;
+        if (Vector.IsHardwareAccelerated)
+        {
+            for (; i <= source.Length - Vector<float>.Count; i += Vector<float>.Count)
+            {
+                ((new Vector<float>(source[i..]) * gain) + new Vector<float>(destination[i..])).CopyTo(destination[i..]);
+            }
+        }
+
+        for (; i < source.Length; i++)
+        {
+            destination[i] += source[i] * gain;
+        }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="source"/> to <paramref name="destination"/> at a gain that moves linearly from
+    /// <paramref name="from"/> to <paramref name="to"/> across the block, as <see cref="Ramp"/> does.
+    /// </summary>
+    public static void AddRamped(ReadOnlySpan<float> source, Span<float> destination, float from, float to)
+    {
+        if (from == to)
+        {
+            if (to != 0f)
+            {
+                AddScaled(source, destination, to);
+            }
+
+            return;
+        }
+
+        var step = (to - from) / source.Length;
+        for (var i = 0; i < source.Length; i++)
+        {
+            destination[i] += source[i] * (from + (step * (i + 1)));
+        }
+    }
+
     /// <summary>Multiplies by a gain that moves linearly from <paramref name="from"/> to <paramref name="to"/> across the block.</summary>
     public static void Ramp(Span<float> samples, float from, float to)
     {

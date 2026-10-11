@@ -10,7 +10,50 @@ namespace Bluestone.Audio.Clips;
 /// <param name="SongStartFrame">First song frame of the clip, at the engine's rate.</param>
 /// <param name="SongEndFrame">Song frame after the clip's last.</param>
 /// <param name="SourceSecondsAtStart">Position in the file, in seconds, heard at <paramref name="SongStartFrame"/>.</param>
-public sealed record AudioClipRegion(string Path, long SongStartFrame, long SongEndFrame, double SourceSecondsAtStart);
+public sealed record AudioClipRegion(string Path, long SongStartFrame, long SongEndFrame, double SourceSecondsAtStart)
+{
+    /// <summary>The clip's gain and fades. Changing only these does not reopen the file (see <see cref="ClipPlayerNode.UpdateEnvelopes"/>).</summary>
+    public AudioClipEnvelope Envelope { get; init; } = AudioClipEnvelope.Unity;
+
+    /// <summary>Whether <paramref name="other"/> plays the same file the same way, whatever its envelope.</summary>
+    public bool SameStream(AudioClipRegion other) => other is not null && this with { Envelope = other.Envelope } == other;
+}
+
+/// <summary>
+/// A clip's gain and fades, in frames at the engine's rate from the clip's first frame and before its end. A frame
+/// <c>p</c> frames into a fade of <c>n</c> frames plays at <c>curve(p / n)</c>: the first frame of a fade-in and the
+/// last frame of a fade-out are silent. The curve is linear (<c>x</c>) or equal power (<c>sin(x·π/2)</c>).
+/// </summary>
+/// <param name="Gain">Linear gain (1 is unity).</param>
+/// <param name="FadeInFrames">Frames from the clip's start.</param>
+/// <param name="FadeOutFrames">Frames before the clip's end.</param>
+/// <param name="EqualPower">Quarter-sine curves instead of straight lines.</param>
+public sealed record AudioClipEnvelope(float Gain, long FadeInFrames, long FadeOutFrames, bool EqualPower)
+{
+    public static AudioClipEnvelope Unity { get; } = new(1f, 0, 0, false);
+
+    public bool IsUnity => Gain == 1f && FadeInFrames <= 0 && FadeOutFrames <= 0;
+
+    /// <summary>The gain of the frame <paramref name="frame"/> frames into a clip of <paramref name="clipFrames"/>.</summary>
+    public float GainAt(long frame, long clipFrames)
+    {
+        double gain = Gain;
+        if (frame < FadeInFrames)
+        {
+            gain *= Curve((double)frame / FadeInFrames);
+        }
+
+        var beforeEnd = clipFrames - 1 - frame;
+        if (beforeEnd < FadeOutFrames)
+        {
+            gain *= Curve((double)beforeEnd / FadeOutFrames);
+        }
+
+        return (float)gain;
+    }
+
+    private double Curve(double x) => EqualPower ? Math.Sin(x * Math.PI / 2) : x;
+}
 
 /// <summary>
 /// One clip's audio, ready for the audio thread: the first part of the region decoded in memory (so starting at the
@@ -35,6 +78,9 @@ internal sealed class ClipSource : IDisposable
     private readonly float[] _readInterleaved;
     private readonly float[] _readLeft;
     private readonly float[] _readRight;
+    private readonly float[] _outLeft;
+    private readonly float[] _outRight;
+    private AudioClipEnvelope _envelope;
     private long _underrunFrames;
 
     private ClipSource(AudioClipRegion region, AudioFileReader reader, int outputRate, int blockFrames, TimeSpan preload, TimeSpan ringLength)
@@ -56,6 +102,9 @@ internal sealed class ClipSource : IDisposable
         _readInterleaved = new float[ReadChunkFrames * format.Channels];
         _readLeft = new float[ReadChunkFrames];
         _readRight = new float[ReadChunkFrames];
+        _outLeft = new float[blockFrames];
+        _outRight = new float[blockFrames];
+        _envelope = region.Envelope;
 
         _preloadStart = Math.Clamp((long)Math.Floor(_sourceStart) - halo, 0, SourceFrames);
         _preloadEnd = Math.Min(SourceFrames, _preloadStart + (long)(preload.TotalSeconds * format.SampleRate));
@@ -69,6 +118,13 @@ internal sealed class ClipSource : IDisposable
     }
 
     public AudioClipRegion Region { get; }
+
+    /// <summary>Gain and fades; replaced whole by the control thread, read once per range by the audio thread.</summary>
+    public AudioClipEnvelope Envelope
+    {
+        get => Volatile.Read(ref _envelope);
+        set => Volatile.Write(ref _envelope, value ?? throw new ArgumentNullException(nameof(value)));
+    }
 
     public long SourceFrames { get; }
 
@@ -132,8 +188,16 @@ internal sealed class ClipSource : IDisposable
         }
 
         var offset = (int)(from - blockStart);
-        var outLeft = output.Left.Slice(offset, (int)(to - from));
-        var outRight = output.Right.Slice(offset, (int)(to - from));
+        var length = (int)(to - from);
+        var envelope = Envelope;
+        var outLeft = envelope.IsUnity ? output.Left.Slice(offset, length) : _outLeft.AsSpan(0, length);
+        var outRight = envelope.IsUnity ? output.Right.Slice(offset, length) : _outRight.AsSpan(0, length);
+        if (!envelope.IsUnity)
+        {
+            outLeft.Clear();
+            outRight.Clear();
+        }
+
         if (_direct)
         {
             Mix.Add(left[..outLeft.Length], outLeft);
@@ -149,9 +213,36 @@ internal sealed class ClipSource : IDisposable
             }
         }
 
+        if (!envelope.IsUnity)
+        {
+            ApplyEnvelope(envelope, from - Region.SongStartFrame, outLeft, outRight);
+            Mix.Add(outLeft, output.Left.Slice(offset, length));
+            Mix.Add(outRight, output.Right.Slice(offset, length));
+        }
+
         // The next block needs nothing before the next frame's window.
-        var next = x0 + (outLeft.Length * ratio);
+        var next = x0 + (length * ratio);
         _ring.Consume(Math.Max(_preloadEnd, (long)Math.Floor(next) - halo));
+    }
+
+    // Frames [first, first + left.Length) of the clip, scaled by the gain and the fades they fall in.
+    private void ApplyEnvelope(AudioClipEnvelope envelope, long first, Span<float> left, Span<float> right)
+    {
+        var clipFrames = Region.SongEndFrame - Region.SongStartFrame;
+        var fadeOutStart = clipFrames - envelope.FadeOutFrames;
+        if (first >= envelope.FadeInFrames && first + left.Length <= fadeOutStart)
+        {
+            Mix.Scale(left, envelope.Gain);
+            Mix.Scale(right, envelope.Gain);
+            return;
+        }
+
+        for (var i = 0; i < left.Length; i++)
+        {
+            var gain = envelope.GainAt(first + i, clipFrames);
+            left[i] *= gain;
+            right[i] *= gain;
+        }
     }
 
     /// <summary>Reads ahead into the ring. Disk thread.</summary>

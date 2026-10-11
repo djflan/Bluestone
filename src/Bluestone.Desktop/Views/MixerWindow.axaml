@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Bluestone.Presentation"
+        xmlns:c="using:Bluestone.Desktop.Controls"
+        x:Class="Bluestone.Desktop.Views.MixerWindow"
+        x:DataType="vm:MixerViewModel"
+        Title="Mixer"
+        Width="980" Height="640" MinWidth="360" MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+  <!-- The mixer console: one strip per mixer channel and the master. The inspector's Mixer section edits the same view model. -->
+  <Grid RowDefinitions="Auto,*" Margin="12">
+    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+      <StackPanel Spacing="2">
+        <TextBlock Text="Mixer" Classes="title" />
+        <TextBlock Text="Channels are audio paths, independent of tracks. Sends copy a channel's audio to a return, before or after its fader. Meters show peak (held for two seconds) and RMS while audio is on."
+                   Classes="muted" TextWrapping="Wrap" />
+      </StackPanel>
+      <Button Grid.Column="1" Classes="raised" Content="New channel" Command="{Binding NewChannelCommand}" VerticalAlignment="Top" Margin="12,0,0,0" />
+    </Grid>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <ItemsControl x:Name="Strips" ItemsSource="{Binding Channels}" AutomationProperties.Name="Mixer strips">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="6" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:MixerChannelRow">
+              <Border Width="148" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="1" CornerRadius="3" Padding="6">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Top" Spacing="4">
+                    <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Channel name" />
+                    <TextBlock Text="{Binding Role}" Classes="overline" IsVisible="{Binding Role.Length}" />
+                    <TextBlock Text="{Binding Sources}" Classes="muted" FontSize="10" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Sources}" />
+                    <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding Output}" HorizontalAlignment="Stretch" AutomationProperties.Name="Channel output"
+                              ToolTip.Tip="Where this channel's audio goes: the master, or another channel used as a bus" />
+                    <TextBlock Text="SENDS" Classes="overline" Margin="0,4,0,0" />
+                    <ItemsControl ItemsSource="{Binding Sends}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:MixerSendRow">
+                          <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,2">
+                            <TextBlock Text="{Binding TargetName}" FontSize="10" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <ToggleButton Grid.Column="1" Classes="tool" Content="Pre" FontSize="9" IsChecked="{Binding IsPreFader}" AutomationProperties.Name="Pre-fader send"
+                                          ToolTip.Tip="Take the send before the fader and pan" />
+                            <Button Grid.Column="2" Classes="tool" Content="✕" Command="{Binding RemoveCommand}" AutomationProperties.Name="Remove send" />
+                            <Slider Grid.Row="1" Grid.ColumnSpan="2" Minimum="{Binding MinimumLevel}" Maximum="{Binding MaximumLevel}" Value="{Binding Level}" SmallChange="0.5" LargeChange="3"
+                                    AutomationProperties.Name="Send level" ToolTip.Tip="{Binding LevelText}" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding LevelText}" FontSize="9" VerticalAlignment="Center" />
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ComboBox ItemsSource="{Binding SendTargets}" SelectedItem="{Binding SendToAdd}" PlaceholderText="Add send…" FontSize="11" HorizontalAlignment="Stretch"
+                              IsEnabled="{Binding CanAddSend}" AutomationProperties.Name="Add send" ToolTip.Tip="Send a copy of this channel to another channel (a return), after its fader" />
+                    <TextBlock Text="PAN" Classes="overline" Margin="0,4,0,0" />
+                    <Slider Minimum="-1" Maximum="1" Value="{Binding Pan}" SmallChange="0.05" LargeChange="0.25" AutomationProperties.Name="Channel pan" />
+                  </StackPanel>
+                  <StackPanel DockPanel.Dock="Bottom" Spacing="4">
+                    <TextBlock Text="{Binding GainText}" FontSize="11" HorizontalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                      <ToggleButton Content="M" IsChecked="{Binding IsMuted}" Padding="8,1" AutomationProperties.Name="Mute channel" />
+                      <ToggleButton Content="S" IsChecked="{Binding IsSoloed}" Padding="8,1" AutomationProperties.Name="Solo channel" />
+                      <Button Classes="tool" Content="✕" Command="{Binding RemoveCommand}" AutomationProperties.Name="Remove channel" ToolTip.Tip="Remove this channel" />
+                    </StackPanel>
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto" MinHeight="140" Margin="0,6">
+                    <Slider Orientation="Vertical" HorizontalAlignment="Center" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" Value="{Binding Gain}"
+                            SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Channel fader" />
+                    <c:LevelMeter Grid.Column="1" Levels="{Binding Meter}" AutomationProperties.Name="Channel meter" />
+                  </Grid>
+                </DockPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <Border Grid.Column="1" Width="96" Margin="8,0,0,0" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="1" CornerRadius="3" Padding="6">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Master" FontWeight="SemiBold" HorizontalAlignment="Center" />
+          <TextBlock DockPanel.Dock="Bottom" Text="{Binding MasterGainText}" FontSize="11" HorizontalAlignment="Center" />
+          <Grid ColumnDefinitions="*,Auto" Margin="0,6">
+            <Slider Orientation="Vertical" HorizontalAlignment="Center" Minimum="-120" Maximum="24" Value="{Binding MasterGain}" SmallChange="0.5" LargeChange="3"
+                    AutomationProperties.Name="Master fader" />
+            <c:LevelMeter Grid.Column="1" Levels="{Binding MasterMeter}" AutomationProperties.Name="Master meter" />
+          </Grid>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

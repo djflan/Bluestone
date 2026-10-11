@@ -50,8 +50,7 @@ and in the worst case within the buffer period; garbage-collection pauses during
   silences its own strip. **Meters** (per strip and master, post-fader): peak held and falling 20 dB/s, RMS with a
   300 ms time constant, read lock-free from any thread.
 - `OfflineAudioDriver` drives the same render path with virtual time, for deterministic tests and measurement.
-- Sends are not modelled in the domain yet; a send would be another strip-to-strip edge with its own gain, which
-  the builder's strip routing can take.
+- Sends are strip-to-strip edges with their own gain; see "Sends, clip gain and fades, and device loss" below.
 
 ### Audio clips
 
@@ -69,8 +68,8 @@ and in the worst case within the buffer period; garbage-collection pauses during
   a disk-streamer thread keeps a 4-second ring per clip filled ahead of the play position. The audio thread never
   reads a file; data that is late plays as silence and is counted (`UnderrunFrames`), never as other audio. Seeking
   into a clip beyond its preload is silent until the ring has the data (a few milliseconds).
-- A clip's source plays at its own rate from the song time of its origin; the domain has no clip gain, fades, or
-  loops, so none are applied. A missing or unreadable file is a problem in the graph result, never an exception.
+- A clip's source plays at its own rate from the song time of its origin, at the clip's gain and with its fades (see
+  below); there are no clip loops. A missing or unreadable file is a problem in the graph result, never an exception.
 
 ### Plugins and the project
 
@@ -172,11 +171,85 @@ not force collections, so this is a bound, not the expected case.
 - The app has an Audio Settings window (device, rate, buffer, render-ahead, start/stop, test tone, master level);
   settings are saved in `<application data>/Bluestone/audio-settings.json`. While audio runs, audio clips and plugin
   instruments and effects are heard during playback, in time with MIDI.
-- Plugin instances must run at the device's rate and accept the engine's block size; the plugin bridge creates them
-  at 48 kHz with 256-frame blocks, so another device rate leaves plugins silent with a message.
-- Not done: plugin delay compensation (latencies are reported), sends (not in the domain), audio input and recording,
-  compressed file formats, clip fades and gain (not in the domain), a mixer console with meters (the meters exist),
-  hot-plug recovery beyond reporting a lost device, and a real-time render thread. Linux and Windows device output
-  is built and unit-tested in CI but has not been heard.
+- Plugin instances must run at the device's rate and accept the engine's block size (256 frames); each time a device
+  opens, the plugin bridge restarts them at its rate (see below).
+- Not done: plugin delay compensation (latencies are reported), audio input and recording, compressed file formats,
+  and send or fader automation. Linux and Windows device output is built and unit-tested in CI but has not been heard.
 - The measurements are from one Mac and one USB headset; rerun the harness on other machines before changing the
   default queue.
+
+## Sends, clip gain and fades, and device loss (added 2026-10-11)
+
+### Sends
+
+- A mixer channel has sends (`MixerSend`: target channel, level in dB, pre or post fader), at most one per target
+  and never to itself. Any channel can be a target; one that receives sends is shown as a return. Sends are stored
+  on the channel in format 4 as an optional `sends` list (docs/project-format.md).
+- Validation treats a send as an edge between mixer channels, with outputs: a path of outputs and sends back to a
+  channel is a `Cycle` error, and a send to a missing channel is an error. The commands (`AddMixerSend`,
+  `UpdateMixerSend` with the merge key `send:{channel}:{target}`, `RemoveMixerSend`) are refused when they add one.
+  Removing a channel removes the sends to it. A file edited by hand that still has a loop plays without the edge
+  that closes it, with a problem in the graph result.
+- In the render graph a send adds the strip's input to the target at a gain ramped over one block, like the fader.
+  **Pre-fader** sends take the strip's input before its fader and pan (level only); **post-fader** sends take it after
+  both (level × fader × pan, per side). Strips render in dependency order over outputs and sends, so a return
+  always has its sends before it renders; meters are on every strip, returns included.
+- **Mute** silences a strip's sends too. **Solo:** a strip sounds if it is soloed, feeds a soloed strip through its
+  output, or is reached from a soloed strip through outputs and sends (so a soloed channel keeps its returns). A
+  send carries audio when its strip sounds or its target is soloed, so soloing a return plays what is sent to it
+  without the dry channels. Rendering with sends allocates nothing (tested).
+
+### Clip gain and fades
+
+- `AudioClip` has a gain (−120 to +24 dB), a fade-in and a fade-out in ticks from its edges (so they follow the
+  tempo), and one shape for both. Stored fades may exceed a trimmed clip; the fade-in plays first and the fade-out
+  in what remains. Splitting keeps the fade-in on the left part and the fade-out on the right.
+- In the engine a frame `p` frames into a fade of `n` frames plays at `curve(p / n)`, so a fade-in starts at silence
+  and a fade-out ends at silence. **Linear:** `curve(x) = x` (−6 dB half way). **Equal power:** `curve(x) =
+  sin(x·π/2)` (−3 dB half way), so two overlapping fades of uncorrelated material keep their power. Tests check the
+  curves sample by sample.
+- A change of gain or fades only replaces the clip node's envelope (one reference write the audio thread reads per
+  block); the files are not reopened.
+- The inspector's Audio Clip section edits them (fades in beats); the arrangement draws the fades.
+
+### Clip node ownership
+
+The project graph owns the clip nodes it opens. A node it replaces (a clip moved or trimmed) is closed at the next
+build, when the graph that replaced it is the one playing; disposing the project graph (when audio stops) closes
+the rest. Closing is idempotent and serialized with disk reads, so the engine's disk thread closing the same node
+is harmless, and a node the disk thread closed while its track was silent is opened again when the track plays. A
+file that fails while streaming (deleted, or its disk gone) plays as silence and is counted; it no longer stops
+the disk thread.
+
+### Device rate and plugins
+
+Plugins cannot change rate while running. Each time a device opens (start, fallback, return), `AudioPlayback` asks
+the plugin bridge for its rate (`PluginDeviceHost.SetSampleRateAsync`, on the UI thread): every instance's live
+state and parameters are captured (not stored in the project, so nothing is added to undo), the instance is
+destroyed and created again at the new rate from that state; a crashed instance starts from its last snapshot or
+the project's state. The graph is rebuilt when that finishes; until then the plugins are silent. An open plugin editor closes with its instance.
+
+### Device loss
+
+`AudioPlayback` checks the stream once a second. When a stream fails (the device was removed or invalidated) it is
+closed with its engine and graph, and:
+
+- if a specific device was chosen, the system default output opens in its place (`IsOnFallback`, with a message);
+  when the chosen device is listed again, it is opened and the stand-in closed;
+- if nothing can be opened, audio stays off and waits (`IsWaitingForDevice`): it tries again whenever the list of
+  devices changes, and opens as soon as it can. Choosing another device or stopping audio ends the wait.
+
+Every stream opened is closed exactly once (tested). The device layer is behind `IAudioBackend`/`IAudioOutput` so
+this is tested with a backend whose devices come and go; unplugging real hardware was not tested.
+
+### Render thread priority
+
+The buffered mode's render-ahead thread asks for the operating system's audio priority when it starts
+(`RenderThreadScheduling`): on macOS the Mach time-constraint policy (computation half of the queue's duration, at
+most 25 of 50 ms, preemptible; the thread blocks in native code between bursts, so it stays inside the budget), on
+Windows the MMCSS "Pro Audio" task, on Linux `SCHED_FIFO` at priority 60, which needs an rtprio limit and otherwise
+leaves the thread at normal priority. What was granted is shown in the Audio Settings status. .NET's own
+`ThreadPriority` only has an effect on Windows. The direct mode renders on the backend's own real-time thread.
+The default queue is unchanged; the measurement above was made without this priority, so a smaller default needs a
+new measurement.
+

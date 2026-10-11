@@ -41,6 +41,7 @@
                 <MenuItem Header="Import MIDI File…" Command="{Binding ImportMidiCommand}" InputGesture="Ctrl+I" />
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
                 <Separator />
+                <MenuItem Header="Mixer…" Click="OnShowMixer" ToolTip.Tip="The mixer console: strips, sends, and meters" />
                 <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, modules that could not be read, and quarantined modules" />
                 <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" />
               </MenuFlyout>
@@ -252,6 +253,23 @@
               </ItemsControl>
             </StackPanel>
 
+            <Expander x:Name="AudioClipSection" Classes="section" Header="Audio Clip" IsExpanded="True" DataContext="{Binding AudioClip}" x:DataType="vm:AudioClipViewModel" IsVisible="{Binding HasClip}">
+              <Grid ColumnDefinitions="64,*,64" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="4">
+                <TextBlock Grid.ColumnSpan="3" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Row="1" Text="Gain" Classes="label" VerticalAlignment="Center" />
+                <Slider Grid.Row="1" Grid.Column="1" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" Value="{Binding Gain}" SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Clip gain" />
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding GainText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                <TextBlock Grid.Row="2" Text="Fade in" Classes="label" VerticalAlignment="Center" />
+                <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="{Binding MaximumFade}" Value="{Binding FadeIn}" SmallChange="0.25" LargeChange="1" AutomationProperties.Name="Fade-in length" />
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding FadeInText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                <TextBlock Grid.Row="3" Text="Fade out" Classes="label" VerticalAlignment="Center" />
+                <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="{Binding MaximumFade}" Value="{Binding FadeOut}" SmallChange="0.25" LargeChange="1" AutomationProperties.Name="Fade-out length" />
+                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding FadeOutText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                <CheckBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Content="Equal-power fades" IsChecked="{Binding IsEqualPower}" AutomationProperties.Name="Equal-power fades"
+                          ToolTip.Tip="Quarter-sine curves (−3 dB half way) instead of straight lines (−6 dB half way)" />
+              </Grid>
+            </Expander>
+
             <Expander x:Name="DevicesSection" Classes="section" Header="{Binding Heading}" IsExpanded="True" DataContext="{Binding DeviceStrip}" x:DataType="vm:DeviceStripViewModel" IsVisible="{Binding HasTrack}">
               <StackPanel Spacing="6">
                 <Button Classes="link" Content="← Back to the selected track" IsVisible="{Binding IsEditingRack}" Command="{Binding BackToTrackCommand}" HorizontalAlignment="Left" />
@@ -383,7 +401,7 @@
 
             <Expander x:Name="MixerSection" Classes="section" Header="Mixer" IsExpanded="False" DataContext="{Binding Mixer}" x:DataType="vm:MixerViewModel">
               <StackPanel Spacing="6">
-                <TextBlock Text="Mixer channels are audio paths, independent of tracks. Bluestone has no audio engine yet, so they are kept and saved but nothing sounds." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Mixer channels are audio paths, independent of tracks. They are heard while audio is on (File ▸ Audio Settings). The mixer console (File ▸ Mixer…) also shows sends and meters." Classes="muted" TextWrapping="Wrap" />
                 <ItemsControl ItemsSource="{Binding Channels}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:MixerChannelRow">

@@ -6,6 +6,6 @@ internal interface IStreamedSource
     /// <summary>Reads ahead of the audio thread. Disk-streamer thread only.</summary>
     void Service();
 
-    /// <summary>Closes files once the node has left the current graph. Disk-streamer thread only.</summary>
+    /// <summary>Closes files once the node has left the current graph. Idempotent; the node must tolerate a close from its builder too.</summary>
     void Close();
 }

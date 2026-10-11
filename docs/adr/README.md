@@ -36,7 +36,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0029](0029-rename-to-bluestone.md) | The project is renamed Bluestone, with no compatibility for Cadence files | Accepted |
 | [0030](0030-group-tracks.md) | Group tracks: mute and solo reach members, membership routes, folding is saved | Accepted; amends 0021 |
 | [0031](0031-hardware-parameter-automation.md) | Hardware parameter automation through profile parameter maps | Accepted; amends 0007 and 0024 |
-| [0032](0032-audio-engine.md) | Audio engine: cpal output in Rust, the render graph in C# buffered by a ring, one transport (measured) | Accepted |
+| [0032](0032-audio-engine.md) | Audio engine: cpal output in Rust, the render graph in C# buffered by a ring, one transport (measured); sends, clip fades, device loss | Accepted |
 | [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
 
 ## Template

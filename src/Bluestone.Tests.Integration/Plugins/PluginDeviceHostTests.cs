@@ -128,6 +128,33 @@ public sealed class PluginDeviceHostTests
     }
 
     [Fact]
+    public async Task ARateChange_RecreatesTheInstanceAtTheNewRate_FromItsLiveState_WithoutTouchingTheProject()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Vocals");
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var before = bridge.InstanceOf(device.Id)!;
+        host.Track(before);
+        await before.SetParameterAsync(GainParameter.Value, 0.25, Ct);
+        var project = session.Project;
+
+        await bridge.SetSampleRateAsync(44_100, Ct);
+
+        var after = bridge.InstanceOf(device.Id)!;
+        host.Track(after);
+        Assert.NotSame(before, after);
+        Assert.Equal((44_100.0, PluginInstanceState.Running), (after.Request.SampleRate, after.Status.State));
+        Assert.Equal(44_100.0, bridge.SampleRate);
+        Assert.All(Run(after), s => Assert.Equal(0.5f, s, 4));
+        Assert.Same(project, session.Project);
+
+        // The same rate again changes nothing.
+        await bridge.SetSampleRateAsync(44_100, Ct);
+        Assert.Same(after, bridge.InstanceOf(device.Id));
+    }
+
+    [Fact]
     public async Task AMissingPlugin_KeepsItsDevice_AndIsReported_WithoutStartingAWorker()
     {
         await using var host = new PluginTestHost();

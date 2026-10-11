@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Bluestone.Application.Plugins;
 using Bluestone.Audio;
@@ -32,16 +33,19 @@ public sealed record ProjectAudioGraphResult(AudioGraph Graph, ImmutableArray<st
 /// solo rule, plus audio connected into the track or rack). Each device in order: a plugin audio effect processes
 /// it; a plugin instrument adds its output; anything else (bypassed devices, MIDI effects, built-in event devices,
 /// plugins that are not running) passes it on unchanged. A tap takes the audio after its device. Connections that
-/// routing validation rejects are left out. Control thread only (it opens files).
+/// routing validation rejects are left out, and so are mixer outputs and sends that would close a loop. Control
+/// thread only (it opens files). It owns the clip nodes it opens: a node it replaces is closed at the next build (by
+/// then the graph that replaced it is the one playing), and <see cref="Dispose"/> closes the rest.
 /// </remarks>
-public sealed class ProjectAudioGraph
+public sealed class ProjectAudioGraph : IDisposable
 {
     private readonly int _sampleRate;
     private readonly int _blockFrames;
     private readonly Func<DeviceId, PluginInstance?> _instances;
-    private readonly Dictionary<MixerChannelId, MixerStripState> _strips = [];
+    private readonly ConcurrentDictionary<MixerChannelId, MixerStripState> _strips = new();
     private readonly Dictionary<DeviceId, PluginNode> _plugins = [];
     private readonly Dictionary<TrackId, ClipEntry> _clips = [];
+    private readonly List<ClipPlayerNode> _retired = [];
 
     /// <param name="sampleRate">The engine's rate.</param>
     /// <param name="blockFrames">The engine's block size.</param>
@@ -55,7 +59,7 @@ public sealed class ProjectAudioGraph
 
     public MixerStripState Master { get; } = new();
 
-    /// <summary>The meter and gain state of a mixer channel, once a graph has included it.</summary>
+    /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
     public MixerStripState? StripOf(MixerChannelId channel) => _strips.GetValueOrDefault(channel);
 
     /// <summary>The node playing a plugin device, once a graph has included it.</summary>
@@ -70,7 +74,25 @@ public sealed class ProjectAudioGraph
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(signal);
         ArgumentNullException.ThrowIfNull(devices);
+        foreach (var node in _retired)
+        {
+            node.Dispose();
+        }
+
+        _retired.Clear();
         return new Builder(this, project, signal, devices, projectDirectory).Run();
+    }
+
+    /// <summary>Closes the files of every clip node this object opened. Call once no engine renders its graphs.</summary>
+    public void Dispose()
+    {
+        foreach (var node in _retired.Concat(_clips.Values.Select(c => c.Node)))
+        {
+            node.Dispose();
+        }
+
+        _retired.Clear();
+        _clips.Clear();
     }
 
     /// <summary>The song frame of a tick, at <paramref name="sampleRate"/>.</summary>
@@ -183,18 +205,74 @@ public sealed class ProjectAudioGraph
                 _stripIndex[channel.Id] = _builder.AddStrip(state, new MixerStripSettings(channel.GainDecibels, channel.Pan, channel.IsMuted, channel.IsSoloed));
             }
 
+            // Outputs first, then sends; an edge that would close a loop (only in a file edited by hand) is left out.
+            var edges = new Dictionary<int, List<int>>();
             foreach (var channel in project.Mixer.Channels)
             {
                 if (channel.Output is { } bus && _stripIndex.TryGetValue(bus, out var destination))
                 {
-                    _builder.RouteStrip(_stripIndex[channel.Id], destination);
+                    var from = _stripIndex[channel.Id];
+                    if (AddEdge(edges, from, destination))
+                    {
+                        _builder.RouteStrip(from, destination);
+                    }
+                    else
+                    {
+                        _problems.Add($"{channel.Name}: its output would feed back on itself, so it goes to the master.");
+                    }
+                }
+            }
+
+            foreach (var channel in project.Mixer.Channels)
+            {
+                foreach (var send in channel.Sends)
+                {
+                    if (_stripIndex.TryGetValue(send.Target, out var destination) && destination != _stripIndex[channel.Id])
+                    {
+                        var from = _stripIndex[channel.Id];
+                        if (AddEdge(edges, from, destination))
+                        {
+                            _builder.SendStrip(from, destination, send.LevelDecibels, send.PreFader);
+                        }
+                        else
+                        {
+                            _problems.Add($"{channel.Name}: a send would feed back on itself, so it is silent.");
+                        }
+                    }
                 }
             }
 
             foreach (var gone in owner._strips.Keys.Where(id => !_stripIndex.ContainsKey(id)).ToList())
             {
-                owner._strips.Remove(gone);
+                owner._strips.TryRemove(gone, out _);
             }
+        }
+
+        // Adds from → to unless to already reaches from.
+        private static bool AddEdge(Dictionary<int, List<int>> edges, int from, int to)
+        {
+            var seen = new HashSet<int>();
+            var pending = new Stack<int>([to]);
+            while (pending.TryPop(out var at))
+            {
+                if (at == from)
+                {
+                    return false;
+                }
+
+                if (seen.Add(at) && edges.TryGetValue(at, out var next))
+                {
+                    next.ForEach(pending.Push);
+                }
+            }
+
+            if (!edges.TryGetValue(from, out var list))
+            {
+                edges[from] = list = [];
+            }
+
+            list.Add(to);
+            return true;
         }
 
         // The audio nodes a source's output is the sum of.
@@ -304,19 +382,42 @@ public sealed class ProjectAudioGraph
             ImmutableArray<AudioClipRegion> regions = [.. track.Clips.OfType<AudioClip>().Select(clip =>
             {
                 var start = SecondsAt(tempo, clip.Start);
-                return new AudioClipRegion(
-                    Resolve(clip.Source.Location),
-                    (long)Math.Round(start * rate),
-                    (long)Math.Round(SecondsAt(tempo, clip.End) * rate),
-                    start - SecondsAt(tempo, new Tick(clip.Origin)));
+                var startFrame = (long)Math.Round(start * rate);
+                var endFrame = (long)Math.Round(SecondsAt(tempo, clip.End) * rate);
+                var (fadeIn, fadeOut) = clip.EffectiveFades;
+                return new AudioClipRegion(Resolve(clip.Source.Location), startFrame, endFrame, start - SecondsAt(tempo, new Tick(clip.Origin)))
+                {
+                    Envelope = new AudioClipEnvelope(
+                        PanLaw.DecibelsToGain(clip.GainDecibels),
+                        fadeIn.Value == 0 ? 0 : (long)Math.Round(SecondsAt(tempo, clip.Start + fadeIn) * rate) - startFrame,
+                        fadeOut.Value == 0 ? 0 : endFrame - (long)Math.Round(SecondsAt(tempo, new Tick(clip.End.Value - fadeOut.Value)) * rate),
+                        clip.FadeShape == FadeShape.EqualPower),
+                };
             })];
             if (regions.IsEmpty)
             {
                 return null;
             }
 
-            if (!owner._clips.TryGetValue(track.Id, out var entry) || !entry.Regions.SequenceEqual(regions))
+            // Only the gain or fades changed: the node keeps its streams. Anything else (or a node the engine closed
+            // while the track was silent) opens the clips again.
+            var entry = owner._clips.GetValueOrDefault(track.Id);
+            if (entry is not null && !entry.Node.IsClosed && entry.Regions.Length == regions.Length && entry.Regions.Zip(regions).All(p => p.First.SameStream(p.Second)))
             {
+                if (!entry.Regions.SequenceEqual(regions))
+                {
+                    entry.Node.UpdateEnvelopes(regions);
+                    entry = entry with { Regions = regions };
+                    owner._clips[track.Id] = entry;
+                }
+            }
+            else
+            {
+                if (entry is not null)
+                {
+                    owner._retired.Add(entry.Node);
+                }
+
                 var node = ClipPlayerNode.Open(track.Name, regions, rate, owner._blockFrames, out var problems);
                 entry = new ClipEntry(regions, node, problems);
                 owner._clips[track.Id] = entry;
@@ -375,6 +476,7 @@ public sealed class ProjectAudioGraph
 
             foreach (var gone in owner._clips.Keys.Where(id => project.Sequence.FindTrack(id) is null).ToList())
             {
+                owner._retired.Add(owner._clips[gone].Node);
                 owner._clips.Remove(gone);
             }
         }
