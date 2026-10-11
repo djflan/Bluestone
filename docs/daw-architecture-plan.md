@@ -76,7 +76,7 @@ Each phase leaves the solution building with every test passing.
 ### Phase 0 baseline (captured from the code before the refactor)
 
 Two format 3 projects were written by the format 3 serializer and are committed as fixtures
-(`src/Bluestone.Tests.Unit/Infrastructure/Fixtures/format3-*.bluestone`). They are never regenerated. The
+(`src/dotnet/Bluestone.Tests.Unit/Infrastructure/Fixtures/format3-*.bluestone`). They are never regenerated. The
 hashes below are what the *old* pipeline (route resolution, output preparation, plan compilation)
 sent, with each endpoint present except `gone-*` (missing) and `old-*` (present under a new key, so
 bound by name), and the profiles shipped in `/profiles`. After the refactor the migrated projects

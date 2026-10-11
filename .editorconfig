@@ -63,6 +63,6 @@ dotnet_diagnostic.IDE0005.severity = warning
 dotnet_diagnostic.IDE0055.severity = warning
 dotnet_diagnostic.IDE0161.severity = warning
 
-[src/Bluestone.Tests.*/**.cs]
+[src/dotnet/Bluestone.Tests.*/**.cs]
 # Test names use Subject_Condition_Expectation.
 dotnet_diagnostic.CA1707.severity = none

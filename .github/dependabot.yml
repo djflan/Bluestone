@@ -1,13 +1,17 @@
 version: 2
 updates:
   - package-ecosystem: nuget
-    directory: /src
+    directory: /src/dotnet
     schedule:
       interval: weekly
     groups:
       avalonia:
         patterns:
           - "Avalonia*"
+  - package-ecosystem: cargo
+    directory: /src/native
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -28,4 +28,4 @@ The format is documented in [docs/profiles.md](../docs/profiles.md). Files must 
    set only its one parameter.
 4. **Name trademarks factually.** Add a non-affiliation notice to `notices` when a profile names a
    vendor's product or format.
-5. Run `dotnet test src/Bluestone.slnx`; the integration suite validates every profile here.
+5. Run `dotnet test src/dotnet/Bluestone.slnx`; the integration suite validates every profile here.

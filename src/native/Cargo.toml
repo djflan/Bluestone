@@ -1,5 +1,5 @@
 # Bluestone-owned native code (ADR 0026: C# first; Rust where a measurement or a native ABI requires it).
-# Each crate is a cdylib with a small, versioned C ABI, built by `dotnet build` through src/Native.targets.
+# Each crate is a cdylib with a small, versioned C ABI, built by `dotnet build` through src/dotnet/Native.targets.
 [workspace]
 resolver = "3"
 members = ["crates/*"]

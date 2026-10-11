@@ -11,7 +11,7 @@ Record the date, macOS version, interface, and results for each run.
 
 1. Connect the interface's MIDI OUT to the instrument's MIDI IN (and MIDI OUT to MIDI IN for input tests).
 2. Confirm the interface appears in **Audio MIDI Setup → MIDI Studio**.
-3. Start Bluestone: `dotnet run --project src/Bluestone.Desktop`.
+3. Start Bluestone: `dotnet run --project src/dotnet/Bluestone.Desktop`.
 
 ## Checks
 

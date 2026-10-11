@@ -70,7 +70,7 @@ In the same way, Bluestone models music, not a MIDI wire format. MIDI 1.0 is ful
 
 C# and .NET are the default for all of Bluestone: domain, sequencing, MIDI processing, routing, device chains, persistence, plugin supervision, and the cross-platform UI. Platform adapters call operating-system MIDI services from C#.
 
-Rust is used for a component only when a measurement shows managed code cannot meet a real-time or throughput requirement after tuning (allocation on the real-time path, callback deadlines, garbage collection pauses), or when a native interface such as plugin binaries requires it. It replaces C and C++ for new Bluestone-owned native code; C and C++ appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Native components sit behind a small, versioned C ABI, and vendor knowledge and domain rules stay in managed code. The Rust components are the audio device layer, `native/crates/bluestone_audio` ([ADR 0032](docs/adr/0032-audio-engine.md)), and the plugin host that loads VST3 and CLAP plugins in worker processes, `native/crates/bluestone_plugin_host` ([ADR 0033](docs/adr/0033-third-party-plugin-hosting.md)). See [ADR 0026](docs/adr/0026-native-technology-policy.md).
+Rust is used for a component only when a measurement shows managed code cannot meet a real-time or throughput requirement after tuning (allocation on the real-time path, callback deadlines, garbage collection pauses), or when a native interface such as plugin binaries requires it. It replaces C and C++ for new Bluestone-owned native code; C and C++ appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Native components sit behind a small, versioned C ABI, and vendor knowledge and domain rules stay in managed code. The Rust components are the audio device layer, `src/native/crates/bluestone_audio` ([ADR 0032](docs/adr/0032-audio-engine.md)), and the plugin host that loads VST3 and CLAP plugins in worker processes, `src/native/crates/bluestone_plugin_host` ([ADR 0033](docs/adr/0033-third-party-plugin-hosting.md)). See [ADR 0026](docs/adr/0026-native-technology-policy.md).
 
 ## Repository layout
 
@@ -87,18 +87,18 @@ Bluestone/
 │   ├── plugin-hosting.md  Out-of-process plugin hosting, hosting modes, crash recovery, and its limits
 │   ├── profiles.md     Device profile format
 │   └── project-format.md  Bluestone project files, saving, and recovery
-├── native/             Bluestone-owned Rust crates (audio device layer, plugin host, test plugins), built by dotnet build
 ├── profiles/           Shipped device profiles (data, not code)
 ├── samples/            Redistributable demo and fixture files
 └── src/
-    ├── Bluestone.slnx
-    ├── SubModules/
-    └── <ProjectFolder>/
+    ├── dotnet/         The .NET solution
+    │   ├── Bluestone.slnx
+    │   └── <ProjectFolder>/
+    └── native/         Bluestone-owned Rust crates (audio device layer, plugin host, test plugins), built by dotnet build
 ```
 
-- `src/Bluestone.slnx` is the solution entry point.
-- `src/SubModules/` is reserved for shared source submodules.
-- Each normal project belongs in its own direct child folder under `src/`.
+- `src/dotnet/Bluestone.slnx` is the solution entry point.
+- Each .NET project belongs in its own direct child folder under `src/dotnet/`.
+- `src/native/` is one Cargo workspace; each Rust crate is a folder under `src/native/crates/`.
 - `docs/adr/` records consequential architecture decisions.
 - `profiles/` holds device profile data; see `profiles/README.md` for contribution rules.
 
@@ -106,32 +106,32 @@ The repository is intentionally minimal while the first vertical slice is design
 
 ## Building
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.300 or a later 10.0 feature band; see `global.json`) and a stable [Rust toolchain](https://rustup.rs) (edition 2024, so Rust 1.85 or later): `dotnet build` runs `cargo` for the crates in `native/`. On Linux, also install the ALSA development files (`sudo apt install libasound2-dev` on Debian and Ubuntu). Any editor works; in Visual Studio, use a version that supports .NET 10 and opens `src/Bluestone.slnx`. From the repository root run:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.300 or a later 10.0 feature band; see `global.json`) and a stable [Rust toolchain](https://rustup.rs) (edition 2024, so Rust 1.85 or later): `dotnet build` runs `cargo` for the crates in `src/native/`. On Linux, also install the ALSA development files (`sudo apt install libasound2-dev` on Debian and Ubuntu). Any editor works; in Visual Studio, use a version that supports .NET 10 and opens `src/dotnet/Bluestone.slnx`. From the repository root run:
 
 ```sh
-dotnet restore src/Bluestone.slnx
-dotnet build src/Bluestone.slnx
-dotnet test src/Bluestone.slnx
-dotnet format src/Bluestone.slnx --verify-no-changes
+dotnet restore src/dotnet/Bluestone.slnx
+dotnet build src/dotnet/Bluestone.slnx
+dotnet test src/dotnet/Bluestone.slnx
+dotnet format src/dotnet/Bluestone.slnx --verify-no-changes
 ```
 
-Benchmarks and a real-time jitter probe live in `src/Bluestone.Benchmarks`:
+Benchmarks and a real-time jitter probe live in `src/dotnet/Bluestone.Benchmarks`:
 
 ```sh
-dotnet run -c Release --project src/Bluestone.Benchmarks -- --filter '*' --job Short
-dotnet run -c Release --project src/Bluestone.Benchmarks -- --jitter 10 --realtime
-dotnet run -c Release --project src/Bluestone.Benchmarks -- --audio 20 --pressure app --queue 1024
-dotnet run -c Release --project src/Bluestone.Benchmarks -- --live 20 --pressure app --buffer 128 --queue 1024 --live-queue 512
+dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --filter '*' --job Short
+dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --jitter 10 --realtime
+dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio 20 --pressure app --queue 1024
+dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --live 20 --pressure app --buffer 128 --queue 1024 --live-queue 512
 ```
 
-The native crates have their own tests and lints: `cargo test`, `cargo fmt --check`, and `cargo clippy --all-targets -- -D warnings` in `native/`.
+The native crates have their own tests and lints: `cargo test`, `cargo fmt --check`, and `cargo clippy --all-targets -- -D warnings` in `src/native/`.
 
 Warnings are treated as errors and code style is enforced during build. Tests run on Microsoft.Testing.Platform; the default suite needs no MIDI hardware, and tests that need an audio output device skip when there is none. Platform MIDI adapters may require their target operating system.
 
 ## Running Bluestone
 
 ```sh
-dotnet run --project src/Bluestone.Desktop
+dotnet run --project src/dotnet/Bluestone.Desktop
 ```
 
 Without any hardware, route tracks to **Bluestone Monitor** and watch the messages in the MIDI

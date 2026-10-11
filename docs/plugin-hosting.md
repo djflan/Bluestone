@@ -28,8 +28,8 @@ native-interface reason; ADR 0033). The plugin data plane stays C#: it has not b
 | `Bluestone.Plugins.Protocol` | both | BCL only | Control-plane frames and messages, the handshake, the memory-mapped block exchange |
 | `Bluestone.Plugins` | Bluestone | Protocol | Worker launching and supervision, instance lifecycle and recovery, the real-time processing API, scanning |
 | `Bluestone.PluginWorker` | worker process | Protocol, `bluestone_plugin_host` | Instance-host mode and scan mode; the reference plugins; `NativePlugin` over the Rust host |
-| `native/crates/bluestone_plugin_host` | worker process | (Rust) `vst3`, `clap-sys` | Loads VST3 and CLAP modules; instances, parameters, state, processing, host callbacks, editor windows; C ABI version 1 |
-| `native/crates/bluestone_test_plugins` | tests only | (Rust) `vst3`, `clap-sys` | Test Gain, Test Sine, Test Transpose as a `.vst3` bundle and a `.clap` module, packaged by `src/NativeTestPlugins.targets` |
+| `src/native/crates/bluestone_plugin_host` | worker process | (Rust) `vst3`, `clap-sys` | Loads VST3 and CLAP modules; instances, parameters, state, processing, host callbacks, editor windows; C ABI version 1 |
+| `src/native/crates/bluestone_test_plugins` | tests only | (Rust) `vst3`, `clap-sys` | Test Gain, Test Sine, Test Transpose as a `.vst3` bundle and a `.clap` module, packaged by `src/dotnet/NativeTestPlugins.targets` |
 
 `Bluestone.Plugins` does not reference `Bluestone.PluginWorker`, so the plugin code cannot even be loaded into the
 host (`DependencyDirectionTests.Plugins_DoesNotReferenceTheWorker_SoNoPluginCanRunInTheHostProcess`).
@@ -398,7 +398,7 @@ clicked with the mouse, real scanner processes).
 
 ## Third-party plugins (VST3 and CLAP)
 
-`native/crates/bluestone_plugin_host` (Rust, ADR 0033) loads VST3 modules (through the MIT-licensed `vst3` bindings)
+`src/native/crates/bluestone_plugin_host` (Rust, ADR 0033) loads VST3 modules (through the MIT-licensed `vst3` bindings)
 and CLAP modules (through `clap-sys`) in the worker. `NativePlugin` implements `IHostedPlugin` over its C ABI
 (`Native/NativeMethods.cs`, the worker's only unsafe code). The data plane, failure policies, supervision, and
 recovery are the same as for the reference plugins.
@@ -650,7 +650,7 @@ are covered by `NativePluginTests`, `ThirdPartyPluginDeviceTests`, and, with ins
 | Installed VST3 and CLAP plugins (skipped when absent); editors with installed plugins (macOS) | `InstalledPluginTests`, `PluginEditorTests` |
 | Protocol version 3 fields and notifications, architecture checks, bundle discovery, bundle fingerprints, only the worker loads the native host | `FrameCodecTests`, `BinaryArchitectureTests`, `PluginLibraryTests`, `ScanCacheTests`, `DependencyDirectionTests` |
 
-Unit tests are in `src/Bluestone.Tests.Unit/Plugins/`; process tests are in `src/Bluestone.Tests.Integration/Plugins/`
+Unit tests are in `src/dotnet/Bluestone.Tests.Unit/Plugins/`; process tests are in `src/dotnet/Bluestone.Tests.Integration/Plugins/`
 and run as one non-parallel collection. The integration project references the worker with
 `ReferenceOutputAssembly="false"` so the worker is built and copied beside the tests without being loaded.
 

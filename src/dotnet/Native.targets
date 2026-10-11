@@ -1,9 +1,9 @@
 <Project>
-  <!-- Builds Bluestone's Rust crates (native/crates/*) with cargo and copies each library beside the assemblies.
+  <!-- Builds Bluestone's Rust crates (src/native/crates/*) with cargo and copies each library beside the assemblies.
        Use: <ItemGroup><RustCrate Include="bluestone_audio" /></ItemGroup> and
             <Import Project="../Native.targets" /> after it.
        The package name and [lib] name must both equal the item (underscores); crate-type must include "cdylib".
-       Cargo.lock is committed and builds pass the locked flag: after changing dependencies run `cargo build` in native/ once.
+       Cargo.lock is committed and builds pass the locked flag: after changing dependencies run `cargo build` in src/native/ once.
        Debug builds use cargo's dev profile; Release builds use the release profile. -->
   <PropertyGroup>
     <BluestoneNativeRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../native/'))</BluestoneNativeRoot>

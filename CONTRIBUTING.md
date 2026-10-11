@@ -14,16 +14,16 @@ Read the [architectural principle](README.md#architectural-principle), the [arch
 
 ## Development setup
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (see `global.json` for the required feature band) and a stable [Rust toolchain](https://rustup.rs) (Rust 1.85 or later; `dotnet build` builds the crates in `native/` with `cargo`). On Linux, also install `libasound2-dev` (ALSA, for audio output). Then from the repository root:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (see `global.json` for the required feature band) and a stable [Rust toolchain](https://rustup.rs) (Rust 1.85 or later; `dotnet build` builds the crates in `src/native/` with `cargo`). On Linux, also install `libasound2-dev` (ALSA, for audio output). Then from the repository root:
 
 ```sh
-dotnet restore src/Bluestone.slnx
-dotnet build src/Bluestone.slnx
-dotnet test src/Bluestone.slnx
-dotnet format src/Bluestone.slnx --verify-no-changes
+dotnet restore src/dotnet/Bluestone.slnx
+dotnet build src/dotnet/Bluestone.slnx
+dotnet test src/dotnet/Bluestone.slnx
+dotnet format src/dotnet/Bluestone.slnx --verify-no-changes
 ```
 
-If you change Rust code, also run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` in `native/`. After changing a crate's dependencies, run `cargo build` there once and commit `native/Cargo.lock` (builds use `--locked`).
+If you change Rust code, also run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` in `src/native/`. After changing a crate's dependencies, run `cargo build` there once and commit `src/native/Cargo.lock` (builds use `--locked`).
 
 Packages are restored only from nuget.org: the repository's `nuget.config` clears inherited sources and maps every package to it, as central package management requires. Add a mapping there if a package ever needs another source.
 

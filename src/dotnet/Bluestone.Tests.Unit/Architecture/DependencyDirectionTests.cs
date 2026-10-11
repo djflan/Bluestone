@@ -67,7 +67,7 @@ public sealed class DependencyDirectionTests
     [Fact]
     public void OnlyTheWorker_BuildsOrImportsTheNativePluginHost_SoNoPluginCodeLoadsInBluestonesProcess()
     {
-        var source = Path.Combine(PlanDump.RepositoryRoot, "src");
+        var source = Path.Combine(PlanDump.RepositoryRoot, "src", "dotnet");
         var projects = Directory.EnumerateFiles(source, "*.csproj", SearchOption.AllDirectories)
             .Where(p => File.ReadAllText(p).Contains("bluestone_plugin_host", StringComparison.Ordinal))
             .Select(Path.GetFileNameWithoutExtension);
