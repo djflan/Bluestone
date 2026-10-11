@@ -16,6 +16,7 @@ public sealed class DependencyDirectionTests
         { "Bluestone.Infrastructure", ["Bluestone.Domain"] },
         { "Bluestone.Presentation", ["Bluestone.Application", "Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Profiles", "Bluestone.Signal"] },
         { "Bluestone.Plugins.Protocol", [] },
+        { "Bluestone.Audio", ["Bluestone.Plugins", "Bluestone.Plugins.Protocol"] },
         { "Bluestone.Plugins", ["Bluestone.Plugins.Protocol"] },
         { "Bluestone.PluginWorker", ["Bluestone.Plugins.Protocol"] },
     };

@@ -345,6 +345,7 @@ fn build_f32(
                 let user = &user;
                 let frames = (data.len() / channels as usize) as u32;
                 let block = clock.block(&shared, info, frames);
+                data.fill(0.0);
                 // SAFETY: `data` holds frames * channels samples for the duration of the call; the function
                 // pointer and user data were registered by .NET and stay valid until the stream is closed.
                 unsafe { render(user.0, data.as_mut_ptr(), frames, channels, &block) };
