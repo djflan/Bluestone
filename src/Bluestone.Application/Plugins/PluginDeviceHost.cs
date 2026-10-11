@@ -535,7 +535,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         if (instance.WorkerKey is { } key && instance.Status.State == PluginInstanceState.Running)
         {
             var others = _instances.Where(p => p.Key != device && p.Value.WorkerKey == key && p.Value.Status.State == PluginInstanceState.Running)
-                .Select(p => NameOf(p.Key)).ToList();
+                .Select(p => NameOf(p.Key)).Order(StringComparer.CurrentCulture).ToList();
             if (others.Count > 0)
             {
                 text += $" · shares its process with {List(others)}";
@@ -547,7 +547,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
     private string? WentDownWith(DeviceId device, PluginInstance instance)
     {
-        var others = WentDownTogether(device).Where(d => d != device).Select(NameOf).ToList();
+        var others = WentDownTogether(device).Where(d => d != device).Select(NameOf).Order(StringComparer.CurrentCulture).ToList();
         return others.Count == 0 || instance.LastWorkerLoss is null
             ? null
             : $"{List(others)} went down with it: they shared its worker process. Restart starts them all again.";
