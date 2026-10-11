@@ -8,19 +8,37 @@ namespace Bluestone.Signal.Live;
 /// <summary>
 /// One step of the live clock: ticks [<see cref="StartTick"/>, <see cref="EndTick"/>), which last
 /// <see cref="Frames"/> sample frames when the step is an audio block (0 when it is not). Ticks advance at the
-/// transport's tempo; the live clock never jumps back (a loop wrap or a seek does not move it).
+/// transport's tempo; the live clock never jumps back (a loop wrap or a seek does not move it). For an audio block,
+/// <see cref="Origin"/> is the exact (fractional) tick of its first frame and <see cref="FramesPerTick"/> the rate, so
+/// a tick maps to the frame where it falls and back without drift.
 /// </summary>
-public readonly record struct LiveBlock(long StartTick, long EndTick, int Frames = 0)
+public readonly record struct LiveBlock(long StartTick, long EndTick, int Frames = 0, double Origin = 0, double FramesPerTick = 0)
 {
     public long Ticks => EndTick - StartTick;
 
     /// <summary>The frame inside the block where <paramref name="tick"/> falls (0 when the block has no frames).</summary>
-    public int OffsetOf(long tick) =>
-        Frames <= 0 || Ticks <= 0 ? 0 : (int)Math.Clamp((tick - StartTick) * Frames / Ticks, 0, Frames - 1);
+    public int OffsetOf(long tick)
+    {
+        if (Frames <= 0)
+        {
+            return 0;
+        }
 
-    /// <summary>The tick of a frame inside the block.</summary>
-    public long TickOf(int offset) =>
-        Frames <= 0 ? StartTick : StartTick + Math.Clamp((long)offset * Ticks / Frames, 0, Math.Max(0, Ticks - 1));
+        var offset = FramesPerTick > 0 ? Math.Round((tick - Origin) * FramesPerTick) : Ticks > 0 ? (double)(tick - StartTick) * Frames / Ticks : 0;
+        return (int)Math.Clamp(offset, 0, Frames - 1);
+    }
+
+    /// <summary>The tick of a frame inside the block; frame 0 is the block's first tick.</summary>
+    public long TickOf(int offset)
+    {
+        if (Frames <= 0 || offset <= 0)
+        {
+            return StartTick;
+        }
+
+        var tick = FramesPerTick > 0 ? (long)Math.Round(Origin + (offset / FramesPerTick)) : StartTick + ((long)offset * Ticks / Frames);
+        return Math.Clamp(tick, StartTick, Math.Max(StartTick, EndTick - 1));
+    }
 }
 
 /// <summary>

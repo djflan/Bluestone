@@ -23,7 +23,18 @@ internal sealed record LiveContext(
     IReadOnlyDictionary<DeviceId, PluginNode>? Nodes,
     PlaybackEngine Engine)
 {
-    public Ppqn Ppqn => Project.Sequence.Ppqn;
+    /// <summary>
+    /// The live clock's resolution: the sequence's, multiplied as far as it goes up to 64 times, so a tick is finer than a
+    /// sample at usual tempos and events keep their frame through plugin stages. Devices measure musical lengths in it.
+    /// </summary>
+    public Ppqn Ppqn
+    {
+        get
+        {
+            var ppqn = Project.Sequence.Ppqn.TicksPerQuarterNote;
+            return new Ppqn(ppqn * Math.Clamp(Ppqn.MaxValue / ppqn, 1, 64));
+        }
+    }
 }
 
 /// <summary>

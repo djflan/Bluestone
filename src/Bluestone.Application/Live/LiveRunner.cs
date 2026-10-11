@@ -202,9 +202,15 @@ internal sealed class LiveRunner : ILiveEventSource
         var block = Advance((double)context.Frames / context.SampleRate * TicksPerSecond(tempo), context.Frames);
         if (_latency is { } meter && context.HeardTimestamp != 0 && Node is { } node)
         {
-            // What follows the block's start: the instrument's own latency and the compensation after it.
+            // What follows the block's start: the effects' and the instrument's latency, and the compensation after it.
             var heard = Stopwatch.GetElapsedTime(0, context.HeardTimestamp);
-            var after = TimeSpan.FromSeconds((double)(node.LatencyFrames + CompensationFrames) / context.SampleRate);
+            var effects = 0;
+            foreach (var stage in PluginStages)
+            {
+                effects += stage.Instance.ReportedLatencyFrames;
+            }
+
+            var after = TimeSpan.FromSeconds((double)(effects + node.LatencyFrames + CompensationFrames) / context.SampleRate);
             Run(block, heard + after, meter);
         }
         else
@@ -254,9 +260,10 @@ internal sealed class LiveRunner : ILiveEventSource
 
     private LiveBlock Advance(double ticks, int frames)
     {
-        var start = (long)_tick;
+        var origin = _tick;
+        var start = (long)origin;
         _tick += ticks;
-        return new LiveBlock(start, Math.Max(start, (long)_tick), frames);
+        return new LiveBlock(start, Math.Max(start, (long)_tick), frames, origin, ticks > 0 ? frames / ticks : 0);
     }
 
     // Drains the queue into this block (input is placed at its start: it is played now) and runs the chain.
