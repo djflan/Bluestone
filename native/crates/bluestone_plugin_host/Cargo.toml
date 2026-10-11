@@ -1,0 +1,31 @@
+# Hosts third-party VST3 and CLAP plugins for Bluestone.PluginWorker (ADR 0033). Loaded only by the worker process,
+# never by Bluestone itself. Licences: vst3 and clap-sys are MIT OR Apache-2.0 (the VST 3 SDK headers they are
+# generated from are MIT since SDK 3.8); every other dependency is MIT, Apache-2.0, Zlib, or ISC.
+[package]
+name = "bluestone_plugin_host"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "bluestone_plugin_host"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clap-sys = "0.5"
+libloading = "0.9"
+serde_json = "1"
+vst3 = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSGraphics", "NSGraphicsContext", "NSResponder", "NSRunningApplication", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDate", "NSGeometry", "NSObject", "NSString", "NSNotification", "NSRunLoop"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+x11rb = "0.14"
