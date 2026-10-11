@@ -94,8 +94,11 @@ public sealed class ProjectAudioGraph : IDisposable
     /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
     public MixerStripState? StripOf(MixerChannelId channel) => _strips.GetValueOrDefault(channel);
 
-    /// <summary>The node playing a plugin device, once a graph has included it.</summary>
+    /// <summary>The node playing a plugin device, once a graph has included it. Control thread.</summary>
     public PluginNode? PluginNodeOf(DeviceId device) => _plugins.GetValueOrDefault(device);
+
+    /// <summary>Every plugin node of the last graph built, by device. Any thread.</summary>
+    public ImmutableDictionary<DeviceId, PluginNode> PluginNodes { get; private set; } = ImmutableDictionary<DeviceId, PluginNode>.Empty;
 
     /// <param name="project">The project.</param>
     /// <param name="signal">Its evaluated signal graph (software-instrument and parameter feeds).</param>
@@ -235,6 +238,7 @@ public sealed class ProjectAudioGraph : IDisposable
             }
 
             ForgetUnused();
+            owner.PluginNodes = owner._plugins.ToImmutableDictionary();
             var graph = _builder.Build(owner._blockFrames, owner.Master, project.Mixer.MasterGainDecibels, owner._compensation);
             return new ProjectAudioGraphResult(graph, _problems.Distinct().ToImmutableArray(), _latency.ToImmutable());
         }

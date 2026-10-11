@@ -22,6 +22,9 @@ namespace Bluestone.Application.Audio;
 /// </remarks>
 public sealed class AudioPlayback : IDisposable
 {
+    /// <summary>How long the live queue stays after the last live note before the playback queue comes back.</summary>
+    public static readonly TimeSpan LiveHold = TimeSpan.FromSeconds(10);
+
     private static readonly TimeSpan DefaultCheckInterval = TimeSpan.FromSeconds(1);
     private readonly PlaybackController _playback;
     private readonly ProjectSession _session;
@@ -70,7 +73,18 @@ public sealed class AudioPlayback : IDisposable
         _prepareSampleRate = prepareSampleRate;
         _checkInterval = checkInterval ?? DefaultCheckInterval;
         _playback.Refreshed += (_, _) => _ = Task.Run(Rebuild);
+        _playback.Live.MonitoredInstrumentChanged += (_, _) =>
+        {
+            if (_wanted?.LowLatencyMonitoring == true)
+            {
+                _ = Task.Run(Rebuild);
+            }
+        };
+        _playback.Live.SoftwareInput += (_, _) => UseLiveQueue();
     }
+
+    /// <summary>Whether the smaller live queue is in use because live input is playing a plugin instrument.</summary>
+    public bool IsLiveQueue { get; private set; }
 
     /// <summary>Raised (on any thread) when the device opens or closes, fails, or the graph's problems change.</summary>
     public event EventHandler? Changed;
@@ -194,8 +208,10 @@ public sealed class AudioPlayback : IDisposable
             }
 
             var directory = _session.FilePath is { } path ? Path.GetDirectoryName(Path.GetFullPath(path)) : null;
+            graph.Monitored = _wanted?.LowLatencyMonitoring == true && _playback.Live.MonitoredInstrument is { } monitored ? [monitored] : [];
             var result = graph.Build(_session.Project, routing.Graph, _playback.Devices, directory);
             engine.Publish(result.Graph);
+            _playback.Live.UseInstruments(graph.PluginNodes, node => result.Graph.CompensationOf(node) ?? 0);
             var changed = !result.Problems.SequenceEqual(GraphProblems);
             GraphProblems = result.Problems;
             if (changed)
@@ -328,7 +344,9 @@ public sealed class AudioPlayback : IDisposable
     {
         _output?.Dispose();
         _output = null;
+        IsLiveQueue = false;
         _slot.Engine = null;
+        _playback.Live.UseInstruments(null);
         lock (_gate)
         {
             _engine?.Dispose();
@@ -338,10 +356,37 @@ public sealed class AudioPlayback : IDisposable
         }
     }
 
+    /// <summary>Goes back to the playback queue once live input has been quiet for <see cref="LiveHold"/>. Runs on the timer; tests call it.</summary>
+    public void CheckLiveQueue()
+    {
+        lock (_control)
+        {
+            if (IsLiveQueue && _output is { } output && _wanted is { } wanted
+                && _playback.Engine.Clock.Now - _playback.Live.LastSoftwareInput >= LiveHold)
+            {
+                output.SetQueuedFrames(wanted.QueuedFrames);
+                IsLiveQueue = false;
+            }
+        }
+    }
+
+    // Live input reached a plugin instrument: render closer to the device until it has been quiet for a while.
+    private void UseLiveQueue()
+    {
+        if (IsLiveQueue || _wanted is not { LiveQueuedFrames: > 0 } wanted || _output is not { QueuedFrames: > 0 } output || wanted.LiveQueuedFrames >= wanted.QueuedFrames)
+        {
+            return;
+        }
+
+        output.SetQueuedFrames(wanted.LiveQueuedFrames);
+        IsLiveQueue = true;
+    }
+
     private void Tick()
     {
         Align();
         CheckDevice();
+        CheckLiveQueue();
 
         // A plugin restarted or changed its latency without telling us: compensate for what it reports now.
         if (_engine?.Graph.IsLatencyStale == true)

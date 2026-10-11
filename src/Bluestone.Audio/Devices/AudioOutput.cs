@@ -101,6 +101,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
     private nint _handle;
     private long _renderFaults;
     private int _queued;
+    private int _openedQueue;
     private int _renderBlock;
     private Thread? _renderThread;
     private volatile bool _rendering;
@@ -109,7 +110,15 @@ public sealed unsafe class AudioOutput : IAudioOutput
     private AudioOutput(IAudioRenderer renderer) => _renderer = renderer;
 
     /// <summary>Frames the render thread keeps queued (buffered mode), or 0 in direct mode.</summary>
-    public int QueuedFrames => _queued;
+    public int QueuedFrames => Volatile.Read(ref _queued);
+
+    public void SetQueuedFrames(int frames)
+    {
+        if (_openedQueue > 0)
+        {
+            Volatile.Write(ref _queued, Math.Clamp(frames, 1, _openedQueue));
+        }
+    }
 
     /// <summary>
     /// How the render-ahead thread is scheduled (see <see cref="RenderThreadScheduling"/>), once it runs; null in direct
@@ -148,6 +157,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
         var error = stackalloc byte[ErrorCapacity];
         error[0] = 0;
         stream._queued = Math.Max(0, request.QueuedFrames);
+        stream._openedQueue = stream._queued;
         fixed (byte* idPointer = id)
         {
             stream._handle = stream._queued == 0
@@ -314,15 +324,17 @@ public sealed unsafe class AudioOutput : IAudioOutput
         var checks = 0;
         while (_rendering)
         {
-            var queued = NativeMethods.RingWait(_handle, (uint)_queued, 2000);
+            // The target is read once per wake-up, so a change takes effect at the next one.
+            var target = Volatile.Read(ref _queued);
+            var queued = NativeMethods.RingWait(_handle, (uint)target, 2000);
             if (++checks % 256 == 0)
             {
                 latency = ReadOutputLatency();
             }
 
-            while (_rendering && queued < _queued)
+            while (_rendering && queued < target)
             {
-                var frames = (int)Math.Min(_renderBlock, _queued - queued);
+                var frames = (int)Math.Min(_renderBlock, target - queued);
                 var now = Stopwatch.GetTimestamp();
                 var heardIn = latency + TimeSpan.FromSeconds((double)queued / SampleRate);
                 Array.Clear(block);

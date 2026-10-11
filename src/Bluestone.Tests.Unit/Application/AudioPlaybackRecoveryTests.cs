@@ -165,7 +165,7 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
                 throw new AudioDeviceException("The device is not connected.");
             }
 
-            var output = new FakeOutput(device.Id, device.DefaultSampleRate);
+            var output = new FakeOutput(device.Id, device.DefaultSampleRate) { QueuedFrames = request.QueuedFrames };
             Opened.Add(output);
             return output;
         }
@@ -183,7 +183,9 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         public int Channels => 2;
 
-        public int QueuedFrames => 0;
+        public int QueuedFrames { get; set; }
+
+        public void SetQueuedFrames(int frames) => QueuedFrames = frames;
 
         public string? RenderThreadPolicy => null;
 

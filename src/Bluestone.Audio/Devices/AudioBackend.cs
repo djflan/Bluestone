@@ -11,6 +11,13 @@ public interface IAudioOutput : IDisposable
     /// <summary>Frames rendered ahead (buffered mode), or 0 in direct mode.</summary>
     int QueuedFrames { get; }
 
+    /// <summary>
+    /// Changes how far ahead a buffered stream renders, while it runs (ADR 0035): a smaller queue drains, a larger one
+    /// fills, and the audio stays continuous because the device plays every frame either way. At least one frame, at
+    /// most what the stream was opened with; ignored in direct mode.
+    /// </summary>
+    void SetQueuedFrames(int frames);
+
     /// <summary>How the render-ahead thread is scheduled, in words; null in direct mode or before it runs.</summary>
     string? RenderThreadPolicy { get; }
 

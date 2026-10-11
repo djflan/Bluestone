@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Bluestone.Application.Live;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Sequencing;
@@ -8,12 +9,6 @@ using Bluestone.Midi.Wire;
 using Bluestone.Playback;
 
 namespace Bluestone.Application.Recording;
-
-/// <summary>Where played notes are echoed while a track is selected or armed.</summary>
-/// <param name="Output">The track's open output.</param>
-/// <param name="Channel">The route's channel override, if any.</param>
-/// <param name="Transpose">The route's transposition, applied as playback would.</param>
-public sealed record ThruTarget(IMidiOutput Output, MidiChannel? Channel, int Transpose);
 
 /// <summary>A note in a take, for drawing it while recording. <see cref="IsHeld"/> notes are still sounding.</summary>
 public readonly record struct RecordingNote(long Start, long End, NoteNumber Note, Velocity Velocity, bool IsHeld);
@@ -26,24 +21,26 @@ public sealed record RecordedTake(TrackId Track, ImmutableArray<TrackEvent> Even
 }
 
 /// <summary>
-/// Receives MIDI input, echoes it to the selected track's output (MIDI thru), and captures it into a
-/// take while recording. Messages are timestamped by the adapter and placed on the timeline with
-/// <see cref="PlaybackEngine.TryGetTickAt"/>, so input latency in the UI never moves notes.
+/// Receives MIDI input, plays it on the selected track's live route (MIDI thru, through the route's devices;
+/// ADR 0035), and captures it into a take while recording. Messages are timestamped by the adapter and placed on the
+/// timeline with <see cref="PlaybackEngine.TryGetTickAt"/>, so input latency in the UI never moves notes. A take holds
+/// what was played (before any device), never what the devices made of it: the devices run again at playback.
 /// </summary>
 /// <remarks>
-/// Input handlers run on adapter threads. They only enqueue thru messages for the playback thread
-/// and append to the take under a short lock; pairing notes into events happens when recording stops.
-/// System messages (SysEx, clock, active sensing) are neither echoed nor recorded.
+/// Input handlers run on adapter threads. They hand thru messages to <see cref="LiveInput"/> and append to the take
+/// under a short lock; pairing notes into events happens when recording stops. System messages (SysEx, clock, active
+/// sensing) are neither echoed nor recorded.
 /// </remarks>
 public sealed class MidiRecorder : IDisposable
 {
     private readonly PlaybackEngine _engine;
+    private readonly LiveInput _live;
     private readonly Lock _gate = new();
     private readonly List<Captured> _captured = [];
-    private readonly Dictionary<(int Input, byte Channel, byte Note), (IMidiOutput Output, ChannelMessage Off)> _thruHeld = [];
+    private readonly Dictionary<(int Input, byte Channel, byte Note), TrackId> _thruHeld = [];
     private readonly HashSet<(int Input, byte Channel, byte Note)> _held = [];
     private readonly List<OpenInput> _inputs = [];
-    private ThruTarget? _thru;
+    private TrackId? _thru;
     private TrackId _track;
     private long _start;
     private volatile bool _recording;
@@ -53,7 +50,11 @@ public sealed class MidiRecorder : IDisposable
     // Opened inputs are numbered from 1; the on-screen keyboard is input 0.
     private const int OnScreenKey = 0;
 
-    public MidiRecorder(PlaybackEngine engine) => _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+    public MidiRecorder(PlaybackEngine engine, LiveInput live)
+    {
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _live = live ?? throw new ArgumentNullException(nameof(live));
+    }
 
     public bool IsRecording => _recording;
 
@@ -141,8 +142,14 @@ public sealed class MidiRecorder : IDisposable
         return problems.ToImmutable();
     }
 
-    /// <summary>Sets where input is echoed, or <see langword="null"/> to stop echoing. Held notes still release where they started.</summary>
-    public void SetThru(ThruTarget? target) => Volatile.Write(ref _thru, target);
+    /// <summary>Sets the track whose live route input plays on, or <see langword="null"/> to stop echoing. Held notes still release where they started.</summary>
+    public void SetThru(TrackId? track)
+    {
+        lock (_gate)
+        {
+            _thru = track;
+        }
+    }
 
     /// <summary>Starts a take on <paramref name="track"/>. Input from now on is captured until <see cref="Stop"/>.</summary>
     public void Start(TrackId track, Tick from)
@@ -241,7 +248,7 @@ public sealed class MidiRecorder : IDisposable
     private bool Receive(int inputKey, EndpointDescriptor? source, ChannelMessage message, TimeSpan timestamp)
     {
         TrackHeld(inputKey, message);
-        var echoed = Echo(inputKey, source, message);
+        var echoed = Echo(inputKey, source, message, timestamp);
         if (_recording && _engine.TryGetTickAt(timestamp, out var tick))
         {
             lock (_gate)
@@ -277,72 +284,50 @@ public sealed class MidiRecorder : IDisposable
         }
     }
 
-    private bool Echo(int inputKey, EndpointDescriptor? source, ChannelMessage message)
+    private bool Echo(int inputKey, EndpointDescriptor? source, ChannelMessage message, TimeSpan timestamp)
     {
         var key = (inputKey, message.Channel.Index, message.Data1);
+        TrackId? track;
         if (message.IsNoteOff)
         {
-            // A release goes wherever its note went, even if the thru target changed in between.
-            (IMidiOutput Output, ChannelMessage Off) held;
-            bool found;
+            // A release goes wherever its note went, even if the thru track changed in between.
             lock (_gate)
             {
-                found = _thruHeld.Remove(key, out held);
+                track = _thruHeld.Remove(key, out var held) ? held : null;
             }
 
-            if (found)
-            {
-                _engine.SendNow(held.Output, held.Off);
-            }
-
-            return found;
+            return track is { } releasing && _live.Post(releasing, message, timestamp);
         }
 
-        if (Volatile.Read(ref _thru) is not { } target || (source is not null && IsFeedback(source, target.Output.Endpoint)))
+        lock (_gate)
+        {
+            track = _thru;
+        }
+
+        if (track is not { } thru || !_live.Post(thru, message, timestamp, source))
         {
             return false;
         }
 
-        var echoed = target.Channel is { } channel ? message.WithChannel(channel) : message;
-        if (target.Transpose != 0 && message.Kind is ChannelMessageKind.NoteOn or ChannelMessageKind.PolyPressure)
+        if (message.IsNoteOn)
         {
-            if (!message.Note.TryTranspose(target.Transpose, out var note))
-            {
-                return false;
-            }
-
-            ChannelMessage.TryCreate(echoed.Status, note.Value, echoed.Data2, out echoed);
-        }
-
-        if (echoed.IsNoteOn)
-        {
-            var off = ChannelMessage.NoteOff(echoed.Channel, echoed.Note, Velocity.DefaultRelease);
             lock (_gate)
             {
-                _thruHeld[key] = (target.Output, off);
+                _thruHeld[key] = thru;
             }
         }
 
-        _engine.SendNow(target.Output, echoed);
         return true;
     }
-
-    /// <summary>
-    /// True when echoing would send input straight back to where it came from, such as an IAC bus used
-    /// both ways, which would loop forever.
-    /// </summary>
-    private static bool IsFeedback(EndpointDescriptor input, EndpointDescriptor output) =>
-        input.Id.Provider == output.Id.Provider && string.Equals(input.DisplayName, output.DisplayName, StringComparison.Ordinal);
 
     /// <summary>Forgets what a closed input was holding, releasing its notes where they were echoed.</summary>
     private void ReleaseInput(int inputKey)
     {
-        List<(IMidiOutput Output, ChannelMessage Off)> released;
+        List<((int Input, byte Channel, byte Note) Key, TrackId Track)> released;
         lock (_gate)
         {
-            var keys = _thruHeld.Keys.Where(k => k.Input == inputKey).ToList();
-            released = [.. keys.Select(k => _thruHeld[k])];
-            foreach (var k in keys)
+            released = [.. _thruHeld.Where(h => h.Key.Input == inputKey).Select(h => (h.Key, h.Value))];
+            foreach (var (k, _) in released)
             {
                 _thruHeld.Remove(k);
             }
@@ -350,9 +335,9 @@ public sealed class MidiRecorder : IDisposable
             _held.RemoveWhere(k => k.Input == inputKey);
         }
 
-        foreach (var (output, off) in released)
+        foreach (var (k, track) in released)
         {
-            _engine.SendNow(output, off);
+            _live.Post(track, ChannelMessage.NoteOff(MidiChannel.FromIndex(k.Channel), new NoteNumber(k.Note), Velocity.DefaultRelease), TimeSpan.Zero);
         }
     }
 

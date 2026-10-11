@@ -122,6 +122,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (_plugins is not null)
         {
             _playback.UseDevices(_plugins.Extend(DeviceCatalog.BuiltIn));
+            _playback.Live.UsePlugins(_plugins.InstanceOf);
             // A plugin MIDI effect that stops or comes back changes what goes into the plan, so recompile it too.
             _plugins.StatusChanged += (_, device) => _dispatcher.Post(() =>
             {
