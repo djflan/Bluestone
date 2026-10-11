@@ -455,8 +455,9 @@ public sealed class ProjectAudioGraph : IDisposable
                 return null;
             }
 
-            // Only the gain or fades changed: the node keeps its streams. Anything else (or a node the engine closed
-            // while the track was silent) opens the clips again.
+            // Only the gain or fades changed: the node keeps its streams. Anything else (or a node closed elsewhere)
+            // opens the clips again. The engine never closes a node that leaves its graph, so a node kept for a muted
+            // track is still open when the track plays again.
             var entry = owner._clips.GetValueOrDefault(track.Id);
             if (entry is not null && !entry.Node.IsClosed && entry.Regions.Length == regions.Length && entry.Regions.Zip(regions).All(p => p.First.SameStream(p.Second)))
             {

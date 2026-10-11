@@ -127,8 +127,8 @@ public sealed class ClipPlayerNode : AudioNode, IStreamedSource, IDisposable
     }
 
     /// <summary>
-    /// Closes the files. Any thread, any number of times: the engine's disk thread closes a node that leaves its graph,
-    /// and whoever built the node closes it when it is replaced or no longer wanted.
+    /// Closes the files. Any thread, any number of times: whoever built the node closes it when it is replaced or no
+    /// longer wanted, and a disposed engine closes the nodes of its last graph.
     /// </summary>
     public void Dispose() => ((IStreamedSource)this).Close();
 

@@ -222,8 +222,10 @@ not force collections, so this is a bound, not the expected case.
 
 The project graph owns the clip nodes it opens. A node it replaces (a clip moved or trimmed) is closed at the next
 build, when the graph that replaced it is the one playing; disposing the project graph (when audio stops) closes
-the rest. Closing is idempotent and serialized with disk reads, so the engine's disk thread closing the same node
-is harmless, and a node the disk thread closed while its track was silent is opened again when the track plays. A
+the rest. It is the only owner: the engine's disk thread stops reading a node that leaves the graph but does not
+close it (a pass acting on an older graph once closed a node a newer build had just reused, leaving the track silent
+after its preload); a disposed engine closes the nodes of its last graph. Closing is idempotent and serialized with
+disk reads. A node kept for a muted track stays open, so the track plays again at once. A
 file that fails while streaming (deleted, or its disk gone) plays as silence and is counted; it no longer stops
 the disk thread.
 
