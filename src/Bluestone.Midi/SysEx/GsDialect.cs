@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using Bluestone.Domain.Midi;
 using System.Globalization;
+using Bluestone.Domain.Midi;
 
 namespace Bluestone.Midi.SysEx;
 
