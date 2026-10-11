@@ -77,8 +77,8 @@ public sealed class HardwareAutomationTests
     private static string Hex(byte status, byte data1, byte data2, int length) =>
         length == 2 ? $"{status:X2}{data1:X2}" : $"{status:X2}{data1:X2}{data2:X2}";
 
-    private static string Chased(ChaseMessage m, PlaybackPlan plan) =>
-        m.PayloadIndex >= 0 ? Convert.ToHexString(plan.Payloads[m.PayloadIndex].Span) : Hex(m.Message.Status, m.Message.Data1, m.Message.Data2, m.Message.Length);
+    private static string Chased(ChaseMessage m) =>
+        m.Payload is { } payload ? Convert.ToHexString(payload.Span) : Hex(m.Message.Status, m.Message.Data1, m.Message.Data2, m.Message.Length);
 
     [Fact]
     public void Values_SendOnlyChanges()
@@ -216,8 +216,8 @@ public sealed class HardwareAutomationTests
         var project = Build(synth, [Note(2000)], Lane(synth, "cutoff", (0, 0.25), (960, 0.75)), Lane(synth, "part-volume", (0, 1.0)), Lane(synth, "volume", (0, 1.0)));
         var plan = Compile(project);
 
-        var early = ChaseState.Compute(plan, 500).Select(m => Chased(m, plan)).ToList();
-        var late = ChaseState.Compute(plan, 1500).Select(m => Chased(m, plan)).ToList();
+        var early = ChaseState.Compute(plan, 500).Select(Chased).ToList();
+        var late = ChaseState.Compute(plan, 1500).Select(Chased).ToList();
 
         // The controller mapping is chased as a controller, once; the NRPN and SysEx parameters whole, after it.
         Assert.Equal(["B2077F", "B26301", "B26220", "B20620", "B2657F", "B2647F", "F043104C08020B7FF7"], early);
@@ -232,7 +232,7 @@ public sealed class HardwareAutomationTests
         var project = Build(synth, [], Lane(synth, "cutoff", (0, 0.25), (1000, 0.75)));
         var plan = Compile(project);
 
-        var wrap = ChaseState.AtWrap(plan, new LoopRegion(new Tick(500), new Tick(1500))).Select(m => Chased(m, plan)).ToList();
+        var wrap = ChaseState.AtWrap(plan, new LoopRegion(new Tick(500), new Tick(1500))).Select(Chased).ToList();
 
         Assert.Equal(["B26301", "B26220", "B20620", "B2657F", "B2647F"], wrap);
         Assert.Empty(ChaseState.AtWrap(plan, new LoopRegion(new Tick(1000), new Tick(1500))));
@@ -251,6 +251,48 @@ public sealed class HardwareAutomationTests
         f.PumpAt(0);
 
         Assert.Equal("F043104C08020B7FF7@0", f.Sent()[0]);
+    }
+
+    [Fact]
+    public async Task Locate_WhileAnotherPlanIsLoaded_SendsOnlyTheChasedPlansMessages()
+    {
+        // A chases its part-volume SysEx; B's only payload is a SysEx far beyond the playhead, so it must never be sent.
+        var synth = Synth();
+        var a = Compile(Build(synth, [Note(0)], Lane(synth, "part-volume", (0, 1.0))));
+        var b = Compile(Build(synth, [Note(0), new SysExEvent(new Tick(100_000), SysExMessage.Create([0xF0, 0x7D, 0x01, 0xF7]))]));
+        using var f = new PlaybackFixture();
+        f.Engine.Load(a);
+        f.Engine.Play(new Tick(960));
+        f.PumpAt(0);
+
+        // A Seek computes its chase from the plan loaded when it is called; a Load can reach the playback thread first.
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(300);
+        var loader = Task.Run(() =>
+        {
+            while (DateTime.UtcNow < deadline)
+            {
+                f.Engine.Load(a);
+                f.Engine.Load(b);
+            }
+        }, TestContext.Current.CancellationToken);
+        var seeker = Task.Run(() =>
+        {
+            while (DateTime.UtcNow < deadline)
+            {
+                f.Engine.Seek(new Tick(960));
+            }
+        }, TestContext.Current.CancellationToken);
+        while (!loader.IsCompleted || !seeker.IsCompleted)
+        {
+            f.PumpAt(0);
+        }
+
+        await Task.WhenAll(loader, seeker);
+        f.PumpAt(0);
+
+        var sent = f.Sent();
+        Assert.Contains(sent, m => m.StartsWith("F043104C08020B7FF7", StringComparison.Ordinal));
+        Assert.DoesNotContain(sent, m => m.StartsWith("F07D01F7", StringComparison.Ordinal));
     }
 
     [Fact]

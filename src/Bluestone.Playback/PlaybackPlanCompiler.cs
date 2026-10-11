@@ -177,7 +177,7 @@ public static class PlaybackPlanCompiler
                         case SysExEvent sysEx:
                             payloads.Add(sysEx.Message.Bytes);
                             entries.Add((tick, EventPhase.SystemExclusive, part.Origin, send.Sequence + k, partIndex, new PlanEvent(tick, part.OutputSlot, default, payloads.Count - 1, 0)));
-                            messages.Add(new ChaseMessage(part.OutputSlot, default, payloads.Count - 1));
+                            messages.Add(new ChaseMessage(part.OutputSlot, default, sysEx.Message.Bytes));
                             break;
                         default:
                             throw new ArgumentException("Parameter sends hold only controller-style channel events and SysEx.", nameof(parameters));

@@ -5,9 +5,10 @@ namespace Bluestone.Playback;
 
 /// <summary>
 /// A message to send to <see cref="Slot"/> to bring a device up to date: before playback starts mid-sequence, or at
-/// a loop wrap. A SysEx message (from hardware parameter automation) is a payload of the plan, at <see cref="PayloadIndex"/>.
+/// a loop wrap. A SysEx message (from hardware parameter automation) carries its bytes in <see cref="Payload"/>, so it
+/// stays right when a newer plan is loaded before the chase is sent.
 /// </summary>
-internal readonly record struct ChaseMessage(int Slot, ChannelMessage Message, int PayloadIndex = -1);
+internal readonly record struct ChaseMessage(int Slot, ChannelMessage Message, ByteBlock? Payload = null);
 
 /// <summary>
 /// Computes the controller state in effect at a position so starting playback mid-song sounds as it
