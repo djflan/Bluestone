@@ -1,56 +1,55 @@
 # DAW architecture epic: handoff
 
-Read this before continuing the epic. The original requirements are in `docs/daw-epic-prompt.md` (the source of truth;
+Read this before continuing. The original requirements are in `docs/daw-epic-prompt.md` (the source of truth;
 sections 19, 22, 25, and 26 matter most). The plan and assessment are in `docs/daw-architecture-plan.md`; the result
-is described by `docs/architecture.md`, `docs/plugin-hosting.md`, `docs/project-format.md`, and ADRs 0021 to 0027.
+is described by `docs/architecture.md`, `docs/plugin-hosting.md`, `docs/project-format.md`, and ADRs 0021 to 0035.
 These `daw-epic-*` files can be deleted once the owner accepts the epic.
 
-Branch: `claude/busy-gates-qengpq` (pushed). Do not merge to `main`; do not open a PR unless asked.
+The first epic (branch `claude/busy-gates-qengpq`, PR #8) built the architecture. The second
+(`epic/audio-engine-and-plugins`) delivered everything its section 7 listed as remaining: the audio engine,
+VST3 and CLAP plugins, more headless UI tests, plugin rescanning, group tracks, hardware parameter automation, a mixer
+console, and from the deferred list live input through devices and plugins, plugin delay compensation, and hosting
+modes. Owner decisions for the second epic (2026-10-11) are decisions 27 to 33 below.
 
 ## 1. Status
-
-Every phase of the epic has been implemented and tested to the scope stated in the docs. What is modelled but not
-functional (no audio engine, no third-party plugin formats) is labelled as such everywhere.
 
 | Area | State |
 | ---- | ----- |
 | Domain: roles, devices, chains, instruments, connections, mixer, device automation | Done, tested |
-| `Bluestone.Signal`: chain runner, built-in devices, signal graph | Done, tested; a passthrough chain allocates 0 bytes after warm-up |
-| Routing replacement (`TrackRoute`, `RoutingTable`, `ResolvedRoute`, `PlanTrackBinding` removed) | Done; format 3 fixtures send byte-identical MIDI (section 5) |
-| Format 4, 3→4 migration, chain preset files (`bluestone-chain-preset` v1) | Done, tested; roles reconciled on load |
-| Commands (devices, presets, racks, connections, instruments, mixer, roles, groups), refusal of routing errors | Done, tested |
-| UI: Track (role), Devices (strip), Connections (routing inspector), audio clips drawn, plugin status and Restart | Done; view-model tests; **the app was run on macOS** and the sections checked visually |
-| UI: Racks (new, rename, edit in the strip, remove), Mixer (channels: name, gain, pan, mute, solo, output, remove; master gain) | Done; view-model tests; run on macOS: new rack → strip edits it → back; channel added; fader drag then one Undo restored 0 dB |
-| Undo merging: same merge key within 1 s is one undo step (parameter sliders, mixer gain/pan, master gain) | Done; `EditHistory` tests with a manual `TimeProvider`, view-model tests |
-| Plugin hosting (`Bluestone.Plugins.Protocol`, `Bluestone.Plugins`, `Bluestone.PluginWorker`) | Done, merged; real worker processes killed in tests; reference plugins only |
-| Application bridge (`PluginDeviceHost`): devices ↔ worker instances, state into the project, status, restart | Done, tested with real workers; wired into the desktop app |
-| Headless UI tests (`Bluestone.Tests.Ui`): real window, bindings, UI thread, mouse clicks, captured frames | Done; inspector sections, rack editing, mixer fader undo, plugin recompile on worker death and restart |
-| Plugin MIDI effects in the plan (ADR 0028): rendered in their worker at compile time, routed downstream | Done; `PluginMidiInThePlanTests` with real workers (transpose to a port, automation, tap, killed and hung workers) |
+| `Bluestone.Signal`: chain runner, built-in devices, signal graph | Done, tested; built-in devices also have live, allocation-free forms (ADR 0035) |
+| Routing model, format 4, migrations, chain presets, commands, inspector | Done, tested (first epic) |
+| Group tracks: mute/solo reach members, joining routes into the group, folding saved (ADR 0030) | Done, tested; headless UI test |
+| Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; XG map unverified on hardware |
+| Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, mixer with sends, clip gain and fades, meters, device-loss fallback, one transport (ADR 0032) | Done, tested with an offline driver and the real default device; heard on macOS only |
+| Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS |
+| Third-party plugins: VST3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins as VST3 and CLAP; installed plugins tested on macOS |
+| Plugin hosting modes: together, by manufacturer, by plugin (default), individually; per-plugin override; crash blast radius and counts (ADR 0034) | Done, tested with real workers |
+| UI: Plugins view (rescan, quarantine retry, hosting), Mixer console, Audio Settings, editor button, group menu, instrument parameter lanes | Done; view-model and headless UI tests; app launched as a smoke test only (screen locked) |
+| Headless UI tests: Devices, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
 | Acceptance scenarios 1–15 | All have tests: table in `docs/architecture.md` and `docs/plugin-hosting.md` |
-| Docs: ADRs 0021–0028, architecture, project format, MIDI files, plugin hosting, README | Done |
-| Rust | Not introduced: nothing measured needs it yet (ADR 0026 sets the bar) |
-| CI on Ubuntu, macOS, Windows | Green on this branch at 84564bb (run 38094496608, dispatched; no PR) |
+| Rust | Two cdylib crates (`bluestone_audio`, `bluestone_plugin_host`) plus test plugins, each with a measured or native-ABI reason (ADRs 0032, 0033) |
+| Code review | Three review passes over the second epic; 13 confirmed findings fixed with regression tests |
 
-**Last full run (macOS arm64, SDK 10.0.300):** build 0 warnings, 0 errors; `dotnet format --verify-no-changes` exit 0;
-`dotnet test src/Bluestone.slnx`: 1137 total, 1124 passed, 12 skipped (other platforms' adapters), 1 failed: the
-intermittent `CoreMidiProviderTests.Playback_ThroughBluestoneVirtualPort_ArrivesInOrder`, which also fails on the
-untouched base (section 2). Plugin integration tests: 8 consecutive passes of 27, no workers left behind; the bridge
-and strip tests (5) pass.
+**Last full run:** see the PR for this epic for the final numbers (macOS arm64, SDK 10.0.300, and CI on Ubuntu,
+macOS, Windows).
 
 ## 2. Build environment
 
-Use the README commands on a machine with SDK 10.0.300 (`global.json`). One test project:
+Use the README commands on a machine with SDK 10.0.300 (`global.json`) and a Rust toolchain (`cargo`; the hosted
+CI runners have one). `dotnet build` builds the Rust crates through `src/Native.targets` (`cargo build --locked`;
+after changing Rust dependencies run `cargo build` in `native/` once). Linux needs `libasound2-dev`. One test project:
 `dotnet test --project src/Bluestone.Tests.Unit/Bluestone.Tests.Unit.csproj -- --filter-namespace "Bluestone.Tests.Unit.Signal"`.
+Rust: `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` in `native/`.
 
-- `CoreMidiProviderTests.Playback_ThroughBluestoneVirtualPort_ArrivesInOrder` fails intermittently on macOS (real
-  CoreMIDI timing; it failed before any change). Two other CoreMIDI tests timed out occasionally under full-suite load
-  during the plugin work. Not a regression; do not chase it as part of the epic.
+- `CoreMidiProviderTests` fail intermittently on macOS under load (real CoreMIDI timing; up to three of them in a
+  full run while other builds run; they pass alone). CI leaves them out. Not a regression.
 - Plugin tests that make a worker call `Environment.FailFast` leave macOS crash reports in
-  `~/Library/Logs/DiagnosticReports` (33 after this session). Harmless; delete them if they bother you.
-- CI (`.github/workflows/ci.yml`) runs only on `main` and pull requests, so **nothing has been built on Windows or
-  Linux** in this epic.
-- To look at the UI: `./src/Bluestone.Desktop/bin/Debug/net10.0/Bluestone.Desktop path/to/project.bluestone` (the app opens a
-  project or MIDI file named on the command line).
+  `~/Library/Logs/DiagnosticReports`. Harmless.
+- Tests with installed third-party plugins (`InstalledPluginTests`, `PluginEditorTests`) and the real audio device
+  (`AudioDeviceTests`) skip with a reason where those are absent (CI).
+- The app cannot start while the Mac's display is asleep (Avalonia: "RenderTimer -6661"). `caffeinate -u -t 60 &`
+  wakes it; with the screen locked, screenshots show only the lock screen.
+- To look at the UI: `./src/Bluestone.Desktop/bin/Debug/net10.0/Bluestone.Desktop path/to/project.bluestone`.
 
 ## 3. Analyzer traps already hit (warnings are errors)
 
@@ -83,7 +82,7 @@ devices, and routing"). Plugin hosting: `docs/plugin-hosting.md`, including the 
 8. **Presets are `DevicePreset` templates without ids**, so loading always creates new identities; presets exclude connections (no hardware references).
 9. Old `TrackRoute.Transpose` migrates to a **Transpose device** in the track's chain; `Voice` moves onto the connection; `Channel` becomes `ChannelMapping.Force`; one `ExternalInstrument` per distinct (endpoint, profile) pair, including an "Unassigned" one for routes that have settings but no endpoint (the old code kept those).
 10. `TrackRendering.Render(track, ppqn, channelOverride)`: the override is the **unique Force channel** of the track's outgoing event connections, else none. This preserves the old "two lanes collide after the channel override" behaviour.
-11. **Mute and solo apply to a track's own content** (the old rule: solo overrides mute). Events routed *into* a muted track from a playing one still pass through its chain. Revisit only if the UI needs "mute silences the track's output".
+11. **Mute and solo apply to a track's own content** (the old rule: solo overrides mute). Events routed *into* a muted track from a playing one still pass through its chain. Revisit only if the UI needs "mute silences the track's output". Amended for groups by decision 30 (ADR 0030).
 12. **Device automation is not signal**: it is rendered for every track, playing or muted, applied to built-in processors at its ticks, and returned as `ParameterFeed`s for every other device. A lane whose device is missing is reported (`AutomationTargetMissing`) and kept.
 13. **At compile time, a plugin MIDI effect runs in its own worker (ADR 0028)**: a `RenderEvents` request runs a fresh copy from the project's stored state and parameters over the timeline (sample frames on the tempo map), and its output joins the chain. If its worker is gone, hung, or failing, or the request is over the protocol's limits, its events pass through unchanged with a diagnostic. An unknown device always passes events through, with a diagnostic. An instrument without an in-process processor takes its `Handles` classes out of the chain (this matches `SignalPresence.Through`); SysEx and other unhandled classes go on to the track's connections.
 14. **The evaluator never fails on bad routing.** It leaves out every connection named in a validator error, reports it (`InvalidConnection`), and as a backstop drops any connection that still closes a loop during topological ordering (`Feedback`). Audio connections are validated and reported but not followed (no audio engine).
@@ -118,6 +117,21 @@ devices, and routing"). Plugin hosting: `docs/plugin-hosting.md`, including the 
     round once more. (It used to re-post itself, which spins the UI queue, and overflows the stack with an inline
     test dispatcher.) `PlaybackController` evaluates the graph on the thread pool only when a device will be rendered
     out of process, so refreshes without plugin MIDI effects keep their old synchronous behaviour.
+27. **Second-epic scope (owner, 2026-10-11).** All of the first epic's section 7.1 to 7.4, plus from 7.5 live input
+    through plugins and built-in devices, plugin delay compensation, and hosting modes. MIDI 2.0/UMP, MPE, the visual
+    node graph, and feedback routing stay out of scope.
+28. **VST3 first, then CLAP**, tested with the owner's installed plugins and open-source CLAP plugins installed
+    locally (never vendored). The native host is Rust and loads only in the worker (ADR 0033).
+29. **Audio output is Rust (cpal); the render graph is C#.** The callback was built in C# first and measured: .NET GC
+    pauses missed deadlines, so only the device callback moved to Rust, copying from a ring a .NET thread fills ahead
+    (ADR 0032). Live input shrinks the ring (ADR 0035).
+30. **A group's mute and solo reach its members** (amends decision 11 for groups; ADR 0030).
+31. **"Sandboxing" means crash isolation with hosting modes** (Bitwig-style), not operating-system containment;
+    plugins keep network and file access (ADR 0034).
+32. **Hardware parameters are automation targets** through profile parameter maps; still no "external instrument
+    device kind" (decision 4; ADR 0031).
+33. **New project data is additive optional fields in format 4** (group folding, parked connections, instrument
+    automation targets, sends, clip gain and fades): no version bump, files without them are unchanged.
 
 ## 5. Regression net (hold the refactor to these)
 
@@ -134,77 +148,30 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 
 ## 6. Not verified
 
-- Real MIDI hardware and the platform MIDI services on Windows and Linux beyond what CI exercises. CI was run on this
-  branch (workflow_dispatch, run 38094496608, commit 84564bb): Ubuntu, macOS, and Windows all built and passed,
-  1132 tests each with 0 failures (CI leaves out the CoreMIDI tests). ALSA tests skip on the hosted runner, so the
-  ALSA adapter is still checked only where an ALSA sequencer exists.
-- Real-time behaviour of out-of-process audio under a real audio device (there is no audio engine); plugin latency
-  and deadline handling are tested only with the reference plugins and a test clock.
-- Any third-party plugin: no VST3 or other format is loaded; claims are limited to the reference plugins.
-- The UI was run and inspected on macOS with a hand-made format 4 project (role, chain with a tap and a missing plugin,
-  audio clip), and the Racks and Mixer sections with `format3-routing-full.bluestone` (synthetic clicks and drags; an
-  autosave restore brought the new rack back). Clicking through every workflow was not done by hand; view-model tests
-  cover the workflows. `Bluestone.Tests.Ui` covers the Devices, Racks, and Mixer sections on the headless platform
-  (frames are saved to `bin/.../frames/` for looking at); other sections have no headless tests yet.
-- Plugin MIDI rendering is tested with the reference Transpose plugin only (real workers), at the routing level and
-  through the app on the headless UI thread (worker killed, then restarted).
+- Real MIDI hardware, and the XG parameter map against a real XG instrument.
+- Audio output heard on Windows and Linux (CI has no audio devices); unplugging a real device (device loss is tested
+  with a test backend).
+- Plugin editors on Windows and Linux (they build, and CI runs the rest of the plugin path there); closing or
+  resizing an editor by hand.
+- A third-party MIDI effect plugin (none installed: Scaler 3 and Melody Sauce 3 report as instruments); third-party
+  plugins live and delay-compensated through the audio engine on a real device (reference and test plugins only).
+- The acoustic round trip of live input (no loopback recording); measured numbers include the device's reported
+  output latency.
+- The app was launched as a smoke test, but no view was looked at by eye in the second epic (the screen was locked);
+  headless UI tests cover the workflows and save frames.
 
 ## 7. Remaining work
 
-Nothing here blocks the epic: the prompt lets each item be deferred, and the boundaries for each exist. Suggested
-order: the quick wins (7.3, and 7.4's rescan and group UI), then a measured spike on the audio engine (7.1), then
-third-party plugins (7.2), which need the engine to drive them.
+Nothing here blocks the epic. Suggested order:
 
-### 7.1 Audio engine (largest; turns the model into a working DAW)
-
-- **In place:** audio clips, audio connections, and mixer channels are modelled, saved, validated, and editable. The
-  signal graph produces `SoftwareInstrumentFeed`s (merged events per software instrument) and `ParameterFeed`s
-  (automation for out-of-process devices). The plugin data plane has a shared-memory block exchange, pipelining
-  with reported latency, and silence or dry input when a worker fails.
-- **Missing:** audio device output per OS (CoreAudio, WASAPI, ALSA/PipeWire); a real-time callback that runs the
-  audio graph per block; audio clip playback (file decoding, sample-rate conversion, streaming from disk); mixer
-  summing with gain, pan, mute, and solo; driving instrument and effect plugins through `PluginInstance.ProcessBlock`
-  during playback; one clock shared with the MIDI engine.
-- **How:** measure first (ADR 0026). Build the callback in C#, allocation-free, and measure deadline misses and GC
-  pauses under load; move only the callback path to Rust if that fails. Order: device output with a test tone →
-  mixer → audio clip playback → instrument plugins driven live. Several PRs.
-
-### 7.2 Third-party plugins
-
-- **In place:** worker processes, crash recovery, scanning with quarantine, opaque state in the project, and the
-  `IHostedPlugin` seam in the worker.
-- **Missing:** a native hosting layer that loads plugin binaries; parameter enumeration mapped to `DeviceParameter`s;
-  state through the format's API; bus layouts and processing with event lists; editor windows per OS (including a
-  worker dying with its editor open).
-- **Decide:** the first format. CLAP has a plain C ABI and is simpler to host; VST3 has the broadest library (check
-  the SDK's current licence). The native layer is where ADR 0026 expects Rust. Claim no format until loading,
-  processing, state, and recovery are shown with a real plugin.
-
-### 7.3 More headless UI tests
-
-`Bluestone.Tests.Ui` covers Devices, Racks, and Mixer. Add Track, Routing, Connections, the arrangement (clip drag,
-resize, rename), the piano roll (draw, select, move notes), and keyboard shortcuts. `Avalonia.Headless.XUnit` 12.1
-targets xUnit v3 3.x while the repository uses 4.x, so the tests use `HeadlessUnitTestSession` directly
-(`HeadlessApp.RunAsync`). Cheap; also what a cloud or Linux agent needs to check UI work.
-
-### 7.4 Smaller items
-
-- **Rescanning plugins from the UI.** The app scans `<AppData>/Bluestone/plugins` once at start;
-  `PluginScanner.RescanAsync` and clearing quarantine are API only. Add a menu or settings view and a list of
-  quarantined modules with "retry". Small.
-- **Device automation → CC/RPN/NRPN/SysEx for hardware.** Today a hardware parameter reachable only that way is
-  automated with a MIDI lane. Translating device parameters needs a parameter map in device profiles ("cutoff →
-  NRPN 1/32", SysEx templates), emitted at plan compile. Changes what playback sends, so section 5's hashes must
-  still hold for existing projects. Medium.
-- **Group track processing.** Membership, the Group role, and commands exist; group processing already works by
-  connecting members into the group track. Missing: UI to put tracks in a group, folding in the arrangement,
-  routing members to their group automatically, and whether group mute/solo affects members (decision 11 says mute
-  applies to a track's own content, so this is a deliberate change).
-- **Dedicated mixer view.** The inspector's Mixer section is a list. A console (strips, sends, meters) follows the
-  audio engine, since meters need it.
-
-### 7.5 Also deferred (`docs/architecture.md`, "Deferred" and "Known compromises")
-
-MIDI 2.0/UMP and MPE (16-bit velocity is already designed); live input through plugins and through built-in devices
-other than Transpose (plugins shape playback only through the compiled plan); plugin delay compensation across the
-graph; operating-system sandboxing of workers; visual node-graph editing and feedback routing.
+1. **Repository layout (owner request, after this epic, as its own PR):** move everything under `src/` to
+   `src/dotnet/` and `native/` to `src/native/`. `Native.targets`' `../native/` path then still resolves; update the
+   solution path in CI and docs, CI's `working-directory: native`, `.gitignore`, Dependabot (add a Cargo entry), and
+   check tests that find the repository root by walking up folders.
+2. **Audio engine, remaining:** audio input and recording, compressed formats (FLAC, MP3, Ogg), send and fader
+   automation, real-time-priority verification on Windows and Linux.
+3. **Plugins, remaining:** editors verified on Windows and Linux, embedded (not floating) editors, second-architecture
+   workers (Rosetta), SysEx to native plugins, note expressions, a protocol message for a worker-side idle-handler
+   failure (today it is logged to stderr and that instance's notifications stop).
+4. **Groups:** drag and drop into a group; a folded group's lane summarizing its members' clips.
+5. **Deferred by design:** MIDI 2.0/UMP, MPE, visual node-graph editing, feedback routing.
