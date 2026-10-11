@@ -41,6 +41,9 @@ public enum RoutingIssueCode
 
     /// <summary>A lane's parameter is not one its device defines. The lane is kept.</summary>
     AutomationParameterUnknown,
+
+    /// <summary>A lane's external instrument, or its port, is not in the project. The lane is kept.</summary>
+    AutomationInstrumentMissing,
 }
 
 /// <summary>One finding about a project's routing, in words a musician can read.</summary>
@@ -305,7 +308,7 @@ public static class SignalRoutingValidator
     {
         foreach (var track in project.Sequence.Tracks)
         {
-            foreach (var lane in track.Automation.Where(l => !l.Target.IsMidi))
+            foreach (var lane in track.Automation.Where(l => l.Target.IsDevice))
             {
                 if (project.FindDevice(lane.Target.Device) is not { } found)
                 {
@@ -314,6 +317,18 @@ public static class SignalRoutingValidator
                 else if (definitions(found.Device.Definition.Id) is { } definition && definition.FindParameter(lane.Target.DeviceParameter) is null)
                 {
                     issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationParameterUnknown, $"An automation lane on {track.Name} targets parameter {lane.Target.DeviceParameter} of {found.Device.DisplayName}, which it does not define. The lane is kept."));
+                }
+            }
+
+            foreach (var lane in track.Automation.Where(l => l.Target.IsInstrument))
+            {
+                if (project.FindInstrument(lane.Target.Instrument) is not { } instrument)
+                {
+                    issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationInstrumentMissing, $"An automation lane on {track.Name} targets an external instrument that is not in the project. The lane is kept."));
+                }
+                else if (instrument.FindPort(lane.Target.Port) is null)
+                {
+                    issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationInstrumentMissing, $"An automation lane on {track.Name} targets port {lane.Target.Port} of {instrument.Name}, which it does not have. The lane is kept."));
                 }
             }
         }
