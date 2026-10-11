@@ -10,7 +10,7 @@ using static Bluestone.Tests.Unit.Signal.SignalFixture;
 
 namespace Bluestone.Tests.Unit.Signal;
 
-/// <summary>Acceptance scenarios 2, 3, 4, 6, and 10 (prompt section 19) through the signal graph, plus its routing rules.</summary>
+/// <summary>Acceptance scenarios 2, 3, 4, 6, and 10 (docs/architecture.md) through the signal graph, plus its routing rules.</summary>
 public sealed class SignalGraphTests
 {
     private static readonly MidiChannel Two = MidiChannel.FromNumber(2);

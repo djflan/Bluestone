@@ -15,7 +15,7 @@ namespace Bluestone.Benchmarks;
 /// node and strip still renders.
 /// </summary>
 /// <remarks>
-/// Run: <c>dotnet run -c Release --project src/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|churn|full]
+/// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|churn|full]
 /// [--sustained] [--buffers 64,128,256] [--strips 32]</c>. GC configuration comes from the environment
 /// (DOTNET_gcServer, DOTNET_gcConcurrent, DOTNET_GCgen0size, DOTNET_TieredPGO), printed at the start.
 /// </remarks>

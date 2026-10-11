@@ -1,6 +1,6 @@
 # 0028. Plugin MIDI effects run in their worker when the plan is compiled
 
-- Status: Accepted; amends 0022 and 0025
+- Status: Accepted; amends 0022 and 0025; amended by 0035 (live input)
 - Date: 2026-10-10
 
 ## Context

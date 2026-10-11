@@ -8,6 +8,7 @@
 
 - [ ] `dotnet build src/dotnet/Bluestone.slnx` and `dotnet test src/dotnet/Bluestone.slnx` pass
 - [ ] `dotnet format src/dotnet/Bluestone.slnx --verify-no-changes` passes
-- [ ] Tests do not require specific hardware
+- [ ] If Rust code changed: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` pass in `src/native/`
+- [ ] Tests do not require specific hardware, an audio device, or installed plugins (they skip with a reason)
 - [ ] Documentation and ADRs are updated where needed
-- [ ] Contributed data (profiles, samples) is redistributable and has provenance
+- [ ] Contributed data (profiles, samples) is redistributable and has provenance; no third-party plugins are committed

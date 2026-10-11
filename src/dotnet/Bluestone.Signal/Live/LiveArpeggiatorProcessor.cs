@@ -7,7 +7,7 @@ namespace Bluestone.Signal.Live;
 
 /// <summary>
 /// The live form of <see cref="BuiltInDevices.Arpeggiator"/>, with the same rules as <see cref="ArpeggiatorProcessor"/>
-/// (decision 16 in the epic handoff): a phrase starts at the first note played while nothing is held, steps follow
+/// (decision 16 in docs/roadmap.md): a phrase starts at the first note played while nothing is held, steps follow
 /// every step length while anything is held, a note after a gap restarts the phrase at its own tick, held pitches
 /// are played lowest first, each once. Steps fall on the live clock, which advances at the transport's tempo, so the
 /// arpeggio follows tempo whether the transport plays or not. Generated notes end after the gate; a release frees

@@ -1,6 +1,6 @@
 # 0032. Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport
 
-- Status: Accepted
+- Status: Accepted; amended by 0035 (latency)
 - Date: 2026-10-11
 
 ## Context

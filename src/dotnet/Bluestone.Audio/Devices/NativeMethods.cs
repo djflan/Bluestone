@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Bluestone.Audio.Devices;
 
 /// <summary>
-/// The C ABI of the <c>bluestone_audio</c> Rust crate (native/crates/bluestone_audio). Layouts here must match its
+/// The C ABI of the <c>bluestone_audio</c> Rust crate (src/native/crates/bluestone_audio). Layouts here must match its
 /// <c>#[repr(C)]</c> structs; <see cref="AbiVersion"/> is checked before the first call.
 /// </summary>
 internal static unsafe partial class NativeMethods

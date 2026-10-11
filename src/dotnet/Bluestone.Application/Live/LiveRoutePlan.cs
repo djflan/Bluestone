@@ -33,8 +33,8 @@ public sealed record LiveRouteStage(DeviceInstance? Device, MidiChannel? Channel
 
 /// <summary>
 /// What live input on a track passes through and where it ends (ADR 0035): breadth-first from the track along event
-/// connections, the nearest playable instrument wins (decision 21 of the epic). On the way, every device that is not
-/// bypassed and consumes events is a stage, in chain order (built-in devices and plugin MIDI effects alike), and
+/// connections, the nearest playable instrument wins (decision 21 in docs/roadmap.md). On the way, every device that
+/// is not bypassed and consumes events is a stage, in chain order (built-in devices and plugin MIDI effects alike), and
 /// every connection's forced channel is a stage where the connection is. A plugin instrument in a chain ends the route
 /// there (it takes the notes, as at plan time); otherwise the first usable external instrument port does.
 /// </summary>

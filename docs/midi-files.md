@@ -57,12 +57,21 @@ Bluestone's canonical order (ADR 0003), so a release always precedes a retrigger
 Text is written as UTF-8.
 
 Each file track holds what its sequence track plays: the events its clips show (notes cut at clip
-ends, trimmed content left out) and its automation lanes, rendered as controller, pitch bend, and
-pressure events (ADR 0020). Clip events a lane replaces are left out (SMF203). Lanes that automate a
-device parameter have no MIDI form and are not written; export reports them (SMF204, ADR 0024). Export
-does not follow the routing model (device chains, connections), so it compares lanes and clip events on
-their own channels; when a connection forces a channel, playback can replace more. A MIDI file has no clips or lanes, so importing an exported file brings
-automation back as clip events.
+ends, trimmed content left out) and its automation lanes:
+
+- MIDI lanes are rendered as controller, pitch bend, and pressure events (ADR 0020). Clip events a lane
+  replaces are left out (SMF203).
+- Lanes that automate an external instrument's parameter are written as the MIDI the instrument's
+  profile maps them to (CC, RPN, NRPN, or SysEx), thinned exactly as playback sends them, after the
+  track's own events at the same tick and phase (ADR 0031). A MIDI file has no ports, so they go on the
+  part's channel. A lane whose instrument, port, profile, or parameter is missing, or whose parameter an
+  earlier lane already controls, is not written; export reports it (SMF204).
+- Lanes that automate a device parameter have no MIDI form and are not written; export reports them
+  (SMF204, ADR 0024).
+
+Export does not follow the routing model (device chains, connections), so it compares lanes and clip
+events on their own channels; when a connection forces a channel, playback can replace more. A MIDI file
+has no clips or lanes, so importing an exported file brings automation back as clip events.
 
 ## Diagnostics
 
@@ -98,7 +107,7 @@ with a count.
 | SMF201 | Info | Non-ASCII names were written as UTF-8 |
 | SMF202 | Warning | Same-pitch notes overlap on one channel; their lengths may change when read back |
 | SMF203 | Info | Clip events were left out because the track's automation replaces them |
-| SMF204 | Warning | Device parameter automation cannot be stored in a MIDI file and was left out |
+| SMF204 | Warning | Automation lanes were left out: device parameter lanes (no MIDI form), or instrument parameter lanes that could not be translated to MIDI |
 
 ## Known limitations
 

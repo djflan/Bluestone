@@ -3,7 +3,7 @@ using Bluestone.Plugins.Scanning;
 
 namespace Bluestone.Tests.Integration.Plugins;
 
-/// <summary>Scanning in separate scanner processes (epic scenario 15). The crash is a real <c>Environment.FailFast</c> in the scanner.</summary>
+/// <summary>Scanning in separate scanner processes (acceptance scenario 15 in docs/plugin-hosting.md). The crash is a real <c>Environment.FailFast</c> in the scanner.</summary>
 [Collection(PluginProcessTests.Name)]
 public sealed class PluginScannerProcessTests : IDisposable
 {

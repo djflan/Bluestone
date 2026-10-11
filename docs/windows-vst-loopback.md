@@ -1,8 +1,9 @@
 # Windows: playing into a VST synth through a MIDI loopback
 
-Bluestone sends MIDI; it does not host plugins. To hear a software synth on Windows, run the synth in a
-standalone VST host and connect Bluestone to it with a MIDI loopback port. This page records the setup
-that was verified and how.
+Bluestone hosts VST3 and CLAP plugins built for its own architecture ([plugin-hosting.md](plugin-hosting.md)).
+This page is for synths it cannot host, such as VST 2 or 32-bit plugins: run the synth in a standalone
+host and connect Bluestone to it with a MIDI loopback port, as an external instrument. It records the
+setup that was verified and how.
 
 ## Verified setup (2026-10-04)
 
@@ -37,8 +38,8 @@ Windows, loopMIDI remains a working alternative.
 2. In **MIDI Settings**, create a **MIDI 1.0 loopback** endpoint. Its name does not matter.
 3. Start the VST host (SAVIHost for S-YXG50) and pick the loopback as its MIDI input under
    **Devices → MIDI**. Pick an audio output under **Devices → Wave**.
-4. Start Bluestone **after** the loopback exists (Bluestone does not detect new ports while running yet)
-   and route the tracks to the loopback output.
+4. Start Bluestone **after** the loopback exists (WinMM does not announce new ports, so Bluestone does not
+   see one added while it runs) and route the tracks to the loopback output.
 5. Play. If the song has no XG reset, sending XG System On (`F0 43 10 4C 00 00 7E 00 F7`) first puts
    the synth in a known state.
 

@@ -6,8 +6,9 @@ using static Bluestone.Tests.Integration.Plugins.PluginTestHost;
 namespace Bluestone.Tests.Integration.Plugins;
 
 /// <summary>
-/// Crash isolation and recovery with real worker processes (epic scenarios 11, 12, 13). Crashes are real:
-/// <see cref="Process.Kill()"/> from outside, <c>Environment.FailFast</c> inside, or a heartbeat kill; nothing is mocked.
+/// Crash isolation and recovery with real worker processes (acceptance scenarios 11, 12, 13 in docs/plugin-hosting.md).
+/// Crashes are real: <see cref="Process.Kill()"/> from outside, <c>Environment.FailFast</c> inside, or a heartbeat
+/// kill; nothing is mocked.
 /// </summary>
 [Collection(PluginProcessTests.Name)]
 public sealed class PluginCrashRecoveryTests

@@ -404,7 +404,7 @@
 
             <Expander x:Name="MixerSection" Classes="section" Header="Mixer" IsExpanded="False" DataContext="{Binding Mixer}" x:DataType="vm:MixerViewModel">
               <StackPanel Spacing="6">
-                <TextBlock Text="Mixer channels are audio paths, independent of tracks. They are heard while audio is on (File ▸ Audio Settings). The mixer console (File ▸ Mixer…) also shows sends and meters." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Mixer channels are audio paths, independent of tracks. They are heard while audio is on (Audio Settings… in the File menu, or the Window menu on macOS). The mixer console (Mixer in the same menu) also shows sends and meters." Classes="muted" TextWrapping="Wrap" />
                 <ItemsControl ItemsSource="{Binding Channels}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:MixerChannelRow">

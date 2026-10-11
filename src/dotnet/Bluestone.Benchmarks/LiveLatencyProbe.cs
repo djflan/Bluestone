@@ -16,7 +16,7 @@ namespace Bluestone.Benchmarks;
 /// block at depth 2) on top; the offline tests measure that part exactly.
 /// </summary>
 /// <remarks>
-/// Run: <c>dotnet run -c Release --project src/Bluestone.Benchmarks -- --live [seconds] [--pressure none|app|churn]
+/// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --live [seconds] [--pressure none|app|churn]
 /// [--buffer 128] [--queue 1024] [--live-queue 256]</c>.
 /// </remarks>
 internal static class LiveLatencyProbe

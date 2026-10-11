@@ -54,6 +54,7 @@ internal static class Shortcuts
         ("View", "Piano roll / event list", "P  /  D"),
         ("View", "Zoom in / out", "⌘ =  /  ⌘ −"),
         ("View", "Zoom with the pointer", "⌘-scroll, pinch, or scroll over the ruler"),
+        ("Input", "Computer keyboard as MIDI input on / off", "`"),
         ("File", "New / open project", "⌘ N  /  ⌘ O"),
         ("File", "Save / save as", "⌘ S  /  ⇧ ⌘ S"),
         ("File", "Import / export MIDI", "⌘ I  /  ⌘ E"),

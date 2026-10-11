@@ -1,6 +1,6 @@
 # 0020. Hybrid tracks: typed clips and track automation lanes
 
-- Status: Accepted; amended by 0021 (track roles) and 0024 (device parameter automation)
+- Status: Accepted; supersedes 0006's loop-wrap chase rule; amended by 0021 (track roles) and 0024 (device parameter automation)
 - Date: 2026-10-10
 
 ## Context
