@@ -130,10 +130,10 @@ public static class PlaybackRouting
             }
         }
 
-        var anySolo = sequence.Tracks.Any(t => t.IsSoloed);
+        var playing = GroupTracks.Playing(sequence);
         foreach (var track in sequence.Tracks.Where(t => unplayable.Contains(t.Id) && !reached.Contains(t.Id)))
         {
-            var plays = anySolo ? track.IsSoloed : !track.IsMuted;
+            var plays = playing[sequence.Tracks.IndexOf(track)];
             var elsewhere = graph.SoftwareInstruments.Any(i => project.ChainOf(track.Id)?.Id == i.Chain)
                 || project.ConnectionsFrom(SignalNode.Track(track.Id)).Any(c => c.Kind == SignalKind.Events && c.Destination.Kind != SignalNodeKind.ExternalInstrument);
             if (plays && !elsewhere)

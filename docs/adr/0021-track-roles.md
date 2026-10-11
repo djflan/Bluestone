@@ -1,6 +1,6 @@
 # 0021. Track roles: persisted, reconciled with content, never destructive
 
-- Status: Accepted
+- Status: Accepted; amended by 0030
 - Date: 2026-10-10
 
 ## Context
@@ -38,5 +38,5 @@ an instrument track whose only content is an empty clip is still an instrument t
 - A track's role is the user's statement, kept even when the track is empty.
 - Role changes never discard clips, devices, automation, plugin state, routing, or MIDI settings.
 - Group tracks exist in the model (membership, refusal rules) but have no group processing or folded
-  UI yet; that is deferred.
+  UI yet; that is deferred. (ADR 0030 adds them; `SetGroup` moved to `GroupCommands`.)
 - Tests: `TrackRoleTests`, `DeviceAndRoutingCommandsTests.Scenario9_*`, `ChangingTheRole_IsAppliedOrExplained`.

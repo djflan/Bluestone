@@ -136,23 +136,6 @@ public static class TrackRoleCommands
         });
     }
 
-    /// <summary>Puts a track in a group track, or takes it out with null.</summary>
-    public static IProjectCommand SetGroup(TrackId track, TrackId? group) =>
-        new ProjectCommand(group is null ? "Remove From Group" : "Add To Group", p =>
-        {
-            if (p.Sequence.FindTrack(track) is not { } found || found.Group == group)
-            {
-                return p;
-            }
-
-            if (group is { } id && p.Sequence.FindTrack(id) is not { Role: TrackRole.Group })
-            {
-                throw new CommandRefusedException("Tracks can only be put in a group track.");
-            }
-
-            return p with { Sequence = p.Sequence.WithTrack(found.WithGroup(group)) };
-        });
-
     private static Project ApplyPlan(Project project, RoleChangePlan plan, bool confirmed) => plan.Outcome switch
     {
         RoleChangeOutcome.Refused => throw new CommandRefusedException(plan.Message),

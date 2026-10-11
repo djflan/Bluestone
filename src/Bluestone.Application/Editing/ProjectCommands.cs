@@ -15,9 +15,12 @@ public static class ProjectCommands
     public static IProjectCommand AddTrack(Track track) =>
         new ProjectCommand("Add Track", p => p with { Sequence = p.Sequence.WithTrack(track) });
 
-    /// <summary>Removes a track with its chain and every connection from or to it (see <see cref="Project.WithoutTrack"/>).</summary>
+    /// <summary>
+    /// Removes a track with its chain and every connection from or to it (see <see cref="Project.WithoutTrack"/>).
+    /// A group's members first move to the group around it, or out of groups, with their own outputs back (ADR 0030).
+    /// </summary>
     public static IProjectCommand RemoveTrack(TrackId track) =>
-        new ProjectCommand("Delete Track", p => p.Sequence.FindTrack(track) is null ? p : p.WithoutTrack(track));
+        new ProjectCommand("Delete Track", p => p.Sequence.FindTrack(track) is null ? p : GroupCommands.Dissolve(p, track, BuiltInDevices.Find).WithoutTrack(track));
 
     public static IProjectCommand RenameTrack(TrackId track, string name) =>
         EditTrack("Rename Track", track, t => t.Name == name ? t : t.WithName(name));
@@ -182,7 +185,7 @@ public static class ProjectCommands
     /// <summary>
     /// Copies each track directly below the original, with fresh track, clip, event, and lane IDs. Its chain
     /// is copied with fresh device IDs, its automation of its own devices follows the copies, and its outgoing
-    /// connections are copied. Connections into it are not: the copy is a new destination nobody chose.
+    /// and parked connections are copied. Connections into it are not: the copy is a new destination nobody chose.
     /// </summary>
     public static IProjectCommand DuplicateTracks(IReadOnlyCollection<TrackId> tracks) =>
         new ProjectCommand(tracks.Count == 1 ? "Duplicate Track" : "Duplicate Tracks", p =>
@@ -220,7 +223,8 @@ public static class ProjectCommands
                         !l.Target.IsMidi && devices.TryGetValue(l.Target.Device, out var device) ? AutomationTarget.ForDevice(device, l.Target.DeviceParameter) : l.Target,
                         l.Points)),
                     track.Role,
-                    track.Group);
+                    track.Group,
+                    track.IsFolded);
                 var index = result.Sequence.Tracks.IndexOf(track) + 1;
                 result = result with { Sequence = result.Sequence.InsertTrack(index, copy) };
                 var outgoing = result.Connections
@@ -231,7 +235,11 @@ public static class ProjectCommands
                         Source = c.Source.Kind == SignalNodeKind.Device ? SignalNode.Device(devices[c.Source.AsDevice()]) : SignalNode.Track(copyId),
                     })
                     .ToList();
-                result = result with { Connections = result.Connections.AddRange(outgoing) };
+                var parked = result.ParkedConnections
+                    .Where(c => c.Source == SignalNode.Track(id))
+                    .Select(c => c with { Id = ConnectionId.New(), Source = SignalNode.Track(copyId) })
+                    .ToList();
+                result = result with { Connections = result.Connections.AddRange(outgoing), ParkedConnections = result.ParkedConnections.AddRange(parked) };
             }
 
             return result;

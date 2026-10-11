@@ -50,6 +50,7 @@ public sealed record Project
     private readonly ImmutableArray<ExternalInstrument> _instruments = [];
     private readonly ImmutableArray<DeviceChain> _chains = [];
     private readonly ImmutableArray<SignalConnection> _connections = [];
+    private readonly ImmutableArray<SignalConnection> _parked = [];
     private readonly Mixer _mixer = Mixer.Empty;
 
     public required ProjectId Id { get; init; }
@@ -92,6 +93,16 @@ public sealed record Project
     {
         get => _connections;
         init => _connections = UniqueBy(value, c => c.Id, nameof(value), "Connection");
+    }
+
+    /// <summary>
+    /// A grouped track's own outputs, set aside when it joined its group and put back when it leaves (ADR 0030).
+    /// They are not routing: nothing plays, validates, or shows them. Their IDs are not in <see cref="Connections"/>.
+    /// </summary>
+    public ImmutableArray<SignalConnection> ParkedConnections
+    {
+        get => _parked;
+        init => _parked = UniqueBy(value, c => c.Id, nameof(value), "Parked connection");
     }
 
     /// <summary>Mixer channels, which are audio paths and are independent of tracks.</summary>
@@ -178,8 +189,9 @@ public sealed record Project
     public Project WithoutChain(DeviceChainId id) => this with { Chains = _chains.RemoveAll(c => c.Id == id) };
 
     /// <summary>
-    /// Removes a track with everything it owns: its chain, and every connection from or to it or from one
-    /// of its devices. Instruments, racks, mixer channels, and other tracks' automation stay.
+    /// Removes a track with everything it owns: its chain, every connection from or to it or from one of its
+    /// devices, and parked connections from or to it. Instruments, racks, mixer channels, and other tracks'
+    /// automation stay.
     /// </summary>
     public Project WithoutTrack(TrackId track)
     {
@@ -193,6 +205,7 @@ public sealed record Project
                 c.Source == node
                 || c.Destination == node
                 || (c.Source.Kind == SignalNodeKind.Device && chain?.Find(c.Source.AsDevice()) is not null)),
+            ParkedConnections = _parked.IsEmpty ? _parked : _parked.RemoveAll(c => c.Source == node || c.Destination == node),
         };
     }
 

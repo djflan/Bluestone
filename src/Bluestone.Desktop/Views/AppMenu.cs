@@ -23,6 +23,7 @@ internal static class AppMenu
         (Key.Z, KeyModifiers.Shift), (Key.T, KeyModifiers.None), (Key.OemPeriod, KeyModifiers.None), (Key.OemPlus, KeyModifiers.None),
         (Key.OemMinus, KeyModifiers.None), (Key.M, KeyModifiers.None), (Key.A, KeyModifiers.None), (Key.D, KeyModifiers.None),
         (Key.X, KeyModifiers.None), (Key.C, KeyModifiers.None), (Key.V, KeyModifiers.None), (Key.OemQuestion, KeyModifiers.None),
+        (Key.G, KeyModifiers.None),
     ];
 
     public static void Install(MainWindow window, MainViewModel vm, KeyModifiers command)
@@ -69,6 +70,9 @@ internal static class AppMenu
                 Item("Duplicate Tracks", vm.DuplicateTracksCommand),
                 Item("Rename    Return", window.BeginRename),
                 Item("Delete Tracks", vm.DeleteTracksCommand),
+                new NativeMenuItemSeparator(),
+                Item("Group Tracks", vm.Groups.GroupSelectedCommand, Cmd(Key.G)),
+                Item("Remove from Group", vm.Groups.RemoveSelectedCommand),
                 new NativeMenuItemSeparator(),
                 Item("Mute    M", vm.ToggleMuteCommand),
                 Item("Solo    S", vm.ToggleSoloCommand),
