@@ -1,6 +1,6 @@
 # 0024. Device parameter automation is separate from signal flow
 
-- Status: Accepted; amends 0020
+- Status: Accepted; amends 0020; amended by 0031
 - Date: 2026-10-10
 
 ## Context

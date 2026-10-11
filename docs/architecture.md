@@ -66,7 +66,8 @@ main window on Avalonia's headless platform: real views, bindings, and UI thread
 | How MIDI 1.0 messages from files or input become channel events | `Bluestone.Midi/Wire/Midi1Decoder.cs` |
 | Reading or writing `.mid` files | `Bluestone.Midi/Files` |
 | Recognizing a SysEx family (Universal, XG, GS, another manufacturer) | `Bluestone.Midi/SysEx` |
-| Facts about one instrument (banks, voices, drum names, setup SysEx) | a JSON profile in `/profiles`; the loader is `Bluestone.Profiles` |
+| Facts about one instrument (banks, voices, drum names, setup SysEx, parameter maps) | a JSON profile in `/profiles`; the loader is `Bluestone.Profiles` |
+| How automation of an instrument's parameter becomes CC, RPN, NRPN, or SysEx | the profile's `parameterMap`; translation in `Bluestone.Application/Routing/HardwareAutomation.cs` |
 | An operating-system MIDI API | `Bluestone.Platform.<OS>`, implementing `IMidiEndpointProvider` |
 | The project file format or a migration | `Bluestone.Infrastructure/Projects` |
 | A built-in device | its definition in `Bluestone.Domain/Devices/BuiltInDevices.cs`, its processor in `Bluestone.Signal/BuiltIn`, registered in `DeviceCatalog.BuiltIn` |
@@ -226,7 +227,7 @@ from (ADR 0005, 0007, 0008).
 Arrangement
   Track (role: instrument, audio, hybrid, effect, group)
     ├── clips (NoteClip, AudioClip)        musical content; never owns an endpoint or a device
-    ├── automation lanes                    MIDI targets, or device parameters by DeviceId
+    ├── automation lanes                    MIDI targets, device parameters by DeviceId, or instrument part parameters
     └── device chain (optional, one)        Arpeggiator → Transpose → Synth → Filter
 
 Project
@@ -305,6 +306,19 @@ pressure on a channel, and becomes events. A device lane targets a parameter of 
 not pass through the devices before it, it is never encoded as MIDI, and reordering or moving devices
 does not retarget it. Built-in processors apply it at its tick; other devices receive it as a parameter
 feed for their worker.
+
+A hardware lane targets a parameter of an external instrument's part (ADR 0031): the instrument, its port, the
+channel, and the parameter's key in the instrument's profile. The profile's parameter map says how the parameter
+is set: a 7- or 14-bit controller, an RPN or NRPN (followed by the RPN null unless the profile says otherwise), or
+a SysEx template with the value (whole or in bit slices such as nibbles), the channel, a device number byte, and a
+Roland or Yamaha checksum. When playback is prepared, `HardwareAutomation` samples the lane, scales its normalized
+values to the parameter's range, and sends a value only when it changes and at most once per 20 ms per parameter
+(a change that comes sooner waits, so a ramp still ends on its last value). The MIDI goes to the part's endpoint as
+a `ParameterPart`, ordered like everything else by tick, phase, the lane's track, and index, after that track's own
+events at the same tick and phase. On play, seek, and loop wrap the latest RPN, NRPN, or SysEx change of each
+parameter is resent whole; controller mappings are chased as controllers. MIDI file export writes the same MIDI on
+the lane's track. A lane whose instrument, port, profile, parameter, or endpoint is missing is kept and reported.
+There is no "external instrument device": the target names the part, as connections do.
 
 ### Plugin workers
 
@@ -395,7 +409,6 @@ Built as boundaries and tested where cheap, but not finished:
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
 - **Operating-system sandboxing** of plugin workers.
 - **Group track processing** and folding in the arrangement.
-- **Translating device automation to CC, RPN, NRPN, or SysEx** for external instruments.
 
 ## Decisions at a glance
 
@@ -418,6 +431,7 @@ Built as boundaries and tested where cheap, but not finished:
 | C# first; Rust only for measured or native-interface needs | ADR 0026 |
 | Project format 4 and its migration | ADR 0027 |
 | Plugin MIDI effects run in their worker when the plan is compiled | ADR 0028 |
+| Hardware parameters are automated through profile parameter maps, translated at plan compile | ADR 0031 |
 
 ## Native technology
 
