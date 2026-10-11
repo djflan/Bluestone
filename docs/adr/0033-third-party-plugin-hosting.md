@@ -48,8 +48,11 @@ Licences checked on 2026-10-11:
   unmapped controllers are dropped. System exclusive is not passed to native plugins.
 - **State.** VST3 component and controller state are stored together in a versioned container (`BSV3`, format
   `bluestone.vst3-state`); CLAP state from the state extension in a container of its own (`BSCL`,
-  `bluestone.clap-state`). A host parameter edit reaches a VST3 processor at once in a one-frame block of silence
-  whose output is dropped: some plugins ignore the empty "flush" block the VST3 API allows.
+  `bluestone.clap-state`). A host parameter edit reaches a VST3 processor with its next block while blocks are
+  streaming (one processed in the last 500 ms), so the stream is never disturbed. When none are, it is delivered at
+  once in a one-frame block of silence at the last block's transport, whose audio is dropped and whose events are
+  passed on with the next block: some plugins ignore the empty "flush" block the VST3 API allows. Saving the state
+  first waits for the streaming blocks to take pending edits.
 - **Edits from the plugin** (VST3 `performEdit`, restart flags, `setDirty`; CLAP output parameter events, rescan,
   `mark_dirty`, latency) become `PluginNotification` frames (protocol version 3), the worker's first unsolicited
   messages. The application stores edited values in the project, which stays the authority.

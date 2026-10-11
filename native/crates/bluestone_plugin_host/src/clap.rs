@@ -35,7 +35,7 @@ const MAX_EVENTS: usize = 2048;
 pub struct ClapModule {
     entry: *const clap_plugin_entry,
     factory: *const clap_plugin_factory,
-    _library: Library,
+    _library: Option<Library>,
 }
 
 impl ClapModule {
@@ -45,7 +45,18 @@ impl ClapModule {
             .symbol("clap_entry")
             .ok_or("The module exports no clap_entry; it is not a CLAP module.")?
             as *const clap_plugin_entry;
-        // SAFETY: clap_entry is a clap_plugin_entry in every CLAP module; its functions are called as the spec says.
+        // SAFETY: clap_entry is a clap_plugin_entry in every CLAP module, and lives as long as its library.
+        unsafe { Self::from_entry(entry, path, Some(library)) }
+    }
+
+    /// # Safety
+    /// `entry` points at a clap_plugin_entry that lives as long as the module (inside `library` when one is given).
+    unsafe fn from_entry(
+        entry: *const clap_plugin_entry,
+        path: &Path,
+        library: Option<Library>,
+    ) -> Result<Rc<ClapModule>, String> {
+        // SAFETY: the entry's functions are called as the spec says.
         unsafe {
             let e = &*entry;
             if !clap_version_is_compatible(e.clap_version) {
@@ -168,7 +179,7 @@ impl ParamRange {
 
     fn normalized(&self, plain: f64) -> f64 {
         if self.max > self.min {
-            ((plain - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+            unit_value((plain - self.min) / (self.max - self.min))
         } else {
             0.0
         }
@@ -187,6 +198,8 @@ struct AudioState {
     steady_time: i64,
     notes_as_midi: bool,
     accepts_midi: bool,
+    /// The audio thread's copy of the parameter ranges, replaced under the processor lock when they change.
+    ranges: HashMap<u32, ParamRange>,
 }
 
 struct Editor {
@@ -232,6 +245,8 @@ impl ClapInstance {
                 .plugin
                 .store(plugin as *mut clap_plugin, Ordering::Release);
             if !(*plugin).init.is_some_and(|init| init(plugin)) {
+                // Timers and file descriptors registered during init would otherwise call the destroyed plugin.
+                host.shared.unregister_all();
                 if let Some(destroy) = (*plugin).destroy {
                     destroy(plugin);
                 }
@@ -303,6 +318,11 @@ impl ClapInstance {
                 )
             })
             .collect();
+        if let Ok(mut audio) = self.audio.lock()
+            && let Some(audio) = audio.as_mut()
+        {
+            audio.ranges.clone_from(&ranges);
+        }
         if let Ok(mut current) = self.ranges.lock() {
             *current = ranges;
         }
@@ -692,6 +712,7 @@ impl Instance for ClapInstance {
                 steady_time: 0,
                 notes_as_midi,
                 accepts_midi,
+                ranges: self.ranges.lock().map(|r| r.clone()).unwrap_or_default(),
             });
         }
         self.settings.set(Some((
@@ -729,15 +750,13 @@ impl Instance for ClapInstance {
         audio.input_events.events.clear();
         audio.output_events.events.clear();
         let last = frames.saturating_sub(1) as u32;
-        if let Ok(ranges) = self.ranges.try_lock() {
-            for change in block.changes() {
-                if let Some(range) = ranges.get(&change.id) {
-                    audio.input_events.push(param_event(
-                        (change.offset.max(0) as u32).min(last),
-                        range,
-                        change.value,
-                    ));
-                }
+        for change in block.changes() {
+            if let Some(range) = audio.ranges.get(&change.id) {
+                audio.input_events.push(param_event(
+                    (change.offset.max(0) as u32).min(last),
+                    range,
+                    change.value,
+                ));
             }
         }
         for e in block.events() {
@@ -807,7 +826,6 @@ impl Instance for ClapInstance {
             audio.adapter.clear_outputs(frames);
         }
         audio.adapter.deliver_outputs(block);
-        let ranges = self.ranges.try_lock().ok();
         for event in audio.output_events.events.iter() {
             let offset = (event.time().min(last)) as i32;
             // SAFETY: the slot's header says which member it is.
@@ -838,9 +856,7 @@ impl Instance for ClapInstance {
                         }
                     }
                     CLAP_EVENT_PARAM_VALUE => {
-                        if let Some(range) =
-                            ranges.as_ref().and_then(|r| r.get(&event.param.param_id))
-                        {
+                        if let Some(range) = audio.ranges.get(&event.param.param_id) {
                             self.host.shared.notify(
                                 notification_kind::PARAMETER_EDITED,
                                 range.id,
@@ -1126,3 +1142,7 @@ impl Drop for ClapInstance {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "clap_tests.rs"]
+mod tests;

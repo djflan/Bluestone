@@ -82,6 +82,8 @@ public sealed class ThirdPartyPluginDeviceTests
             session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.25)));
             await bridge.SyncAsync(session.Project, Ct);
             Assert.All(Run(instance), s => Assert.Equal(0.5f, s, 4));
+            // The plugin sets Invert itself (as from its editor); the edit is then recorded and not sent back.
+            await instance.SetParameterAsync(1, 1.0, Ct);
             bridge.RecordEdit(new PluginParameterEdit(device.Id, 1, 1.0));
             Assert.Equal(1.0, session.Project.FindDevice(device.Id)!.Value.Device.ValueOf(new ParameterId(1))!.Value.ToFraction(), 6);
             await bridge.SyncAsync(session.Project, Ct);

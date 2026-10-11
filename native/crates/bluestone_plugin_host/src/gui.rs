@@ -128,6 +128,19 @@ pub fn remove_timer(id: u64) -> bool {
     })
 }
 
+/// Makes the calling test thread the main thread without starting the platform's event loop.
+#[cfg(test)]
+pub fn claim_main_thread_for_tests() {
+    let current = std::thread::current().id();
+    assert_eq!(*MAIN_THREAD.get_or_init(|| current), current);
+}
+
+/// Timers registered on the calling thread.
+#[cfg(test)]
+pub fn timer_count() -> usize {
+    TIMERS.with_borrow(|t| t.timers.len())
+}
+
 /// A top-level window that hosts a plugin editor.
 pub struct Window {
     inner: platform::Window,
