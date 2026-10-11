@@ -13,7 +13,9 @@ editor windows work; exactly what was verified on which plugin and machine is in
 the same `PluginInstance.ProcessBlock` whatever their format; playing third-party plugins through it was not checked by
 ear (the machine was locked).
 
-**Process isolation is crash isolation, not a security sandbox.** See [Security limitations](#security-limitations).
+**Process isolation is crash isolation, not a security sandbox.** See [Security limitations](#security-limitations). The
+user chooses how plugins share worker processes ([Hosting modes](#hosting-modes), ADR 0034): together, by
+manufacturer, by plugin (the default), or individually.
 
 Everything here is C# except the plugin host, which is Rust because it loads native plugin binaries (ADR 0026's
 native-interface reason; ADR 0033). The plugin data plane stays C#: it has not been measured to need anything else.
@@ -35,7 +37,7 @@ host (`DependencyDirectionTests.Plugins_DoesNotReferenceTheWorker_SoNoPluginCanR
 ## Process model
 
 ```text
-Bluestone process                                     Worker process (one per instance by default)
+Bluestone process                                     Worker process (one per hosting-mode key; by plugin in the app)
 ---------------                                     ---------------------------------------------
 PluginHostManager                                   Bluestone.PluginWorker --mode host --pipe NAME
   WorkerProcess  --- named pipe (control plane) ---  InstanceHostSession (one request at a time)
@@ -234,7 +236,7 @@ hanging in the plugin until it is restarted.
 | From | To |
 | ---- | -- |
 | Starting | Running, Unavailable, Unloaded |
-| Running | Unavailable, Unloaded |
+| Running | Unavailable, Restarting (moved to another worker by a hosting change), Unloaded |
 | Unavailable | Restarting, Quarantined, Unloaded |
 | Restarting | Running, Unavailable, Unloaded |
 | Quarantined | Restarting (manual restart only), Unloaded |
@@ -254,7 +256,8 @@ A worker is considered dead when its process exits, its pipe breaks, it misses h
 
 Instances on other workers are not affected (`PluginCrashRecoveryTests.KillingOneOfSeveralWorkers_LeavesTheOthersProducingCorrectAudio`).
 
-**Restart policy** (`RestartPolicy`): automatic restart is **off** by default. When on, at most `MaxRestarts`
+**Restart policy** (`RestartPolicy`): automatic restart is **off** by default (in the app: "Restart crashed plugins
+automatically" in the Plugins view; changing it applies to running instances from their next failure). When on, at most `MaxRestarts`
 restarts happen within any sliding `Window`, each after a back-off that doubles from `InitialBackoff` up to
 `MaxBackoff`; the next failure **quarantines** the instance. A quarantined instance stays down until a manual
 `RestartAsync`, which also resets the counters
@@ -262,7 +265,7 @@ restarts happen within any sliding `Window`, each after a back-off that doubles 
 `RestartGuardTests`).
 
 **Manual restart** (`PluginInstance.RestartAsync`) works from `Unavailable` and `Quarantined`. It starts a worker as
-the isolation policy says, recreates the instance under a new generation, restores the last snapshot, then applies
+the hosting mode says, recreates the instance under a new generation, restores the last snapshot, then applies
 the remembered parameter values (they are newer than the snapshot), and processing resumes. Nothing else has to be
 closed.
 
@@ -280,14 +283,54 @@ closed.
   with default parameters (`PluginCrashRecoveryTests.CorruptState_IsReported_AndTheInstanceRunsWithDefaults`).
   The reference plugins' state is a versioned list of parameter values (format `bluestone.reference-state`).
 
-## Isolation policies
+## Hosting modes
 
-| Policy | Status | Meaning |
-| ------ | ------ | ------- |
-| `PerInstance` | Implemented, default, tested | One worker per instance |
-| `PerModule` | Implemented, tested | Instances of the same module share a worker; a crash takes down all of them |
-| `SharedTrusted` | Implemented (opt-in), tested | All instances that choose it share one worker |
-| `InProcessTrusted` | **Not implemented** | Refused unless `AllowInProcessTrusted` is set, and even then throws `NotSupportedException` |
+How instances share worker processes (ADR 0034). A crash takes down every instance in the worker and nothing else, so
+the mode trades the blast radius of a crash against the number of processes (each worker is a .NET process of roughly
+50 to 75 MB before the plugin's own memory, sampled on macOS arm64).
+
+| Mode (`HostingMode`) | Instances that share a worker | Status |
+| -------------------- | ----------------------------- | ------ |
+| Together | Every instance in this mode | Implemented, tested |
+| By manufacturer | Instances whose plugins have the same vendor (from the scan; trimmed, any case), across formats and modules; a plugin without a vendor is hosted by plugin | Implemented, tested |
+| By plugin | Instances of plugins from the same module (one VST3 bundle or CLAP file; a VST3 and a CLAP build are different modules) | Implemented, tested, **the app's default** |
+| Individually | None: one worker per instance | Implemented, tested; the default of `PluginInstanceRequest` |
+| Within Bluestone | **Not implemented** | Refused unless `AllowWithinBluestone` is set, and even then throws `NotSupportedException` |
+
+- **Worker keys.** `WorkerKeys.For(mode, plugin, instance, architecture)`; equal keys share a worker. Shared keys name
+  the worker's processor architecture, because x64 and ARM64 plugin binaries cannot share a process (today every
+  hosted plugin has the worker's architecture: others are `Unsupported` at scan time).
+- **Settings** (`PluginHostingSettings`, saved per user in `plugin-hosting.json` beside the audio settings, not in
+  the project): the global mode, automatic restart (off by default; on, the `RestartPolicy` below), and a mode per
+  plugin by device definition ID, which wins over the global mode. Unknown or in-process modes in the file are
+  dropped. There is no per-device setting in the project.
+- **Changing a mode** (`PluginHostManager.ChangeHostingAsync`, `PluginDeviceHost.ApplyHostingAsync`) moves every
+  instance whose worker key changes, keeping the instance: a running one has its state captured first and goes
+  Running → Restarting → Running in its new worker, restored from that state and its remembered parameter values; a
+  crashed, hung, or quarantined one is restarted there from its last snapshot. A worker left without instances exits.
+  An instance whose key does not change is not touched. A move is a restart: a block or two of silence, held notes
+  cut, and an open editor closes with its instance (not tested with an editor open).
+- **What went down together.** When a worker ends under running instances, each gets `LastWorkerLoss` (process,
+  reason, every instance that was in it) before its status changes, and `PluginHostManager.WorkerLost` is raised once.
+  The device strip shows, under a crashed device, which other devices went down with it; the messages list says it
+  once; **Restart** restarts every device that went down with it and is still down, so they share a worker again. Each
+  plugin device also says which process it is in ("Hosted by plugin (Surge XT) · shares its process with Pad").
+- **Crash counts.** `PluginDeviceHost.CrashCounts`: per plugin, for this session, the worker losses that took it down
+  and how many of them also took down other plugins (any of which may have caused it). Not saved.
+- **In the Plugins view**: a Hosting section (global mode, "Restart crashed plugins automatically"), a mode per plugin
+  ("Global (By plugin)" or a mode), and for a plugin that crashed, its count and **Host individually**. Changes are
+  saved and applied at once; the result line says how many devices were restarted in a new process.
+
+Tested by `HostingModeTests` (keys for every mode, vendors, modules, formats, architectures; settings, overrides,
+the settings file), `HostingModeProcessTests` (real workers: two plugins together share a process and crash together
+while an individual one keeps running, a VST3 and a CLAP plugin together, individually isolates, a running instance
+moved with its state and the others untouched, the last instance moved out stops its worker, a crashed VST3 or CLAP
+plugin restarted from its snapshot by a mode change, by manufacturer from scanned vendors, a plugin's own mode
+winning, settings applied to running devices, a shared crash with which devices went down and Restart bringing them
+back together, crash counts, automatic restart turned on at run time), `PluginCrashRecoveryTests` (by plugin and
+together through the API), `PluginsViewModelTests`, `PluginDeviceStripTests` (a shared crash in the strip, the
+messages, and the Plugins view, then Host individually), and `PluginsViewTests` (headless: the settings chosen with
+the mouse, saved, and applied).
 
 ## Scanning and quarantine
 
@@ -442,7 +485,11 @@ Process isolation here is **crash isolation, not a security boundary**:
 - The pipe is restricted to the current user and the per-launch token only proves that the connecting process is
   the one Bluestone launched; neither protects against code already running as the user.
 
-Operating-system sandboxing (App Sandbox, seccomp, AppContainer, and so on) is deferred.
+- Hosting modes decide which plugins share a process, not what a process may do: "Individually" is not a sandbox
+  either, only the smallest blast radius for a crash.
+
+Operating-system sandboxing (App Sandbox, seccomp, AppContainer, and so on) is not done. Plugins need the network and
+the file system (licences, presets, samples), and the owner chose crash isolation instead (ADR 0034).
 
 ## Platform notes
 
@@ -538,7 +585,9 @@ graph).
 | 13 | Several workers; one fails, the others keep working | `PluginCrashRecoveryTests.KillingOneOfSeveralWorkers_LeavesTheOthersProducingCorrectAudio`, `PluginDeviceHostTests.Scenarios11And13_*` |
 | 15 | A module crashes the scanner; Bluestone carries on, reports it, and skips it next time | `PluginScannerProcessTests.ACrashingModule_IsQuarantined_SkippedNextTime_AndRetriedOnRequest_WhileOthersStillScan` |
 
-These use the reference plugins in `Bluestone.PluginWorker`. The same scenarios with VST3 and CLAP plugins (11 and 12)
+These use the reference plugins in `Bluestone.PluginWorker`. Scenario 13 runs its devices individually; with the app's
+default (by plugin) two copies of one plugin share a worker and go down together, which `HostingModeProcessTests`
+covers. The same scenarios with VST3 and CLAP plugins (11 and 12)
 are covered by `NativePluginTests`, `ThirdPartyPluginDeviceTests`, and, with installed plugins, `InstalledPluginTests`.
 
 ## Implemented and tested
@@ -558,6 +607,7 @@ are covered by `NativePluginTests`, `ThirdPartyPluginDeviceTests`, and, with ins
 | No worker survives the manager; worker exits when its pipe closes | `PluginCrashRecoveryTests.DisposingTheManager_LeavesNoWorkerProcessBehind`, `WorkerProcessTests` |
 | Restart arithmetic with an explicit clock; status transition table | `RestartGuardTests`, `PluginInstanceStatusTests` |
 | In-process hosting refused; bypass rules | `PluginHostManagerTests` |
+| Hosting modes: worker keys, settings, moves with state, shared crashes, crash counts, the Plugins view | `HostingModeTests`, `HostingModeProcessTests`, `PluginsViewModelTests`, `PluginDeviceStripTests`, `PluginsViewTests` |
 | Scanning, cache, quarantine | `PluginScannerProcessTests`, `ScanCacheTests`, `ModuleScannerTests` |
 | Rescan and retry from the Plugins view; the device catalog follows | `PluginLibraryProcessTests`, `PluginsViewModelTests`, `PluginLibraryTests`, `PluginsViewTests` |
 | VST3 and CLAP through the test plugins: scan, process, state, render, crash and restart, project devices | `NativePluginTests`, `ThirdPartyPluginDeviceTests` |
@@ -575,7 +625,7 @@ and run as one non-parallel collection. The integration project references the w
   inputs, routing the MIDI output of an instrument plugin, reloading a VST3 component on `kReloadComponent`.
 - **Editors embedded in Bluestone's own window**, and editors on Windows and Linux verified on hardware.
 - **Plugin delay compensation across a graph.** Instances report their latency; nothing compensates for it yet.
-- **Operating-system sandboxing** of workers.
+- **Operating-system sandboxing** of workers (not planned: the owner chose crash isolation with hosting modes; ADR 0034).
 - **Wake-up primitives** (futex, eventfd, Windows events) for the data plane.
 - **MIDI 2.0** events on the data plane.
 - **In-process hosting** of trusted plugins.
