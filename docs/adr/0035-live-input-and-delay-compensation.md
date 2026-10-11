@@ -45,11 +45,14 @@ built-in devices, and plugin delay compensation, in scope for this epic.
   not reference the application): input is queued lock-free and goes into the next block at its first frame;
   generated events (arpeggio steps) land on their own frame. Any other route runs on the thread that posts the input,
   so MIDI thru stays immediate, and on a live thread every millisecond for what happens later (arpeggio steps,
-  plugin effect blocks of 64 frames). One thread processes a route at a time.
+  plugin effect blocks of 64 frames). One thread processes a route at a time. Several tracks can play one plugin
+  instrument at once (a track whose events go to the track holding it, and that track): the node's live source is a
+  `LiveSourceSet` of every route that ends there, rendered in turn. A route's input queue holds at most 4096 events;
+  more are dropped and counted.
 - **Nothing hangs.** The target keeps the notes it sounds and sends a release only for a note that sounds. When a
   route changes (a device added, removed, bypassed, or edited; a connection; the target), the old route releases
-  every note it sounds before the new one takes over (on the audio thread for plugin instruments: the node asks the
-  source it replaces). A plugin effect whose worker dies releases what it put out. Panic releases every live note.
+  every note it sounds before the new one takes over (on the audio thread for plugin instruments: the set asks the
+  route it drops). A plugin effect whose worker dies releases what it put out. Panic releases every live note.
   A key released after its route changed finds nothing sounding and sends nothing.
 - **Recording records the input**, before any device, as before. The devices run again when the take plays, so
   recording their output would apply them twice. Recording the processed output is not offered; it would need a

@@ -60,6 +60,7 @@ public sealed class LiveInput : IDisposable
     private readonly IMonotonicClock _clock;
     private readonly Lock _gate = new();
     private readonly Dictionary<TrackId, LiveRunner> _runners = [];
+    private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
     private readonly AutoResetEvent _wake = new(false);
     private Project? _project;
     private DeviceCatalog _devices = DeviceCatalog.BuiltIn;
@@ -370,32 +371,47 @@ public sealed class LiveInput : IDisposable
 
     private void Replace(TrackId track, LiveRunner next)
     {
+        Attach(next);
         if (_runners.TryGetValue(track, out var old))
         {
             Retire(old);
         }
 
-        Attach(next);
         _runners[track] = next;
     }
 
+    // Every runner that plays a node is in the node's live source set, so several tracks can play one instrument.
     private void Attach(LiveRunner runner)
     {
         if (runner.Node is { } node)
         {
             runner.CompensationFrames = _compensation(node);
-            node.LiveSource = runner;
+            if (!_players.TryGetValue(node, out var players))
+            {
+                _players[node] = players = new LiveSourceSet();
+            }
+
+            players.Add(runner);
+            node.LiveSource = players;
         }
     }
 
-    // The audio thread releases what a node's runner sounds when its source is replaced; others release here and now.
-    private static void Retire(LiveRunner runner)
+    // The audio thread releases what a node's runner sounds when it leaves the set; others release here and now.
+    private void Retire(LiveRunner runner)
     {
         if (runner.Node is { } node)
         {
-            if (ReferenceEquals(node.LiveSource, runner))
+            if (_players.TryGetValue(node, out var players))
             {
-                node.LiveSource = null;
+                players.Remove(runner);
+                if (players.Count == 0)
+                {
+                    _players.Remove(node);
+                    if (ReferenceEquals(node.LiveSource, players))
+                    {
+                        node.LiveSource = null;
+                    }
+                }
             }
         }
         else

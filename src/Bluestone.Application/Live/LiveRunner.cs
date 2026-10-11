@@ -24,6 +24,9 @@ namespace Bluestone.Application.Live;
 internal sealed class LiveRunner : ILiveEventSource
 {
     private const int Capacity = 512;
+
+    // Input waiting for a block; more is dropped (and counted), so a route whose node is not rendered cannot grow without bound.
+    private const int MaxQueued = 4096;
     private readonly ConcurrentQueue<(LiveEvent Event, TimeSpan Timestamp)> _queue = new();
     private readonly LiveChain _chain;
     private readonly LiveEventBuffer _input = new(Capacity);
@@ -40,6 +43,8 @@ internal sealed class LiveRunner : ILiveEventSource
     private TimeSpan _nextBlock;
     private long _pumpedTo;
     private bool _released;
+    private int _queued;
+    private long _overflow;
 
     private LiveRunner(LiveRoutePlan plan, LiveChain chain, Ppqn ppqn, IMidiOutput? external, PlaybackEngine? engine, PluginNode? node, LiveLatencyMeter? latency, int fixedFrames, int sampleRate)
     {
@@ -77,7 +82,7 @@ internal sealed class LiveRunner : ILiveEventSource
     public IReadOnlyList<PluginLiveStage> PluginStages { get; private init; } = [];
 
     /// <summary>Events lost because a block held more than the buffers' capacity.</summary>
-    public long Dropped => _chain.Dropped + _input.Dropped + _output.Dropped;
+    public long Dropped => _chain.Dropped + _input.Dropped + _output.Dropped + Interlocked.Read(ref _overflow);
 
     public static LiveRunner Create(LiveRoutePlan plan, LiveContext context, LiveLatencyMeter latency)
     {
@@ -127,7 +132,17 @@ internal sealed class LiveRunner : ILiveEventSource
     }
 
     /// <summary>Queues input; it is processed in the next block. Any thread.</summary>
-    public void Enqueue(in LiveEvent e, TimeSpan timestamp) => _queue.Enqueue((e, timestamp));
+    public void Enqueue(in LiveEvent e, TimeSpan timestamp)
+    {
+        if (Interlocked.Increment(ref _queued) > MaxQueued)
+        {
+            Interlocked.Decrement(ref _queued);
+            Interlocked.Increment(ref _overflow);
+            return;
+        }
+
+        _queue.Enqueue((e, timestamp));
+    }
 
     /// <summary>Advances a route the audio engine does not run to <paramref name="now"/>, sending what it puts out. One thread at a time.</summary>
     public void Pump(TimeSpan now, double tempo)
@@ -272,6 +287,7 @@ internal sealed class LiveRunner : ILiveEventSource
         _input.Clear();
         while (_input.Count < _input.Capacity && _queue.TryDequeue(out var queued))
         {
+            Interlocked.Decrement(ref _queued);
             _input.Add(queued.Event.At(block.StartTick));
             if (meter is not null && queued.Event.IsNoteOn)
             {
