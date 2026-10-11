@@ -179,7 +179,7 @@ impl ParamRange {
 
     fn normalized(&self, plain: f64) -> f64 {
         if self.max > self.min {
-            ((plain - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+            unit_value((plain - self.min) / (self.max - self.min))
         } else {
             0.0
         }
