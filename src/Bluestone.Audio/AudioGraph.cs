@@ -10,8 +10,9 @@ public sealed class AudioGraph
     private readonly NodeEntry[] _nodes;
     private readonly StripEntry[] _strips;
     private readonly float[] _silence;
+    private readonly float[] _delayed;
 
-    internal AudioGraph(int blockFrames, NodeEntry[] nodes, StripEntry[] strips, MixerStripState master, float masterGain, IReadOnlyList<IStreamedSource> streams)
+    internal AudioGraph(int blockFrames, NodeEntry[] nodes, StripEntry[] strips, MixerStripState master, float masterGain, IReadOnlyList<IStreamedSource> streams, int latencyFrames)
     {
         BlockFrames = blockFrames;
         _nodes = nodes;
@@ -19,7 +20,49 @@ public sealed class AudioGraph
         Master = master;
         MasterGain = masterGain;
         Streams = streams;
+        LatencyFrames = latencyFrames;
         _silence = new float[2 * blockFrames];
+        _delayed = new float[2 * blockFrames];
+    }
+
+    /// <summary>
+    /// Frames between the song position a block renders and the song position the master puts out (the longest path's
+    /// latency; every shorter path is delayed to match). The engine renders this far ahead of the transport.
+    /// </summary>
+    public int LatencyFrames { get; }
+
+    /// <summary>
+    /// True when a node now reports another latency than the one this graph was built for (a plugin's latency changed):
+    /// the graph should be rebuilt so its compensation matches. Any thread.
+    /// </summary>
+    public bool IsLatencyStale
+    {
+        get
+        {
+            foreach (var entry in _nodes)
+            {
+                if (entry.Node.LatencyFrames != entry.BuiltLatency)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>The delay compensation applied after <paramref name="node"/> on its way to a mixer channel or the master, in frames, or null when the node is not in this graph.</summary>
+    public int? CompensationOf(AudioNode node)
+    {
+        foreach (var entry in _nodes)
+        {
+            if (ReferenceEquals(entry.Node, node))
+            {
+                return entry.Compensation;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The largest block this graph renders; its buffers are this long.</summary>
@@ -58,23 +101,23 @@ public sealed class AudioGraph
             {
                 input = StereoBuffer.Of(entry.InputStorage!, stride, frames);
                 input.Clear();
-                foreach (var source in entry.Inputs)
+                for (var i = 0; i < entry.Inputs.Length; i++)
                 {
-                    input.Add(StereoBuffer.Of(_nodes[source].OutputStorage, stride, frames));
+                    input.Add(Delayed(StereoBuffer.Of(_nodes[entry.Inputs[i]].OutputStorage, stride, frames), entry.InputDelays[i], frames));
                 }
             }
 
             var rendered = StereoBuffer.Of(entry.OutputStorage, stride, frames);
             rendered.Clear();
             entry.Node.Render(context, input, rendered);
-            foreach (var strip in entry.Strips)
+            for (var i = 0; i < entry.Strips.Length; i++)
             {
-                StereoBuffer.Of(_strips[strip].Storage, stride, frames).Add(rendered);
+                StereoBuffer.Of(_strips[entry.Strips[i]].Storage, stride, frames).Add(Delayed(rendered, entry.StripDelays[i], frames));
             }
 
             if (entry.ToMaster)
             {
-                output.Add(rendered);
+                output.Add(Delayed(rendered, entry.MasterDelay, frames));
             }
         }
 
@@ -85,18 +128,19 @@ public sealed class AudioGraph
             // Sends read the strip's input; their gains include the fader and pan when they are post-fader.
             foreach (var send in strip.Sends)
             {
-                send.Ramp.AddTo(buffer, StereoBuffer.Of(_strips[send.Destination].Storage, stride, frames), send.Left, send.Right);
+                send.Ramp.AddTo(Delayed(buffer, send.Delay, frames), StereoBuffer.Of(_strips[send.Destination].Storage, stride, frames), send.Left, send.Right);
             }
 
             strip.State.Apply(buffer, strip.Left, strip.Right);
             strip.State.Meter.Update(buffer, context.SampleRate);
+            var leaving = Delayed(buffer, strip.OutputDelay, frames);
             if (strip.Destination < 0)
             {
-                output.Add(buffer);
+                output.Add(leaving);
             }
             else
             {
-                StereoBuffer.Of(_strips[strip.Destination].Storage, stride, frames).Add(buffer);
+                StereoBuffer.Of(_strips[strip.Destination].Storage, stride, frames).Add(leaving);
             }
         }
 
@@ -104,11 +148,26 @@ public sealed class AudioGraph
         Master.Meter.Update(output, context.SampleRate);
     }
 
-    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, float[]? InputStorage, float[] OutputStorage, int[] Strips, bool ToMaster);
+    // The signal through its edge's compensation delay (in a scratch buffer), or the signal itself when there is none.
+    private StereoBuffer Delayed(StereoBuffer signal, in EdgeDelay delay, int frames)
+    {
+        if (delay.Line is not { } line)
+        {
+            return signal;
+        }
 
-    internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends);
+        var delayed = StereoBuffer.Of(_delayed, BlockFrames, frames);
+        line.Process(signal, delayed, delay.Frames);
+        return delayed;
+    }
 
-    internal sealed record SendEntry(GainRamp Ramp, int Destination, float Left, float Right);
+    internal readonly record struct EdgeDelay(DelayLine? Line, int Frames);
+
+    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int Compensation);
+
+    internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends, EdgeDelay OutputDelay);
+
+    internal sealed record SendEntry(GainRamp Ramp, int Destination, float Left, float Right, EdgeDelay Delay);
 }
 
 /// <summary>
@@ -126,6 +185,7 @@ public sealed class AudioGraphBuilder
     private readonly Dictionary<int, int> _stripDestinations = [];
     private readonly List<(int Strip, int Destination, double LevelDecibels, bool PreFader)> _sends = [];
     private readonly List<IStreamedSource> _streams = [];
+    private readonly HashSet<int> _monitored = [];
 
     /// <returns>The node's index in this builder.</returns>
     public int AddNode(AudioNode node)
@@ -146,6 +206,17 @@ public sealed class AudioGraphBuilder
         CheckNode(from);
         CheckNode(to);
         _nodeEdges.Add((from, to));
+    }
+
+    /// <summary>
+    /// Low-latency monitoring for a node that plays live input (ADR 0035): its signal, and that of the nodes it feeds,
+    /// is not delayed for compensation on its way to the first mixer channel or the master, and does not make the
+    /// other signals there wait for it. Buses and returns after that stay compensated.
+    /// </summary>
+    public void Monitor(int node)
+    {
+        CheckNode(node);
+        _monitored.Add(node);
     }
 
     public void ConnectToMaster(int node)
@@ -200,10 +271,19 @@ public sealed class AudioGraphBuilder
     /// sends (its buses and returns); a send carries audio when its strip sounds or its target is soloed (so soloing a
     /// return plays what is sent to it, without the dry channels).
     /// </summary>
-    public AudioGraph Build(int blockFrames, MixerStripState master, double masterGainDecibels = 0)
+    /// <remarks>
+    /// Delay compensation (ADR 0035): each node's output lags by its own <see cref="AudioNode.LatencyFrames"/> plus the
+    /// latency of its inputs, each summing point (a node's input, a mixer channel, the master) waits for its slowest
+    /// input, and every faster input is delayed by the difference, so audio arrives aligned. The graph's
+    /// <see cref="AudioGraph.LatencyFrames"/> is the master's. Delay lines come from <paramref name="compensation"/> and
+    /// keep their audio across builds; without one, each graph gets new lines.
+    /// </remarks>
+    public AudioGraph Build(int blockFrames, MixerStripState master, double masterGainDecibels = 0, LatencyCompensation? compensation = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(blockFrames);
         ArgumentNullException.ThrowIfNull(master);
+        compensation ??= new LatencyCompensation();
+        compensation.BeginBuild();
         var nodeOrder = OrderNodes();
         var stripOrder = OrderStrips();
         var nodePosition = new int[_nodes.Count];
@@ -218,16 +298,60 @@ public sealed class AudioGraphBuilder
             stripPosition[stripOrder[i]] = i;
         }
 
+        // Latencies: what each node's output lags the song by, and what each summing point waits for.
+        var built = _nodes.Select(n => n.LatencyFrames).ToArray();
+        var nodeInput = new int[_nodes.Count];
+        var nodeOutput = new int[_nodes.Count];
+        var monitored = new bool[_nodes.Count];
+        foreach (var index in nodeOrder)
+        {
+            monitored[index] = _monitored.Contains(index) || _nodeEdges.Any(e => e.To == index && monitored[e.From]);
+            nodeInput[index] = _nodeEdges.Where(e => e.To == index && !monitored[e.From]).Select(e => nodeOutput[e.From]).DefaultIfEmpty(0).Max();
+            nodeOutput[index] = nodeInput[index] + built[index];
+        }
+
+        var strip = new int[_strips.Count];
+        foreach (var index in stripOrder)
+        {
+            var arrivals = _toStrips.Where(e => e.Strip == index && !monitored[e.Node]).Select(e => nodeOutput[e.Node])
+                .Concat(_stripDestinations.Where(d => d.Value == index).Select(d => strip[d.Key]))
+                .Concat(_sends.Where(x => x.Destination == index).Select(x => strip[x.Strip]));
+            strip[index] = arrivals.DefaultIfEmpty(0).Max();
+        }
+
+        var latency = _toMaster.Where(n => !monitored[n]).Select(n => nodeOutput[n])
+            .Concat(Enumerable.Range(0, _strips.Count).Where(i => !_stripDestinations.ContainsKey(i)).Select(i => strip[i]))
+            .DefaultIfEmpty(0).Max();
+
+        AudioGraph.EdgeDelay Edge(object source, object destination, int kind, int frames)
+        {
+            var line = compensation.LineFor(source, destination, kind, frames, blockFrames);
+            return new AudioGraph.EdgeDelay(line, line is null ? 0 : frames);
+        }
+
         var nodes = nodeOrder.Select(index =>
         {
-            int[] inputs = [.. _nodeEdges.Where(e => e.To == index).Select(e => nodePosition[e.From])];
+            var node = _nodes[index];
+            var inputEdges = _nodeEdges.Where(e => e.To == index).ToList();
+            int[] inputs = [.. inputEdges.Select(e => nodePosition[e.From])];
+            AudioGraph.EdgeDelay[] inputDelays = [.. inputEdges.Select(e => Edge(_nodes[e.From], node, 0, monitored[index] ? 0 : nodeInput[index] - nodeOutput[e.From]))];
+            var strips = _toStrips.Where(e => e.Node == index).Select(e => e.Strip).Distinct().ToList();
+            AudioGraph.EdgeDelay[] stripDelays = [.. strips.Select(s => Edge(node, _strips[s].State, 0, monitored[index] ? 0 : strip[s] - nodeOutput[index]))];
+            var toMaster = _toMaster.Contains(index);
+            var masterDelay = toMaster ? Edge(node, master, 0, monitored[index] ? 0 : latency - nodeOutput[index]) : default;
+            var compensated = stripDelays.Select(d => d.Frames).Append(masterDelay.Frames).Max();
             return new AudioGraph.NodeEntry(
-                _nodes[index],
+                node,
                 inputs,
+                inputDelays,
                 inputs.Length > 0 ? new float[2 * blockFrames] : null,
                 new float[2 * blockFrames],
-                [.. _toStrips.Where(e => e.Node == index).Select(e => stripPosition[e.Strip]).Distinct()],
-                _toMaster.Contains(index));
+                [.. strips.Select(s => stripPosition[s])],
+                stripDelays,
+                toMaster,
+                masterDelay,
+                built[index],
+                compensated);
         }).ToArray();
 
         var audible = Audible();
@@ -238,19 +362,23 @@ public sealed class AudioGraphBuilder
             var fader = PanLaw.DecibelsToGain(settings.GainDecibels);
             var (left, right) = PanLaw.Gains(settings.Pan);
             var gain = audible[index] ? fader : 0f;
-            var destination = _stripDestinations.TryGetValue(index, out var d) ? stripPosition[d] : -1;
+            var hasDestination = _stripDestinations.TryGetValue(index, out var d);
+            var destination = hasDestination ? stripPosition[d] : -1;
+            var outputDelay = hasDestination ? Edge(state, _strips[d].State, 0, strip[d] - strip[index]) : Edge(state, master, 0, latency - strip[index]);
             var sends = _sends.Where(s => s.Strip == index).Select(send =>
             {
                 var carries = !settings.Muted && (!anySolo || audible[index] || _strips[send.Destination].Settings.Soloed);
                 var level = carries ? PanLaw.DecibelsToGain(send.LevelDecibels) : 0f;
                 var (sendLeft, sendRight) = send.PreFader ? (level, level) : (level * fader * left, level * fader * right);
-                return new AudioGraph.SendEntry(state.SendTo(_strips[send.Destination].State), stripPosition[send.Destination], sendLeft, sendRight);
+                var target = _strips[send.Destination].State;
+                return new AudioGraph.SendEntry(state.SendTo(target), stripPosition[send.Destination], sendLeft, sendRight, Edge(state, target, 1, strip[send.Destination] - strip[index]));
             }).ToArray();
             state.KeepSendsTo(_sends.Where(s => s.Strip == index).Select(s => _strips[s.Destination].State).ToHashSet());
-            return new AudioGraph.StripEntry(state, gain * left, gain * right, destination, new float[2 * blockFrames], sends);
+            return new AudioGraph.StripEntry(state, gain * left, gain * right, destination, new float[2 * blockFrames], sends, outputDelay);
         }).ToArray();
 
-        return new AudioGraph(blockFrames, nodes, strips, master, PanLaw.DecibelsToGain(masterGainDecibels), [.. _streams]);
+        compensation.EndBuild();
+        return new AudioGraph(blockFrames, nodes, strips, master, PanLaw.DecibelsToGain(masterGainDecibels), [.. _streams], latency);
     }
 
     // See Build for the rule.

@@ -18,7 +18,11 @@ namespace Bluestone.Audio;
 /// <param name="Tempo">Beats per minute at the block's start, for plugins that ask (informational).</param>
 /// <param name="WrapOffset">Where in the block the loop wraps, or 0 when it does not.</param>
 /// <param name="WrapFrame">The song frame playing from <paramref name="WrapOffset"/> on.</param>
-public readonly record struct AudioRenderContext(int Frames, int SampleRate, bool Playing, long SongFrame, bool Jumped, double Tempo = 120, int WrapOffset = 0, long WrapFrame = 0)
+/// <param name="HeardTimestamp">
+/// When the master puts out the block's first frame at the device, in <see cref="System.Diagnostics.Stopwatch"/> ticks
+/// (0 when unknown). Live input is measured against it.
+/// </param>
+public readonly record struct AudioRenderContext(int Frames, int SampleRate, bool Playing, long SongFrame, bool Jumped, double Tempo = 120, int WrapOffset = 0, long WrapFrame = 0, long HeardTimestamp = 0)
 {
     /// <summary>The loop wraps inside this block.</summary>
     public bool Wraps => WrapOffset > 0 && WrapOffset < Frames;
@@ -41,8 +45,8 @@ public abstract class AudioNode
     public virtual string Name => GetType().Name;
 
     /// <summary>
-    /// Frames the node's output lags its input or the song (plugin pipelining plus the plugin's own latency).
-    /// Reported for later delay compensation; nothing compensates yet.
+    /// Frames the node's output lags its input or the song (plugin pipelining plus the plugin's own latency). The graph
+    /// compensates for it when it is built (ADR 0035); a change shows in <see cref="AudioGraph.IsLatencyStale"/>.
     /// </summary>
     public virtual int LatencyFrames => 0;
 

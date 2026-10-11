@@ -13,11 +13,12 @@ using Bluestone.Domain.Time;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol.Exchange;
 using Bluestone.Signal;
+using NotificationKind = Bluestone.Plugins.Protocol.NotificationKind;
 
 namespace Bluestone.Application.Audio;
 
 /// <summary>A render graph for a project, with what could not be included and each plugin node's latency.</summary>
-/// <param name="Graph">The graph to publish to the engine.</param>
+/// <param name="Graph">The graph to publish to the engine; its <see cref="AudioGraph.LatencyFrames"/> is the longest path's latency, which the transport renders ahead by.</param>
 /// <param name="Problems">Missing or unreadable audio files, and devices that make no sound here, in words.</param>
 /// <param name="LatencyFrames">Each plugin device in the graph: frames its output lags (pipelining plus the plugin's own).</param>
 public sealed record ProjectAudioGraphResult(AudioGraph Graph, ImmutableArray<string> Problems, ImmutableDictionary<DeviceId, int> LatencyFrames);
@@ -26,7 +27,9 @@ public sealed record ProjectAudioGraphResult(AudioGraph Graph, ImmutableArray<st
 /// Turns a project into a render graph (ADR 0032): audio clips, plugin instruments and effects in chain order, the
 /// audio connections (ADR 0023) into mixer channels, buses, the master, and other chains, and the mixer's gain,
 /// pan, mute, and solo. It keeps node and strip state between builds, so an edit while playing does not restart a
-/// clip's stream, lose a plugin's note tracking, or reset a meter.
+/// clip's stream, lose a plugin's note tracking, or reset a meter. Every path is delay-compensated (ADR 0035): the
+/// compensation delay lines are kept between builds too, and a plugin that reports a new latency raises
+/// <see cref="LatencyChanged"/> so the graph can be built again.
 /// </summary>
 /// <remarks>
 /// A chain's audio starts with the owner's own audio (a track's audio clips, when the track plays by the mute and
@@ -46,6 +49,9 @@ public sealed class ProjectAudioGraph : IDisposable
     private readonly Dictionary<DeviceId, PluginNode> _plugins = [];
     private readonly Dictionary<TrackId, ClipEntry> _clips = [];
     private readonly List<ClipPlayerNode> _retired = [];
+    private readonly LatencyCompensation _compensation = new();
+    private readonly Lock _monitorGate = new();
+    private ImmutableHashSet<DeviceId> _monitored = [];
 
     /// <param name="sampleRate">The engine's rate.</param>
     /// <param name="blockFrames">The engine's block size.</param>
@@ -58,6 +64,32 @@ public sealed class ProjectAudioGraph : IDisposable
     }
 
     public MixerStripState Master { get; } = new();
+
+    /// <summary>A plugin in the graph reported a new latency (any thread); build the graph again to compensate for it.</summary>
+    public event EventHandler? LatencyChanged;
+
+    /// <summary>
+    /// Plugin instruments played live with low-latency monitoring (ADR 0035): their output is not delayed for
+    /// compensation. Takes effect at the next build. Any thread.
+    /// </summary>
+    public ImmutableHashSet<DeviceId> Monitored
+    {
+        get
+        {
+            lock (_monitorGate)
+            {
+                return _monitored;
+            }
+        }
+
+        set
+        {
+            lock (_monitorGate)
+            {
+                _monitored = value ?? [];
+            }
+        }
+    }
 
     /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
     public MixerStripState? StripOf(MixerChannelId channel) => _strips.GetValueOrDefault(channel);
@@ -93,6 +125,20 @@ public sealed class ProjectAudioGraph : IDisposable
 
         _retired.Clear();
         _clips.Clear();
+        foreach (var plugin in _plugins.Values)
+        {
+            plugin.Instance.Changed -= OnPluginChanged;
+        }
+
+        _plugins.Clear();
+    }
+
+    private void OnPluginChanged(object? sender, NotificationKind kind)
+    {
+        if (kind == NotificationKind.LatencyChanged)
+        {
+            LatencyChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>The song frame of a tick, at <paramref name="sampleRate"/>.</summary>
@@ -161,6 +207,7 @@ public sealed class ProjectAudioGraph : IDisposable
         private readonly Dictionary<DeviceChainId, List<int>[]> _chains = [];
         private readonly Dictionary<TrackId, List<int>> _starts = [];
         private readonly HashSet<SignalNode> _visiting = [];
+        private readonly ImmutableHashSet<DeviceId> _monitored = owner.Monitored;
         private readonly Dictionary<MixerChannelId, int> _stripIndex = [];
         private ImmutableArray<SignalConnection> _audio = [];
 
@@ -188,7 +235,7 @@ public sealed class ProjectAudioGraph : IDisposable
             }
 
             ForgetUnused();
-            var graph = _builder.Build(owner._blockFrames, owner.Master, project.Mixer.MasterGainDecibels);
+            var graph = _builder.Build(owner._blockFrames, owner.Master, project.Mixer.MasterGainDecibels, owner._compensation);
             return new ProjectAudioGraphResult(graph, _problems.Distinct().ToImmutableArray(), _latency.ToImmutable());
         }
 
@@ -324,6 +371,11 @@ public sealed class ProjectAudioGraph : IDisposable
                     if (NodeOf(device) is { } plugin)
                     {
                         var node = _builder.AddNode(plugin);
+                        if (_monitored.Contains(device.Id))
+                        {
+                            _builder.Monitor(node);
+                        }
+
                         if (definition.Consumes.HasFlag(SignalKinds.Audio))
                         {
                             foreach (var source in audio)
@@ -455,7 +507,13 @@ public sealed class ProjectAudioGraph : IDisposable
                     return null;
                 }
 
+                if (owner._plugins.TryGetValue(device.Id, out var replaced))
+                {
+                    replaced.Instance.Changed -= owner.OnPluginChanged;
+                }
+
                 node = new PluginNode(instance, (device.Definition.DisplayName ?? device.Definition.Id.Value), owner._blockFrames);
+                instance.Changed += owner.OnPluginChanged;
                 owner._plugins[device.Id] = node;
             }
 
@@ -471,6 +529,7 @@ public sealed class ProjectAudioGraph : IDisposable
             var present = project.Chains.SelectMany(c => c.Devices).Select(d => d.Id).ToHashSet();
             foreach (var gone in owner._plugins.Keys.Where(id => !present.Contains(id)).ToList())
             {
+                owner._plugins[gone].Instance.Changed -= owner.OnPluginChanged;
                 owner._plugins.Remove(gone);
             }
 

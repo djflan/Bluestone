@@ -268,6 +268,7 @@ public sealed class AudioPlayback : IDisposable
         {
             _engine = engine;
             _graph = new ProjectAudioGraph(rate, block, _instances);
+            _graph.LatencyChanged += (_, _) => _ = Task.Run(Rebuild);
         }
 
         Rebuild();
@@ -341,6 +342,12 @@ public sealed class AudioPlayback : IDisposable
     {
         Align();
         CheckDevice();
+
+        // A plugin restarted or changed its latency without telling us: compensate for what it reports now.
+        if (_engine?.Graph.IsLatencyStale == true)
+        {
+            Rebuild();
+        }
     }
 
     // Moves the MIDI transport towards the audio by half the measured difference.
