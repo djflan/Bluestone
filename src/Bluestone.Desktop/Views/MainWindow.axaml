@@ -40,6 +40,8 @@
                 <Separator />
                 <MenuItem Header="Import MIDI File…" Command="{Binding ImportMidiCommand}" InputGesture="Ctrl+I" />
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
+                <Separator />
+                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, modules that could not be read, and quarantined modules" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>

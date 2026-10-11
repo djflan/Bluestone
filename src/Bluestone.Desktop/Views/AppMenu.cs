@@ -3,6 +3,7 @@ using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Bluestone.Presentation;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Bluestone.Desktop.Views;
 
@@ -123,7 +124,9 @@ internal static class AppMenu
                 Item("Zoom Out", vm.ZoomOutCommand, Cmd(Key.OemMinus))),
             Submenu("Window",
                 Item("Minimize", () => window.WindowState = WindowState.Minimized, Cmd(Key.M)),
-                Item("Zoom", () => window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized)),
+                Item("Zoom", () => window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized),
+                new NativeMenuItemSeparator(),
+                Item("Plugins…", new RelayCommand(window.ShowPlugins))),
             Submenu("Help",
                 Item("Keyboard Shortcuts", window.ShowShortcuts, Cmd(Key.OemQuestion)),
                 Item("Bluestone Help", () => _ = window.Launcher.LaunchUriAsync(new Uri(HelpUrl)))),
