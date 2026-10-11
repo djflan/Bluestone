@@ -1,5 +1,6 @@
 using Bluestone.Application.Audio;
 using Bluestone.Audio;
+using Bluestone.Audio.Clips;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Mixing;
@@ -121,6 +122,9 @@ public sealed class ProjectAudioGraphTests : IDisposable
 
         Assert.Same(strip, graphs.StripOf(channel.Id));
         Assert.Same(first.Graph.Nodes.Single(), second.Graph.Nodes.Single());
+
+        // No engine served this node, so its files are closed here (Windows cannot delete an open file).
+        ((ClipPlayerNode)second.Graph.Nodes.Single()).Dispose();
     }
 
     [Fact]

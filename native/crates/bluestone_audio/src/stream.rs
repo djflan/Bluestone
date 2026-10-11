@@ -10,7 +10,7 @@ use cpal::{
 };
 use std::ffi::c_void;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::ring::Ring;
@@ -111,6 +111,9 @@ pub const HISTOGRAM_BUCKETS: usize = 2001;
 #[derive(Default)]
 pub(crate) struct Shared {
     state: AtomicU32,
+    /// Set by `stop` when the backend cannot pause (some ALSA devices): the callbacks then output silence and do
+    /// not call the source, so the stream behaves as stopped. Cleared by `start`.
+    silenced: AtomicBool,
     callbacks: AtomicU64,
     frames: AtomicU64,
     xruns: AtomicU64,
@@ -366,6 +369,7 @@ impl OutputStream {
 
     pub fn start(&self) -> Result<(), String> {
         self.stream.play().map_err(|e| e.to_string())?;
+        self.shared.silenced.store(false, Ordering::Release);
         // A failure reported by the error callback stays visible; only a stopped stream becomes running.
         let _ = self.shared.state.compare_exchange(
             STATE_STOPPED,
@@ -377,7 +381,10 @@ impl OutputStream {
     }
 
     pub fn stop(&self) -> Result<(), String> {
-        self.stream.pause().map_err(|e| e.to_string())?;
+        // A device that cannot pause keeps calling back; silencing the callbacks stops the stream just the same.
+        if self.stream.pause().is_err() {
+            self.shared.silenced.store(true, Ordering::Release);
+        }
         let _ = self.shared.state.compare_exchange(
             STATE_RUNNING,
             STATE_STOPPED,
@@ -467,6 +474,10 @@ fn build_f32(
         .build_output_stream::<f32, _, _>(
             config,
             move |data, info| {
+                if shared.silenced.load(Ordering::Acquire) {
+                    data.fill(0.0);
+                    return;
+                }
                 let frames = (data.len() / channels as usize) as u32;
                 let block = clock.block(&shared, info, frames);
                 data.fill(0.0);
@@ -501,6 +512,10 @@ where
         .build_output_stream::<T, _, _>(
             config,
             move |data: &mut [T], info| {
+                if shared.silenced.load(Ordering::Acquire) {
+                    data.fill(T::EQUILIBRIUM);
+                    return;
+                }
                 let frames = (data.len() / channels as usize) as u32;
                 let block = clock.block(&shared, info, frames);
                 if data.len() > scratch.len() {
