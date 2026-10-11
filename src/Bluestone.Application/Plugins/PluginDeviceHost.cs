@@ -23,7 +23,17 @@ public sealed record PluginParameterEdit(DeviceId Device, uint ParameterId, doub
 /// <param name="NeedsAttention">The musician should know: the device is not doing its job.</param>
 /// <param name="CanRestart">A restart (or reload) can be asked for now.</param>
 /// <param name="CanOpenEditor">The plugin is a running VST3 or CLAP plugin, whose editor can be asked for.</param>
-public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart, bool CanOpenEditor = false);
+/// <param name="Hosting">Which worker process it is in: "Hosted by plugin (Surge XT) · shares its process with Pad".</param>
+/// <param name="Detail">More about a failure, for example which other devices went down with it.</param>
+public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart, bool CanOpenEditor = false, string? Hosting = null, string? Detail = null);
+
+/// <summary>How often a plugin's worker has failed under it this session.</summary>
+/// <param name="Crashes">Worker processes that crashed, hung, or misbehaved while running this plugin.</param>
+/// <param name="Shared">Of those, how many also ran other plugins, any of which may have caused the crash.</param>
+public sealed record PluginCrashCount(int Crashes, int Shared);
+
+/// <summary>Plugin devices whose worker process ended under them, together.</summary>
+public sealed record PluginCrash(ImmutableArray<DeviceId> Devices, UnavailableReason Reason);
 
 /// <summary>
 /// Connects the project's plugin devices to plugin instances in worker processes (ADR 0025). The project
@@ -51,8 +61,11 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
     private readonly double _sampleRate;
     private readonly int _maxBlockFrames;
+    private volatile PluginHostingSettings _hosting;
+    private volatile ImmutableDictionary<DeviceDefinitionId, PluginCrashCount> _crashes = ImmutableDictionary<DeviceDefinitionId, PluginCrashCount>.Empty;
 
-    public PluginDeviceHost(PluginHostManager manager, ProjectSession session, IEnumerable<PluginIdentity> available, double sampleRate = 48_000, int maxBlockFrames = 256)
+    /// <summary>A bridge for <paramref name="available"/> plugins. <paramref name="hosting"/> says how instances share worker processes; null gives the defaults (by plugin, no automatic restart).</summary>
+    public PluginDeviceHost(PluginHostManager manager, ProjectSession session, IEnumerable<PluginIdentity> available, double sampleRate = 48_000, int maxBlockFrames = 256, PluginHostingSettings? hosting = null)
     {
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
         _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -60,11 +73,13 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         _plugins = available.ToImmutableDictionary(DefinitionIdOf, p => p);
         _sampleRate = sampleRate;
         _maxBlockFrames = maxBlockFrames;
+        _hosting = (hosting ?? new PluginHostingSettings()).Sanitized();
+        _manager.WorkerLost += OnWorkerLost;
     }
 
     /// <summary>A bridge whose available plugins follow <paramref name="library"/>: after every scan, rescan, or retry.</summary>
-    public PluginDeviceHost(PluginHostManager manager, ProjectSession session, PluginLibrary library, double sampleRate = 48_000, int maxBlockFrames = 256)
-        : this(manager, session, (library ?? throw new ArgumentNullException(nameof(library))).Available, sampleRate, maxBlockFrames)
+    public PluginDeviceHost(PluginHostManager manager, ProjectSession session, PluginLibrary library, double sampleRate = 48_000, int maxBlockFrames = 256, PluginHostingSettings? hosting = null)
+        : this(manager, session, (library ?? throw new ArgumentNullException(nameof(library))).Available, sampleRate, maxBlockFrames, hosting)
     {
         _modulePaths = library.ModulePaths;
         library.Changed += (_, _) => SetAvailable(library.Available, library.ModulePaths);
@@ -85,6 +100,55 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     /// May be raised on any thread.
     /// </summary>
     public event EventHandler? AvailableChanged;
+
+    /// <summary>
+    /// A worker process ended under one or more of this bridge's devices: they are all Unavailable now, and
+    /// <see cref="CrashCounts"/> is updated. Raised on any thread.
+    /// </summary>
+    public event EventHandler<PluginCrash>? Crashed;
+
+    /// <summary>How instances share worker processes now. Change it with <see cref="ApplyHostingAsync"/>.</summary>
+    public PluginHostingSettings Hosting => _hosting;
+
+    /// <summary>Worker failures per plugin this session, by device definition ID. Plugins that never failed are absent.</summary>
+    public ImmutableDictionary<DeviceDefinitionId, PluginCrashCount> CrashCounts => _crashes;
+
+    /// <summary>
+    /// Applies new hosting settings to every instance. An instance whose mode changes so that it belongs in another worker
+    /// is moved there: a running one has its state captured first, a crashed one is restarted from its last state
+    /// (<see cref="PluginHostManager.ChangeHostingAsync"/>). The restart policy applies from the next failure. Returns
+    /// the devices that were moved or restarted.
+    /// </summary>
+    public async Task<ImmutableArray<DeviceId>> ApplyHostingAsync(PluginHostingSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _hosting = settings = settings.Sanitized();
+        var moved = ImmutableArray.CreateBuilder<DeviceId>();
+        foreach (var (device, instance) in _instances.ToList())
+        {
+            if (instance.RestartPolicy != settings.RestartPolicy)
+            {
+                instance.RestartPolicy = settings.RestartPolicy;
+            }
+
+            var mode = settings.ModeFor(instance.Plugin);
+            if (instance.Hosting == mode)
+            {
+                continue;
+            }
+
+            var before = (instance.WorkerKey, instance.Status.State);
+            await _manager.ChangeHostingAsync(instance, mode, cancellationToken).ConfigureAwait(false);
+            if ((instance.WorkerKey, instance.Status.State) != before || before.State != PluginInstanceState.Running)
+            {
+                moved.Add(device);
+            }
+
+            StatusChanged?.Invoke(this, device);
+        }
+
+        return moved.ToImmutable();
+    }
 
     /// <summary>
     /// Replaces the available plugins, for example after a rescan. <paramref name="modulePaths"/> gives the module each
@@ -232,11 +296,12 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         }
 
         var status = instance.Status;
+        var hosting = HostingOf(device.Id, instance);
         return status.State switch
         {
-            PluginInstanceState.Running => new DeviceRuntimeStatus(instance.IsEditorOpen ? "Running, editor open" : "Running", false, false, CanOpenEditor: instance.Plugin.Format is "vst3" or "clap"),
-            PluginInstanceState.Starting or PluginInstanceState.Restarting => new DeviceRuntimeStatus("Starting", false, false),
-            PluginInstanceState.Quarantined => new DeviceRuntimeStatus("Stopped after repeated crashes", true, true),
+            PluginInstanceState.Running => new DeviceRuntimeStatus(instance.IsEditorOpen ? "Running, editor open" : "Running", false, false, CanOpenEditor: instance.Plugin.Format is "vst3" or "clap", hosting),
+            PluginInstanceState.Starting or PluginInstanceState.Restarting => new DeviceRuntimeStatus("Starting", false, false, Hosting: hosting),
+            PluginInstanceState.Quarantined => new DeviceRuntimeStatus("Stopped after repeated crashes", true, true, Hosting: hosting, Detail: WentDownWith(device.Id, instance)),
             PluginInstanceState.Unavailable => new DeviceRuntimeStatus(status.Reason switch
             {
                 UnavailableReason.Crashed => "Crashed",
@@ -244,10 +309,19 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 UnavailableReason.FailedToStart => "Failed to start",
                 UnavailableReason.ProtocolError => "Misbehaved",
                 _ => "Unavailable",
-            }, true, true),
+            }, true, true, Hosting: hosting, Detail: WentDownWith(device.Id, instance)),
             _ => new DeviceRuntimeStatus("Unloaded", false, false),
         };
     }
+
+    /// <summary>
+    /// The devices that were in the same worker process as <paramref name="device"/> when it last ended, this one first;
+    /// just this one when it ran alone, and empty when its worker has not failed since it last ran.
+    /// </summary>
+    public ImmutableArray<DeviceId> WentDownTogether(DeviceId device) =>
+        _instances.TryGetValue(device, out var instance) && instance.LastWorkerLoss is { } loss
+            ? [device, .. DevicesOf(loss.Instances).Where(d => d != device)]
+            : [];
 
     /// <summary>
     /// Brings the running instances in line with <paramref name="project"/>: every plugin device whose plugin is
@@ -292,8 +366,11 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         {
             var plugin = available[device.Definition.Id];
             var parameters = device.Parameters.Select(p => new WorkerParameterValue(p.Id.Value, p.Value.ToFraction())).ToImmutableArray();
+            var hosting = _hosting;
             var request = new PluginInstanceRequest(plugin, _sampleRate, _maxBlockFrames, plugin.Kind == PluginKind.AudioEffect ? 2 : 0, plugin.Kind == PluginKind.MidiEffect ? 0 : 2)
             {
+                Hosting = hosting.ModeFor(plugin),
+                RestartPolicy = hosting.RestartPolicy,
                 ModulePath = _modulePaths.GetValueOrDefault(plugin),
                 RestoreFrom = device.State is { } saved
                     ? new PluginStateSnapshot(plugin, new PluginStateData(saved.Format, [.. saved.Data.Span]), parameters, DateTimeOffset.UnixEpoch)
@@ -357,7 +434,11 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         }
     }
 
-    /// <summary>Restarts a crashed, hung, or quarantined device's worker and restores its last captured state.</summary>
+    /// <summary>
+    /// Restarts a crashed, hung, or quarantined device's worker and restores its last captured state. Devices that went
+    /// down with it (they shared its worker) and are still down are restarted with it, so they share a worker again.
+    /// Returns whether <paramref name="device"/> runs again.
+    /// </summary>
     public async Task<bool> RestartAsync(DeviceId device, CancellationToken cancellationToken = default)
     {
         if (!_instances.TryGetValue(device, out var instance))
@@ -365,13 +446,23 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             return false;
         }
 
-        var status = await instance.RestartAsync(cancellationToken).ConfigureAwait(false);
+        var together = WentDownTogether(device).Where(d => d != device).Select(d => (Device: d, Instance: _instances.GetValueOrDefault(d)))
+            .Where(t => t.Instance?.Status.State is PluginInstanceState.Unavailable or PluginInstanceState.Quarantined)
+            .ToList();
+        var restarts = together.Select(t => t.Instance!.RestartAsync(cancellationToken)).Prepend(instance.RestartAsync(cancellationToken)).ToList();
+        var statuses = await Task.WhenAll(restarts).ConfigureAwait(false);
         StatusChanged?.Invoke(this, device);
-        return status.State == PluginInstanceState.Running;
+        foreach (var (other, _) in together)
+        {
+            StatusChanged?.Invoke(this, other);
+        }
+
+        return statuses[0].State == PluginInstanceState.Running;
     }
 
     public async ValueTask DisposeAsync()
     {
+        _manager.WorkerLost -= OnWorkerLost;
         foreach (var (id, instance) in _instances.ToList())
         {
             instance.StatusChanged -= Handler(id);
@@ -379,6 +470,87 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         }
 
         _instances.Clear();
+    }
+
+    // Runs on a thread-pool thread after every instance on the worker is Unavailable.
+    private void OnWorkerLost(object? sender, WorkerLoss loss)
+    {
+        var devices = DevicesOf(loss.Instances).ToImmutableArray();
+        if (devices.IsEmpty)
+        {
+            return;
+        }
+
+        var plugins = loss.Instances.Where(i => _instances.Values.Contains(i)).Select(i => DefinitionIdOf(i.Plugin)).Distinct().ToList();
+        var shared = plugins.Count > 1;
+        ImmutableDictionary<DeviceDefinitionId, PluginCrashCount> before, after;
+        do
+        {
+            before = _crashes;
+            after = before;
+            foreach (var plugin in plugins)
+            {
+                var count = after.GetValueOrDefault(plugin) ?? new PluginCrashCount(0, 0);
+                after = after.SetItem(plugin, new PluginCrashCount(count.Crashes + 1, count.Shared + (shared ? 1 : 0)));
+            }
+        }
+        while (Interlocked.CompareExchange(ref _crashes, after, before) != before);
+
+        Crashed?.Invoke(this, new PluginCrash(devices, loss.Reason));
+    }
+
+    private IEnumerable<DeviceId> DevicesOf(IEnumerable<PluginInstance> instances)
+    {
+        var wanted = instances.ToHashSet();
+        return _instances.Where(p => wanted.Contains(p.Value)).Select(p => p.Key);
+    }
+
+    private string NameOf(DeviceId device) => _session.Project.FindDevice(device) is { } found ? found.Device.DisplayName : "a removed device";
+
+    private static string List(List<string> names) => names.Count switch
+    {
+        0 => string.Empty,
+        1 => names[0],
+        <= 3 => string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1],
+        _ => string.Join(", ", names.Take(2)) + $" and {names.Count - 2} more",
+    };
+
+    // "Hosted by plugin (Surge XT) · shares its process with Pad and Bass", from the instance's mode and current worker.
+    private string HostingOf(DeviceId device, PluginInstance instance)
+    {
+        var plugin = instance.Plugin;
+        var text = instance.Hosting switch
+        {
+            HostingMode.Individually => "Hosted individually",
+            HostingMode.ByManufacturer when plugin.Vendor.Trim().Length > 0 => $"Hosted by manufacturer ({plugin.Vendor.Trim()})",
+            HostingMode.ByManufacturer => $"Hosted by plugin ({plugin.ModuleId}; no manufacturer given)",
+            HostingMode.ByPlugin => $"Hosted by plugin ({plugin.ModuleId})",
+            _ => "Hosted together",
+        };
+        if (_hosting.Overrides.ContainsKey(DefinitionIdOf(plugin).Value))
+        {
+            text += ", set for this plugin";
+        }
+
+        if (instance.WorkerKey is { } key && instance.Status.State == PluginInstanceState.Running)
+        {
+            var others = _instances.Where(p => p.Key != device && p.Value.WorkerKey == key && p.Value.Status.State == PluginInstanceState.Running)
+                .Select(p => NameOf(p.Key)).ToList();
+            if (others.Count > 0)
+            {
+                text += $" · shares its process with {List(others)}";
+            }
+        }
+
+        return text;
+    }
+
+    private string? WentDownWith(DeviceId device, PluginInstance instance)
+    {
+        var others = WentDownTogether(device).Where(d => d != device).Select(NameOf).ToList();
+        return others.Count == 0 || instance.LastWorkerLoss is null
+            ? null
+            : $"{List(others)} went down with it: they shared its worker process. Restart starts them all again.";
     }
 
     // One handler per device, so the same delegate can be removed again.
