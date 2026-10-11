@@ -129,6 +129,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 }
             });
 
+            // A parameter the plugin changed itself (in its editor) is stored in the project, which stays the authority.
+            _plugins.ParameterEdited += (_, edit) => _dispatcher.Post(() => _plugins.RecordEdit(edit));
+
             // A rescan that finds or loses plugins changes the catalog; devices whose plugin was found start.
             _plugins.AvailableChanged += (_, _) => _dispatcher.Post(() => _ = OnPluginsChangedAsync());
         }
@@ -193,7 +196,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>A device's status for the strip: a plugin's from its worker, otherwise from the catalog.</summary>
     internal DeviceStatus DeviceStatus(DeviceInstance device) =>
         _plugins?.StatusOf(device) is { } runtime
-            ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart)
+            ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor)
             : Presentation.DeviceStatus.Of(device, Devices);
 
     /// <summary>Restarts a crashed, hung, or quarantined plugin device and restores its last saved state.</summary>
@@ -214,6 +217,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             AddMessage(MessageSeverity.Warning, "Plugins", $"The plugin could not be restarted: {ex.Message}");
+        }
+
+        SyncSelection();
+    }
+
+    /// <summary>Opens a plugin device's own editor in a window of its worker process.</summary>
+    internal async Task OpenDeviceEditorAsync(DeviceId device)
+    {
+        if (_plugins is null)
+        {
+            return;
+        }
+
+        if (await _plugins.OpenEditorAsync(device) is { } problem)
+        {
+            AddMessage(MessageSeverity.Warning, "Plugins", $"The plugin's editor could not be opened: {problem}");
         }
 
         SyncSelection();

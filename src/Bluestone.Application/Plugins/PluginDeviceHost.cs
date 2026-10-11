@@ -22,7 +22,8 @@ public sealed record PluginParameterEdit(DeviceId Device, uint ParameterId, doub
 /// <param name="Text">"Running", "Crashed", "Not installed", …</param>
 /// <param name="NeedsAttention">The musician should know: the device is not doing its job.</param>
 /// <param name="CanRestart">A restart (or reload) can be asked for now.</param>
-public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart);
+/// <param name="CanOpenEditor">The plugin is a running VST3 or CLAP plugin, whose editor can be asked for.</param>
+public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart, bool CanOpenEditor = false);
 
 /// <summary>
 /// Connects the project's plugin devices to plugin instances in worker processes (ADR 0025). The project
@@ -35,6 +36,9 @@ public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool 
 public sealed class PluginDeviceHost : IAsyncDisposable
 {
     public const string DefinitionPrefix = "plugin:";
+
+    // Values closer than this are the same: the project stores 32-bit fractions, plugins often 32-bit floats.
+    private const double ParameterTolerance = 1e-6;
 
     private readonly PluginHostManager _manager;
     private readonly ProjectSession _session;
@@ -230,7 +234,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         var status = instance.Status;
         return status.State switch
         {
-            PluginInstanceState.Running => new DeviceRuntimeStatus("Running", false, false),
+            PluginInstanceState.Running => new DeviceRuntimeStatus(instance.IsEditorOpen ? "Running, editor open" : "Running", false, false, CanOpenEditor: instance.Plugin.Format is "vst3" or "clap"),
             PluginInstanceState.Starting or PluginInstanceState.Restarting => new DeviceRuntimeStatus("Starting", false, false),
             PluginInstanceState.Quarantined => new DeviceRuntimeStatus("Stopped after repeated crashes", true, true),
             PluginInstanceState.Unavailable => new DeviceRuntimeStatus(status.Reason switch
@@ -267,6 +271,23 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             }
         }
 
+        // Values changed in the project (in the device strip, or by undo) go to the running plugins.
+        foreach (var device in wanted.Values)
+        {
+            if (_instances.TryGetValue(device.Id, out var running) && running.Status.State == PluginInstanceState.Running)
+            {
+                var known = running.GetCachedParameterValues().ToDictionary(v => v.Id, v => v.Value);
+                foreach (var parameter in device.Parameters)
+                {
+                    var value = parameter.Value.ToFraction();
+                    if (known.TryGetValue(parameter.Id.Value, out var current) && Math.Abs(current - value) > ParameterTolerance)
+                    {
+                        await running.SetParameterAsync(parameter.Id.Value, value, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
         foreach (var device in wanted.Values.Where(d => !_instances.ContainsKey(d.Id)))
         {
             var plugin = available[device.Definition.Id];
@@ -295,7 +316,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 var known = instance.GetCachedParameterValues().ToDictionary(v => v.Id, v => v.Value);
                 foreach (var parameter in parameters)
                 {
-                    if (known.TryGetValue(parameter.Id, out var current) && Math.Abs(current - parameter.Value) > 1e-9)
+                    if (known.TryGetValue(parameter.Id, out var current) && Math.Abs(current - parameter.Value) > ParameterTolerance)
                     {
                         await instance.SetParameterAsync(parameter.Id, parameter.Value, cancellationToken).ConfigureAwait(false);
                     }
