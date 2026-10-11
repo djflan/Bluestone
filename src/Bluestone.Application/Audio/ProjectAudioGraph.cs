@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Bluestone.Application.Plugins;
 using Bluestone.Audio;
@@ -41,7 +42,7 @@ public sealed class ProjectAudioGraph : IDisposable
     private readonly int _sampleRate;
     private readonly int _blockFrames;
     private readonly Func<DeviceId, PluginInstance?> _instances;
-    private readonly Dictionary<MixerChannelId, MixerStripState> _strips = [];
+    private readonly ConcurrentDictionary<MixerChannelId, MixerStripState> _strips = new();
     private readonly Dictionary<DeviceId, PluginNode> _plugins = [];
     private readonly Dictionary<TrackId, ClipEntry> _clips = [];
     private readonly List<ClipPlayerNode> _retired = [];
@@ -58,7 +59,7 @@ public sealed class ProjectAudioGraph : IDisposable
 
     public MixerStripState Master { get; } = new();
 
-    /// <summary>The meter and gain state of a mixer channel, once a graph has included it.</summary>
+    /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
     public MixerStripState? StripOf(MixerChannelId channel) => _strips.GetValueOrDefault(channel);
 
     /// <summary>The node playing a plugin device, once a graph has included it.</summary>
@@ -243,7 +244,7 @@ public sealed class ProjectAudioGraph : IDisposable
 
             foreach (var gone in owner._strips.Keys.Where(id => !_stripIndex.ContainsKey(id)).ToList())
             {
-                owner._strips.Remove(gone);
+                owner._strips.TryRemove(gone, out _);
             }
         }
 

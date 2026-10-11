@@ -90,6 +90,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Mixer = new MixerViewModel(this);
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
+        AudioClip = new AudioClipViewModel(this);
+        Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         Groups = new GroupsViewModel(this);
         EventList = new EventListViewModel(this, Editor);
         SelectedTracks.CollectionChanged += (_, _) =>
@@ -169,6 +171,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>The clip selection and clip edits in the arrangement.</summary>
     public ArrangementViewModel Arrangement { get; }
+
+    /// <summary>Gain and fades of the selected audio clip.</summary>
+    public AudioClipViewModel AudioClip { get; }
 
     /// <summary>Group tracks: grouping the selection, membership, and folding.</summary>
     public GroupsViewModel Groups { get; }
@@ -1200,6 +1205,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SyncTracks();
         SyncEditor();
         Arrangement.Sync();
+        AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         await SyncPluginsAsync();
         await RefreshAsync();
     }
@@ -1306,8 +1312,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DeviceStrip.Sync(Project, single, Devices);
         Connections.Sync(Project, single, DeviceStrip.Rack);
         Racks.Sync(Project, DeviceStrip.Rack);
-        Mixer.Sync(Project.Mixer);
+        Mixer.Sync(Project);
     }
+
+    /// <summary>Runs <paramref name="action"/> later on the UI thread.</summary>
+    internal void Post(Action action) => _dispatcher.Post(action);
 
     /// <summary>Refreshes the device strip, routing inspector, racks, and mixer from the project.</summary>
     internal void SyncDeviceViews() => SyncSelection();
@@ -1370,9 +1379,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             SelectedTracks.Add(Tracks[0]);
         }
-        else if (selectedIds.Count > 0)
+        else
         {
-            // Rows were updated in place; refresh the inspector from their new values.
+            // Rows were updated in place; refresh the inspector (and the mixer, which shows with no track too).
             SyncSelection();
         }
     }

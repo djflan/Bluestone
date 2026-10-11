@@ -911,6 +911,29 @@ public sealed class TimelineView : Control
         }
     }
 
+    // A fade-in rises from the clip's bottom-left corner to its top, a fade-out falls to its bottom-right corner.
+    private void DrawFades(DrawingContext context, AudioClip clip, Rect body, double shift, Color color)
+    {
+        var (fadeIn, fadeOut) = clip.EffectiveFades;
+        if (fadeIn.Value == 0 && fadeOut.Value == 0)
+        {
+            return;
+        }
+
+        var pen = new Pen(new SolidColorBrush(color, 0.85), 1);
+        var top = body.Y + 15;
+        var bottom = body.Bottom - 1;
+        if (fadeIn.Value > 0)
+        {
+            context.DrawLine(pen, new Point(body.X, bottom), new Point(TickToX(clip.Start.Value + fadeIn.Value) + shift, top));
+        }
+
+        if (fadeOut.Value > 0)
+        {
+            context.DrawLine(pen, new Point(TickToX(clip.End.Value - fadeOut.Value) + shift, top), new Point(body.Right, bottom));
+        }
+    }
+
     // notes[slice] are this clip's notes, in timeline order. The clip has its track's colour
     // (colorLane) wherever it is drawn (rowTop).
     private void DrawClip(DrawingContext context, Track track, Clip clip, List<NoteEvent> notes, (int Start, int End) slice, (int Low, int High) range, int colorLane, double rowTop, double left, double right, long offset)
@@ -948,8 +971,9 @@ public sealed class TimelineView : Control
 
         if (clip is AudioClip audio)
         {
-            // There is no audio engine yet, so no waveform: say what the clip holds, plainly.
-            var source = new FormattedText($"Audio · {Path.GetFileName(audio.Source.Location)}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 9, RegionText)
+            // No waveform is drawn: say what the clip holds, plainly, with its gain, and draw its fades as ramps.
+            var gain = audio.GainDecibels == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $" · {audio.GainDecibels:+0.0;-0.0} dB");
+            var source = new FormattedText($"Audio · {Path.GetFileName(audio.Source.Location)}{gain}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 9, RegionText)
             {
                 MaxTextWidth = Math.Max(1, body.Right - labelX - 4),
                 MaxLineCount = 1,
@@ -962,6 +986,7 @@ public sealed class TimelineView : Control
                 context.DrawText(source, new Point(labelX, body.Y + 15));
             }
 
+            DrawFades(context, audio, body, shift, Palette.Lighten(color, 0.5));
             return;
         }
 
