@@ -34,6 +34,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0027](0027-project-format-4.md) | Project format 4 and the migration from per-track routes | Accepted; amends 0009 |
 | [0028](0028-plugin-midi-effects-at-plan-time.md) | Plugin MIDI effects run in their worker when the plan is compiled | Accepted; amends 0022 and 0025 |
 | [0029](0029-rename-to-bluestone.md) | The project is renamed Bluestone, with no compatibility for Cadence files | Accepted |
+| [0032](0032-audio-engine.md) | Audio engine: cpal output in Rust, the render graph in C# buffered by a ring, one transport (measured) | Accepted |
 
 ## Template
 

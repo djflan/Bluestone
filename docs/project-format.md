@@ -81,7 +81,7 @@ indices, only stable identifiers and identity hints.
   (optional) is the ID of the group track it belongs to. Roles are stored, and on reading a role that
   cannot show the track's content is widened (an instrument track with audio clips becomes hybrid).
 - A clip's `type` is `note`, holding the events below, or `audio`, holding a `source` (`location`,
-  `sampleRate`, `frames`, `channels`). Audio clips are arrangement data only; nothing plays them yet.
+  `sampleRate`, `frames`, `channels`). The audio engine plays audio clips while audio output is on (ADR 0032); the stored rate, length, and channels are informational, and the file's own header is used for playback.
 - Event IDs are unique across all clips of a track.
 - `automation` (optional; omitted when empty) holds a track's automation lanes, in display order. A
   lane's `target` is a `controller` (with a `controller` number, not bank select, 32–63, data entry or

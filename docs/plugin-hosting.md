@@ -13,8 +13,9 @@ this package should be read as VST3 support.
 **Process isolation is crash isolation, not a security sandbox.** See [Security limitations](#security-limitations).
 
 Everything here is C#. The language policy (`docs/daw-epic-handoff.md`, decision 17) allows Rust for a part of
-this only with a measured performance reason or a native ABI constraint. Neither exists yet: no native plugin
-binary is loaded, and the data plane has not been measured to need it.
+this only with a measured performance reason or a native ABI constraint. Neither exists yet for the plugin data plane:
+no native plugin binary is loaded, and the data plane has not been measured to need it. (The audio device callback
+is Rust for a measured reason; ADR 0032.)
 
 ## Projects
 
@@ -161,8 +162,9 @@ everything and is not included):
 Depth 1 adds no pipeline blocks, but the worker's wake-up, the plugin's processing, and the hand-back must all fit
 inside the same audio callback while the host spins; any scheduling hiccup becomes a late block and silence. It is
 not "zero additional latency": it moves the cost into the callback and into dropouts. Depth 2 gives the worker a
-whole block period. Larger depths tolerate more jitter at the cost of more latency. None of these figures has
-been measured under a real audio device yet; the tests prove ordering and correctness, not real-time performance.
+whole block period. Larger depths tolerate more jitter at the cost of more latency. The audio engine now drives instances from
+its render thread, but plugin timing under a real device has only been exercised with the reference plugins, not
+measured; the tests prove ordering and correctness, not real-time performance.
 
 ### Worker wake-up: spin, then back off
 
@@ -381,6 +383,22 @@ bytes reach a loopback port while SysEx and controllers go around it; its automa
 its tick on and a tap carries its output to another track; a killed worker and a hung worker both leave the notes
 unchanged with a reason, and a restart brings the transposition back.
 
+## Plugins in the audio engine
+
+When an audio device is open (ADR 0032), each plugin instrument or audio effect in a chain whose audio is connected
+somewhere becomes a `PluginNode` in the render graph. Every block it calls `ProcessBlock` with the chain's audio so far
+(effects), the software-instrument feed's events and the device's automation scheduled in that block, and the
+transport; plugins run every block, playing or not. On a start, stop, seek, loop wrap, or a new schedule after an
+edit, the notes the node started are released first. A worker that fails gives silence under the instance's failure
+policy, never stale audio, and the engine carries on (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`). Each
+node's latency (`ReportedLatencyFrames`) is reported per device; nothing compensates for it yet. Instances must run
+at the device's rate and accept the engine's block size, or they are reported and left silent.
+
+Tests (real workers, offline driver): `AudioPluginTests` (the Sine at its pitch through a mixer strip after one
+block of latency, the Gain processing connected audio, a killed worker, release on locate, zero allocation) and
+`SoftwareInstrumentAudioTests` (an instrument track through the signal graph, the plugin bridge, and the project audio
+graph).
+
 ## Acceptance scenarios
 
 | # | Scenario | Tests (real worker processes) |
@@ -428,8 +446,5 @@ and run as one non-parallel collection. The integration project references the w
 - **Wake-up primitives** (futex, eventfd, Windows events) for the data plane.
 - **MIDI 2.0** events on the data plane.
 - **In-process hosting** of trusted plugins.
-- **Audio from plugins into a mixer.** There is no audio engine: plugin instances process blocks when asked (as the
-  tests do), but nothing drives them from playback yet. Plugin MIDI effects reach the plan by rendering (above); live
-  input does not pass through plugins.
 - **Scanning from the UI.** The app scans `<application data>/Bluestone/plugins` once at start; rescanning and
   clearing quarantine are API calls (`PluginScanner.RescanAsync`) without a menu yet.

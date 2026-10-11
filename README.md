@@ -15,7 +15,7 @@ It is initially focused on excellent Yamaha XG and QY100 workflows, while its ar
 
 Bluestone can import and export Standard MIDI Files; play tracks to CoreMIDI on macOS, WinMM on Windows (with measured timing), or the ALSA sequencer on Linux (not yet tested on Linux); record MIDI input with count-in, metronome, punch in and out, and cycle recording (macOS for now); arrange tracks as clips that can be moved, copied, trimmed, and split; draw automation lanes for controllers, pitch bend, and pressure; edit notes in a piano roll with velocity and controller lanes, or in an event list; show what was sent in a built-in MIDI monitor; and save and reopen projects safely. MIDI input on Windows and Linux, and Windows MIDI Services, are next.
 
-Bluestone is becoming a DAW without giving up MIDI depth. **Working today:** track roles (instrument, audio, hybrid, effect, group) that convert safely; device chains on tracks and shared racks with built-in Transpose, Event Filter, and Arpeggiator devices, bypass, reordering, parameters, and chain presets; one routing model (connections from a track or from after any device to other tracks, racks, external instruments by port and channel, and mixer channels) with feedback detection; external MIDI instruments as project entities; device parameter automation; project format 4 with a migration that plays older projects byte for byte. **Modelled but not yet sounding:** audio clips, software instruments, and the mixer (there is no audio engine yet). **Plugins:** an out-of-process hosting foundation (worker processes, crash detection and recovery, state persistence, crash-isolated scanning) tested by killing real worker processes, using Bluestone's own reference plugins; plugin MIDI effects run in their worker when the plan is compiled, so their output is routed like any device's; third-party plugin formats such as VST3 are not supported yet. See [docs/architecture.md](docs/architecture.md) and [docs/plugin-hosting.md](docs/plugin-hosting.md).
+Bluestone is becoming a DAW without giving up MIDI depth. **Working today:** track roles (instrument, audio, hybrid, effect, group) that convert safely; device chains on tracks and shared racks with built-in Transpose, Event Filter, and Arpeggiator devices, bypass, reordering, parameters, and chain presets; one routing model (connections from a track or from after any device to other tracks, racks, external instruments by port and channel, and mixer channels) with feedback detection; external MIDI instruments as project entities; device parameter automation; project format 4 with a migration that plays older projects byte for byte. **Audio (new, macOS-tested):** an audio engine plays audio clips (WAVE and AIFF, any sample rate, streamed from disk), plugin instruments and effects, and the mixer (gain, pan, mute, solo, buses, meters) in time with MIDI, with device output in Rust through cpal; plugin delay compensation, sends, audio recording, and compressed formats are not done (ADR 0032). **Plugins:** an out-of-process hosting foundation (worker processes, crash detection and recovery, state persistence, crash-isolated scanning) tested by killing real worker processes, using Bluestone's own reference plugins; plugin MIDI effects run in their worker when the plan is compiled, so their output is routed like any device's; third-party plugin formats such as VST3 are not supported yet. See [docs/architecture.md](docs/architecture.md) and [docs/plugin-hosting.md](docs/plugin-hosting.md).
 
 ### Platform support
 
@@ -24,6 +24,8 @@ Bluestone is becoming a DAW without giving up MIDI depth. **Working today:** tra
 | macOS (Apple Silicon) | Yes | CoreMIDI: hardware, IAC, network, and Bluestone's own virtual port | CoreMIDI, with adapter timestamps | Development platform; native menu bar; real-time playback thread |
 | Windows (ARM64 and x64 tested) | Yes | WinMM: hardware ports and software synths, including SysEx | Computer keyboard only; WinMM input not yet |
 untested on Linux | Computer keyboard only; ALSA input not yet |
+
+Audio output goes through cpal: CoreAudio on macOS (played and measured), WASAPI on Windows and ALSA on Linux (built and unit-tested in CI, not yet heard). Open it from File → Audio Settings.
 
 ## Goals
 
@@ -68,7 +70,7 @@ In the same way, Bluestone models music, not a MIDI wire format. MIDI 1.0 is ful
 
 C# and .NET are the default for all of Bluestone: domain, sequencing, MIDI processing, routing, device chains, persistence, plugin supervision, and the cross-platform UI. Platform adapters call operating-system MIDI services from C#.
 
-Rust is used for a component only when a measurement shows managed code cannot meet a real-time or throughput requirement after tuning (allocation on the real-time path, callback deadlines, garbage collection pauses), or when a native interface such as plugin binaries requires it. It replaces C and C++ for new Bluestone-owned native code; C and C++ appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Native components sit behind a small, versioned C ABI, and vendor knowledge and domain rules stay in managed code. There is no native Bluestone code today. See [ADR 0026](docs/adr/0026-native-technology-policy.md).
+Rust is used for a component only when a measurement shows managed code cannot meet a real-time or throughput requirement after tuning (allocation on the real-time path, callback deadlines, garbage collection pauses), or when a native interface such as plugin binaries requires it. It replaces C and C++ for new Bluestone-owned native code; C and C++ appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Native components sit behind a small, versioned C ABI, and vendor knowledge and domain rules stay in managed code. The first Rust component is the audio device layer, `native/crates/bluestone_audio` ([ADR 0032](docs/adr/0032-audio-engine.md)). See [ADR 0026](docs/adr/0026-native-technology-policy.md).
 
 ## Repository layout
 
@@ -85,6 +87,7 @@ Bluestone/
 │   ├── plugin-hosting.md  Out-of-process plugin hosting, crash recovery, and its limits
 │   ├── profiles.md     Device profile format
 │   └── project-format.md  Bluestone project files, saving, and recovery
+├── native/             Bluestone-owned Rust crates (Cargo workspace), built by dotnet build
 ├── profiles/           Shipped device profiles (data, not code)
 ├── samples/            Redistributable demo and fixture files
 └── src/
@@ -103,7 +106,7 @@ The repository is intentionally minimal while the first vertical slice is design
 
 ## Building
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.300 or a later 10.0 feature band; see `global.json`). Any editor works; in Visual Studio, use a version that supports .NET 10 and opens `src/Bluestone.slnx`. From the repository root run:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.300 or a later 10.0 feature band; see `global.json`) and a stable [Rust toolchain](https://rustup.rs) (edition 2024, so Rust 1.85 or later): `dotnet build` runs `cargo` for the crates in `native/`. On Linux, also install the ALSA development files (`sudo apt install libasound2-dev` on Debian and Ubuntu). Any editor works; in Visual Studio, use a version that supports .NET 10 and opens `src/Bluestone.slnx`. From the repository root run:
 
 ```sh
 dotnet restore src/Bluestone.slnx
@@ -117,9 +120,12 @@ Benchmarks and a real-time jitter probe live in `src/Bluestone.Benchmarks`:
 ```sh
 dotnet run -c Release --project src/Bluestone.Benchmarks -- --filter '*' --job Short
 dotnet run -c Release --project src/Bluestone.Benchmarks -- --jitter 10 --realtime
+dotnet run -c Release --project src/Bluestone.Benchmarks -- --audio 20 --pressure app --queue 1024
 ```
 
-Warnings are treated as errors and code style is enforced during build. Tests run on Microsoft.Testing.Platform; the default suite needs no MIDI hardware. Platform MIDI adapters may require their target operating system.
+The native crates have their own tests and lints: `cargo test`, `cargo fmt --check`, and `cargo clippy --all-targets -- -D warnings` in `native/`.
+
+Warnings are treated as errors and code style is enforced during build. Tests run on Microsoft.Testing.Platform; the default suite needs no MIDI hardware, and tests that need an audio output device skip when there is none. Platform MIDI adapters may require their target operating system.
 
 ## Running Bluestone
 

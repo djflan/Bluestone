@@ -22,7 +22,7 @@ public sealed record ExternalPartFeed(ConnectionId Connection, ExternalInstrumen
 
 /// <summary>
 /// The events a software instrument takes in: everything that reaches it from every track routed into its
-/// chain, merged in canonical order. Bluestone has no audio engine yet, so nothing plays them (ADR 0022).
+/// chain, merged in canonical order. The audio engine plays them through plugin instruments (ADR 0022, ADR 0032).
 /// </summary>
 public sealed record SoftwareInstrumentFeed(DeviceId Device, DeviceChainId Chain, ImmutableArray<SignalEvent> Events);
 
@@ -167,12 +167,12 @@ public static class SignalGraph
             if (!events.IsEmpty)
             {
                 var name = project.FindDevice(device)?.Device.DisplayName ?? "A software instrument";
-                _diagnostics.Add(new SignalDiagnostic(SignalDiagnosticCode.NotAudible, $"{name} receives events, but Bluestone has no audio engine yet, so it does not sound.") { Device = device });
+                _diagnostics.Add(new SignalDiagnostic(SignalDiagnosticCode.NotAudible, $"{name} receives events; it sounds only if it is a plugin instrument, while audio output is on.") { Device = device });
             }
         }
 
-        // Event connections that routing validation accepts; every rejected connection is reported. Audio has no
-        // engine yet, so audio connections are checked but not followed.
+        // Event connections that routing validation accepts; every rejected connection is reported. Audio connections
+        // are checked here but followed by the audio engine's graph (Bluestone.Application/Audio/ProjectAudioGraph).
         private void SelectConnections()
         {
             var rejected = new Dictionary<ConnectionId, string>();
