@@ -469,6 +469,7 @@ public partial class MainWindow : Window
         Bind(Key.I, command, vm.ImportMidiCommand);
         Bind(Key.E, command, vm.ExportMidiCommand);
         Bind(Key.T, command, vm.AddTrackCommand);
+        Bind(Key.G, command, vm.Groups.GroupSelectedCommand);
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
     }
