@@ -58,10 +58,36 @@ public readonly record struct PluginInstanceId(Guid Value)
     public override string ToString() => Value.ToString("N");
 }
 
-/// <summary>A plugin parameter. Values are normalized to [0, 1]; <see cref="StepCount"/> 0 means continuous.</summary>
+/// <summary>What a plugin says about one of its parameters.</summary>
+[Flags]
+public enum ParameterTraits : byte
+{
+    None = 0,
+    Automatable = 1,
+    ReadOnly = 2,
+
+    /// <summary>The plugin does not want the parameter shown.</summary>
+    Hidden = 4,
+
+    /// <summary>The plugin's own bypass switch.</summary>
+    Bypass = 8,
+
+    /// <summary>A list of named choices (the step count says how many).</summary>
+    List = 16,
+
+    /// <summary>A stand-in for a MIDI controller (VST3 MIDI mapping): reached by sending the controller, not shown as a parameter.</summary>
+    MidiController = 32,
+}
+
+/// <summary>
+/// A plugin parameter. Values are normalized to [0, 1]; <see cref="StepCount"/> 0 means continuous. <see cref="Units"/>
+/// is the plugin's unit label (for example "dB"), possibly empty.
+/// </summary>
 public sealed record ParameterDescriptor
 {
-    public ParameterDescriptor(uint id, string name, double defaultValue, int stepCount = 0)
+    public const ParameterTraits AllTraits = ParameterTraits.Automatable | ParameterTraits.ReadOnly | ParameterTraits.Hidden | ParameterTraits.Bypass | ParameterTraits.List | ParameterTraits.MidiController;
+
+    public ParameterDescriptor(uint id, string name, double defaultValue, int stepCount = 0, string units = "", ParameterTraits traits = ParameterTraits.Automatable)
     {
         if (!NormalizedValue.IsValid(defaultValue))
         {
@@ -69,10 +95,17 @@ public sealed record ParameterDescriptor
         }
 
         ArgumentOutOfRangeException.ThrowIfNegative(stepCount);
+        if ((traits & ~AllTraits) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(traits), traits, "Unknown parameter traits.");
+        }
+
         Id = id;
         Name = ProtocolText.Require(name, nameof(name), allowEmpty: false);
         DefaultValue = defaultValue;
         StepCount = stepCount;
+        Units = ProtocolText.Require(units, nameof(units), allowEmpty: true);
+        Traits = traits;
     }
 
     public uint Id { get; }
@@ -82,6 +115,13 @@ public sealed record ParameterDescriptor
     public double DefaultValue { get; }
 
     public int StepCount { get; }
+
+    public string Units { get; }
+
+    public ParameterTraits Traits { get; }
+
+    /// <summary>Whether Bluestone shows and automates it: not hidden, not read-only, and not a MIDI-controller stand-in.</summary>
+    public bool IsUserFacing => (Traits & (ParameterTraits.Hidden | ParameterTraits.ReadOnly | ParameterTraits.MidiController)) == 0;
 }
 
 /// <summary>A parameter id with its normalized value.</summary>

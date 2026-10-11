@@ -136,4 +136,22 @@ public sealed class ScanCacheTests : IDisposable
         Assert.Equal(ModuleScanStatus.Failed, result[0].Status);
         Assert.Empty(scanner.Quarantined);
     }
+
+    [Fact]
+    public void Fingerprint_OfABundle_ChangesWhenItsBinaryChanges()
+    {
+        using var folder = new TestDirectory();
+        var binary = Path.Combine(folder.Path, "Synth.vst3", "Contents", "MacOS", "Synth");
+        Directory.CreateDirectory(Path.GetDirectoryName(binary)!);
+        File.WriteAllBytes(binary, [1, 2, 3]);
+        var before = ModuleFingerprint.Of(Path.Combine(folder.Path, "Synth.vst3"));
+
+        File.WriteAllBytes(binary, [1, 2, 3, 4]);
+        var after = ModuleFingerprint.Of(Path.Combine(folder.Path, "Synth.vst3"));
+
+        Assert.NotNull(before);
+        Assert.Equal(3, before.Value.Size);
+        Assert.NotEqual(before, after);
+        Assert.Null(ModuleFingerprint.Of(Path.Combine(folder.Path, "Missing.vst3")));
+    }
 }

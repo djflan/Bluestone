@@ -1,0 +1,17 @@
+# Minimal VST3 and CLAP plugins for Bluestone's tests (ADR 0033): a gain effect, a sine instrument, and a transpose
+# MIDI effect that behave like the worker's reference plugins. One library exports both formats; the build packages it
+# as a .vst3 bundle and a .clap module. Not shipped with Bluestone.
+[package]
+name = "bluestone_test_plugins"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "bluestone_test_plugins"
+crate-type = ["cdylib"]
+
+[dependencies]
+clap-sys = "0.5"
+vst3 = "0.3"

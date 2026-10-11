@@ -38,6 +38,9 @@ internal sealed record WorkerProcessOptions
     public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>Called on the read loop for each <see cref="PluginNotification"/> the worker sends; must return quickly.</summary>
+    public Action<WorkerProcess, PluginNotification>? OnNotification { get; init; }
 }
 
 /// <summary>A worker could not be brought up. <see cref="Reason"/> is the status the affected instances get.</summary>
@@ -334,6 +337,10 @@ internal sealed class WorkerProcess : IAsyncDisposable
                 if (frame.Message is Pong)
                 {
                     Volatile.Write(ref _lastPong, Stopwatch.GetTimestamp());
+                }
+                else if (frame.Message is PluginNotification notification && frame.RequestId == 0)
+                {
+                    _options.OnNotification?.Invoke(this, notification);
                 }
                 else if (_pending.TryRemove(frame.RequestId, out var reply))
                 {

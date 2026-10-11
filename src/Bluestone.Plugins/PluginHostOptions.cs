@@ -86,6 +86,9 @@ public sealed record PluginInstanceRequest
     /// <summary>A snapshot (for example from the project) to restore when the instance is created.</summary>
     public PluginStateSnapshot? RestoreFrom { get; init; }
 
+    /// <summary>The module (VST3 bundle or CLAP file) the plugin comes from; null for the built-in reference plugins.</summary>
+    public string? ModulePath { get; init; }
+
     public int EventCapacity { get; init; } = ExchangeOptions.DefaultEventCapacity;
 
     public int ParameterChangeCapacity { get; init; } = ExchangeOptions.DefaultParameterChangeCapacity;

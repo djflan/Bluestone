@@ -76,6 +76,24 @@ public sealed class PluginInstance
 
     public event EventHandler<PluginStatusChangedEventArgs>? StatusChanged;
 
+    /// <summary>
+    /// The plugin changed one of its parameters itself (usually in its editor). The remembered value is already updated.
+    /// Raised on a worker's read loop, in the order the plugin made the changes.
+    /// </summary>
+    public event EventHandler<PluginParameterEditedEventArgs>? ParameterEdited;
+
+    /// <summary>
+    /// Something else the plugin did on its own: its latency changed (<see cref="PluginLatencyFrames"/> is updated), its
+    /// state changed and should be captured before the next save, its editor was closed, or its parameter list changed.
+    /// Raised on a worker's read loop.
+    /// </summary>
+    public event EventHandler<NotificationKind>? Changed;
+
+    private volatile bool _editorOpen;
+
+    /// <summary>Whether the plugin's editor window is open in its worker, as far as the host knows.</summary>
+    public bool IsEditorOpen => _editorOpen && _link is not null;
+
     public PluginInstanceId Id { get; }
 
     public PluginIdentity Plugin => Request.Plugin;
@@ -293,8 +311,53 @@ public sealed class PluginInstance
         ArgumentOutOfRangeException.ThrowIfGreaterThan(changes.Length, ProtocolLimits.MaxRenderParameterChanges, nameof(changes));
         ArgumentOutOfRangeException.ThrowIfGreaterThan(tempo.Length, ProtocolLimits.MaxRenderTempoChanges, nameof(tempo));
         var link = RequireLink();
-        var request = new RenderEvents(Plugin, state, parameters, Request.SampleRate, Request.MaxBlockFrames, endFrame, tempo, events, changes);
+        var request = new RenderEvents(Plugin, state, parameters, Request.SampleRate, Request.MaxBlockFrames, endFrame, tempo, events, changes, Request.ModulePath);
         return Expect<RenderedEvents>(await _manager.RequestAsync(link.Worker, request, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Opens the plugin's editor in a window owned by its worker. Throws <see cref="PluginHostException"/> when the
+    /// plugin has no editor that can be shown, <see cref="PluginUnavailableException"/> when it is not running.
+    /// </summary>
+    public async Task OpenEditorAsync(string title, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        var link = RequireLink();
+        Expect<Ack>(await _manager.RequestAsync(link.Worker, new OpenEditor(Id, title), cancellationToken).ConfigureAwait(false));
+        _editorOpen = true;
+    }
+
+    /// <summary>Closes the plugin's editor if it is open. Does nothing when the instance is not running.</summary>
+    public async Task CloseEditorAsync(CancellationToken cancellationToken = default)
+    {
+        _editorOpen = false;
+        if (_link is { } link)
+        {
+            Expect<Ack>(await _manager.RequestAsync(link.Worker, new CloseEditor(Id), cancellationToken).ConfigureAwait(false));
+        }
+    }
+
+    internal void OnNotification(PluginNotification notification)
+    {
+        switch (notification.Kind)
+        {
+            case NotificationKind.ParameterEdited:
+                if (_parameters is { } table && table.TryGetIndex(notification.ParameterId, out var index))
+                {
+                    table.Set(index, notification.Value);
+                    ParameterEdited?.Invoke(this, new PluginParameterEditedEventArgs(notification.ParameterId, notification.Value));
+                }
+
+                return;
+            case NotificationKind.LatencyChanged:
+                PluginLatencyFrames = (int)notification.Value;
+                break;
+            case NotificationKind.EditorClosed:
+                _editorOpen = false;
+                break;
+        }
+
+        Changed?.Invoke(this, notification.Kind);
     }
 
     /// <summary>
@@ -336,6 +399,7 @@ public sealed class PluginInstance
 
             PluginLatencyFrames = pluginLatency;
             LastStateRestoreError = stateRestoreError;
+            _editorOpen = false;
             _link = link;
             SetStatusLocked(PluginInstanceStatus.Running);
         }

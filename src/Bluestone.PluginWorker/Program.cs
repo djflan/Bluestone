@@ -6,7 +6,9 @@ namespace Bluestone.PluginWorker;
 /// <summary>
 /// Entry point. Usage: <c>Bluestone.PluginWorker --mode host|scan --pipe NAME</c>, with the per-launch token as the
 /// first line on standard input (not on the command line, where other users could read it). The worker connects to
-/// the host's pipe, completes the Hello handshake, and serves until Shutdown or until the pipe closes.
+/// the host's pipe, completes the Hello handshake, and serves until Shutdown or until the pipe closes. The control
+/// plane runs on the thread pool; the process's main thread is kept for plugins and their editors
+/// (<see cref="WorkerMainThread"/>).
 /// </summary>
 internal static class Program
 {
@@ -17,7 +19,15 @@ internal static class Program
 
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
 
-    public static async Task<int> Main(string[] args)
+    public static int Main(string[] args)
+    {
+        using var mainThread = WorkerMainThread.CreateForThisThread();
+        var serving = Task.Run(() => RunAsync(args, mainThread));
+        mainThread.Run(serving);
+        return serving.GetAwaiter().GetResult();
+    }
+
+    private static async Task<int> RunAsync(string[] args, WorkerMainThread mainThread)
     {
         WorkerFaults.CrashAtStartupIfRequested();
         if (!TryParse(args, out var mode, out var pipeName))
@@ -56,7 +66,8 @@ internal static class Program
 
             if (mode == WorkerMode.InstanceHost)
             {
-                await new InstanceHostSession(pipe).RunAsync(CancellationToken.None).ConfigureAwait(false);
+                using var session = new InstanceHostSession(pipe, mainThread);
+                await session.RunAsync(CancellationToken.None).ConfigureAwait(false);
             }
             else
             {

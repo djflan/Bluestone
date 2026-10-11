@@ -29,6 +29,8 @@ Packages are restored only from nuget.org: the repository's `nuget.config` clear
 
 Warnings are treated as errors and code style is enforced during the build; `.editorconfig` defines the style. Build conventions are described in [ADR 0002](docs/adr/0002-build-and-test-conventions.md).
 
+Rust is used only where [ADR 0026](docs/adr/0026-native-technology-policy.md) allows it. Rust dependencies must be MIT-compatible (MIT, Apache-2.0, BSD, ISC, Zlib); GPL crates such as `vst3-sys` are not used. Plugins used for testing are installed locally and never committed.
+
 ## Pull requests
 
 1. Fork the repository and create a branch from `main`.
