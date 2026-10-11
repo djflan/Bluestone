@@ -286,15 +286,59 @@ pub fn to_json_plugins(plugins: &[PluginInfo]) -> String {
     serde_json::Value::Array(list).to_string()
 }
 
+/// A normalized value for the ABI: clamped to [0, 1], and 0 when it is not a number (JSON has no NaN; .NET would see
+/// null).
+pub fn unit_value(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 pub fn to_json_params(params: &[ParamInfo]) -> String {
     let list: Vec<serde_json::Value> = params
         .iter()
         .map(|p| {
             serde_json::json!({
-                "id": p.id, "name": p.name, "units": p.units, "default": p.default_value.clamp(0.0, 1.0),
+                "id": p.id, "name": p.name, "units": p.units, "default": unit_value(p.default_value),
                 "steps": p.step_count.max(0), "flags": p.flags,
             })
         })
         .collect();
     serde_json::Value::Array(list).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parameter(default_value: f64) -> ParamInfo {
+        ParamInfo {
+            id: 3,
+            name: "P".into(),
+            units: String::new(),
+            default_value,
+            step_count: 0,
+            flags: 0,
+        }
+    }
+
+    #[test]
+    fn parameter_defaults_are_always_numbers_in_the_unit_range() {
+        let json = to_json_params(&[
+            parameter(f64::NAN),
+            parameter(f64::INFINITY),
+            parameter(-2.0),
+            parameter(0.25),
+        ]);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let defaults: Vec<f64> = parsed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["default"].as_f64().expect("a number"))
+            .collect();
+        assert_eq!(defaults, [0.0, 0.0, 0.0, 0.25]);
+    }
 }

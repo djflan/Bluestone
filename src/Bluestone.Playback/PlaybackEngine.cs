@@ -468,7 +468,7 @@ public sealed class PlaybackEngine : IDisposable
         // Pedals are left alone so a sustain held in the song does not latch notes played live.
         // SysEx that hardware parameter automation chases is left for play: it is not channel state.
         var chase = ChaseState.Compute(_plan, Volatile.Read(ref _positionTick) + 1)
-            .Where(c => c.PayloadIndex < 0 && (c.Message.Kind != ChannelMessageKind.ControlChange || c.Message.Data1 is < 64 or > 69))
+            .Where(c => c.Payload is null && (c.Message.Kind != ChannelMessageKind.ControlChange || c.Message.Data1 is < 64 or > 69))
             .ToArray();
         var previous = _stoppedChase.ToLookup(c => (c.Slot, c.Message.Channel.Index));
         _stoppedChase = chase;
@@ -586,7 +586,7 @@ public sealed class PlaybackEngine : IDisposable
                     {
                         // Tracked like any dispatched pedal, so stopping lifts a sustain the wrap put down.
                         SendChase(message, scheduledClass ? MidiTimestamp.At(wrapTime) : MidiTimestamp.Immediate);
-                        if (message.PayloadIndex < 0)
+                        if (message.Payload is null)
                         {
                             TrackSustain(message.Slot, message.Message);
                         }
@@ -798,13 +798,13 @@ public sealed class PlaybackEngine : IDisposable
 
     private void SendChase(in ChaseMessage message, MidiTimestamp timestamp)
     {
-        if (message.PayloadIndex < 0)
+        if (message.Payload is not { } payload)
         {
             SendChannel(message.Slot, message.Message, timestamp);
         }
-        else if ((uint)message.Slot < (uint)_outputs.Length && _outputs[message.Slot] is { } output && message.PayloadIndex < _plan.Payloads.Length)
+        else if ((uint)message.Slot < (uint)_outputs.Length && _outputs[message.Slot] is { } output)
         {
-            Record(output.Send(_plan.Payloads[message.PayloadIndex].Span, timestamp), TimeSpan.Zero);
+            Record(output.Send(payload.Span, timestamp), TimeSpan.Zero);
         }
     }
 

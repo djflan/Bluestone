@@ -44,9 +44,13 @@ impl Ring {
         self.capacity
     }
 
-    /// Frames written and not yet played.
+    /// Frames written and not yet played. Safe from any thread: `read` is loaded first, and the reader only stores a
+    /// `read` it saw `write` reach, so the later `write` load is never behind it (the saturation is only a guard).
+    /// From a third thread both positions can move between the two loads, so the result is clamped to the capacity.
     pub fn fill(&self) -> u64 {
-        self.write.load(Ordering::Acquire) - self.read.load(Ordering::Acquire)
+        let read = self.read.load(Ordering::Acquire);
+        let write = self.write.load(Ordering::Acquire);
+        write.saturating_sub(read).min(self.capacity)
     }
 
     /// Frames the device found missing (played as silence) since the stream started.
@@ -144,6 +148,40 @@ mod tests {
         let ring = Ring::new(2, 1);
         assert_eq!(ring.write(&[1.0, 2.0, 3.0]), 2);
         assert_eq!(ring.write(&[4.0]), 0);
+    }
+
+    #[test]
+    fn a_third_thread_never_sees_more_than_the_capacity_queued() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+        let ring = Arc::new(Ring::new(4, 1));
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer = {
+            let (ring, stop) = (Arc::clone(&ring), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    ring.write(&[0.0; 4]);
+                }
+            })
+        };
+        let reader = {
+            let (ring, stop) = (Arc::clone(&ring), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                let mut out = [0.0; 1];
+                while !stop.load(Ordering::Relaxed) {
+                    ring.read(&mut out);
+                }
+            })
+        };
+        let started = std::time::Instant::now();
+        let mut worst = 0;
+        while started.elapsed() < Duration::from_millis(500) {
+            worst = worst.max(ring.fill());
+        }
+        stop.store(true, Ordering::Relaxed);
+        writer.join().unwrap();
+        reader.join().unwrap();
+        assert!(worst <= ring.capacity(), "observed fill {worst}");
     }
 
     #[test]

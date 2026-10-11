@@ -26,8 +26,15 @@ internal sealed class WorkerMainThread : IDisposable
     private readonly AutoResetEvent _signal = new(false);
     private readonly List<Func<bool>> _idle = [];
     private readonly int _threadId = Environment.CurrentManagedThreadId;
+    private readonly TextWriter _errors;
     private volatile bool _nativeReady;
     private string? _nativeError;
+
+    /// <summary>Creates the loop for the calling thread; failures of idle handlers are written to <paramref name="errors"/>.</summary>
+    internal WorkerMainThread(TextWriter errors)
+    {
+        _errors = errors;
+    }
 
     /// <summary>The main thread of this process, once <see cref="Program"/> has created it; null in unit tests.</summary>
     public static WorkerMainThread? Current { get; private set; }
@@ -36,7 +43,7 @@ internal sealed class WorkerMainThread : IDisposable
 
     public bool IsCurrent => Environment.CurrentManagedThreadId == _threadId;
 
-    public static WorkerMainThread CreateForThisThread() => Current = new WorkerMainThread();
+    public static WorkerMainThread CreateForThisThread() => Current = new WorkerMainThread(Console.Error);
 
     /// <summary>Runs <paramref name="work"/> on the main thread and returns its result (or rethrows its exception).</summary>
     public T Invoke<T>(Func<T> work)
@@ -132,7 +139,7 @@ internal sealed class WorkerMainThread : IDisposable
 
             for (var i = _idle.Count - 1; i >= 0; i--)
             {
-                if (!_idle[i]())
+                if (!RunIdleHandler(_idle[i]))
                 {
                     _idle.RemoveAt(i);
                 }
@@ -140,6 +147,22 @@ internal sealed class WorkerMainThread : IDisposable
         }
 
         RunQueued();
+    }
+
+    /// <summary>Runs one idle handler; one that throws is reported and removed, so it cannot stop the loop (and with it every other instance).</summary>
+    private bool RunIdleHandler(Func<bool> handler)
+    {
+        try
+        {
+            return handler();
+        }
+#pragma warning disable CA1031 // Any failure of one plugin's main-thread work is contained and reported.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            _errors.WriteLine($"An idle handler failed and was removed: {ex}");
+            return false;
+        }
     }
 
     private void RunQueued()

@@ -7,6 +7,7 @@ use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
@@ -24,6 +25,8 @@ const MAX_EVENTS: usize = 2048;
 const MAX_CHANGED_PARAMETERS: usize = 512;
 const MAX_POINTS: usize = 64;
 const CONTROLLERS: usize = 131; // CC 0-127, aftertouch, pitch bend, program change
+/// An instance that processed a block this recently is streaming: edits wait for its next block instead of a flush.
+const STREAMING_WINDOW: Duration = Duration::from_millis(500);
 const EVENT_NOTE_ON: u16 = Event_::EventTypes_::kNoteOnEvent as u16;
 const EVENT_NOTE_OFF: u16 = Event_::EventTypes_::kNoteOffEvent as u16;
 const EVENT_POLY_PRESSURE: u16 = Event_::EventTypes_::kPolyPressureEvent as u16;
@@ -226,6 +229,18 @@ struct AudioState {
     sample_rate: f64,
     has_event_input: bool,
     controller_map: Vec<Option<u32>>,
+    last_block: Option<LastBlock>,
+    /// Events a flush block produced, passed on at the start of the next real block.
+    carried_events: Vec<BphEvent>,
+}
+
+/// The transport at the end of the last real block, and when it was processed.
+#[derive(Clone, Copy)]
+struct LastBlock {
+    at: Instant,
+    position: i64,
+    tempo: f64,
+    playing: u32,
 }
 
 struct Editor {
@@ -444,10 +459,12 @@ impl Vst3Instance {
         }
     }
 
-    /// Delivers pending controller-side edits to the processor now, with a one-frame block of silence whose output is
-    /// dropped. The VST3 API also allows an empty block for this, but some plugins ignore one (The Legend HZ does), and
-    /// their controller then keeps showing the old value.
-    fn flush(&self) {
+    /// Delivers pending controller-side edits to the processor. While blocks are streaming they stay queued for the
+    /// next real block (returns true), so a flush never disturbs the stream. Otherwise they are delivered now with a
+    /// one-frame block of silence at the last block's transport; its audio is dropped and its events are passed on
+    /// with the next real block. The VST3 API also allows an empty block for this, but some plugins ignore one (The
+    /// Legend HZ does), and their controller then keeps showing the old value.
+    fn flush(&self) -> bool {
         let pending = self
             .shared
             .to_processor
@@ -455,8 +472,24 @@ impl Vst3Instance {
             .map(|p| !p.is_empty())
             .unwrap_or(false);
         if !pending {
-            return;
+            return false;
         }
+        let Ok(mut guard) = self.audio.lock() else {
+            return false;
+        };
+        let Some(audio) = guard.as_mut() else {
+            return false;
+        };
+        if audio
+            .last_block
+            .is_some_and(|b| b.at.elapsed() < STREAMING_WINDOW)
+        {
+            return true;
+        }
+        let (position, tempo, playing) = audio
+            .last_block
+            .map_or((0, 120.0, 0), |b| (b.position, b.tempo, b.playing));
+        let mut events = vec![BphEvent::default(); MAX_EVENTS - audio.carried_events.len()];
         let mut block = BphProcess {
             frames: 1,
             input_channels: 0,
@@ -467,16 +500,256 @@ impl Vst3Instance {
             events: std::ptr::null(),
             changes: std::ptr::null(),
             change_count: 0,
-            out_event_capacity: 0,
-            out_events: std::ptr::null_mut(),
+            out_event_capacity: events.len() as u32,
+            out_events: events.as_mut_ptr(),
             out_event_count: 0,
             out_events_dropped: 0,
-            position: 0,
-            tempo: 120.0,
-            playing: 0,
+            position,
+            tempo,
+            playing,
             reserved: 0,
         };
-        self.process(&mut block);
+        self.process_locked(audio, &mut block);
+        let produced = block.out_event_count as usize;
+        audio.carried_events.extend_from_slice(&events[..produced]);
+        false
+    }
+
+    /// Delivers pending edits before the state is read: waits for the streaming blocks to take them, or flushes them
+    /// once the stream stops.
+    fn deliver_pending_edits(&self) {
+        let deadline = Instant::now() + 2 * STREAMING_WINDOW;
+        while self.flush() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// One block with the audio state already locked: the parameter changes and events in, the plugin's process call,
+    /// and its audio, events, and parameter changes out.
+    fn process_locked(&self, audio: &mut AudioState, block: &mut BphProcess) -> bool {
+        let frames = block.frames as usize;
+        audio.input_changes.clear();
+        audio.output_changes.clear();
+        audio.input_events.events.borrow_mut().clear();
+        audio.output_events.events.borrow_mut().clear();
+        if let Ok(mut pending) = self.shared.to_processor.try_lock() {
+            for (id, value) in pending.drain(..) {
+                audio.input_changes.add(id, 0, value);
+            }
+        }
+        for change in block.changes() {
+            audio.input_changes.add(
+                change.id,
+                change.offset.clamp(0, frames as i32 - 1),
+                change.value,
+            );
+        }
+        for e in block.events() {
+            let offset = e.offset.clamp(0, frames.saturating_sub(1) as i32);
+            let channel = (e.channel & 0x0F) as usize;
+            let controller = |number: usize, value: f64| (number, value);
+            let mapped = match e.kind {
+                event_kind::CONTROL_CHANGE => {
+                    Some(controller(e.data1 as usize & 0x7F, e.data2 as f64 / 127.0))
+                }
+                event_kind::CHANNEL_PRESSURE => Some(controller(
+                    ControllerNumbers_::kAfterTouch as usize,
+                    e.data1 as f64 / 127.0,
+                )),
+                event_kind::PITCH_BEND => Some(controller(
+                    ControllerNumbers_::kPitchBend as usize,
+                    ((e.data2 as u32) << 7 | e.data1 as u32) as f64 / 16383.0,
+                )),
+                event_kind::PROGRAM_CHANGE => Some(controller(
+                    ControllerNumbers_::kCtrlProgramChange as usize,
+                    e.data1 as f64 / 127.0,
+                )),
+                _ => None,
+            };
+            if let Some((number, value)) = mapped {
+                if let Some(Some(id)) = audio.controller_map.get(channel * CONTROLLERS + number) {
+                    audio.input_changes.add(*id, offset, value);
+                }
+                continue;
+            }
+            if !audio.has_event_input {
+                continue;
+            }
+            // SAFETY: a zeroed Event is valid; the union member matching `type` is filled in.
+            let mut event: Event = unsafe { std::mem::zeroed() };
+            event.sampleOffset = offset;
+            match e.kind {
+                event_kind::NOTE_ON if e.data2 > 0 => {
+                    event.r#type = EVENT_NOTE_ON;
+                    event.__field0.noteOn = NoteOnEvent {
+                        channel: channel as i16,
+                        pitch: e.data1 as i16,
+                        tuning: 0.0,
+                        velocity: e.data2 as f32 / 127.0,
+                        length: 0,
+                        noteId: -1,
+                    };
+                }
+                event_kind::NOTE_ON | event_kind::NOTE_OFF => {
+                    event.r#type = EVENT_NOTE_OFF;
+                    event.__field0.noteOff = NoteOffEvent {
+                        channel: channel as i16,
+                        pitch: e.data1 as i16,
+                        velocity: e.data2 as f32 / 127.0,
+                        noteId: -1,
+                        tuning: 0.0,
+                    };
+                }
+                event_kind::POLY_PRESSURE => {
+                    event.r#type = EVENT_POLY_PRESSURE;
+                    event.__field0.polyPressure = PolyPressureEvent {
+                        channel: channel as i16,
+                        pitch: e.data1 as i16,
+                        pressure: e.data2 as f32 / 127.0,
+                        noteId: -1,
+                    };
+                }
+                _ => continue,
+            }
+            let mut events = audio.input_events.events.borrow_mut();
+            if events.len() < MAX_EVENTS {
+                events.push(event);
+            }
+        }
+        audio.adapter.prepare_inputs(block);
+        audio.adapter.clear_outputs(frames);
+        let samples_per_beat = audio.sample_rate * 60.0 / block.tempo.max(1.0);
+        audio.context.projectTimeSamples = block.position;
+        audio.context.continousTimeSamples = block.position;
+        audio.context.tempo = block.tempo;
+        audio.context.projectTimeMusic = block.position as f64 / samples_per_beat;
+        audio.context.barPositionMusic = (audio.context.projectTimeMusic / 4.0).floor() * 4.0;
+        audio.context.state = ProcessContext_::StatesAndFlags_::kTempoValid as u32
+            | ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid as u32
+            | ProcessContext_::StatesAndFlags_::kBarPositionValid as u32
+            | ProcessContext_::StatesAndFlags_::kTimeSigValid as u32
+            | if block.playing != 0 {
+                ProcessContext_::StatesAndFlags_::kPlaying as u32
+            } else {
+                0
+            };
+        // SAFETY: every pointer in ProcessData refers to state owned by `audio`, alive for the call.
+        let result = unsafe {
+            let mut data: ProcessData = std::mem::zeroed();
+            data.processMode = ProcessModes_::kRealtime as i32;
+            data.symbolicSampleSize = SymbolicSampleSizes_::kSample32 as i32;
+            data.numSamples = frames as i32;
+            data.numInputs = audio.input_buses.len() as i32;
+            data.numOutputs = audio.output_buses.len() as i32;
+            data.inputs = if audio.input_buses.is_empty() {
+                std::ptr::null_mut()
+            } else {
+                audio.input_buses.as_mut_ptr()
+            };
+            data.outputs = if audio.output_buses.is_empty() {
+                std::ptr::null_mut()
+            } else {
+                audio.output_buses.as_mut_ptr()
+            };
+            for bus in audio.output_buses.iter_mut() {
+                bus.silenceFlags = 0;
+            }
+            data.inputParameterChanges =
+                com_ptr(audio.input_changes.as_com_ref::<IParameterChanges>());
+            data.outputParameterChanges =
+                com_ptr(audio.output_changes.as_com_ref::<IParameterChanges>());
+            data.inputEvents = com_ptr(audio.input_events.as_com_ref::<IEventList>());
+            data.outputEvents = com_ptr(audio.output_events.as_com_ref::<IEventList>());
+            data.processContext = &mut audio.context;
+            self.processor.process(&mut data)
+        };
+        if result != kResultOk {
+            audio.adapter.clear_outputs(frames);
+        }
+        audio.adapter.deliver_outputs(block);
+        for event in audio.output_events.events.borrow().iter() {
+            let offset = event.sampleOffset.clamp(0, frames.saturating_sub(1) as i32);
+            // SAFETY: the union member read matches the event's type.
+            let converted = unsafe {
+                match event.r#type {
+                    EVENT_NOTE_ON => {
+                        let n = event.__field0.noteOn;
+                        Some((
+                            if n.velocity > 0.0 {
+                                event_kind::NOTE_ON
+                            } else {
+                                event_kind::NOTE_OFF
+                            },
+                            n.channel,
+                            n.pitch as u8,
+                            velocity_byte(n.velocity),
+                        ))
+                    }
+                    EVENT_NOTE_OFF => {
+                        let n = event.__field0.noteOff;
+                        Some((
+                            event_kind::NOTE_OFF,
+                            n.channel,
+                            n.pitch as u8,
+                            velocity_byte(n.velocity),
+                        ))
+                    }
+                    EVENT_POLY_PRESSURE => {
+                        let p = event.__field0.polyPressure;
+                        Some((
+                            event_kind::POLY_PRESSURE,
+                            p.channel,
+                            p.pitch as u8,
+                            velocity_byte(p.pressure),
+                        ))
+                    }
+                    EVENT_LEGACY_CC => {
+                        let cc = event.__field0.midiCCOut;
+                        let (channel, value, value2) = (
+                            cc.channel as i16,
+                            cc.value as u8 & 0x7F,
+                            cc.value2 as u8 & 0x7F,
+                        );
+                        match cc.controlNumber as u32 {
+                            n if n < 128 => {
+                                Some((event_kind::CONTROL_CHANGE, channel, n as u8, value))
+                            }
+                            CTRL_AFTERTOUCH => {
+                                Some((event_kind::CHANNEL_PRESSURE, channel, value, 0))
+                            }
+                            CTRL_PITCH_BEND => {
+                                Some((event_kind::PITCH_BEND, channel, value, value2))
+                            }
+                            CTRL_PROGRAM_CHANGE => {
+                                Some((event_kind::PROGRAM_CHANGE, channel, value, 0))
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            };
+            if let Some((kind, channel, data1, data2)) = converted
+                && (0..16).contains(&channel)
+                && data1 < 128
+            {
+                block.push_output_event(BphEvent {
+                    offset,
+                    kind,
+                    channel: channel as u8,
+                    data1,
+                    data2,
+                });
+            }
+        }
+        if !audio.output_changes.is_empty()
+            && let Ok(mut to_controller) = self.shared.to_controller.try_lock()
+        {
+            audio
+                .output_changes
+                .last_values(|id, value| to_controller.push((id, value)));
+        }
+        result == kResultOk
     }
 
     fn close_editor_now(&self, notify: bool) {
@@ -723,6 +996,8 @@ impl Instance for Vst3Instance {
                 sample_rate,
                 has_event_input: event_in > 0,
                 controller_map: self.controller_map(),
+                last_block: None,
+                carried_events: Vec::with_capacity(MAX_EVENTS),
             });
         }
         Ok(())
@@ -735,232 +1010,20 @@ impl Instance for Vst3Instance {
         let Some(audio) = guard.as_mut() else {
             return false;
         };
-        let frames = block.frames as usize;
-        if frames > audio.adapter.max_frames {
+        if block.frames as usize > audio.adapter.max_frames {
             return false;
         }
-        audio.input_changes.clear();
-        audio.output_changes.clear();
-        audio.input_events.events.borrow_mut().clear();
-        audio.output_events.events.borrow_mut().clear();
-        if let Ok(mut pending) = self.shared.to_processor.try_lock() {
-            for (id, value) in pending.drain(..) {
-                audio.input_changes.add(id, 0, value);
-            }
+        for event in audio.carried_events.drain(..) {
+            block.push_output_event(event);
         }
-        for change in block.changes() {
-            audio.input_changes.add(
-                change.id,
-                change.offset.clamp(0, frames as i32 - 1),
-                change.value,
-            );
-        }
-        for e in block.events() {
-            let offset = e.offset.clamp(0, frames.saturating_sub(1) as i32);
-            let channel = (e.channel & 0x0F) as usize;
-            let controller = |number: usize, value: f64| (number, value);
-            let mapped = match e.kind {
-                event_kind::CONTROL_CHANGE => {
-                    Some(controller(e.data1 as usize & 0x7F, e.data2 as f64 / 127.0))
-                }
-                event_kind::CHANNEL_PRESSURE => Some(controller(
-                    ControllerNumbers_::kAfterTouch as usize,
-                    e.data1 as f64 / 127.0,
-                )),
-                event_kind::PITCH_BEND => Some(controller(
-                    ControllerNumbers_::kPitchBend as usize,
-                    ((e.data2 as u32) << 7 | e.data1 as u32) as f64 / 16383.0,
-                )),
-                event_kind::PROGRAM_CHANGE => Some(controller(
-                    ControllerNumbers_::kCtrlProgramChange as usize,
-                    e.data1 as f64 / 127.0,
-                )),
-                _ => None,
-            };
-            if let Some((number, value)) = mapped {
-                if let Some(Some(id)) = audio.controller_map.get(channel * CONTROLLERS + number) {
-                    audio.input_changes.add(*id, offset, value);
-                }
-                continue;
-            }
-            if !audio.has_event_input {
-                continue;
-            }
-            // SAFETY: a zeroed Event is valid; the union member matching `type` is filled in.
-            let mut event: Event = unsafe { std::mem::zeroed() };
-            event.sampleOffset = offset;
-            match e.kind {
-                event_kind::NOTE_ON if e.data2 > 0 => {
-                    event.r#type = EVENT_NOTE_ON;
-                    event.__field0.noteOn = NoteOnEvent {
-                        channel: channel as i16,
-                        pitch: e.data1 as i16,
-                        tuning: 0.0,
-                        velocity: e.data2 as f32 / 127.0,
-                        length: 0,
-                        noteId: -1,
-                    };
-                }
-                event_kind::NOTE_ON | event_kind::NOTE_OFF => {
-                    event.r#type = EVENT_NOTE_OFF;
-                    event.__field0.noteOff = NoteOffEvent {
-                        channel: channel as i16,
-                        pitch: e.data1 as i16,
-                        velocity: e.data2 as f32 / 127.0,
-                        noteId: -1,
-                        tuning: 0.0,
-                    };
-                }
-                event_kind::POLY_PRESSURE => {
-                    event.r#type = EVENT_POLY_PRESSURE;
-                    event.__field0.polyPressure = PolyPressureEvent {
-                        channel: channel as i16,
-                        pitch: e.data1 as i16,
-                        pressure: e.data2 as f32 / 127.0,
-                        noteId: -1,
-                    };
-                }
-                _ => continue,
-            }
-            let mut events = audio.input_events.events.borrow_mut();
-            if events.len() < MAX_EVENTS {
-                events.push(event);
-            }
-        }
-        audio.adapter.prepare_inputs(block);
-        audio.adapter.clear_outputs(frames);
-        let samples_per_beat = audio.sample_rate * 60.0 / block.tempo.max(1.0);
-        audio.context.projectTimeSamples = block.position;
-        audio.context.continousTimeSamples = block.position;
-        audio.context.tempo = block.tempo;
-        audio.context.projectTimeMusic = block.position as f64 / samples_per_beat;
-        audio.context.barPositionMusic = (audio.context.projectTimeMusic / 4.0).floor() * 4.0;
-        audio.context.state = ProcessContext_::StatesAndFlags_::kTempoValid as u32
-            | ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid as u32
-            | ProcessContext_::StatesAndFlags_::kBarPositionValid as u32
-            | ProcessContext_::StatesAndFlags_::kTimeSigValid as u32
-            | if block.playing != 0 {
-                ProcessContext_::StatesAndFlags_::kPlaying as u32
-            } else {
-                0
-            };
-        // SAFETY: every pointer in ProcessData refers to state owned by `audio`, alive for the call.
-        let result = unsafe {
-            let mut data: ProcessData = std::mem::zeroed();
-            data.processMode = ProcessModes_::kRealtime as i32;
-            data.symbolicSampleSize = SymbolicSampleSizes_::kSample32 as i32;
-            data.numSamples = frames as i32;
-            data.numInputs = audio.input_buses.len() as i32;
-            data.numOutputs = audio.output_buses.len() as i32;
-            data.inputs = if audio.input_buses.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                audio.input_buses.as_mut_ptr()
-            };
-            data.outputs = if audio.output_buses.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                audio.output_buses.as_mut_ptr()
-            };
-            for bus in audio.output_buses.iter_mut() {
-                bus.silenceFlags = 0;
-            }
-            data.inputParameterChanges =
-                com_ptr(audio.input_changes.as_com_ref::<IParameterChanges>());
-            data.outputParameterChanges =
-                com_ptr(audio.output_changes.as_com_ref::<IParameterChanges>());
-            data.inputEvents = com_ptr(audio.input_events.as_com_ref::<IEventList>());
-            data.outputEvents = com_ptr(audio.output_events.as_com_ref::<IEventList>());
-            data.processContext = &mut audio.context;
-            self.processor.process(&mut data)
-        };
-        if result != kResultOk {
-            audio.adapter.clear_outputs(frames);
-        }
-        audio.adapter.deliver_outputs(block);
-        for event in audio.output_events.events.borrow().iter() {
-            let offset = event.sampleOffset.clamp(0, frames.saturating_sub(1) as i32);
-            // SAFETY: the union member read matches the event's type.
-            let converted = unsafe {
-                match event.r#type {
-                    EVENT_NOTE_ON => {
-                        let n = event.__field0.noteOn;
-                        Some((
-                            if n.velocity > 0.0 {
-                                event_kind::NOTE_ON
-                            } else {
-                                event_kind::NOTE_OFF
-                            },
-                            n.channel,
-                            n.pitch as u8,
-                            velocity_byte(n.velocity),
-                        ))
-                    }
-                    EVENT_NOTE_OFF => {
-                        let n = event.__field0.noteOff;
-                        Some((
-                            event_kind::NOTE_OFF,
-                            n.channel,
-                            n.pitch as u8,
-                            velocity_byte(n.velocity),
-                        ))
-                    }
-                    EVENT_POLY_PRESSURE => {
-                        let p = event.__field0.polyPressure;
-                        Some((
-                            event_kind::POLY_PRESSURE,
-                            p.channel,
-                            p.pitch as u8,
-                            velocity_byte(p.pressure),
-                        ))
-                    }
-                    EVENT_LEGACY_CC => {
-                        let cc = event.__field0.midiCCOut;
-                        let (channel, value, value2) = (
-                            cc.channel as i16,
-                            cc.value as u8 & 0x7F,
-                            cc.value2 as u8 & 0x7F,
-                        );
-                        match cc.controlNumber as u32 {
-                            n if n < 128 => {
-                                Some((event_kind::CONTROL_CHANGE, channel, n as u8, value))
-                            }
-                            CTRL_AFTERTOUCH => {
-                                Some((event_kind::CHANNEL_PRESSURE, channel, value, 0))
-                            }
-                            CTRL_PITCH_BEND => {
-                                Some((event_kind::PITCH_BEND, channel, value, value2))
-                            }
-                            CTRL_PROGRAM_CHANGE => {
-                                Some((event_kind::PROGRAM_CHANGE, channel, value, 0))
-                            }
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                }
-            };
-            if let Some((kind, channel, data1, data2)) = converted
-                && (0..16).contains(&channel)
-                && data1 < 128
-            {
-                block.push_output_event(BphEvent {
-                    offset,
-                    kind,
-                    channel: channel as u8,
-                    data1,
-                    data2,
-                });
-            }
-        }
-        if !audio.output_changes.is_empty()
-            && let Ok(mut to_controller) = self.shared.to_controller.try_lock()
-        {
-            audio
-                .output_changes
-                .last_values(|id, value| to_controller.push((id, value)));
-        }
-        result == kResultOk
+        let processed = self.process_locked(audio, block);
+        audio.last_block = Some(LastBlock {
+            at: Instant::now(),
+            position: block.position + block.frames as i64,
+            tempo: block.tempo,
+            playing: block.playing,
+        });
+        processed
     }
 
     fn latency(&self) -> u32 {
@@ -969,7 +1032,7 @@ impl Instance for Vst3Instance {
     }
 
     fn save_state(&self) -> Result<Vec<u8>, String> {
-        self.flush();
+        self.deliver_pending_edits();
         let component_state = ComWrapper::new(MemoryStream::default());
         let controller_state = ComWrapper::new(MemoryStream::default());
         // SAFETY: plain state calls with our own streams.
@@ -1033,6 +1096,8 @@ impl Instance for Vst3Instance {
     }
 
     fn idle(&self, notifications: &mut Vec<BphNotification>) {
+        // Edits left queued for a stream that has since stopped.
+        self.flush();
         let from_processor: Vec<(u32, f64)> = self
             .shared
             .to_controller

@@ -50,7 +50,15 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
             throw new InvalidOperationException(NativeMethods.TakeString(error) ?? "The plugin could not be created.");
         }
 
-        return new NativePlugin(identity, handle);
+        try
+        {
+            return new NativePlugin(identity, handle);
+        }
+        catch
+        {
+            NativeMethods.PluginDestroy(handle);
+            throw;
+        }
     }
 
     public void Prepare(double sampleRate, int maxFrames, int inputChannels, int outputChannels)
@@ -223,9 +231,12 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
         };
     }
 
-    private static ImmutableArray<ParameterDescriptor> ReadParameters(nint handle)
+    private static ImmutableArray<ParameterDescriptor> ReadParameters(nint handle) =>
+        ParseParameters(NativeMethods.TakeString(NativeMethods.PluginParameters(handle)) ?? "[]");
+
+    /// <summary>Parses the native host's parameter list. A default that is not a number (older hosts wrote NaN as null) is 0.</summary>
+    internal static ImmutableArray<ParameterDescriptor> ParseParameters(string json)
     {
-        var json = NativeMethods.TakeString(NativeMethods.PluginParameters(handle)) ?? "[]";
         using var document = JsonDocument.Parse(json);
         var all = new List<ParameterDescriptor>();
         foreach (var p in document.RootElement.EnumerateArray())
@@ -233,7 +244,7 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
             var id = p.GetProperty("id").GetUInt32();
             var name = p.GetProperty("name").GetString();
             var units = p.GetProperty("units").GetString() ?? string.Empty;
-            var defaultValue = Math.Clamp(p.GetProperty("default").GetDouble(), 0, 1);
+            var defaultValue = p.GetProperty("default") is { ValueKind: JsonValueKind.Number } number ? Math.Clamp(number.GetDouble(), 0, 1) : 0;
             var steps = Math.Max(0, p.GetProperty("steps").GetInt32());
             var traits = (ParameterTraits)(p.GetProperty("flags").GetInt32() & (int)ParameterDescriptor.AllTraits);
             all.Add(new ParameterDescriptor(id, string.IsNullOrWhiteSpace(name) ? $"Parameter {id}" : Truncate(name), double.IsFinite(defaultValue) ? defaultValue : 0, steps, Truncate(units), traits));

@@ -528,8 +528,10 @@ authority (ADR 0025):
 - The desktop app scans its plugin folders at start, one scanner process per module, and the bridge follows later
   rescans and retries from the Plugins view (see [The plugin library and the Plugins view](#the-plugin-library-and-the-plugins-view)).
 
-- Values changed in the project go to running plugins on the next sync (only those that differ); `RecordEdit` stores
-  an edit the plugin made itself; `OpenEditorAsync` and `CloseEditorAsync` show and hide its editor, and the status
+- Values changed in the project go to running plugins on the next sync: only those that differ from the value the
+  bridge last gave or recorded for that parameter. `RecordEdit` stores an edit the plugin made itself and is never
+  sent back, so a plugin that keeps moving (a drag in its editor, a preset) is not pulled back to an older value
+  while its edits catch up; `OpenEditorAsync` and `CloseEditorAsync` show and hide its editor, and the status
   says "Running, editor open".
 
 Tests: `PluginDeviceHostTests` (scenarios 11 to 13 through the project: save, reopen, kill, restart, automation still
