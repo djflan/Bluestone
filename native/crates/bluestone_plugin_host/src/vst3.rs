@@ -444,32 +444,39 @@ impl Vst3Instance {
         }
     }
 
-    /// Delivers pending controller-side edits to the processor with a zero-length block (the VST3 "flush").
-    fn flush(&self, audio: &mut AudioState) {
-        let pending: Vec<(u32, f64)> = self
+    /// Delivers pending controller-side edits to the processor now, with a one-frame block of silence whose output is
+    /// dropped. The VST3 API also allows an empty block for this, but some plugins ignore one (The Legend HZ does), and
+    /// their controller then keeps showing the old value.
+    fn flush(&self) {
+        let pending = self
             .shared
             .to_processor
             .lock()
-            .map(|mut p| p.drain(..).collect())
-            .unwrap_or_default();
-        if pending.is_empty() {
+            .map(|p| !p.is_empty())
+            .unwrap_or(false);
+        if !pending {
             return;
         }
-        audio.input_changes.clear();
-        for (id, value) in pending {
-            audio.input_changes.add(id, 0, value);
-        }
-        let mut data: ProcessData = unsafe { std::mem::zeroed() };
-        data.processMode = ProcessModes_::kRealtime as i32;
-        data.symbolicSampleSize = SymbolicSampleSizes_::kSample32 as i32;
-        data.inputParameterChanges = audio
-            .input_changes
-            .as_com_ref::<IParameterChanges>()
-            .map(|r| r.as_ptr())
-            .unwrap_or(std::ptr::null_mut());
-        // SAFETY: a zero-sample block with parameter changes only, as the VST3 API allows.
-        unsafe { self.processor.process(&mut data) };
-        audio.input_changes.clear();
+        let mut block = BphProcess {
+            frames: 1,
+            input_channels: 0,
+            output_channels: 0,
+            event_count: 0,
+            input: std::ptr::null(),
+            output: std::ptr::null_mut(),
+            events: std::ptr::null(),
+            changes: std::ptr::null(),
+            change_count: 0,
+            out_event_capacity: 0,
+            out_events: std::ptr::null_mut(),
+            out_event_count: 0,
+            out_events_dropped: 0,
+            position: 0,
+            tempo: 120.0,
+            playing: 0,
+            reserved: 0,
+        };
+        self.process(&mut block);
     }
 
     fn close_editor_now(&self, notify: bool) {
@@ -561,9 +568,14 @@ impl Instance for Vst3Instance {
             }
         }
         self.known_values.borrow_mut().insert(id, value);
+        // Values the processor reported before this edit are older than it.
+        if let Ok(mut stale) = self.shared.to_controller.lock() {
+            stale.retain(|&(stale_id, _)| stale_id != id);
+        }
         if let Ok(mut pending) = self.shared.to_processor.lock() {
             pending.push((id, value));
         }
+        self.flush();
         true
     }
 
@@ -956,11 +968,7 @@ impl Instance for Vst3Instance {
     }
 
     fn save_state(&self) -> Result<Vec<u8>, String> {
-        if let Ok(mut audio) = self.audio.lock() {
-            if let Some(audio) = audio.as_mut() {
-                self.flush(audio);
-            }
-        }
+        self.flush();
         let component_state = ComWrapper::new(MemoryStream::default());
         let controller_state = ComWrapper::new(MemoryStream::default());
         // SAFETY: plain state calls with our own streams.

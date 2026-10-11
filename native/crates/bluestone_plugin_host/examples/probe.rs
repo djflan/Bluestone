@@ -69,6 +69,56 @@ fn main() {
                 error,
             );
             println!("latency {}", bph_plugin_latency(plugin));
+            if let Ok(id) = std::env::var("PROBE_PARAMETER") {
+                let id: u32 = id.parse().unwrap();
+                let mut value = 0.0;
+                bph_plugin_get_parameter(plugin, id, &mut value);
+                println!(
+                    "parameter {id} = {value}; set 0.8 -> {}",
+                    bph_plugin_set_parameter(plugin, id, 0.8)
+                );
+                bph_plugin_get_parameter(plugin, id, &mut value);
+                println!("after set: {value}");
+                let (mut data, mut length) = (std::ptr::null_mut(), 0);
+                check(
+                    bph_plugin_save_state(plugin, &mut data, &mut length, &mut error),
+                    error,
+                );
+                bph_bytes_free(data, length);
+                bph_plugin_get_parameter(plugin, id, &mut value);
+                println!("after save: {value}");
+                let mut notifications = vec![BphNotification::default(); 16];
+                let n = bph_plugin_idle(plugin, notifications.as_mut_ptr(), 16);
+                bph_plugin_get_parameter(plugin, id, &mut value);
+                println!("after idle ({n} notifications): {value}");
+                let input = vec![0.0f32; 512];
+                let mut output = vec![0f32; 512];
+                let mut process = BphProcess {
+                    frames: 256,
+                    input_channels: 2,
+                    output_channels: 2,
+                    event_count: 0,
+                    input: input.as_ptr(),
+                    output: output.as_mut_ptr(),
+                    events: std::ptr::null(),
+                    changes: std::ptr::null(),
+                    change_count: 0,
+                    out_event_capacity: 0,
+                    out_events: std::ptr::null_mut(),
+                    out_event_count: 0,
+                    out_events_dropped: 0,
+                    position: 0,
+                    tempo: 120.0,
+                    playing: 1,
+                    reserved: 0,
+                };
+                bph_plugin_process(plugin, &mut process);
+                bph_plugin_get_parameter(plugin, id, &mut value);
+                println!("after process: {value}");
+                let n = bph_plugin_idle(plugin, notifications.as_mut_ptr(), 16);
+                bph_plugin_get_parameter(plugin, id, &mut value);
+                println!("after process+idle ({n}): {value}");
+            }
             let input = vec![0.25f32; 512];
             let mut output = vec![0f32; 512];
             let events = [BphEvent {
