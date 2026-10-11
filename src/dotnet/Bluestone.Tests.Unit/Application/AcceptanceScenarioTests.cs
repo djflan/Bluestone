@@ -16,7 +16,7 @@ using Bluestone.Signal;
 namespace Bluestone.Tests.Unit.Application;
 
 /// <summary>
-/// Acceptance scenarios 1, 5, and 8 (prompt section 19) end to end: project model, routing validation, the
+/// Acceptance scenarios 1, 5, and 8 (docs/architecture.md) end to end: project model, routing validation, the
 /// signal graph, and, for hardware, the plan and the bytes the port receives. The other scenarios are listed
 /// with their tests in docs/architecture.md.
 /// </summary>

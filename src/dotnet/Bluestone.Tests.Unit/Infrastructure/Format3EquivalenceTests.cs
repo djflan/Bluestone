@@ -9,7 +9,7 @@ namespace Bluestone.Tests.Unit.Infrastructure;
 
 /// <summary>
 /// Holds projects saved in format 3 to the MIDI 1.0 bytes the pre-refactor pipeline sent for them
-/// (docs/daw-epic-handoff.md section 5), now through the format 4 migration, the routing model, the
+/// (docs/roadmap.md, "Regression net"), now through the format 4 migration, the routing model, the
 /// signal graph, and the compiler. The fixtures and hashes are frozen: a failure is a regression.
 /// </summary>
 /// <remarks>

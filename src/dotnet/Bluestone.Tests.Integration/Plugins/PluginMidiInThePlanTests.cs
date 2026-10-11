@@ -19,7 +19,7 @@ using static Bluestone.Tests.Integration.Plugins.PluginTestHost;
 namespace Bluestone.Tests.Integration.Plugins;
 
 /// <summary>
-/// A plugin MIDI effect's output reaches the plan and is routed downstream (prompt section 17): the reference
+/// A plugin MIDI effect's output reaches the plan and is routed downstream (ADR 0028): the reference
 /// Transpose plugin runs in a real worker when the plan is compiled. When the worker is gone or hung, the events pass
 /// through unchanged and the plan says why; compiling never fails. Workers are really killed and really hung.
 /// </summary>

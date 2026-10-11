@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Bluestone.PluginWorker.Native;
 
 /// <summary>
-/// The C ABI of the Rust plugin host (<c>native/crates/bluestone_plugin_host</c>, ABI version <see cref="AbiVersion"/>).
+/// The C ABI of the Rust plugin host (<c>src/native/crates/bluestone_plugin_host</c>, ABI version <see cref="AbiVersion"/>).
 /// This is the worker's only unsafe code. Ownership: strings and byte buffers returned by the library are freed with
 /// <see cref="StringFree"/> and <see cref="BytesFree"/>; handles are released with their close or destroy function.
 /// Threads: process and wake on any thread, everything else on the worker's main thread (see the crate's docs).
