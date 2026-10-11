@@ -246,6 +246,12 @@ because there is no audio engine yet. Clips on a track never overlap. `Track.Arr
 the note clips play. `TrackRendering` adds MIDI automation lanes, sampled into channel events, and
 returns device automation separately as parameter changes.
 
+A track can be in a group track, and groups nest (ADR 0030). Putting a track in a group is one command
+that also routes it: its own outgoing connections are parked in the project and replaced by a connection
+into the group, and taking it out puts back those that still work. A group's mute and solo reach its
+members (`GroupTracks.Playing`: the nearest explicit state wins, and without groups the old rule holds).
+A group can be folded, which hides its members in the track list and the arrangement and is saved.
+
 ### Devices and chains
 
 A `DeviceDefinition` is what a device is (data); a `DeviceInstance` is one configured occurrence with a
@@ -280,7 +286,7 @@ Lead ──► [Arpeggiator → Transpose] ──► MU2000 port B, ch 4
 
 `PlaybackRouting.Prepare` resolves each external instrument's profile and ports against what is
 available, then `SignalGraph.Evaluate` renders every track (mute and solo apply to a track's own
-content), runs every chain in dependency order, follows every event connection, and collects:
+content, and a group's to its members' content), runs every chain in dependency order, follows every event connection, and collects:
 external-instrument part feeds, software-instrument feeds (merged from every source, for a future audio
 engine), parameter feeds for devices that do not run in Bluestone's process, and diagnostics. Each part
 with an available endpoint becomes a `PlanPart`; parts sharing an endpoint share an output slot. The
@@ -394,7 +400,8 @@ Built as boundaries and tested where cheap, but not finished:
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
 - **Operating-system sandboxing** of plugin workers.
-- **Group track processing** and folding in the arrangement.
+- **Groups**: drag and drop into a group, and a folded group's lane summarizing its members' clips. Grouping,
+  routing members into their group, group mute and solo, and folding work (ADR 0030).
 - **Translating device automation to CC, RPN, NRPN, or SysEx** for external instruments.
 
 ## Decisions at a glance
@@ -418,6 +425,7 @@ Built as boundaries and tested where cheap, but not finished:
 | C# first; Rust only for measured or native-interface needs | ADR 0026 |
 | Project format 4 and its migration | ADR 0027 |
 | Plugin MIDI effects run in their worker when the plan is compiled | ADR 0028 |
+| A group's mute and solo reach its members; joining a group routes into it | ADR 0030 |
 
 ## Native technology
 

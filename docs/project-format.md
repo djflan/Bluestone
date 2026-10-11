@@ -80,6 +80,8 @@ indices, only stable identifiers and identity hints.
 - A track's `role` is `instrument`, `audio`, `hybrid`, `effect`, or `group` (ADR 0021); `group`
   (optional) is the ID of the group track it belongs to. Roles are stored, and on reading a role that
   cannot show the track's content is widened (an instrument track with audio clips becomes hybrid).
+  `folded` (optional, written only when true) says a group track's members are hidden under it in the
+  arrangement (ADR 0030).
 - A clip's `type` is `note`, holding the events below, or `audio`, holding a `source` (`location`,
   `sampleRate`, `frames`, `channels`). Audio clips are arrangement data only; nothing plays them yet.
 - Event IDs are unique across all clips of a track.
@@ -112,6 +114,9 @@ indices, only stable identifiers and identity hints.
   `device` tap) to a `destination` (`track`, `rack`, `instrument` with a `port`, `mixer` channel, or
   `master`), with an optional channel `mapping` (`only`, then `force` or `remap`) and `voice`.
   Connections that do not validate are kept and reported, never dropped on load.
+- `parkedConnections` (optional; omitted when empty) are a grouped track's own outputs, set aside when it
+  joined its group and put back when it leaves (ADR 0030). They have the shape of `connections` but are not
+  routing: nothing plays or validates them. An ID may not appear in both lists.
 - `mixer` holds the master gain and mixer channels, which are independent of tracks.
 - `extensions` and any other unrecognised top-level properties are preserved on save.
 - Reading is strict: any invalid value fails with the JSON path of the problem.
@@ -123,7 +128,9 @@ chain of migrations before they are read; saving always writes the current versi
 newer Bluestone is refused with an explanation and never overwritten.
 
 Format 4 replaced the per-track `routing` with `instruments`, `chains`, `connections`, and `mixer`,
-and added track `role`, `group`, audio clips, and device automation targets (ADR 0027). Each format 3
+and added track `role`, `group`, audio clips, and device automation targets (ADR 0027). Track `folded`
+and `parkedConnections` were added to format 4 later without a version change (ADR 0030): both are
+optional, written only when used, and ignored by Bluestone builds that predate them. Each format 3
 route becomes one external instrument per distinct endpoint and profile (named after the endpoint, or
 "Unassigned" for a route with settings but no endpoint), a connection from the track forcing the
 route's channel and selecting its voice, and, for a non-zero transposition, a Transpose device in the
