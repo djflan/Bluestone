@@ -86,7 +86,7 @@ indices, only stable identifiers and identity hints.
   `folded` (optional, written only when true) says a group track's members are hidden under it in the
   arrangement (ADR 0030).
 - A clip's `type` is `note`, holding the events below, or `audio`, holding a `source` (`location`,
-  `sampleRate`, `frames`, `channels`). Audio clips are arrangement data only; nothing plays them yet.
+  `sampleRate`, `frames`, `channels`). The audio engine plays audio clips while audio output is on (ADR 0032); the stored rate, length, and channels are informational, and the file's own header is used for playback.
 - Event IDs are unique across all clips of a track.
 - `automation` (optional; omitted when empty) holds a track's automation lanes, in display order. A
   lane's `target` is a `controller` (with a `controller` number, not bank select, 32–63, data entry or

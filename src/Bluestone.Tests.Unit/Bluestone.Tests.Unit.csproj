@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Application/Bluestone.Application.csproj" />
+    <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
     <ProjectReference Include="../Bluestone.Domain/Bluestone.Domain.csproj" />
     <ProjectReference Include="../Bluestone.Infrastructure/Bluestone.Infrastructure.csproj" />
     <ProjectReference Include="../Bluestone.Midi/Bluestone.Midi.csproj" />

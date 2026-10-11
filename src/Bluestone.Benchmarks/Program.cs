@@ -14,6 +14,12 @@ if (args is ["--jitter", ..])
     return;
 }
 
+if (args is ["--audio", ..])
+{
+    AudioCallbackProbe.Run(args);
+    return;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(Workloads).Assembly).Run(args);
 
 static void Realtime()

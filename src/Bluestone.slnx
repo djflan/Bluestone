@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Bluestone.Desktop/Bluestone.Desktop.csproj" />
   <Project Path="Bluestone.Application/Bluestone.Application.csproj" />
+  <Project Path="Bluestone.Audio/Bluestone.Audio.csproj" />
   <Project Path="Bluestone.Benchmarks/Bluestone.Benchmarks.csproj" />
   <Project Path="Bluestone.Domain/Bluestone.Domain.csproj" />
   <Project Path="Bluestone.Infrastructure/Bluestone.Infrastructure.csproj" />

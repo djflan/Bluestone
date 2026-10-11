@@ -24,7 +24,7 @@ public enum SignalDiagnosticCode
     /// <summary>Something a device reported, such as notes it dropped.</summary>
     DeviceReport,
 
-    /// <summary>A software instrument receives events, but there is no audio engine yet, so it does not sound.</summary>
+    /// <summary>A software instrument receives events; only a plugin instrument sounds, and only while audio output is on (ADR 0032).</summary>
     NotAudible,
 
     /// <summary>Clip events were replaced by automation of the same target.</summary>

@@ -34,8 +34,8 @@ public sealed record AudioSource
 
 /// <summary>
 /// A clip of recorded or imported audio. Content tick 0 is where the source starts; trimming only moves
-/// the window onto it, like a note clip. Bluestone has no audio engine yet: the model, arrangement, and
-/// project file carry audio clips, and playback does not (ADR 0021).
+/// the window onto it, like a note clip. The audio engine plays the source from disk at its own rate from the
+/// clip's origin (ADR 0032).
 /// </summary>
 public sealed record AudioClip : Clip
 {
