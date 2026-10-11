@@ -236,6 +236,14 @@ internal sealed class AppUnderTest : IAsyncDisposable
         }
     }
 
+    /// <summary>Renders a frame now: some views settle their scroll position while drawing.</summary>
+    public void Render()
+    {
+        Window.UpdateLayout();
+        using var frame = Window.CaptureRenderedFrame();
+        Dispatcher.UIThread.RunJobs();
+    }
+
     /// <summary>Renders the main window, or <paramref name="window"/>, and saves the frame as a PNG in the test output, for looking at.</summary>
     public string SaveFrame(string name, TopLevel? window = null)
     {
