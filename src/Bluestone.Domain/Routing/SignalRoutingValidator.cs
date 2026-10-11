@@ -94,6 +94,7 @@ public static class SignalRoutingValidator
             }
         }
 
+        CheckSends(project, issues);
         FindCycles(project, issues);
         CheckAutomation(project, definitions, issues);
         return issues.ToImmutable();
@@ -203,7 +204,18 @@ public static class SignalRoutingValidator
         }
     }
 
-    // A cycle is a path of connections (and mixer outputs) that returns to a node. Nodes are the things
+    private static void CheckSends(Project project, ImmutableArray<RoutingIssue>.Builder issues)
+    {
+        foreach (var channel in project.Mixer.Channels)
+        {
+            foreach (var send in channel.Sends.Where(s => project.Mixer.Find(s.Target) is null))
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Error, RoutingIssueCode.UnknownDestination, $"Mixer channel \"{channel.Name}\" sends to a channel that is not in the project."));
+            }
+        }
+    }
+
+    // A cycle is a path of connections (and mixer outputs and sends) that returns to a node. Nodes are the things
     // that own a chain (tracks and racks) and mixer channels; a tap belongs to its chain's owner, because
     // everything before the tap has already run when it fires.
     private static void FindCycles(Project project, ImmutableArray<RoutingIssue>.Builder issues)
@@ -224,6 +236,11 @@ public static class SignalRoutingValidator
             if (channel.Output is { } output)
             {
                 Add(edges, ('M', channel.Id.Value), (('M', output.Value), null));
+            }
+
+            foreach (var send in channel.Sends)
+            {
+                Add(edges, ('M', channel.Id.Value), (('M', send.Target.Value), null));
             }
         }
 

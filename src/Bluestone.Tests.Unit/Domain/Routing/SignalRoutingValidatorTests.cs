@@ -1,5 +1,6 @@
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
+using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using static Bluestone.Tests.Unit.Domain.Routing.RoutingFixture;
@@ -179,6 +180,36 @@ public sealed class SignalRoutingValidatorTests
         project = project with { Mixer = project.Mixer.With(a with { Output = b.Id }).With(b with { Output = a.Id }) };
 
         Assert.Equal(RoutingIssueCode.Cycle, Assert.Single(project.Errors()).Code);
+    }
+
+    [Fact]
+    public void ASendBackToAChannelThatFeedsIt_IsACycle_NamingTheChannels()
+    {
+        var project = Empty().WithMixerChannel(out var vocal, "Vocal").WithMixerChannel(out var reverb, "Reverb");
+        project = project with { Mixer = project.Mixer.With(vocal.WithSend(new MixerSend(reverb.Id))).With(reverb with { Output = vocal.Id }) };
+
+        var error = Assert.Single(project.Errors());
+        Assert.Equal(RoutingIssueCode.Cycle, error.Code);
+        Assert.Contains("Vocal", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Reverb", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SendsFromManyChannelsToOneReturn_AreValid()
+    {
+        var project = Empty().WithMixerChannel(out var a, "A").WithMixerChannel(out var b, "B").WithMixerChannel(out var reverb, "Reverb");
+        project = project with { Mixer = project.Mixer.With(a.WithSend(new MixerSend(reverb.Id))).With(b.WithSend(new MixerSend(reverb.Id, preFader: true)) with { Output = a.Id }) };
+
+        Assert.Empty(project.Errors());
+    }
+
+    [Fact]
+    public void ASendToAMissingChannel_IsAnError()
+    {
+        var project = Empty().WithMixerChannel(out var a, "A");
+        project = project with { Mixer = project.Mixer.With(a.WithSend(new MixerSend(MixerChannelId.New()))) };
+
+        Assert.Equal(RoutingIssueCode.UnknownDestination, Assert.Single(project.Errors()).Code);
     }
 
     [Fact]

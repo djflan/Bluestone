@@ -30,7 +30,13 @@ internal static class ProjectSamples
         var drums = new Track(
             TrackId.New(),
             "Drüms ♪",
-            [new AudioClip(ClipId.New(), new Tick(960), new TickSpan(1920), new TickSpan(48), new AudioSource("audio/loop.wav", 48_000, 96_000, 2), "Loop")],
+            [new AudioClip(ClipId.New(), new Tick(960), new TickSpan(1920), new TickSpan(48), new AudioSource("audio/loop.wav", 48_000, 96_000, 2), "Loop")
+            {
+                GainDecibels = -4.5,
+                FadeIn = new TickSpan(120),
+                FadeOut = new TickSpan(240),
+                FadeShape = FadeShape.EqualPower,
+            }],
             isSoloed: true,
             role: TrackRole.Hybrid);
         // Two clips, one trimmed and named, with content hidden on both sides.
@@ -69,13 +75,18 @@ internal static class ProjectSamples
         var rack = DeviceChain.Create(ChainOwner.Rack, "Shared synth") with { Devices = [plugin] };
         var bus = MixerChannel.Create("Synth bus") with { GainDecibels = -3.5, Pan = 0.25, IsMuted = true };
         var master = MixerChannel.Create("Sub mix") with { IsSoloed = true };
+        var reverb = MixerChannel.Create("Reverb return");
         var project = new Project
         {
             Id = ProjectId.New(),
             Name = "Demo",
             Sequence = sequence,
             Loop = new TickRange(Tick.Zero, new Tick(1920)),
-            Mixer = new Mixer { Channels = [bus with { Output = master.Id }, master], MasterGainDecibels = -1 },
+            Mixer = new Mixer
+            {
+                Channels = [bus with { Output = master.Id, Sends = [new MixerSend(reverb.Id, -12.5, preFader: true)] }, master.WithSend(new MixerSend(reverb.Id)), reverb],
+                MasterGainDecibels = -1,
+            },
         };
         project = TrackOutputs.Write(project, bass.Id, new TrackOutput
         {
@@ -122,7 +133,7 @@ internal static class ProjectSamples
         {
             lines.Add($"track {track.Id} {track.Name} m={track.IsMuted} s={track.IsSoloed} role={track.Role} group={track.Group} folded={track.IsFolded}");
             lines.AddRange(track.Automation.Select(l => $"  lane {l.Id} {l.Target} {string.Join(",", l.Points)}"));
-            lines.AddRange(track.Clips.OfType<AudioClip>().Select(c => $"  audio {c.Id} {c.Start}+{c.Length} offset={c.ContentOffset} \"{c.Name}\" {c.Source}"));
+            lines.AddRange(track.Clips.OfType<AudioClip>().Select(c => $"  audio {c.Id} {c.Start}+{c.Length} offset={c.ContentOffset} \"{c.Name}\" {c.Source} gain={c.GainDecibels} fades={c.FadeIn}/{c.FadeOut} {c.FadeShape}"));
             foreach (var clip in track.Clips.OfType<NoteClip>())
             {
                 lines.Add($"  clip {clip.Id} {clip.Start}+{clip.Length} offset={clip.ContentOffset} \"{clip.Name}\"");
@@ -152,7 +163,7 @@ internal static class ProjectSamples
         lines.AddRange(project.Connections.Select(c => Describe("connection", c)));
         lines.AddRange(project.ParkedConnections.Select(c => Describe("parked", c)));
         lines.Add($"mixer master={project.Mixer.MasterGainDecibels}");
-        lines.AddRange(project.Mixer.Channels.Select(c => $"  channel {c}"));
+        lines.AddRange(project.Mixer.Channels.Select(c => $"  channel {c} sends={string.Join(",", c.Sends)}"));
         return string.Join("\n", lines);
     }
 
