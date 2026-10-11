@@ -74,7 +74,10 @@ public sealed class AudioPluginTests
         using var engine = Engine(node, out _);
         engine.Transport.Play(0);
         var driver = new OfflineAudioDriver(engine);
-        Assert.Contains(driver.Render(Block * 40, Block), s => s != 0f);
+
+        // The offline driver does not wait for real time, so a worker that wakes late (a Windows timer tick is about
+        // 15.6 ms against a 5 ms collect wait) can miss many blocks in a row: render until the sine is heard.
+        await WaitUntilAsync(() => driver.Render(Block * 4, Block).Any(s => s != 0f), TimeSpan.FromSeconds(10), "the sine to be heard");
 
         KillProcess(sine.WorkerProcessId!.Value);
         await WaitForStateAsync(sine, PluginInstanceState.Unavailable);
@@ -94,7 +97,7 @@ public sealed class AudioPluginTests
         using var engine = Engine(node, out _);
         engine.Transport.Play(0);
         var driver = new OfflineAudioDriver(engine);
-        Assert.Contains(driver.Render(Block * 20, Block), s => s != 0f);
+        await WaitUntilAsync(() => driver.Render(Block * 4, Block).Any(s => s != 0f), TimeSpan.FromSeconds(10), "the note to be heard");
 
         // Past the note's end: nothing should sound once the release has gone through the pipeline.
         engine.Transport.Locate(Rate * 20);
