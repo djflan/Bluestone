@@ -11,6 +11,10 @@
 //!
 //! State is the parameter values: `BTPS`, a little-endian u16 version (1), a u16 count, then that many f64 values.
 
+// The vst3 crate's enum constants have different integer types on different platforms, so casts that are no-ops
+// on one platform are needed on another.
+#![allow(clippy::unnecessary_cast)]
+
 mod clap_plugin;
 mod vst3_plugin;
 
@@ -184,8 +188,10 @@ impl Core {
             return false;
         }
         let values: Vec<f64> = data[8..]
-            .chunks_exact(8)
-            .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| f64::from_le_bytes(*c))
             .collect();
         if values.iter().any(|v| !(0.0..=1.0).contains(v)) {
             return false;

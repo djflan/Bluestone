@@ -722,9 +722,12 @@ impl IParameterChangesTrait for ParamChanges {
     }
 }
 
+/// Resizes the editor's window to a content size; false when the window is gone.
+pub type ResizeWindow = Box<dyn Fn(u32, u32) -> bool>;
+
 /// Lets an editor ask to be resized; on Linux also the run loop plugins register their timers and sockets with.
 pub struct PlugFrame {
-    pub resize: RefCell<Option<Box<dyn Fn(u32, u32) -> bool>>>,
+    pub resize: RefCell<Option<ResizeWindow>>,
     #[cfg(target_os = "linux")]
     pub registrations: RefCell<Vec<(*mut c_void, u64, bool)>>,
 }

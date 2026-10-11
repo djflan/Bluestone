@@ -39,7 +39,7 @@ pub struct ClapModule {
 }
 
 impl ClapModule {
-    pub fn open(path: &Path) -> Result<Arc<ClapModule>, String> {
+    pub fn open(path: &Path) -> Result<Rc<ClapModule>, String> {
         let library = Library::open_clap(path)?;
         let entry = library
             .symbol("clap_entry")
@@ -69,7 +69,7 @@ impl ClapModule {
                 }
                 return Err("The module has no plugin factory.".into());
             }
-            Ok(Arc::new(ClapModule {
+            Ok(Rc::new(ClapModule {
                 entry,
                 factory,
                 _library: library,
@@ -211,11 +211,11 @@ pub struct ClapInstance {
     known_values: RefCell<HashMap<u32, f64>>,
     settings: Cell<Option<(f64, u32, u32, u32)>>,
     editor: RefCell<Option<Editor>>,
-    _module: Arc<ClapModule>,
+    _module: Rc<ClapModule>,
 }
 
 impl ClapInstance {
-    pub fn create(module: Arc<ClapModule>, id: &str) -> Result<ClapInstance, String> {
+    pub fn create(module: Rc<ClapModule>, id: &str) -> Result<ClapInstance, String> {
         let host = Host::new();
         let id_text = CString::new(id).map_err(|_| "Invalid plugin id.")?;
         // SAFETY: the CLAP creation sequence; every pointer is checked.
@@ -395,14 +395,14 @@ impl ClapInstance {
         for event in output.events.drain(..) {
             // SAFETY: the slot's header says which member it is.
             unsafe {
-                if event.header.type_ == CLAP_EVENT_PARAM_VALUE {
-                    if let Some(range) = self.range(event.param.param_id) {
-                        self.host.shared.notify(
-                            notification_kind::PARAMETER_EDITED,
-                            range.id,
-                            range.normalized(event.param.value),
-                        );
-                    }
+                if event.header.type_ == CLAP_EVENT_PARAM_VALUE
+                    && let Some(range) = self.range(event.param.param_id)
+                {
+                    self.host.shared.notify(
+                        notification_kind::PARAMETER_EDITED,
+                        range.id,
+                        range.normalized(event.param.value),
+                    );
                 }
             }
         }
@@ -926,18 +926,17 @@ impl Instance for ClapInstance {
         let shared = &self.host.shared;
         // SAFETY: main-thread plugin calls.
         unsafe {
-            if shared.callback_requested.swap(false, Ordering::AcqRel) {
-                if let Some(on_main_thread) = (*self.plugin).on_main_thread {
-                    on_main_thread(self.plugin);
-                }
+            if shared.callback_requested.swap(false, Ordering::AcqRel)
+                && let Some(on_main_thread) = (*self.plugin).on_main_thread
+            {
+                on_main_thread(self.plugin);
             }
         }
-        if shared.restart_requested.swap(false, Ordering::AcqRel) {
-            if let Some((rate, frames, inputs, outputs)) = self.settings.get() {
-                if self.activate(rate, frames, inputs, outputs).is_err() {
-                    self.deactivate();
-                }
-            }
+        if shared.restart_requested.swap(false, Ordering::AcqRel)
+            && let Some((rate, frames, inputs, outputs)) = self.settings.get()
+            && self.activate(rate, frames, inputs, outputs).is_err()
+        {
+            self.deactivate();
         }
         if shared.flush_requested.swap(false, Ordering::AcqRel) {
             self.flush(&[]);
@@ -965,31 +964,30 @@ impl Instance for ClapInstance {
                 .map(|r| r.keys().copied().collect())
                 .unwrap_or_default();
             for id in ids {
-                if let Some(value) = self.get_parameter(id) {
-                    if self
+                if let Some(value) = self.get_parameter(id)
+                    && self
                         .known_values
                         .borrow_mut()
                         .insert(id, value)
                         .is_none_or(|old| (old - value).abs() > 1e-9)
-                    {
-                        notifications.push(BphNotification {
-                            kind: notification_kind::PARAMETER_EDITED,
-                            id,
-                            value,
-                        });
-                    }
+                {
+                    notifications.push(BphNotification {
+                        kind: notification_kind::PARAMETER_EDITED,
+                        id,
+                        value,
+                    });
                 }
             }
         }
         let resize = shared.resize_request.lock().ok().and_then(|mut r| r.take());
-        if let Some((width, height)) = resize {
-            if let Some(window) = self.editor.borrow().as_ref().and_then(|e| e.window.clone()) {
-                window.set_content_size(width, height);
-                // SAFETY: the plugin's gui extension.
-                unsafe {
-                    if let Some(set_size) = self.ext.gui.as_ref().and_then(|g| g.set_size) {
-                        set_size(self.plugin, width, height);
-                    }
+        if let Some((width, height)) = resize
+            && let Some(window) = self.editor.borrow().as_ref().and_then(|e| e.window.clone())
+        {
+            window.set_content_size(width, height);
+            // SAFETY: the plugin's gui extension.
+            unsafe {
+                if let Some(set_size) = self.ext.gui.as_ref().and_then(|g| g.set_size) {
+                    set_size(self.plugin, width, height);
                 }
             }
         }
@@ -1071,10 +1069,10 @@ impl Instance for ClapInstance {
             let window = Rc::new(gui::Window::create(
                 title, width, height, resizable, callback,
             )?);
-            if cfg!(not(target_os = "macos")) {
-                if let Some(set_scale) = gui_ext.set_scale {
-                    set_scale(self.plugin, window.content_scale());
-                }
+            if cfg!(not(target_os = "macos"))
+                && let Some(set_scale) = gui_ext.set_scale
+            {
+                set_scale(self.plugin, window.content_scale());
             }
             let handle = window.parent_handle();
             let parent = clap_window {

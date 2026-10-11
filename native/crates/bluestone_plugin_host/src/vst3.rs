@@ -45,7 +45,7 @@ type EntryNoArgs = unsafe extern "C" fn() -> bool;
 type GetFactory = unsafe extern "C" fn() -> *mut IPluginFactory;
 
 impl Vst3Module {
-    pub fn open(path: &Path) -> Result<Arc<Vst3Module>, String> {
+    pub fn open(path: &Path) -> Result<Rc<Vst3Module>, String> {
         let library = Library::open_vst3(path)?;
         // SAFETY: the module entry points have these signatures in the VST3 module ABI.
         unsafe {
@@ -93,7 +93,7 @@ impl Vst3Module {
             ) {
                 factory3.setHostContext(context.as_ptr());
             }
-            Ok(Arc::new(Vst3Module {
+            Ok(Rc::new(Vst3Module {
                 factory: Some(factory),
                 host,
                 exit: exit.map(|e| std::mem::transmute::<*mut c_void, EntryNoArgs>(e)),
@@ -104,7 +104,7 @@ impl Vst3Module {
 
     /// The module's audio processor classes. Each one is instantiated briefly to tell instruments, audio effects,
     /// and MIDI effects apart (a VST3 category alone cannot say "MIDI effect").
-    pub fn describe(self: &Arc<Self>) -> Vec<PluginInfo> {
+    pub fn describe(self: &Rc<Self>) -> Vec<PluginInfo> {
         let mut plugins = Vec::new();
         // SAFETY: plain factory queries with properly sized out structures.
         unsafe {
@@ -247,11 +247,11 @@ pub struct Vst3Instance {
     audio: Mutex<Option<AudioState>>,
     known_values: RefCell<HashMap<u32, f64>>,
     editor: RefCell<Option<Editor>>,
-    module: Arc<Vst3Module>,
+    module: Rc<Vst3Module>,
 }
 
 impl Vst3Instance {
-    pub fn create(module: Arc<Vst3Module>, cid: TUID) -> Result<Vst3Instance, String> {
+    pub fn create(module: Rc<Vst3Module>, cid: TUID) -> Result<Vst3Instance, String> {
         // SAFETY: standard VST3 instantiation sequence; every pointer is checked.
         unsafe {
             let mut object: *mut c_void = std::ptr::null_mut();
@@ -329,12 +329,12 @@ impl Vst3Instance {
                     }
                     // The controller starts from the component's state.
                     let stream = ComWrapper::new(MemoryStream::default());
-                    if let Some(s) = stream.to_com_ptr::<IBStream>() {
-                        if component.getState(s.as_ptr()) == kResultOk {
-                            let read = ComWrapper::new(MemoryStream::from_bytes(&stream.bytes()));
-                            if let Some(r) = read.to_com_ptr::<IBStream>() {
-                                controller.setComponentState(r.as_ptr());
-                            }
+                    if let Some(s) = stream.to_com_ptr::<IBStream>()
+                        && component.getState(s.as_ptr()) == kResultOk
+                    {
+                        let read = ComWrapper::new(MemoryStream::from_bytes(&stream.bytes()));
+                        if let Some(r) = read.to_com_ptr::<IBStream>() {
+                            controller.setComponentState(r.as_ptr());
                         }
                     }
                 }
@@ -940,24 +940,25 @@ impl Instance for Vst3Instance {
                     _ => None,
                 }
             };
-            if let Some((kind, channel, data1, data2)) = converted {
-                if (0..16).contains(&channel) && data1 < 128 {
-                    block.push_output_event(BphEvent {
-                        offset,
-                        kind,
-                        channel: channel as u8,
-                        data1,
-                        data2,
-                    });
-                }
+            if let Some((kind, channel, data1, data2)) = converted
+                && (0..16).contains(&channel)
+                && data1 < 128
+            {
+                block.push_output_event(BphEvent {
+                    offset,
+                    kind,
+                    channel: channel as u8,
+                    data1,
+                    data2,
+                });
             }
         }
-        if !audio.output_changes.is_empty() {
-            if let Ok(mut to_controller) = self.shared.to_controller.try_lock() {
-                audio
-                    .output_changes
-                    .last_values(|id, value| to_controller.push((id, value)));
-            }
+        if !audio.output_changes.is_empty()
+            && let Ok(mut to_controller) = self.shared.to_controller.try_lock()
+        {
+            audio
+                .output_changes
+                .last_values(|id, value| to_controller.push((id, value)));
         }
         result == kResultOk
     }
@@ -1046,15 +1047,15 @@ impl Instance for Vst3Instance {
         }
         let flags = self.shared.restart_flags.swap(0, Ordering::AcqRel);
         if flags & RestartFlags_::kLatencyChanged as i32 != 0 {
-            if let Ok(audio) = self.audio.lock() {
-                if audio.is_some() {
-                    // SAFETY: a deactivate/activate cycle so the plugin may change its latency, as the API asks.
-                    unsafe {
-                        self.processor.setProcessing(0);
-                        self.component.setActive(0);
-                        self.component.setActive(1);
-                        self.processor.setProcessing(1);
-                    }
+            if let Ok(audio) = self.audio.lock()
+                && audio.is_some()
+            {
+                // SAFETY: a deactivate/activate cycle so the plugin may change its latency, as the API asks.
+                unsafe {
+                    self.processor.setProcessing(0);
+                    self.component.setActive(0);
+                    self.component.setActive(1);
+                    self.processor.setProcessing(1);
                 }
             }
             notifications.push(BphNotification {
@@ -1065,10 +1066,10 @@ impl Instance for Vst3Instance {
         }
         if flags & RestartFlags_::kMidiCCAssignmentChanged as i32 != 0 {
             let map = self.controller_map();
-            if let Ok(mut audio) = self.audio.lock() {
-                if let Some(audio) = audio.as_mut() {
-                    audio.controller_map = map;
-                }
+            if let Ok(mut audio) = self.audio.lock()
+                && let Some(audio) = audio.as_mut()
+            {
+                audio.controller_map = map;
             }
         }
         if flags & RestartFlags_::kParamTitlesChanged as i32 != 0 {
@@ -1082,17 +1083,16 @@ impl Instance for Vst3Instance {
             // A preset change inside the plugin: report every parameter whose value moved.
             let mut known = self.known_values.borrow_mut();
             for parameter in self.parameters() {
-                if let Some(value) = self.get_parameter(parameter.id) {
-                    if known
+                if let Some(value) = self.get_parameter(parameter.id)
+                    && known
                         .insert(parameter.id, value)
                         .is_none_or(|old| (old - value).abs() > 1e-9)
-                    {
-                        notifications.push(BphNotification {
-                            kind: notification_kind::PARAMETER_EDITED,
-                            id: parameter.id,
-                            value,
-                        });
-                    }
+                {
+                    notifications.push(BphNotification {
+                        kind: notification_kind::PARAMETER_EDITED,
+                        id: parameter.id,
+                        value,
+                    });
                 }
             }
             notifications.push(BphNotification {
@@ -1211,10 +1211,10 @@ impl Instance for Vst3Instance {
             if let Some(frame_ptr) = frame.to_com_ptr::<IPlugFrame>() {
                 view.setFrame(frame_ptr.as_ptr());
             }
-            if let Some(scale) = view.cast::<IPlugViewContentScaleSupport>() {
-                if cfg!(not(target_os = "macos")) {
-                    scale.setContentScaleFactor(window.content_scale() as f32);
-                }
+            if let Some(scale) = view.cast::<IPlugViewContentScaleSupport>()
+                && cfg!(not(target_os = "macos"))
+            {
+                scale.setContentScaleFactor(window.content_scale() as f32);
             }
             if view.attached(window.parent_handle(), platform.as_ptr()) != kResultOk {
                 view.setFrame(std::ptr::null_mut());
@@ -1293,10 +1293,10 @@ impl Drop for Vst3Instance {
         self.close_editor_now(false);
         // SAFETY: the VST3 teardown sequence, in reverse of creation.
         unsafe {
-            if let Ok(mut audio) = self.audio.lock() {
-                if audio.take().is_some() {
-                    self.stop_processing();
-                }
+            if let Ok(mut audio) = self.audio.lock()
+                && audio.take().is_some()
+            {
+                self.stop_processing();
             }
             if let Some((a, b)) = self.connection.take() {
                 a.disconnect(b.as_ptr());

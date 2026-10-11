@@ -16,6 +16,10 @@
 //! - Panics abort the worker process (the workspace builds with `panic = "abort"`), so none crosses the ABI; to
 //!   Bluestone that is a plugin crash, which it already survives.
 
+// The vst3 crate's enum constants have different integer types on different platforms, so casts that are no-ops
+// on one platform are needed on another.
+#![allow(clippy::unnecessary_cast)]
+
 mod clap;
 mod clap_host;
 mod common;
@@ -27,7 +31,7 @@ mod vst3_host;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::path::Path;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::Duration;
 
 use common::Instance;
@@ -39,8 +43,8 @@ pub const FORMAT_VST3: u32 = 1;
 pub const FORMAT_CLAP: u32 = 2;
 
 pub struct ModuleHandle {
-    vst3: Option<Arc<vst3::Vst3Module>>,
-    clap: Option<Arc<clap::ClapModule>>,
+    vst3: Option<Rc<vst3::Vst3Module>>,
+    clap: Option<Rc<clap::ClapModule>>,
 }
 
 pub struct PluginHandle {
