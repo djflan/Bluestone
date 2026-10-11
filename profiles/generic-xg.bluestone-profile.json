@@ -11,7 +11,8 @@
   "provenance": {
     "sources": [
       "Publicly documented XG format conventions: bank select assignments (MSB 0 normal voices, 64 SFX voices, 126 SFX kits, 127 drum kits), the XG System On message, the XG parameter change message layout, and the recommended delay after System On.",
-      "MIDI 1.0 Detailed Specification: controller numbers, registered parameters, and universal System Exclusive formats."
+      "MIDI 1.0 Detailed Specification: controller numbers, registered parameters, and universal System Exclusive formats.",
+      "XG format documentation: the XG NRPN list (MSB 01: vibrato, filter, and EG offsets, data entry 40H = no change) and the multi part parameter change addresses (08 nn xx, part nn), used for the parameter map."
     ],
     "contributors": [
       "Bluestone contributors"
@@ -19,7 +20,7 @@
     "license": "MIT",
     "redistributionConfirmed": true,
     "verification": "unverified",
-    "notes": "Contains only interface facts needed to address an XG instrument, no voice lists or other vendor text. Not yet checked against hardware."
+    "notes": "Contains only interface facts needed to address an XG instrument, no voice lists or other vendor text. The parameter map follows the XG documentation. Not yet checked against hardware."
   },
   "protocols": [
     "xg",
@@ -266,6 +267,191 @@
       ]
     }
   ],
+  "parameterMap": [
+    {
+      "id": "volume",
+      "name": "Volume",
+      "kind": "cc",
+      "controller": 7,
+      "default": 100
+    },
+    {
+      "id": "pan",
+      "name": "Pan",
+      "kind": "cc",
+      "controller": 10,
+      "default": 64
+    },
+    {
+      "id": "expression",
+      "name": "Expression",
+      "kind": "cc",
+      "controller": 11,
+      "default": 127
+    },
+    {
+      "id": "reverb-send",
+      "name": "Reverb Send",
+      "kind": "cc",
+      "controller": 91,
+      "default": 40
+    },
+    {
+      "id": "chorus-send",
+      "name": "Chorus Send",
+      "kind": "cc",
+      "controller": 93,
+      "default": 0
+    },
+    {
+      "id": "variation-send",
+      "name": "Variation Send",
+      "kind": "cc",
+      "controller": 94,
+      "default": 0
+    },
+    {
+      "id": "vibrato-rate",
+      "name": "Vibrato Rate",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 8,
+      "default": 64
+    },
+    {
+      "id": "vibrato-depth",
+      "name": "Vibrato Depth",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 9,
+      "default": 64
+    },
+    {
+      "id": "vibrato-delay",
+      "name": "Vibrato Delay",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 10,
+      "default": 64
+    },
+    {
+      "id": "filter-cutoff",
+      "name": "Filter Cutoff",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 32,
+      "default": 64
+    },
+    {
+      "id": "filter-resonance",
+      "name": "Filter Resonance",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 33,
+      "default": 64
+    },
+    {
+      "id": "eg-attack",
+      "name": "EG Attack Time",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 99,
+      "default": 64
+    },
+    {
+      "id": "eg-decay",
+      "name": "EG Decay Time",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 100,
+      "default": 64
+    },
+    {
+      "id": "eg-release",
+      "name": "EG Release Time",
+      "kind": "nrpn",
+      "msb": 1,
+      "lsb": 102,
+      "default": 64
+    },
+    {
+      "id": "pitch-bend-range",
+      "name": "Pitch Bend Range",
+      "kind": "rpn",
+      "msb": 0,
+      "lsb": 0,
+      "min": 0,
+      "max": 24,
+      "default": 2
+    },
+    {
+      "id": "fine-tuning",
+      "name": "Fine Tuning",
+      "kind": "rpn",
+      "bits": 14,
+      "msb": 0,
+      "lsb": 1,
+      "default": 8192
+    },
+    {
+      "id": "part-volume",
+      "name": "Part Volume (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 0B {value} F7",
+      "device": 16,
+      "default": 100
+    },
+    {
+      "id": "part-pan",
+      "name": "Part Pan (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 0E {value} F7",
+      "device": 16,
+      "min": 1,
+      "default": 64
+    },
+    {
+      "id": "part-chorus-send",
+      "name": "Part Chorus Send (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 12 {value} F7",
+      "device": 16,
+      "default": 0
+    },
+    {
+      "id": "part-reverb-send",
+      "name": "Part Reverb Send (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 13 {value} F7",
+      "device": 16,
+      "default": 40
+    },
+    {
+      "id": "part-filter-cutoff",
+      "name": "Part Filter Cutoff (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 18 {value} F7",
+      "device": 16,
+      "default": 64
+    },
+    {
+      "id": "part-filter-resonance",
+      "name": "Part Filter Resonance (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 19 {value} F7",
+      "device": 16,
+      "default": 64
+    },
+    {
+      "id": "part-detune",
+      "name": "Part Detune (SysEx)",
+      "kind": "sysex",
+      "bytes": "F0 43 {device} 4C 08 {channel} 09 {value[7:4]} {value[3:0]} F7",
+      "device": 16,
+      "max": 255,
+      "default": 128
+    }
+  ],
   "initialization": [
     {
       "sysex": "xg-system-on",
@@ -276,6 +462,9 @@
     "Variation banks (MSB 0 with a non-zero LSB) are not listed; select them by number.",
     "Program and drum kit names are not included.",
     "The device parameter is 16 plus the instrument's device number (1-16 shown as 0-15 on many instruments).",
-    "Parameter changes with more than one data byte are not covered by the template."
+    "Parameter changes with more than one data byte are not covered by the template.",
+    "Parameter map SysEx entries address part nn with the part's channel index (channel 1 is part 00). That matches XG's default receive channels and is wrong once a part's receive channel is changed.",
+    "Parameter map SysEx entries use device number 0 (byte 10H); change \"device\" for another device number.",
+    "The NRPN and SysEx filter, vibrato, and EG values are offsets from the voice's own settings: 64 (40H) means no change."
   ]
 }

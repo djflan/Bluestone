@@ -135,6 +135,34 @@ public sealed class PluginCrashRecoveryTests
     }
 
     [Fact]
+    public async Task ARestartStartedByTheUnavailableEvent_KeepsItsNewWorker_AndTheNewWorkerIsSupervised()
+    {
+        await using var host = new PluginTestHost();
+        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1));
+        Task<PluginInstanceStatus>? restart = null;
+        gain.StatusChanged += (_, e) =>
+        {
+            if (e.Current.State == PluginInstanceState.Unavailable && restart is null)
+            {
+                restart = gain.RestartAsync(Ct);
+            }
+        };
+
+        KillProcess(gain.WorkerProcessId!.Value);
+        await WaitUntilAsync(() => restart is not null, TimeSpan.FromSeconds(10), "the restart to begin");
+
+        Assert.Equal(PluginInstanceState.Running, (await restart!).State);
+        host.Track(gain);
+        var driver = new BlockDriver(gain, Frames);
+        Array.Fill(driver.Input, 1.0f);
+        await WaitUntilAsync(() => driver.Process().Outcome == ProcessOutcome.Processed, TimeSpan.FromSeconds(10), "the restarted worker to process");
+
+        KillProcess(gain.WorkerProcessId!.Value);
+        await WaitForStateAsync(gain, PluginInstanceState.Unavailable);
+        Assert.Equal(UnavailableReason.Crashed, gain.Status.Reason);
+    }
+
+    [Fact]
     public async Task AMissingWorker_FailsToStart_AndNothingRunsInTheHostProcess()
     {
         await using var host = new PluginTestHost(o => o with { WorkerPath = Path.Combine(AppContext.BaseDirectory, "no-such-worker", "Bluestone.PluginWorker") });

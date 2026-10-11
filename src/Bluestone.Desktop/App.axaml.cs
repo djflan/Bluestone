@@ -8,7 +8,6 @@ using Bluestone.Desktop.Views;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
 using Bluestone.Plugins;
-using Bluestone.Plugins.Protocol;
 using Bluestone.Plugins.Scanning;
 using Bluestone.Presentation;
 using Bluestone.Profiles;
@@ -28,11 +27,18 @@ public partial class App : Avalonia.Application
             var window = new MainWindow();
             var platformProviders = PlatformProviders.Create(SystemMonotonicClock.Instance).ToList();
             var plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
-            var viewModel = Compose(window, platformProviders, plugins);
+            var scanner = new PluginScanner(new PluginScannerOptions(PluginCacheDirectory));
+            var library = new PluginLibrary(scanner, PluginFolders);
+            var viewModel = Compose(window, platformProviders, plugins, library);
             window.Attach(viewModel);
             _audio?.StartIfEnabled();
             desktop.MainWindow = window;
-            desktop.Exit += (_, _) => Shutdown(viewModel, platformProviders, plugins);
+            desktop.Exit += (_, _) =>
+            {
+                Shutdown(viewModel, platformProviders, plugins);
+                library.Dispose();
+                scanner.Dispose();
+            };
 
             // A project or MIDI file named on the command line (or by the OS file association) opens at start.
             if (desktop.Args is [var path, ..] && MainViewModel.CanOpenFile(path))
@@ -45,9 +51,10 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>The composition root: the only place that chooses concrete providers and services.</summary>
-    public static MainViewModel Compose(MainWindow window, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins)
+    public static MainViewModel Compose(MainWindow window, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins, PluginLibrary library)
     {
         ArgumentNullException.ThrowIfNull(plugins);
+        ArgumentNullException.ThrowIfNull(library);
         ArgumentNullException.ThrowIfNull(window);
         var clock = SystemMonotonicClock.Instance;
 
@@ -66,8 +73,13 @@ public partial class App : Avalonia.Application
         var session = new ProjectSession();
         var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread);
         var monitor = new MidiMonitor(builtIn.OpenInputAsync(monitorPort.InputId).AsTask().GetAwaiter().GetResult());
-        var devices = new PluginDeviceHost(plugins, session, ScanPlugins());
-        var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), new AvaloniaDispatcher(), monitor, new ComputerKeyboardViewModel(keyboard), devices);
+        ScanPlugins(library);
+        var devices = new PluginDeviceHost(plugins, session, library);
+        var dispatcher = new AvaloniaDispatcher();
+        var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices)
+        {
+            Plugins = new PluginsViewModel(library, dispatcher),
+        };
         _ = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices);
         return viewModel;
@@ -110,26 +122,25 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>
-    /// The plugins in <see cref="UserPluginDirectory"/>. Each module is scanned in its own scanner process, so a module
-    /// that crashes the scanner cannot take Bluestone with it; it is reported and skipped on later scans (ADR 0025).
+    /// Scans the plugin folders at start. Each module is scanned in its own scanner process, so a module that crashes the
+    /// scanner cannot take Bluestone with it; it is reported and skipped on later scans until retried from the plugins
+    /// view (ADR 0025).
     /// </summary>
-    private static IReadOnlyList<PluginIdentity> ScanPlugins()
+    private static void ScanPlugins(PluginLibrary library)
     {
-        if (!Directory.Exists(UserPluginDirectory))
+        Task.Run(() => library.ScanAsync()).GetAwaiter().GetResult();
+        foreach (var module in library.Modules.Where(m => m.State != PluginModuleState.Loaded))
         {
-            return [];
+            System.Diagnostics.Trace.TraceWarning($"Plugin module {module.ModulePath} was not loaded: {module.Problem}");
         }
-
-        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-cache");
-        using var scanner = new PluginScanner(new PluginScannerOptions(cache));
-        var results = Task.Run(() => scanner.ScanAsync(Directory.EnumerateFiles(UserPluginDirectory))).GetAwaiter().GetResult();
-        foreach (var failure in results.Where(r => r.Failure is not null))
-        {
-            System.Diagnostics.Trace.TraceWarning($"Plugin module {failure.ModulePath} was not loaded: {failure.Failure}");
-        }
-
-        return [.. results.SelectMany(r => r.Plugins)];
     }
+
+    /// <summary>The folders scanned for plugin modules, in order. Formats with OS-standard folders add theirs here.</summary>
+    public static IReadOnlyList<string> PluginFolders => [UserPluginDirectory];
+
+    /// <summary>The scanner's cache and quarantine list.</summary>
+    public static string PluginCacheDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-cache");
 
     /// <summary>Where users put plugin modules, e.g. ~/Library/Application Support/Bluestone/plugins on macOS.</summary>
     public static string UserPluginDirectory =>

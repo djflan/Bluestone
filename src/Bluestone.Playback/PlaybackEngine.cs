@@ -466,8 +466,9 @@ public sealed class PlaybackEngine : IDisposable
     {
         // Include events at the playhead: a program change at the very start sets the track's instrument.
         // Pedals are left alone so a sustain held in the song does not latch notes played live.
+        // SysEx that hardware parameter automation chases is left for play: it is not channel state.
         var chase = ChaseState.Compute(_plan, Volatile.Read(ref _positionTick) + 1)
-            .Where(c => c.Message.Kind != ChannelMessageKind.ControlChange || c.Message.Data1 is < 64 or > 69)
+            .Where(c => c.PayloadIndex < 0 && (c.Message.Kind != ChannelMessageKind.ControlChange || c.Message.Data1 is < 64 or > 69))
             .ToArray();
         var previous = _stoppedChase.ToLookup(c => (c.Slot, c.Message.Channel.Index));
         _stoppedChase = chase;
@@ -493,7 +494,7 @@ public sealed class PlaybackEngine : IDisposable
         ReleaseSustain();
         foreach (var message in chase)
         {
-            SendChannel(message.Slot, message.Message, MidiTimestamp.Immediate);
+            SendChase(message, MidiTimestamp.Immediate);
         }
 
         _countIn = [];
@@ -584,8 +585,11 @@ public sealed class PlaybackEngine : IDisposable
                     if (InClass(message.Slot, scheduledClass))
                     {
                         // Tracked like any dispatched pedal, so stopping lifts a sustain the wrap put down.
-                        SendChannel(message.Slot, message.Message, scheduledClass ? MidiTimestamp.At(wrapTime) : MidiTimestamp.Immediate);
-                        TrackSustain(message.Slot, message.Message);
+                        SendChase(message, scheduledClass ? MidiTimestamp.At(wrapTime) : MidiTimestamp.Immediate);
+                        if (message.PayloadIndex < 0)
+                        {
+                            TrackSustain(message.Slot, message.Message);
+                        }
                     }
                 }
 
@@ -789,6 +793,18 @@ public sealed class PlaybackEngine : IDisposable
                 SendChannel(slot, ChannelMessage.ControlChange(ch, ControllerNumber.AllNotesOff, SevenBitValue.Min), MidiTimestamp.Immediate);
                 SendChannel(slot, ChannelMessage.ControlChange(ch, ControllerNumber.AllSoundOff, SevenBitValue.Min), MidiTimestamp.Immediate);
             }
+        }
+    }
+
+    private void SendChase(in ChaseMessage message, MidiTimestamp timestamp)
+    {
+        if (message.PayloadIndex < 0)
+        {
+            SendChannel(message.Slot, message.Message, timestamp);
+        }
+        else if ((uint)message.Slot < (uint)_outputs.Length && _outputs[message.Slot] is { } output && message.PayloadIndex < _plan.Payloads.Length)
+        {
+            Record(output.Send(_plan.Payloads[message.PayloadIndex].Span, timestamp), TimeSpan.Zero);
         }
     }
 

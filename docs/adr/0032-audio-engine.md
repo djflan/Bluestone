@@ -80,7 +80,7 @@ and in the worst case within the buffer period; garbage-collection pauses during
   failure policy), never stale audio. `LatencyFrames` (pipelining plus the plugin's own) is reported per device in
   `ProjectAudioGraphResult.LatencyFrames`; nothing compensates yet.
 - `ProjectAudioGraph` (Application) builds the graph from the project: a chain's audio starts with the owner's
-  audio clips (when the track plays by the existing mute and solo rule) plus audio connected into it; a plugin audio
+  audio clips (when the track plays by the plan's mute and solo rule, groups included, ADR 0030) plus audio connected into it; a plugin audio
   effect processes it, a plugin instrument adds to it, other devices pass it on; taps take the audio after their
   device; audio connections lead to mixer channels, the master, or other chains. Routing errors leave connections
   out. Software-instrument feeds and parameter feeds from the signal graph become per-device schedules in song frames.

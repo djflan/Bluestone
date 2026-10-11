@@ -294,12 +294,8 @@ public sealed class ProjectAudioGraph
         private List<int> Inputs(SignalNode destination) =>
             [.. _audio.Where(c => c.Destination == destination).SelectMany(c => Output(c.Source)).Distinct()];
 
-        // The plan's rule: solo overrides mute, and both apply to a track's own content (handoff decision 11).
-        private bool Plays(Track track)
-        {
-            var anySolo = project.Sequence.Tracks.Any(t => t.IsSoloed);
-            return anySolo ? track.IsSoloed : !track.IsMuted;
-        }
+        // The plan's rule, groups included (ADR 0030): mute and solo apply to a track's own content.
+        private bool Plays(Track track) => GroupTracks.Plays(project.Sequence, track);
 
         private ClipPlayerNode? ClipsOf(Track track)
         {

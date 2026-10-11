@@ -1,8 +1,9 @@
 # Device profiles
 
 This directory holds the device profiles that ship with Bluestone. A profile describes what an
-instrument understands (banks, programs, drum kits, controllers, parameters, SysEx, initialization).
-It never describes where the instrument is connected; that is a routing decision.
+instrument understands (banks, programs, drum kits, controllers, parameters, SysEx, initialization,
+and a parameter map for automation). It never describes where the instrument is connected; that is a
+routing decision.
 
 The format is documented in [docs/profiles.md](../docs/profiles.md). Files must be named
 `<something>.bluestone-profile.json`.
@@ -23,7 +24,8 @@ The format is documented in [docs/profiles.md](../docs/profiles.md). Files must 
    `hardware-verified` (checked on the instrument itself).
 3. **Mark destructive messages.** SysEx that resets or overwrites state must use effect `reset` or
    `bulk`, so Bluestone asks before sending it. Nothing in a profile is ever sent just because a
-   project was opened.
+   project was opened. Parameter map entries are sent by automation without asking, so each must
+   set only its one parameter.
 4. **Name trademarks factually.** Add a non-affiliation notice to `notices` when a profile names a
    vendor's product or format.
 5. Run `dotnet test src/Bluestone.slnx`; the integration suite validates every profile here.

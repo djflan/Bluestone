@@ -24,7 +24,7 @@ public sealed class Track
 
     public const int MaxAutomationLanes = 1024;
 
-    private Track(TrackId id, string name, ImmutableArray<Clip> clips, ImmutableArray<AutomationLane> automation, bool isMuted, bool isSoloed, TrackRole role, TrackId? group)
+    private Track(TrackId id, string name, ImmutableArray<Clip> clips, ImmutableArray<AutomationLane> automation, bool isMuted, bool isSoloed, TrackRole role, TrackId? group, bool isFolded)
     {
         Id = id;
         Name = name;
@@ -34,14 +34,15 @@ public sealed class Track
         IsSoloed = isSoloed;
         Role = role;
         Group = group;
+        IsFolded = isFolded;
     }
 
     /// <exception cref="ArgumentException">
     /// Two clips overlap or share an ID, two events share an <see cref="EventId"/>, two lanes share an ID
     /// or a target, the name is too long, or the track is its own group.
     /// </exception>
-    public Track(TrackId id, string name, IEnumerable<Clip> clips, bool isMuted = false, bool isSoloed = false, IEnumerable<AutomationLane>? automation = null, TrackRole role = TrackRole.Instrument, TrackId? group = null)
-        : this(id, ValidateName(name), ValidateClips(clips), ValidateLanes(automation ?? []), isMuted, isSoloed, ValidateRole(role), ValidateGroup(id, group))
+    public Track(TrackId id, string name, IEnumerable<Clip> clips, bool isMuted = false, bool isSoloed = false, IEnumerable<AutomationLane>? automation = null, TrackRole role = TrackRole.Instrument, TrackId? group = null, bool isFolded = false)
+        : this(id, ValidateName(name), ValidateClips(clips), ValidateLanes(automation ?? []), isMuted, isSoloed, ValidateRole(role), ValidateGroup(id, group), isFolded)
     {
     }
 
@@ -81,8 +82,14 @@ public sealed class Track
     /// <summary>What the track is for. See <see cref="TrackRole"/>.</summary>
     public TrackRole Role { get; }
 
-    /// <summary>The group track this track belongs to, if any. Membership organizes; signal flow is a routing connection.</summary>
+    /// <summary>
+    /// The group track this track belongs to, if any. A group's mute and solo reach its members (ADR 0030);
+    /// signal flow is still a routing connection.
+    /// </summary>
     public TrackId? Group { get; }
+
+    /// <summary>Whether a group track's members are hidden under it in the arrangement. Saved; changes nothing that plays.</summary>
+    public bool IsFolded { get; }
 
     /// <summary>What the track plays: the visible events of its note clips at timeline positions, in canonical order.</summary>
     public ImmutableArray<TrackEvent> ArrangedEvents
@@ -137,23 +144,25 @@ public sealed class Track
         }
     }
 
-    public Track WithName(string name) => new(Id, ValidateName(name), Clips, Automation, IsMuted, IsSoloed, Role, Group);
+    public Track WithName(string name) => new(Id, ValidateName(name), Clips, Automation, IsMuted, IsSoloed, Role, Group, IsFolded);
 
-    public Track WithMuted(bool isMuted) => new(Id, Name, Clips, Automation, isMuted, IsSoloed, Role, Group);
+    public Track WithMuted(bool isMuted) => new(Id, Name, Clips, Automation, isMuted, IsSoloed, Role, Group, IsFolded);
 
-    public Track WithSoloed(bool isSoloed) => new(Id, Name, Clips, Automation, IsMuted, isSoloed, Role, Group);
+    public Track WithSoloed(bool isSoloed) => new(Id, Name, Clips, Automation, IsMuted, isSoloed, Role, Group, IsFolded);
 
     /// <summary>Changes the role without touching anything the track holds. Whether that is sensible is for <c>TrackRoleConversion</c> to say.</summary>
-    public Track WithRole(TrackRole role) => new(Id, Name, Clips, Automation, IsMuted, IsSoloed, ValidateRole(role), Group);
+    public Track WithRole(TrackRole role) => new(Id, Name, Clips, Automation, IsMuted, IsSoloed, ValidateRole(role), Group, IsFolded);
+
+    public Track WithFolded(bool isFolded) => new(Id, Name, Clips, Automation, IsMuted, IsSoloed, Role, Group, isFolded);
 
     /// <exception cref="ArgumentException">The track would be its own group.</exception>
-    public Track WithGroup(TrackId? group) => new(Id, Name, Clips, Automation, IsMuted, IsSoloed, Role, ValidateGroup(Id, group));
+    public Track WithGroup(TrackId? group) => new(Id, Name, Clips, Automation, IsMuted, IsSoloed, Role, ValidateGroup(Id, group), IsFolded);
 
     /// <exception cref="ArgumentException">The clips overlap or share IDs, or two events share an ID.</exception>
-    public Track WithClips(IEnumerable<Clip> clips) => new(Id, Name, ValidateClips(clips), Automation, IsMuted, IsSoloed, Role, Group);
+    public Track WithClips(IEnumerable<Clip> clips) => new(Id, Name, ValidateClips(clips), Automation, IsMuted, IsSoloed, Role, Group, IsFolded);
 
     /// <exception cref="ArgumentException">Two lanes share an ID or a target.</exception>
-    public Track WithAutomation(IEnumerable<AutomationLane> lanes) => new(Id, Name, Clips, ValidateLanes(lanes), IsMuted, IsSoloed, Role, Group);
+    public Track WithAutomation(IEnumerable<AutomationLane> lanes) => new(Id, Name, Clips, ValidateLanes(lanes), IsMuted, IsSoloed, Role, Group, IsFolded);
 
     public AutomationLane? FindLane(AutomationLaneId id) => Automation.FirstOrDefault(l => l.Id == id);
 
@@ -174,7 +183,7 @@ public sealed class Track
     }
 
     public Track RemoveLane(AutomationLaneId id) =>
-        FindLane(id) is null ? this : new Track(Id, Name, Clips, Automation.RemoveAll(l => l.Id == id), IsMuted, IsSoloed, Role, Group);
+        FindLane(id) is null ? this : new Track(Id, Name, Clips, Automation.RemoveAll(l => l.Id == id), IsMuted, IsSoloed, Role, Group, IsFolded);
 
     public Clip? FindClip(ClipId id)
     {
@@ -256,7 +265,7 @@ public sealed class Track
     }
 
     public Track RemoveClip(ClipId id) =>
-        FindClip(id) is null ? this : new Track(Id, Name, Clips.RemoveAll(c => c.Id == id), Automation, IsMuted, IsSoloed, Role, Group);
+        FindClip(id) is null ? this : new Track(Id, Name, Clips.RemoveAll(c => c.Id == id), Automation, IsMuted, IsSoloed, Role, Group, IsFolded);
 
     /// <summary>
     /// Places <paramref name="clip"/>, replacing any clip with its ID. Clips it would overlap make room:
@@ -302,7 +311,7 @@ public sealed class Track
             }
         }
 
-        return new Track(Id, Name, [.. result], Automation, IsMuted, IsSoloed, Role, Group);
+        return new Track(Id, Name, [.. result], Automation, IsMuted, IsSoloed, Role, Group, IsFolded);
     }
 
     private int LastStartingAtOrBefore(Tick position) => Search.LastAtOrBefore(Clips, position, c => c.Start);

@@ -1,6 +1,6 @@
 # 0007. Data-first device profiles
 
-- Status: Accepted
+- Status: Accepted; amended by 0031
 - Date: 2026-10-04
 
 ## Context

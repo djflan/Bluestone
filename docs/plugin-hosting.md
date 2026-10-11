@@ -298,6 +298,37 @@ because of a bad module.
 Tested by `PluginScannerProcessTests` (crash, quarantine, skip without launch, rescan, malformed, good module beside
 them, timeout, fingerprint change) and `ScanCacheTests`.
 
+### The plugin library and the Plugins view
+
+`Bluestone.Application/Plugins/PluginLibrary` holds the list of scan folders and what the last scan found in them. It
+scans through `IPluginScanner`, which `PluginScanner` implements (view-model tests use a fake that launches nothing).
+
+- **Folders**: a list, in order. The desktop app passes `<application data>/Bluestone/plugins` (`App.PluginFolders`);
+  formats with operating-system folders add theirs there. `FindModules` lists every file directly in each folder, by
+  name, leaving out hidden files such as `.DS_Store`. Missing folders are skipped.
+- **Scan** (at start): every module, through the cache, skipping quarantined modules.
+- **Rescan all**: every module again, ignoring the cache, so new, changed, and removed modules are found. Quarantined
+  modules stay skipped.
+- **Retry**: one quarantined module again (`RescanAsync(path, ignoreQuarantine: true)`). If it reads cleanly it
+  leaves quarantine; if it crashes or hangs its scanner again it stays quarantined.
+- After each of these, `Changed` is raised. `PluginDeviceHost`, built over the library, takes the new list of
+  available plugins (`SetAvailable`) and raises `AvailableChanged`; the main view model then rebuilds the device
+  catalog, starts workers for devices whose plugin was found, and recompiles. A newly found plugin appears in the
+  device strip without a restart; a device whose plugin is gone stops and shows "Not installed".
+
+The **Plugins view** (`PluginsViewModel`, `PluginsWindow`; Window ▸ Plugins… in the macOS menu bar, File ▸ Plugins…
+elsewhere) lists the scan folders, the available plugins with their kind, vendor, version, and module, the modules
+that could not be read and why, and the quarantined modules, each with **Retry**. **Rescan all** shows a progress bar
+and the module being scanned; one operation runs at a time and the buttons are disabled meanwhile. The result is a
+line such as "Rescanned. 3 plugins available from 4 modules. 1 module quarantined."
+
+Tested by `PluginLibraryTests` and `PluginsViewModelTests` (fake scanner: listing, progress, retry, disabled commands
+while scanning, a rescan adding a plugin to the device strip), `PluginLibraryProcessTests` (real scanner processes:
+a module that crashes its scanner is quarantined, a retry that crashes again keeps it there, a retry after the module
+is fixed takes it out, and its plugin is added from the strip and runs in a worker, all without a restart), and
+`PluginsViewTests` (headless: the view opened from the File menu and from the macOS Window menu, Rescan all and Retry
+clicked with the mouse, real scanner processes).
+
 ## Test hooks
 
 All failure behaviours are test-only and explicit:
@@ -355,7 +386,8 @@ authority (ADR 0025):
   state stays.
 - `StatusOf(device)` turns the instance status into the device strip's words ("Running", "Crashed",
   "Not responding", "Stopped after repeated crashes"), and `RestartAsync` restarts from the last captured state.
-- The desktop app scans `<application data>/Bluestone/plugins` at start, one scanner process per module.
+- The desktop app scans its plugin folders at start, one scanner process per module, and the bridge follows later
+  rescans and retries from the Plugins view (see [The plugin library and the Plugins view](#the-plugin-library-and-the-plugins-view)).
 
 Tests: `PluginDeviceHostTests` (scenarios 11 to 13 through the project: save, reopen, kill, restart, automation still
 valid; one of two workers killed; a missing plugin; removing a device stops its worker) and
@@ -429,6 +461,7 @@ isolation machinery is real, the plugins are Bluestone's own.
 | Restart arithmetic with an explicit clock; status transition table | `RestartGuardTests`, `PluginInstanceStatusTests` |
 | In-process hosting refused; bypass rules | `PluginHostManagerTests` |
 | Scanning, cache, quarantine | `PluginScannerProcessTests`, `ScanCacheTests`, `ModuleScannerTests` |
+| Rescan and retry from the Plugins view; the device catalog follows | `PluginLibraryProcessTests`, `PluginsViewModelTests`, `PluginLibraryTests`, `PluginsViewTests` |
 
 Unit tests are in `src/Bluestone.Tests.Unit/Plugins/`; process tests are in `src/Bluestone.Tests.Integration/Plugins/`
 and run as one non-parallel collection. The integration project references the worker with
@@ -446,5 +479,5 @@ and run as one non-parallel collection. The integration project references the w
 - **Wake-up primitives** (futex, eventfd, Windows events) for the data plane.
 - **MIDI 2.0** events on the data plane.
 - **In-process hosting** of trusted plugins.
-- **Scanning from the UI.** The app scans `<application data>/Bluestone/plugins` once at start; rescanning and
-  clearing quarantine are API calls (`PluginScanner.RescanAsync`) without a menu yet.
+- **Live input through plugins.** Plugin MIDI effects reach the plan by rendering (above); live input does not pass
+  through plugins.

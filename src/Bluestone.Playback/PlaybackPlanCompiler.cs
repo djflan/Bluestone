@@ -17,9 +17,10 @@ public static class PlaybackPlanCompiler
     /// <summary>
     /// Compiles <paramref name="parts"/>. Meta events are not transmitted. SysEx split across raw events is
     /// joined per part and origin track. <paramref name="diagnostics"/> (from routing and the graph) are
-    /// kept in the plan with the compiler's own, ordered by track.
+    /// kept in the plan with the compiler's own, ordered by track. <paramref name="parameters"/> (translated
+    /// hardware parameter automation, ADR 0031) come after <paramref name="parts"/> in part order.
     /// </summary>
-    public static PlaybackPlan Compile(Sequence sequence, IReadOnlyList<PlanPart> parts, IEnumerable<PlanDiagnostic>? diagnostics = null)
+    public static PlaybackPlan Compile(Sequence sequence, IReadOnlyList<PlanPart> parts, IEnumerable<PlanDiagnostic>? diagnostics = null, IReadOnlyList<ParameterPart>? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(sequence);
         ArgumentNullException.ThrowIfNull(parts);
@@ -149,6 +150,47 @@ public static class PlaybackPlanCompiler
             }
         }
 
+        var chases = new List<ParameterChase>();
+        parameters ??= [];
+        for (var p = 0; p < parameters.Count; p++)
+        {
+            var part = parameters[p];
+            ArgumentNullException.ThrowIfNull(part, nameof(parameters));
+            ArgumentOutOfRangeException.ThrowIfNegative(part.OutputSlot, nameof(parameters));
+            var partIndex = parts.Count + p;
+            foreach (var send in part.Sends)
+            {
+                var tick = send.Position.Value;
+                var messages = new List<ChaseMessage>(send.Events.Length);
+                for (var k = 0; k < send.Events.Length; k++)
+                {
+                    switch (send.Events[k])
+                    {
+                        case ChannelEvent channel and not NoteEvent:
+                            foreach (var message in Midi1Encoder.Encode(channel))
+                            {
+                                entries.Add((tick, channel.Phase, part.Origin, send.Sequence + k, partIndex, new PlanEvent(tick, part.OutputSlot, message, -1, 0)));
+                                messages.Add(new ChaseMessage(part.OutputSlot, message));
+                            }
+
+                            break;
+                        case SysExEvent sysEx:
+                            payloads.Add(sysEx.Message.Bytes);
+                            entries.Add((tick, EventPhase.SystemExclusive, part.Origin, send.Sequence + k, partIndex, new PlanEvent(tick, part.OutputSlot, default, payloads.Count - 1, 0)));
+                            messages.Add(new ChaseMessage(part.OutputSlot, default, payloads.Count - 1));
+                            break;
+                        default:
+                            throw new ArgumentException("Parameter sends hold only controller-style channel events and SysEx.", nameof(parameters));
+                    }
+                }
+
+                if (part.Chased)
+                {
+                    chases.Add(new ParameterChase(tick, p, [.. messages]));
+                }
+            }
+        }
+
         var ordered = entries
             .OrderBy(e => e.Tick)
             .ThenBy(e => e.Phase)
@@ -160,7 +202,7 @@ public static class PlaybackPlanCompiler
 
         var trackOrder = sequence.Tracks.Select((t, i) => (t.Id, i)).ToDictionary(x => x.Id, x => x.i);
         var ordering = found.OrderBy(d => trackOrder.GetValueOrDefault(d.Track, int.MaxValue)).ToList();
-        return new PlaybackPlan(sequence.TempoMap, sequence.MeterMap, ordered, [.. payloads], ordering);
+        return new PlaybackPlan(sequence.TempoMap, sequence.MeterMap, ordered, [.. payloads], ordering, [.. chases.OrderBy(c => c.Tick)]);
 
         void Report(int origin, string message) =>
             found.Add(new PlanDiagnostic(origin >= 0 && origin < sequence.Tracks.Length ? sequence.Tracks[origin].Id : default, message));
