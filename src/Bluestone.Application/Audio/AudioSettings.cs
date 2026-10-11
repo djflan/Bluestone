@@ -32,7 +32,7 @@ public sealed record AudioSettings(
 {
     public const int DefaultQueuedFrames = 1024;
 
-    public const int DefaultLiveQueuedFrames = 256;
+    public const int DefaultLiveQueuedFrames = 512;
 
     public static IReadOnlyList<int> BufferSizes { get; } = [64, 128, 256, 512, 1024];
 

@@ -121,9 +121,14 @@ internal static class AudioCallbackProbe
         ]);
     }
 
-    private static AudioGraph Graph(int blockFrames, int strips)
+    internal static AudioGraph Graph(int blockFrames, int strips, AudioNode? extra = null)
     {
         var builder = new AudioGraphBuilder();
+        if (extra is not null)
+        {
+            builder.ConnectToMaster(builder.AddNode(extra));
+        }
+
         var buses = Enumerable.Range(0, 4).Select(_ => builder.AddStrip(new MixerStripState(), new MixerStripSettings(GainDecibels: -3))).ToArray();
         for (var i = 0; i < strips; i++)
         {
@@ -149,15 +154,15 @@ internal static class AudioCallbackProbe
         return TimeSpan.Zero;
     }
 
-    private static string Ms(TimeSpan time) => time.TotalMilliseconds.ToString("0.000", CultureInfo.InvariantCulture) + " ms";
+    internal static string Ms(TimeSpan time) => time.TotalMilliseconds.ToString("0.000", CultureInfo.InvariantCulture) + " ms";
 
-    private static string? Option(string[] args, string name)
+    internal static string? Option(string[] args, string name)
     {
         var index = Array.IndexOf(args, name);
         return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
     }
 
-    private static Thread Start(Action body)
+    internal static Thread Start(Action body)
     {
         var thread = new Thread(() => body()) { IsBackground = true };
         thread.Start();
@@ -165,7 +170,7 @@ internal static class AudioCallbackProbe
     }
 
     // Short-lived garbage with a rolling window of survivors, so gen0 and gen1 collections happen continuously.
-    private static void Churn(CancellationToken stop)
+    internal static void Churn(CancellationToken stop)
     {
         var random = new Random(1);
         var window = new object[16_384];
@@ -183,7 +188,7 @@ internal static class AudioCallbackProbe
 
     // Roughly what an editing session does: a 200 MB retained heap (the project, undo history, caches), about
     // 50 MB/s of short-lived allocations in small objects, a quarter of them kept for a while, and no forced collections.
-    private static void Application(CancellationToken stop)
+    internal static void Application(CancellationToken stop)
     {
         var retained = new List<byte[]>();
         for (var i = 0; i < 200_000; i++)
@@ -221,7 +226,7 @@ internal static class AudioCallbackProbe
     }
 
     // A large retained object graph that keeps changing, collected with forced, blocking, compacting gen2 collections.
-    private static void FullCollections(CancellationToken stop)
+    internal static void FullCollections(CancellationToken stop)
     {
         var nodes = new Node[1_000_000];
         for (var i = 0; i < nodes.Length; i++)
