@@ -823,12 +823,12 @@ impl Instance for Vst3Instance {
         audio.context.tempo = block.tempo;
         audio.context.projectTimeMusic = block.position as f64 / samples_per_beat;
         audio.context.barPositionMusic = (audio.context.projectTimeMusic / 4.0).floor() * 4.0;
-        audio.context.state = ProcessContext_::StatesAndFlags_::kTempoValid
-            | ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid
-            | ProcessContext_::StatesAndFlags_::kBarPositionValid
-            | ProcessContext_::StatesAndFlags_::kTimeSigValid
+        audio.context.state = ProcessContext_::StatesAndFlags_::kTempoValid as u32
+            | ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid as u32
+            | ProcessContext_::StatesAndFlags_::kBarPositionValid as u32
+            | ProcessContext_::StatesAndFlags_::kTimeSigValid as u32
             | if block.playing != 0 {
-                ProcessContext_::StatesAndFlags_::kPlaying
+                ProcessContext_::StatesAndFlags_::kPlaying as u32
             } else {
                 0
             };
