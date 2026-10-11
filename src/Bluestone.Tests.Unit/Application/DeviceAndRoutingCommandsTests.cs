@@ -265,8 +265,8 @@ public sealed class DeviceAndRoutingCommandsTests
         var band = Track.Create("Band", TrackRole.Group);
         history.Execute(ProjectCommands.AddTrack(band));
 
-        Assert.Throws<CommandRefusedException>(() => history.Execute(TrackRoleCommands.SetGroup(a.Id, b.Id)));
-        history.Execute(TrackRoleCommands.SetGroup(a.Id, band.Id));
+        Assert.Throws<CommandRefusedException>(() => history.Execute(GroupCommands.SetGroup(a.Id, b.Id, Definitions)));
+        history.Execute(GroupCommands.SetGroup(a.Id, band.Id, Definitions));
 
         Assert.Equal(band.Id, history.Current.Sequence.FindTrack(a.Id)!.Group);
     }
