@@ -245,6 +245,8 @@ impl ClapInstance {
                 .plugin
                 .store(plugin as *mut clap_plugin, Ordering::Release);
             if !(*plugin).init.is_some_and(|init| init(plugin)) {
+                // Timers and file descriptors registered during init would otherwise call the destroyed plugin.
+                host.shared.unregister_all();
                 if let Some(destroy) = (*plugin).destroy {
                     destroy(plugin);
                 }

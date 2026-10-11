@@ -281,3 +281,13 @@ fn a_block_keeps_its_parameter_changes_and_edits_while_the_main_thread_holds_the
         }]
     );
 }
+
+#[test]
+fn a_plugin_that_fails_to_initialize_is_destroyed_without_leaving_its_timers() {
+    gui::claim_main_thread_for_tests();
+
+    assert!(ClapInstance::create(module(), "test.fail-init").is_err());
+
+    assert!(DESTROYED.get());
+    assert_eq!(gui::timer_count(), 0);
+}
