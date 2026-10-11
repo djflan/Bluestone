@@ -295,13 +295,7 @@ public sealed class LatencyCompensationTests
             driver.Render(buffer, 512);
         }
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 200; i++)
-        {
-            driver.Render(buffer, 512);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, Allocations.InSteadyState(() => driver.Render(buffer, 512), 200));
     }
 
     // An impulse source feeding a node with the given latency; returns the latent node.

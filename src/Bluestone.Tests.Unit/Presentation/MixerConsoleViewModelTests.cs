@@ -157,14 +157,8 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
             _vm.Mixer.RefreshMeters(Stopwatch.GetTimestamp());
         }
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 300; i++)
-        {
-            _vm.Mixer.RefreshMeters(Stopwatch.GetTimestamp());
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
-        Assert.Equal(310, updates);
+        Assert.Equal(0, Allocations.InSteadyState(() => _vm.Mixer.RefreshMeters(Stopwatch.GetTimestamp()), 300));
+        Assert.Equal(10 + (3 * 300), updates);
 
         on = false;
         _vm.Mixer.RefreshMeters(Stopwatch.GetTimestamp());
