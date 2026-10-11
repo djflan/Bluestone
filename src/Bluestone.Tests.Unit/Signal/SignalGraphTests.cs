@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
+using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
@@ -368,6 +369,33 @@ public sealed class SignalGraphTests
         Assert.Single(withoutSolo.PartFor(plainOut).Events);
         Assert.Empty(withSolo.PartFor(plainOut).Events);
         Assert.Single(withSolo.PartFor(soloOut).Events);
+    }
+
+    [Fact]
+    public void AGroupsMuteAndSolo_ReachItsMembers_ButNotTracksMerelyRoutedIntoIt()
+    {
+        var band = Track.Create("Band", TrackRole.Group);
+        var bass = TrackOf("Bass", Note(0, 40)).WithGroup(band.Id);
+        var keys = TrackOf("Keys", Note(0, 60)).WithGroup(band.Id);
+        var guest = TrackOf("Guest", Note(0, 72));
+        var project = NewProject().With(band).With(bass).With(keys).With(guest).WithInstrument(out var mu2000)
+            .Connect(SignalNode.Track(bass.Id), SignalNode.Track(band.Id))
+            .Connect(SignalNode.Track(keys.Id), SignalNode.Track(band.Id))
+            .Connect(SignalNode.Track(guest.Id), SignalNode.Track(band.Id))
+            .Connect(out var output, SignalNode.Track(band.Id), SignalNode.ExternalPart(mu2000.Id));
+        Project Edit(Track track) => project with { Sequence = project.Sequence.WithTrack(track) };
+
+        var open = project.Evaluate().PartFor(output).Events.Notes().Select(n => (int)n.Note.Value).Order();
+        var muted = Edit(band.WithMuted(true)).Evaluate().PartFor(output).Events.Notes().Select(n => (int)n.Note.Value);
+        var soloed = Edit(band.WithSoloed(true)).Evaluate().PartFor(output).Events.Notes().Select(n => (int)n.Note.Value).Order();
+        var memberSoloed = Edit(band.WithMuted(true)) with { Sequence = Edit(band.WithMuted(true)).Sequence.WithTrack(keys.WithSoloed(true)) };
+
+        Assert.Equal([40, 60, 72], open);
+
+        // Decision 11 still holds for anything routed in: only members' own content is muted by their group.
+        Assert.Equal([72], muted);
+        Assert.Equal([40, 60], soloed);
+        Assert.Equal([60], memberSoloed.Evaluate().PartFor(output).Events.Notes().Select(n => (int)n.Note.Value));
     }
 
     [Fact]

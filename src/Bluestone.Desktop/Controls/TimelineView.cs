@@ -35,6 +35,7 @@ public sealed class TimelineView : Control
     public static readonly StyledProperty<double> LaneHeightProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(LaneHeight), 50);
     public static readonly StyledProperty<double> AutomationLaneHeightProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(AutomationLaneHeight), 36);
     public static readonly StyledProperty<IReadOnlySet<TrackId>> ExpandedTracksProperty = AvaloniaProperty.Register<TimelineView, IReadOnlySet<TrackId>>(nameof(ExpandedTracks), new HashSet<TrackId>());
+    public static readonly StyledProperty<IReadOnlySet<TrackId>> HiddenTracksProperty = AvaloniaProperty.Register<TimelineView, IReadOnlySet<TrackId>>(nameof(HiddenTracks), new HashSet<TrackId>());
     public static readonly StyledProperty<IReadOnlySet<int>> SelectedLanesProperty = AvaloniaProperty.Register<TimelineView, IReadOnlySet<int>>(nameof(SelectedLanes), new HashSet<int>());
     public static readonly StyledProperty<double> VisibleLeftProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(VisibleLeft));
     public static readonly StyledProperty<double> VisibleWidthProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(VisibleWidth), double.PositiveInfinity);
@@ -105,8 +106,8 @@ public sealed class TimelineView : Control
 
     static TimelineView()
     {
-        AffectsRender<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty, SelectedLanesProperty, VisibleLeftProperty, VisibleWidthProperty, RecordingLaneProperty, RecordingPreviewProperty, SelectedClipsProperty);
-        AffectsMeasure<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty);
+        AffectsRender<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty, HiddenTracksProperty, SelectedLanesProperty, VisibleLeftProperty, VisibleWidthProperty, RecordingLaneProperty, RecordingPreviewProperty, SelectedClipsProperty);
+        AffectsMeasure<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty, HiddenTracksProperty);
         FocusableProperty.OverrideDefaultValue<TimelineView>(true);
     }
 
@@ -140,6 +141,13 @@ public sealed class TimelineView : Control
     {
         get => GetValue(ExpandedTracksProperty);
         set => SetValue(ExpandedTracksProperty, value);
+    }
+
+    /// <summary>The tracks folded away under a group: their rows take no space and are not drawn.</summary>
+    public IReadOnlySet<TrackId> HiddenTracks
+    {
+        get => GetValue(HiddenTracksProperty);
+        set => SetValue(HiddenTracksProperty, value);
     }
 
     /// <summary>Indices of the lanes to highlight as selected.</summary>
@@ -222,6 +230,11 @@ public sealed class TimelineView : Control
         {
             if (project.Sequence.Tracks[lane].FindClip(clip) is { } found)
             {
+                if (HiddenTracks.Contains(project.Sequence.Tracks[lane].Id))
+                {
+                    return null;
+                }
+
                 var header = HeaderOf(ClipBody(found, _tops[lane], 0));
                 var visible = new Rect(VisibleLeft, header.Y, double.IsFinite(VisibleWidth) ? VisibleWidth : Bounds.Width, header.Height);
                 var shown = header.Intersect(visible);
@@ -280,6 +293,11 @@ public sealed class TimelineView : Control
         context.FillRectangle(LaneBrush, new Rect(left, 0, right - left, Bounds.Height));
         for (var lane = 0; lane < lanes; lane++)
         {
+            if (HiddenTracks.Contains(sequence.Tracks[lane].Id))
+            {
+                continue;
+            }
+
             var brush = SelectedLanes.Contains(lane) ? LaneSelected : lane % 2 == 1 ? LaneAltBrush : null;
             if (brush is not null)
             {
@@ -300,6 +318,11 @@ public sealed class TimelineView : Control
         for (var lane = 0; lane < lanes; lane++)
         {
             var track = sequence.Tracks[lane];
+            if (HiddenTracks.Contains(track.Id))
+            {
+                continue;
+            }
+
             var top = tops[lane];
             HLine(context, Math.Round(top + LaneHeight) - 0.5, left, right);
             DrawClips(context, track, lane, top, left, right);
@@ -317,7 +340,7 @@ public sealed class TimelineView : Control
             DrawClip(context, track, clip, notes, slice, range, lane, tops[Math.Clamp(lane + _dragLanes, 0, lanes - 1)], left, right, _dragDelta);
         }
 
-        if (RecordingLane >= 0 && RecordingLane < lanes && RecordingPreview.Count > 0)
+        if (RecordingLane >= 0 && RecordingLane < lanes && RecordingPreview.Count > 0 && !HiddenTracks.Contains(sequence.Tracks[RecordingLane].Id))
         {
             DrawTake(context, tops[RecordingLane]);
         }
@@ -528,7 +551,7 @@ public sealed class TimelineView : Control
 
     private int ShownLanes(Track track) => ExpandedTracks.Contains(track.Id) ? track.Automation.Length : 0;
 
-    private double RowHeight(Track track) => LaneHeight + (ShownLanes(track) * AutomationLaneHeight);
+    private double RowHeight(Track track) => HiddenTracks.Contains(track.Id) ? 0 : LaneHeight + (ShownLanes(track) * AutomationLaneHeight);
 
     private void LayoutRows(Sequence sequence)
     {
@@ -901,7 +924,7 @@ public sealed class TimelineView : Control
 
         var color = Palette.Track(colorLane);
         var selected = SelectedClips.Contains(clip.Id);
-        var muted = track.IsMuted;
+        var muted = track.IsMuted || (track.Group is not null && Project is { } project && GroupTracks.IsMutedByGroup(project.Sequence, track));
         var fill = Palette.Mix(Palette.Lane, color, muted ? 0.16 : selected ? 0.5 : 0.32);
         var header = Palette.Mix(Palette.Lane, color, muted ? 0.32 : selected ? 0.95 : 0.68);
         var edge = selected ? new Pen(Brushes.White, 1.5) : new Pen(new SolidColorBrush(Palette.Darken(color, 0.25)), 1);

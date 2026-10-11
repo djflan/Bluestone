@@ -454,12 +454,19 @@ public sealed class PluginHostManager : IAsyncDisposable
         return worker;
     }
 
-    private async Task ReleaseWorkerAsync(PluginInstance instance)
+    // With lost set, releases the instance's slot only if it is still that worker's: once the loss is reported, a
+    // restart may already have given the instance a new slot, which must not be released here.
+    private async Task ReleaseWorkerAsync(PluginInstance instance, WorkerProcess? lost = null)
     {
         WorkerProcess? toDispose = null;
         lock (_gate)
         {
             if (instance.Slot is not { } slot)
+            {
+                return;
+            }
+
+            if (lost is not null && !(slot.Launch.IsCompletedSuccessfully && slot.Launch.Result == lost))
             {
                 return;
             }
@@ -524,7 +531,7 @@ public sealed class PluginHostManager : IAsyncDisposable
 
         link.Exchange.Dispose();
         TryDelete(link.Exchange.Path);
-        await ReleaseWorkerAsync(instance).ConfigureAwait(false);
+        await ReleaseWorkerAsync(instance, worker).ConfigureAwait(false);
         ApplyRestartPolicy(instance);
     }
 

@@ -40,6 +40,8 @@
                 <Separator />
                 <MenuItem Header="Import MIDI File…" Command="{Binding ImportMidiCommand}" InputGesture="Ctrl+I" />
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
+                <Separator />
+                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, modules that could not be read, and quarantined modules" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>
@@ -492,32 +494,67 @@
                   <!-- Rows grow to show automation lanes, matching the arrangement. -->
                   <Style Selector="ListBoxItem" x:DataType="vm:TrackViewModel">
                     <Setter Property="Height" Value="{Binding RowHeight}" />
+                    <!-- Members of a folded group are hidden under it, as in the arrangement. -->
+                    <Setter Property="IsVisible" Value="{Binding IsShown}" />
                     <!-- The divider is drawn under the track's own row instead, where the arrangement draws it. -->
                     <Setter Property="BorderThickness" Value="0" />
+                  </Style>
+                  <!-- Silenced by a muted group: the name and status are dimmed, like the track's clips. -->
+                  <Style Selector="StackPanel.mutedByGroup">
+                    <Setter Property="Opacity" Value="0.5" />
                   </Style>
                 </ListBox.Styles>
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:TrackViewModel">
                     <Grid RowDefinitions="Auto,*">
+                    <!-- Groups: right-click a selected track to group it, put it in a group, or take it out (ADR 0030). -->
+                    <Grid.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="Group Selected Tracks" Command="{Binding Groups.GroupSelectedCommand}" InputGesture="Ctrl+G" />
+                        <MenuItem Header="Add to Group" ItemsSource="{Binding Groups.Available}" IsEnabled="{Binding Groups.Available.Count}">
+                          <MenuItem.ItemContainerTheme>
+                            <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:TrackViewModel">
+                              <Setter Property="Header" Value="{Binding Name}" />
+                              <Setter Property="Command" Value="{Binding Groups.AddSelectedToCommand}" />
+                              <Setter Property="CommandParameter" Value="{Binding}" />
+                            </ControlTheme>
+                          </MenuItem.ItemContainerTheme>
+                        </MenuItem>
+                        <MenuItem Header="Remove from Group" Command="{Binding Groups.RemoveSelectedCommand}" IsEnabled="{Binding Groups.CanRemoveSelected}" />
+                      </ContextMenu>
+                    </Grid.ContextMenu>
                     <Border Height="{x:Static vm:TrackViewModel.TrackRowHeight}" BorderBrush="#19191B" BorderThickness="0,0,0,1">
-                    <Grid ColumnDefinitions="3,24,Auto,*,Auto" AutomationProperties.Name="{Binding Name}">
+                    <Grid ColumnDefinitions="3,24,Auto,*,Auto" AutomationProperties.Name="{Binding Name}"
+                          Margin="{Binding Indent, Converter={x:Static theme:IndentConverter.Instance}}">
                       <Border Background="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
                       <TextBlock Grid.Column="1" Text="{Binding Number}" Classes="muted" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
                       <Border Grid.Column="2" Width="26" Height="26" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,8,0"
                               Background="{Binding ColorIndex, Converter={x:Static theme:TrackTintConverter.Instance}, ConverterParameter=0.28}">
-                        <PathIcon Classes="stroke" Data="{StaticResource Icon.Piano}" Width="15" Height="15"
-                                  Foreground="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
+                        <Panel>
+                          <PathIcon Classes="stroke" Data="{StaticResource Icon.Piano}" Width="15" Height="15" IsVisible="{Binding !IsGroup}"
+                                    Foreground="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
+                          <PathIcon Classes="stroke" Data="{StaticResource Icon.List}" Width="15" Height="15" IsVisible="{Binding IsGroup}"
+                                    Foreground="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
+                        </Panel>
                       </Border>
-                      <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="2" Margin="0,0,4,0">
+                      <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="2" Margin="0,0,4,0" Classes.mutedByGroup="{Binding IsMutedByGroup}">
                         <TextBox Classes="inline" Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Track name" />
                         <StackPanel Orientation="Horizontal" Spacing="4" ToolTip.Tip="{Binding RouteText}" AutomationProperties.Name="{Binding HealthText}">
                           <PathIcon Data="{StaticResource Icon.Check}" Width="8" Height="8" Foreground="{StaticResource Bluestone.Success}" IsVisible="{Binding IsReady}" />
                           <PathIcon Data="{StaticResource Icon.Warning}" Width="8" Height="8" Foreground="{StaticResource Bluestone.Warning}" IsVisible="{Binding NeedsAttention}" />
                           <PathIcon Data="{StaticResource Icon.Offline}" Width="8" Height="8" Foreground="#9A6B6D" IsVisible="{Binding IsOffline}" />
-                          <TextBlock Text="{Binding StatusLine}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" />
+                          <TextBlock Text="{Binding StatusLine}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding !IsGroup}" />
+                          <TextBlock Text="{Binding MembersText}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding IsGroup}" />
                         </StackPanel>
                       </StackPanel>
                       <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <ToggleButton Classes="trackButton" IsChecked="{Binding IsFolded}" IsVisible="{Binding IsGroup}"
+                                      ToolTip.Tip="Fold or unfold the group's tracks" AutomationProperties.Name="Fold group">
+                          <Panel>
+                            <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronDown}" Width="8" Height="8" IsVisible="{Binding !IsFolded}" />
+                            <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronRight}" Width="8" Height="8" IsVisible="{Binding IsFolded}" />
+                          </Panel>
+                        </ToggleButton>
                         <ToggleButton Classes="trackButton" IsChecked="{Binding IsAutomationExpanded}" IsVisible="{Binding Lanes.Count}"
                                       ToolTip.Tip="Show or hide automation lanes" AutomationProperties.Name="Show automation">
                           <Panel>
@@ -553,7 +590,7 @@
                         </Button>
                         <ToggleButton Classes="trackButton mute" Content="M" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute (M)" AutomationProperties.Name="Mute" />
                         <ToggleButton Classes="trackButton solo" Content="S" IsChecked="{Binding IsSoloed}" ToolTip.Tip="Solo (S)" AutomationProperties.Name="Solo" />
-                        <ToggleButton Classes="trackButton arm" IsChecked="{Binding IsArmed}" ToolTip.Tip="Arm for recording" AutomationProperties.Name="Record arm">
+                        <ToggleButton Classes="trackButton arm" IsChecked="{Binding IsArmed}" IsVisible="{Binding !IsGroup}" ToolTip.Tip="Arm for recording" AutomationProperties.Name="Record arm">
                           <PathIcon Data="{StaticResource Icon.Record}" Width="8" Height="8" />
                         </ToggleButton>
                       </StackPanel>
@@ -586,7 +623,7 @@
           <ScrollViewer x:Name="TimelineScroller" Grid.Row="2" Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                         Background="#222224">
             <Panel>
-              <controls:TimelineView x:Name="Timeline" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}" ExpandedTracks="{Binding ExpandedTracks}"
+              <controls:TimelineView x:Name="Timeline" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}" ExpandedTracks="{Binding ExpandedTracks}" HiddenTracks="{Binding Groups.HiddenTracks}"
                                      LaneHeight="{x:Static vm:TrackViewModel.TrackRowHeight}" AutomationLaneHeight="{x:Static vm:TrackViewModel.AutomationLaneHeight}"
                                      RecordingLane="{Binding RecordingLane}" RecordingPreview="{Binding RecordingPreview}"
                                      AutomationProperties.Name="Arrangement. Click a clip to select it and drag to move it; double-click to edit its notes. Click in an automation lane to add a point." />

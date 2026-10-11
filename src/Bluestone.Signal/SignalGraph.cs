@@ -49,7 +49,7 @@ public sealed record SignalGraphResult
 /// <remarks>
 /// <para>
 /// Order: tracks and racks are evaluated so that everything feeding a node runs before it. A node's input
-/// is its own content (a track that plays, by the plan's mute and solo rule) merged with everything
+/// is its own content (a track that plays, by the mute and solo rule of <see cref="GroupTracks"/>) merged with everything
 /// connected into it, in canonical order (position, phase, origin track, index). A connection takes the
 /// end of its source's chain, or the point after one device for a tap, and applies its channel mapping.
 /// </para>
@@ -216,7 +216,7 @@ public static class SignalGraph
         private ImmutableArray<SignalEvent>[] RenderTracks(out ImmutableArray<ParameterChange> changes)
         {
             var sequence = project.Sequence;
-            var anySolo = sequence.Tracks.Any(t => t.IsSoloed);
+            var playing = GroupTracks.Playing(sequence);
             var rendered = new ImmutableArray<SignalEvent>[sequence.Tracks.Length];
             var allChanges = new List<ParameterChange>();
             for (var index = 0; index < sequence.Tracks.Length; index++)
@@ -224,8 +224,7 @@ public static class SignalGraph
                 var track = sequence.Tracks[index];
                 var result = TrackRendering.Render(track, sequence.Ppqn, ChannelOverride(_connections, track.Id));
                 allChanges.AddRange(result.ParameterChanges);
-                var plays = anySolo ? track.IsSoloed : !track.IsMuted;
-                if (!plays)
+                if (!playing[index])
                 {
                     rendered[index] = [];
                     continue;

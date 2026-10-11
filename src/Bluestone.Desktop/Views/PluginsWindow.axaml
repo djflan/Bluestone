@@ -1,0 +1,90 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Bluestone.Presentation"
+        x:Class="Bluestone.Desktop.Views.PluginsWindow"
+        x:DataType="vm:PluginsViewModel"
+        Title="Plugins"
+        Width="560" Height="620" MinWidth="420" MinHeight="360"
+        WindowStartupLocation="CenterOwner">
+  <!-- What the plugin scan found: available plugins, modules that could not be read, and quarantined modules. -->
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+    <StackPanel Spacing="4" Margin="0,0,0,12">
+      <TextBlock Text="Plugins" Classes="title" />
+      <TextBlock Text="Each module is read in its own scanner process. A module that crashes or hangs its scanner is quarantined and skipped until you retry it."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="Folders" Classes="label" Margin="0,6,0,0" />
+      <ItemsControl ItemsSource="{Binding Folders}" AutomationProperties.Name="Plugin folders">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="x:String">
+            <SelectableTextBlock Text="{Binding}" Classes="secondary" TextWrapping="Wrap" FontSize="11" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="6">
+        <StackPanel Spacing="6" IsVisible="{Binding HasQuarantined}">
+          <TextBlock Text="QUARANTINED" Classes="overline" />
+          <ItemsControl x:Name="QuarantinedList" ItemsSource="{Binding Quarantined}" AutomationProperties.Name="Quarantined modules">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModuleProblemRow">
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+                  <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource Bluestone.Warning}" VerticalAlignment="Top" Margin="0,3,6,0" />
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{Binding Module}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ModulePath}" />
+                    <TextBlock Text="{Binding Problem}" Classes="muted" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Problem}" />
+                  </StackPanel>
+                  <Button Grid.Column="2" Classes="raised" Content="Retry" VerticalAlignment="Top" Margin="8,0,0,0"
+                          Command="{Binding $parent[ItemsControl].((vm:PluginsViewModel)DataContext).RetryCommand, FallbackValue={x:Null}}" CommandParameter="{Binding}"
+                          ToolTip.Tip="Read this module again in a new scanner process" AutomationProperties.Name="Retry module" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Spacing="6" IsVisible="{Binding HasFailures}">
+          <TextBlock Text="COULD NOT BE READ" Classes="overline" />
+          <ItemsControl ItemsSource="{Binding Failures}" AutomationProperties.Name="Modules that could not be read">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModuleProblemRow">
+                <StackPanel Margin="0,0,0,6">
+                  <TextBlock Text="{Binding Module}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ModulePath}" />
+                  <TextBlock Text="{Binding Problem}" Classes="muted" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Problem}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <TextBlock Text="AVAILABLE" Classes="overline" />
+        <TextBlock Text="No plugins found." Classes="muted" IsVisible="{Binding !Plugins.Count}" />
+        <ItemsControl x:Name="PluginList" ItemsSource="{Binding Plugins}" AutomationProperties.Name="Available plugins">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginRow">
+              <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" />
+                  <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="10" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding Module}" Classes="muted" FontSize="10" VerticalAlignment="Top" Margin="8,2,0,0" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="2" Spacing="8" Margin="0,12,0,0">
+      <ProgressBar Value="{Binding Progress}" Minimum="0" Maximum="1" IsVisible="{Binding IsBusy}" AutomationProperties.Name="Scan progress" />
+      <TextBlock Text="{Binding ProgressText}" Classes="muted" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsBusy}" />
+      <TextBlock x:Name="StatusLine" Text="{Binding StatusText}" Classes="secondary" TextWrapping="Wrap" AutomationProperties.Name="Scan result" />
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Classes="raised" Content="Rescan all" Command="{Binding RescanAllCommand}"
+                ToolTip.Tip="Read every module in the plugin folders again. Quarantined modules stay skipped." />
+        <Button Classes="primary" Content="Close" IsCancel="True" Click="OnClose" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

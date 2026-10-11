@@ -59,3 +59,13 @@ public sealed class EnumEqualsConverter : IValueConverter
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>A left margin of the given width, for indenting a group's members in the track list.</summary>
+public sealed class IndentConverter : IValueConverter
+{
+    public static readonly IndentConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => new Avalonia.Thickness(value is double width ? width : 0, 0, 0, 0);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
