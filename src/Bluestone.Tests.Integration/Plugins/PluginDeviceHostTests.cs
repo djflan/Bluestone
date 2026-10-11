@@ -193,4 +193,35 @@ public sealed class PluginDeviceHostTests
         Assert.Null(bridge.InstanceOf(device.Id));
         await WaitUntilAsync(() => !IsRunning(pid), TimeSpan.FromSeconds(10), "the removed device's worker to exit");
     }
+
+    [Fact]
+    public async Task ThePluginsOwnEdits_RecordedWhileItKeepsMoving_AreNotSentBackToIt()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Vocals");
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var instance = bridge.InstanceOf(device.Id)!;
+        host.Track(instance);
+        async Task<double> PluginGain() => (await instance.GetParametersAsync(Ct)).Single(p => p.Id == GainParameter.Value).Value;
+
+        // The plugin moves its gain itself (a drag in its editor); each edit reaches the project later, on the UI thread.
+        double[] moves = [0.2, 0.3, 0.4];
+        foreach (var value in moves)
+        {
+            await instance.SetParameterAsync(GainParameter.Value, value, Ct);
+        }
+
+        foreach (var value in moves)
+        {
+            bridge.RecordEdit(new PluginParameterEdit(device.Id, GainParameter.Value, value));
+            await bridge.SyncAsync(session.Project, Ct);
+            Assert.Equal(0.4, await PluginGain(), 6);
+        }
+
+        // An edit in the project still reaches the plugin.
+        session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.25)));
+        await bridge.SyncAsync(session.Project, Ct);
+        Assert.Equal(0.25, await PluginGain(), 6);
+    }
 }

@@ -59,6 +59,10 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
+    // The value each running plugin parameter was last given by the host or recorded from the plugin. The project is
+    // compared with this, not with the plugin's latest value, which runs ahead of the project while the plugin's own
+    // edits are on their way to RecordEdit.
+    private readonly ConcurrentDictionary<(DeviceId Device, uint Parameter), double> _hostValues = new();
     private readonly SemaphoreSlim _syncing = new(1, 1);
     private double _sampleRate;
     private readonly int _maxBlockFrames;
@@ -171,7 +175,9 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         if (_session.Project.FindDevice(edit.Device) is not null && _instances.TryGetValue(edit.Device, out var instance)
             && instance.Parameters.Any(p => p.Id == edit.ParameterId && p.IsUserFacing))
         {
-            _session.Execute(DeviceCommands.SetParameter(edit.Device, new ParameterId(edit.ParameterId), ControlValue.FromFraction(edit.Value)));
+            var value = ControlValue.FromFraction(edit.Value);
+            _hostValues[(edit.Device, edit.ParameterId)] = value.ToFraction();
+            _session.Execute(DeviceCommands.SetParameter(edit.Device, new ParameterId(edit.ParameterId), value));
         }
     }
 
@@ -409,6 +415,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         {
             if (!wanted.ContainsKey(id) && _instances.TryRemove(id, out _))
             {
+                ForgetHostValues(id);
                 instance.StatusChanged -= Handler(id);
                 instance.ParameterEdited -= EditHandler(id);
                 instance.Changed -= ChangeHandler(id);
@@ -417,7 +424,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             }
         }
 
-        // Values changed in the project (in the device strip, or by undo) go to the running plugins.
+        // Values changed in the project (in the device strip, or by undo) go to the running plugins. Values the plugin
+        // set itself and that were recorded are not sent back: by then the plugin may have moved on.
         foreach (var device in wanted.Values)
         {
             if (_instances.TryGetValue(device.Id, out var running) && running.Status.State == PluginInstanceState.Running)
@@ -426,10 +434,19 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 foreach (var parameter in device.Parameters)
                 {
                     var value = parameter.Value.ToFraction();
-                    if (known.TryGetValue(parameter.Id.Value, out var current) && Math.Abs(current - value) > ParameterTolerance)
+                    if (!known.TryGetValue(parameter.Id.Value, out var current))
+                    {
+                        continue;
+                    }
+
+                    var key = (device.Id, parameter.Id.Value);
+                    var given = _hostValues.TryGetValue(key, out var last) ? last : current;
+                    if (Math.Abs(given - value) > ParameterTolerance)
                     {
                         await running.SetParameterAsync(parameter.Id.Value, value, cancellationToken).ConfigureAwait(false);
                     }
+
+                    _hostValues[key] = value;
                 }
             }
         }
@@ -473,6 +490,13 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 }
             }
 
+            // The instance starts from the project's values (its stored state is restored with them).
+            ForgetHostValues(device.Id);
+            foreach (var parameter in parameters)
+            {
+                _hostValues[(device.Id, parameter.Id)] = parameter.Value;
+            }
+
             StatusChanged?.Invoke(this, device.Id);
         }
     }
@@ -493,7 +517,13 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         var state = new PluginState(ByteBlock.Copy(snapshot.State.Data.AsSpan()), snapshot.State.Format);
         var commands = new List<IProjectCommand> { DeviceCommands.SetPluginState(device, state) };
         var shown = instance.Parameters.Where(p => p.IsUserFacing).Select(p => p.Id).ToHashSet();
-        commands.AddRange(snapshot.ParameterValues.Where(p => shown.Contains(p.Id)).Select(p => DeviceCommands.SetParameter(device, new ParameterId(p.Id), ControlValue.FromFraction(p.Value))));
+        foreach (var parameter in snapshot.ParameterValues.Where(p => shown.Contains(p.Id)))
+        {
+            var value = ControlValue.FromFraction(parameter.Value);
+            _hostValues[(device, parameter.Id)] = value.ToFraction();
+            commands.Add(DeviceCommands.SetParameter(device, new ParameterId(parameter.Id), value));
+        }
+
         _session.Execute(ProjectCommands.Batch("Store Plugin State", commands));
         return true;
     }
@@ -625,6 +655,14 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         return others.Count == 0 || instance.LastWorkerLoss is null
             ? null
             : $"{List(others)} went down with it: they shared its worker process. Restart starts them all again.";
+    }
+
+    private void ForgetHostValues(DeviceId device)
+    {
+        foreach (var key in _hostValues.Keys.Where(k => k.Device == device).ToList())
+        {
+            _hostValues.TryRemove(key, out _);
+        }
     }
 
     // One handler per device, so the same delegate can be removed again.
