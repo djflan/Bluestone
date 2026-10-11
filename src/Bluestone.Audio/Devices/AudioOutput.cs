@@ -51,7 +51,11 @@ public enum AudioStreamError
     Other,
 }
 
-/// <summary>A stream's counters, read lock-free from the native layer.</summary>
+/// <summary>
+/// A stream's counters, read lock-free from the native layer. Render times are measured in the native callback around
+/// the call into .NET, so they include entering the runtime and any wait for a garbage collection to finish;
+/// <see cref="LateRenders"/> counts calls longer than their block lasts.
+/// </summary>
 public sealed record AudioStreamStatus(
     AudioStreamState State,
     int SampleRate,
@@ -67,7 +71,10 @@ public sealed record AudioStreamStatus(
     long OversizedBlocks,
     TimeSpan OutputLatency,
     AudioStreamError LastError,
-    int Errors);
+    int Errors,
+    TimeSpan RenderMax,
+    TimeSpan RenderTotal,
+    long LateRenders);
 
 public sealed class AudioDeviceException(string message) : Exception(message);
 
@@ -163,8 +170,51 @@ public sealed unsafe class AudioOutput : IDisposable
                 (long)data.OversizedBlocks,
                 TimeSpan.FromTicks(data.OutputLatencyNanoseconds / 100),
                 (AudioStreamError)Math.Min(data.LastError, (uint)AudioStreamError.Other),
-                (int)data.Errors);
+                (int)data.Errors,
+                TimeSpan.FromTicks(data.RenderMaxNanoseconds / 100),
+                TimeSpan.FromTicks((long)(data.RenderTotalNanoseconds / 100)),
+                (long)data.LateRenders);
         }
+    }
+
+    /// <summary>
+    /// How many render calls fell in each 10 µs bucket of duration (as measured natively, see
+    /// <see cref="AudioStreamStatus"/>); the last bucket counts everything longer than 20 ms.
+    /// </summary>
+    public long[] RenderHistogram()
+    {
+        ObjectDisposedException.ThrowIf(_handle == 0, this);
+        var buckets = new ulong[NativeMethods.HistogramBuckets];
+        fixed (ulong* pointer = buckets)
+        {
+            NativeMethods.StreamHistogram(_handle, pointer, (nuint)buckets.Length);
+        }
+
+        return [.. buckets.Select(b => (long)b)];
+    }
+
+    /// <summary>The render duration below which <paramref name="percent"/> of calls finished, from <see cref="RenderHistogram"/>.</summary>
+    public static TimeSpan Percentile(long[] histogram, double percent)
+    {
+        ArgumentNullException.ThrowIfNull(histogram);
+        var total = histogram.Sum();
+        if (total == 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var target = (long)Math.Ceiling(total * percent / 100);
+        long seen = 0;
+        for (var i = 0; i < histogram.Length; i++)
+        {
+            seen += histogram[i];
+            if (seen >= target)
+            {
+                return TimeSpan.FromMicroseconds((i + 1) * NativeMethods.HistogramBucketMicroseconds);
+            }
+        }
+
+        return TimeSpan.FromMicroseconds(histogram.Length * NativeMethods.HistogramBucketMicroseconds);
     }
 
     public void Dispose()

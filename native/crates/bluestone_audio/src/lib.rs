@@ -13,7 +13,10 @@ mod stream;
 
 use std::ffi::{CStr, c_char, c_void};
 
-pub use stream::{BlockInfo, OutputStream, RenderFn, StreamRequest, StreamStatus};
+pub use stream::{
+    BlockInfo, HISTOGRAM_BUCKET_NS, HISTOGRAM_BUCKETS, OutputStream, RenderFn, StreamRequest,
+    StreamStatus,
+};
 
 /// Bump on any change to a function signature or a `#[repr(C)]` layout.
 pub const ABI_VERSION: u32 = 1;
@@ -163,6 +166,29 @@ pub unsafe extern "C" fn bluestone_audio_stream_status(
     0
 }
 
+/// Copies the render-duration histogram into `buckets` (bucket i counts render calls that took
+/// [i, i + 1) × 10 µs; the last bucket counts everything longer) and returns how many buckets were written.
+///
+/// # Safety
+/// `stream` must be a live handle or null; `buckets` must be valid for `count` writes or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_stream_histogram(
+    stream: *const OutputStream,
+    buckets: *mut u64,
+    count: usize,
+) -> i64 {
+    // SAFETY: the caller guarantees a live handle or null.
+    let Some(stream) = (unsafe { stream.as_ref() }) else {
+        return -1;
+    };
+    if buckets.is_null() {
+        return -1;
+    }
+    // SAFETY: the caller guarantees `count` writable elements.
+    let out = unsafe { std::slice::from_raw_parts_mut(buckets, count) };
+    stream.histogram(out) as i64
+}
+
 /// Stops and frees the stream. When this returns, the render function is never called again.
 ///
 /// # Safety
@@ -298,6 +324,13 @@ mod tests {
             assert_eq!(bluestone_audio_stream_status(stream, &mut status), 0);
             assert!(status.callbacks > 0);
             assert!(status.sample_rate > 0);
+            assert!(status.render_total_ns > 0);
+            let mut buckets = vec![0u64; HISTOGRAM_BUCKETS];
+            assert_eq!(
+                bluestone_audio_stream_histogram(stream, buckets.as_mut_ptr(), buckets.len()),
+                HISTOGRAM_BUCKETS as i64
+            );
+            assert!(buckets.iter().sum::<u64>() > 0);
             assert_eq!(
                 bluestone_audio_stop(stream, error.as_mut_ptr(), error.len()),
                 0

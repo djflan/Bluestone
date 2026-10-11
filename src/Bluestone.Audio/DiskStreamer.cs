@@ -39,16 +39,11 @@ internal sealed class DiskStreamer : IDisposable
     }
 
     /// <summary>Services every source of <paramref name="graph"/>; closes sources in <paramref name="open"/> that are no longer in it.</summary>
-    public static void ServiceOnce(AudioGraph graph, HashSet<IStreamedSource>? open)
+    public static void ServiceOnce(AudioGraph graph, HashSet<IStreamedSource> open)
     {
         foreach (var source in graph.Streams)
         {
             source.Service();
-        }
-
-        if (open is null)
-        {
-            return;
         }
 
         var current = graph.Streams;

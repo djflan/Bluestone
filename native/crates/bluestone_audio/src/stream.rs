@@ -11,6 +11,7 @@ use cpal::{
 use std::ffi::c_void;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 /// Called once per device callback with an interleaved buffer of `frames * channels` samples to fill.
 pub type RenderFn = unsafe extern "C" fn(
@@ -87,7 +88,19 @@ pub struct StreamStatus {
     /// The device's sample format: 0 f32, 1 i16, 2 i32, 3 u16.
     pub sample_format: u32,
     pub reserved: u32,
+    /// Longest call of the render function, in nanoseconds, measured around the call (so it includes entering
+    /// and leaving .NET, and any wait for a .NET garbage collection to finish).
+    pub render_max_ns: i64,
+    /// Sum of render durations, in nanoseconds.
+    pub render_total_ns: u64,
+    /// Render calls that took longer than the block they filled lasts.
+    pub late_renders: u64,
 }
+
+/// Width of one render-duration histogram bucket, in nanoseconds.
+pub const HISTOGRAM_BUCKET_NS: u64 = 10_000;
+/// Buckets in the render-duration histogram; the last one counts everything longer.
+pub const HISTOGRAM_BUCKETS: usize = 2001;
 
 #[derive(Default)]
 pub(crate) struct Shared {
@@ -103,6 +116,37 @@ pub(crate) struct Shared {
     latency_ns: AtomicI64,
     last_error: AtomicU32,
     errors: AtomicU32,
+    render_max_ns: AtomicI64,
+    render_total_ns: AtomicU64,
+    late_renders: AtomicU64,
+    histogram: Histogram,
+}
+
+pub(crate) struct Histogram([AtomicU64; HISTOGRAM_BUCKETS]);
+
+impl Default for Histogram {
+    fn default() -> Self {
+        Histogram(std::array::from_fn(|_| AtomicU64::new(0)))
+    }
+}
+
+impl Shared {
+    /// Records one render call's duration. Lock-free and allocation-free.
+    fn record_render(&self, elapsed: Duration, frames: u32, sample_rate: u32) {
+        let ns = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
+        self.render_total_ns.fetch_add(ns, Ordering::Relaxed);
+        self.render_max_ns
+            .fetch_max(i64::try_from(ns).unwrap_or(i64::MAX), Ordering::Relaxed);
+        let bucket = usize::try_from(ns / HISTOGRAM_BUCKET_NS)
+            .unwrap_or(usize::MAX)
+            .min(HISTOGRAM_BUCKETS - 1);
+        self.histogram.0[bucket].fetch_add(1, Ordering::Relaxed);
+        if sample_rate > 0
+            && u128::from(ns) * u128::from(sample_rate) > u128::from(frames) * 1_000_000_000
+        {
+            self.late_renders.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 }
 
 struct UserData(*mut c_void);
@@ -298,7 +342,19 @@ impl OutputStream {
             errors: s.errors.load(Ordering::Relaxed),
             sample_format: self.format,
             reserved: 0,
+            render_max_ns: s.render_max_ns.load(Ordering::Relaxed),
+            render_total_ns: s.render_total_ns.load(Ordering::Relaxed),
+            late_renders: s.late_renders.load(Ordering::Relaxed),
         }
+    }
+
+    /// Copies the render-duration histogram (bucket i counts durations in [i, i + 1) × 10 µs).
+    pub fn histogram(&self, out: &mut [u64]) -> usize {
+        let n = out.len().min(HISTOGRAM_BUCKETS);
+        for (slot, bucket) in out.iter_mut().zip(self.shared.histogram.0.iter()).take(n) {
+            *slot = bucket.load(Ordering::Relaxed);
+        }
+        n
     }
 }
 
@@ -348,7 +404,9 @@ fn build_f32(
                 data.fill(0.0);
                 // SAFETY: `data` holds frames * channels samples for the duration of the call; the function
                 // pointer and user data were registered by .NET and stay valid until the stream is closed.
+                let started = Instant::now();
                 unsafe { render(user.0, data.as_mut_ptr(), frames, channels, &block) };
+                shared.record_render(started.elapsed(), frames, block.sample_rate);
             },
             errors,
             None,
@@ -391,7 +449,9 @@ where
                 let buffer = &mut scratch[..data.len()];
                 buffer.fill(0.0);
                 // SAFETY: as for the f32 path; the buffer is ours and holds frames * channels samples.
+                let started = Instant::now();
                 unsafe { render(user.0, buffer.as_mut_ptr(), frames, channels, &block) };
+                shared.record_render(started.elapsed(), frames, block.sample_rate);
                 for (out, &sample) in data.iter_mut().zip(buffer.iter()) {
                     *out = T::from_sample(sample.clamp(-1.0, 1.0));
                 }
@@ -489,7 +549,7 @@ mod tests {
     #[test]
     fn the_status_struct_has_a_stable_size() {
         // The .NET side checks this size; change both together and bump the ABI version.
-        assert_eq!(size_of::<StreamStatus>(), 96);
+        assert_eq!(size_of::<StreamStatus>(), 120);
         assert_eq!(size_of::<BlockInfo>(), 32);
         assert_eq!(size_of::<StreamRequest>(), 16);
     }

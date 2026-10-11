@@ -10,6 +10,8 @@ internal static unsafe partial class NativeMethods
 {
     public const uint AbiVersion = 1;
     public const uint FlagDiscontinuity = 1;
+    public const int HistogramBuckets = 2001;
+    public const int HistogramBucketMicroseconds = 10;
     private const string Library = "bluestone_audio";
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_abi_version")]
@@ -35,6 +37,9 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_stream_status")]
     public static partial int StreamStatus(nint stream, StreamStatusData* status);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_stream_histogram")]
+    public static partial long StreamHistogram(nint stream, ulong* buckets, nuint count);
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_close")]
     public static partial void Close(nint stream);
@@ -79,6 +84,9 @@ internal static unsafe partial class NativeMethods
         public uint Errors;
         public uint SampleFormat;
         public uint Reserved;
+        public long RenderMaxNanoseconds;
+        public ulong RenderTotalNanoseconds;
+        public ulong LateRenders;
     }
 
     /// <summary>Whether the library can be loaded and speaks this ABI version; the reason when it cannot.</summary>

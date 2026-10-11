@@ -14,6 +14,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
     private readonly float[] _master;
     private readonly float[] _tone;
     private readonly DiskStreamer? _streamer;
+    private readonly HashSet<IStreamedSource> _serviced = [];
     private AudioGraph _graph;
     private ToneNode? _testTone;
 
@@ -71,7 +72,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
             throw new InvalidOperationException("The disk streamer thread services this engine.");
         }
 
-        DiskStreamer.ServiceOnce(Graph, null);
+        DiskStreamer.ServiceOnce(Graph, _serviced);
     }
 
     public void Render(Span<float> interleaved, int frames, int channels, in AudioDeviceBlock block)
@@ -92,7 +93,17 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         Statistics.Record(Stopwatch.GetTimestamp() - started, frames, SampleRate, block.Discontinuity);
     }
 
-    public void Dispose() => _streamer?.Dispose();
+    /// <summary>Stops the disk streamer and closes the files of the disk sources it served.</summary>
+    public void Dispose()
+    {
+        _streamer?.Dispose();
+        foreach (var source in _serviced)
+        {
+            source.Close();
+        }
+
+        _serviced.Clear();
+    }
 
     private void RenderBlocks(Span<float> interleaved, int frames, int channels, in AudioDeviceBlock block)
     {
