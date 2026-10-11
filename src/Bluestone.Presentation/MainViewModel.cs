@@ -90,6 +90,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Mixer = new MixerViewModel(this);
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
+        Groups = new GroupsViewModel(this);
         EventList = new EventListViewModel(this, Editor);
         SelectedTracks.CollectionChanged += (_, _) =>
         {
@@ -98,6 +99,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SyncSelection();
             SyncEditor();
             Arrangement.KeepOnTracks([.. SelectedTracks.Select(t => t.Id)]);
+            Groups.SyncSelection();
             ApplyThru();
         };
         ApplyMetronome();
@@ -161,6 +163,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>The clip selection and clip edits in the arrangement.</summary>
     public ArrangementViewModel Arrangement { get; }
+
+    /// <summary>Group tracks: grouping the selection, membership, and folding.</summary>
+    public GroupsViewModel Groups { get; }
 
     /// <summary>The selected track's device chain.</summary>
     public DeviceStripViewModel DeviceStrip { get; }
@@ -547,9 +552,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        // Rows folded away under a group are skipped.
+        var shown = Tracks.Where(t => t.IsShown || SelectedTracks.Contains(t)).ToList();
         var anchor = SelectedTracks.Count > 0 ? SelectedTracks[^1] : null;
-        var index = anchor is null ? (delta > 0 ? 0 : Tracks.Count - 1) : Math.Clamp(Tracks.IndexOf(anchor) + delta, 0, Tracks.Count - 1);
-        var target = Tracks[index];
+        var index = anchor is null ? (delta > 0 ? 0 : shown.Count - 1) : Math.Clamp(shown.IndexOf(anchor) + delta, 0, shown.Count - 1);
+        var target = shown[index];
         if (extend)
         {
             if (!SelectedTracks.Contains(target))
@@ -1311,6 +1318,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
             existing.Sync(i + 1, tracks[i], _playback.Tracks.FirstOrDefault(r => r.Track == tracks[i].Id), outputs);
         }
+
+        Groups.Sync();
 
         if (ArmedTrack is { } armed && !Tracks.Contains(armed))
         {
