@@ -196,17 +196,6 @@ impl Window {
         }
     }
 
-    pub fn set_resizable(&self, resizable: bool) {
-        let style = if resizable {
-            WS_OVERLAPPEDWINDOW
-        } else {
-            WS_OVERLAPPEDWINDOW & !(WS_THICKFRAME | WS_MAXIMIZEBOX)
-        };
-        self.style.set(style);
-        // SAFETY: our own window.
-        unsafe { SetWindowLongPtrW(self.handle, GWL_STYLE, style as isize) };
-    }
-
     pub fn content_scale(&self) -> f64 {
         // SAFETY: our own window.
         let dpi = unsafe { GetDpiForWindow(self.handle) };

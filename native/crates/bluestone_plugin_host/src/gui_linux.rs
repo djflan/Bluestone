@@ -309,18 +309,6 @@ impl Window {
         });
     }
 
-    pub fn set_resizable(&self, resizable: bool) {
-        if !resizable {
-            let (width, height) = self.size.get();
-            DISPLAY.with_borrow(|display| {
-                if let Some(display) = display {
-                    let _ = set_fixed_size(&display.connection, self.id, width, height);
-                    let _ = display.connection.flush();
-                }
-            });
-        }
-    }
-
     pub fn content_scale(&self) -> f64 {
         1.0
     }

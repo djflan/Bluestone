@@ -199,12 +199,6 @@ impl Window {
             .setContentSize(NSSize::new(width as f64, height as f64));
     }
 
-    pub fn set_resizable(&self, resizable: bool) {
-        let mut style = self.window.styleMask();
-        style.set(NSWindowStyleMask::Resizable, resizable);
-        self.window.setStyleMask(style);
-    }
-
     pub fn content_scale(&self) -> f64 {
         1.0
     }

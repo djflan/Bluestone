@@ -231,7 +231,8 @@ struct AudioState {
 struct Editor {
     view: ComPtr<IPlugView>,
     frame: ComWrapper<PlugFrame>,
-    window: Rc<gui::Window>,
+    // Kept for its lifetime: dropping it closes the window.
+    _window: Rc<gui::Window>,
     close_requested: Rc<Cell<bool>>,
 }
 
@@ -1224,7 +1225,7 @@ impl Instance for Vst3Instance {
             *self.editor.borrow_mut() = Some(Editor {
                 view,
                 frame,
-                window,
+                _window: window,
                 close_requested,
             });
         }

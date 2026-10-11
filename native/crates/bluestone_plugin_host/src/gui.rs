@@ -164,10 +164,6 @@ impl Window {
         self.inner.set_content_size(width.max(1), height.max(1));
     }
 
-    pub fn set_resizable(&self, resizable: bool) {
-        self.inner.set_resizable(resizable);
-    }
-
     /// Display scale for plugins that size themselves in pixels (Windows, Linux); 1 on macOS, where sizes are points.
     pub fn content_scale(&self) -> f64 {
         self.inner.content_scale()
