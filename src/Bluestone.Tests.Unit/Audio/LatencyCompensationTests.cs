@@ -187,6 +187,40 @@ public sealed class LatencyCompensationTests
     }
 
     [Fact]
+    public void AMonitoredInstrument_ThroughItsChannelABusAndAReturn_IsHeardAfterItsOwnLatency_AndTheRestStaysAligned()
+    {
+        // Channel T: the monitored instrument (128) and a clip; T → bus B, and a send to return R. Channel V: a clip,
+        // into B. Channel U: a 480-frame plugin and a clip, to the master, and a send to R.
+        var builder = new AudioGraphBuilder();
+        var t = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var v = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var u = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var bus = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var ret = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var instrument = Path(builder, latency: 128);
+        builder.Monitor(instrument);
+        builder.ConnectToStrip(instrument, t);
+        builder.ConnectToStrip(builder.AddNode(new ImpulseNode()), t);
+        builder.ConnectToStrip(builder.AddNode(new ImpulseNode()), v);
+        builder.ConnectToStrip(Path(builder, latency: 480), u);
+        builder.ConnectToStrip(builder.AddNode(new ImpulseNode()), u);
+        builder.RouteStrip(t, bus);
+        builder.RouteStrip(v, bus);
+        builder.SendStrip(t, ret, 0, preFader: true);
+        builder.SendStrip(u, ret, 0, preFader: true);
+        var graph = builder.Build(Block, new MixerStripState());
+
+        var left = Left(Render(graph, 1024));
+
+        Assert.Equal(480, graph.LatencyFrames);
+        Assert.Equal([128, 480], Impulses(left));
+
+        // The instrument through B and R; T's clip through B and R, V's clip, and U's plugin and clip, direct and through R.
+        Assert.Equal(2f, left[128]);
+        Assert.Equal(7f, left[480]);
+    }
+
+    [Fact]
     public void FollowingATimeline_RendersAheadByTheGraphsLatency_AndRelocatesWhenItChanges()
     {
         using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);

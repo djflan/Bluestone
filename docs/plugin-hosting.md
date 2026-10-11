@@ -593,7 +593,8 @@ restarted plugin). The reference plugin `reference.delay` delays its input by ex
 announces a change when its Latency parameter or state is set, so this is tested sample by sample with real workers
 (`DelayCompensationTests`: two paths with different plugin latencies impulse-aligned at the master, realigned after a
 latency change; a send to a return with a latent plugin aligned with the dry channel). Low-latency monitoring skips
-the compensation of the instrument played live.
+the compensation of the instrument played live all the way to the master; the channels, buses, and returns it passes
+through delay their other inputs instead, so those stay aligned.
 
 ### Live input through plugins
 

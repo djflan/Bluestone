@@ -107,10 +107,15 @@ built-in devices, and plugin delay compensation, in scope for this epic.
   reference plugins gained `reference.delay`, which delays its input by exactly the latency it reports and announces
   changes, so compensation is tested sample by sample with real workers.
 - **Low-latency monitoring** (an Audio setting, off by default, as in other hosts): the plugin instrument the
-  monitored track plays live is not delayed for compensation on its way to the first mixer channel or the master,
-  and does not hold the others back; buses and returns after that stay compensated. Its own playback is then early
-  against the other tracks by the compensation it skips, while it is monitored. Recording is not affected: it uses
-  input timestamps.
+  monitored track plays live (and the plugin effects after it) is not delayed for compensation anywhere on its way to
+  the master, and does not hold the others back, so it is heard after its own latency. A mixer channel, bus, or
+  return it passes through cannot delay its output without delaying the instrument, so it delays its other inputs to
+  the graph's latency on the way in instead: everything else (the track's clips, the other channels on the bus)
+  stays aligned (`LatencyCompensationTests.AMonitoredInstrument_Through*`). Audio that goes through the same plugin
+  effects as the instrument is early with it. The instrument's own playback is early against the other tracks by
+  the compensation it skips, while it is monitored. Recording is not affected: it uses input timestamps.
+  (Before 2026-10-11 the channel after the instrument delayed its output to the graph's latency, so the monitored
+  instrument was heard later than without monitoring.)
 
 ## Consequences
 

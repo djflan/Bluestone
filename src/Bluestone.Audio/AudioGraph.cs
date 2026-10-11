@@ -210,8 +210,9 @@ public sealed class AudioGraphBuilder
 
     /// <summary>
     /// Low-latency monitoring for a node that plays live input (ADR 0035): its signal, and that of the nodes it feeds,
-    /// is not delayed for compensation on its way to the first mixer channel or the master, and does not make the
-    /// other signals there wait for it. Buses and returns after that stay compensated.
+    /// is not delayed for compensation anywhere on its way to the master, and does not make the other signals wait for
+    /// it. A mixer channel, bus, or return it passes through delays its other inputs to the graph's latency on the way
+    /// in instead of delaying its output, so they stay aligned.
     /// </summary>
     public void Monitor(int node)
     {
@@ -310,18 +311,25 @@ public sealed class AudioGraphBuilder
             nodeOutput[index] = nodeInput[index] + built[index];
         }
 
+        // A strip the monitored signal reaches (through outputs and sends) passes it on undelayed; its other inputs
+        // are delayed to the graph's latency on the way in instead.
         var strip = new int[_strips.Count];
+        var monitoredStrip = new bool[_strips.Count];
         foreach (var index in stripOrder)
         {
+            monitoredStrip[index] = _toStrips.Any(e => e.Strip == index && monitored[e.Node])
+                || _stripDestinations.Any(d => d.Value == index && monitoredStrip[d.Key])
+                || _sends.Any(x => x.Destination == index && monitoredStrip[x.Strip]);
             var arrivals = _toStrips.Where(e => e.Strip == index && !monitored[e.Node]).Select(e => nodeOutput[e.Node])
-                .Concat(_stripDestinations.Where(d => d.Value == index).Select(d => strip[d.Key]))
-                .Concat(_sends.Where(x => x.Destination == index).Select(x => strip[x.Strip]));
+                .Concat(_stripDestinations.Where(d => d.Value == index && !monitoredStrip[d.Key]).Select(d => strip[d.Key]))
+                .Concat(_sends.Where(x => x.Destination == index && !monitoredStrip[x.Strip]).Select(x => strip[x.Strip]));
             strip[index] = arrivals.DefaultIfEmpty(0).Max();
         }
 
-        var latency = _toMaster.Where(n => !monitored[n]).Select(n => nodeOutput[n])
-            .Concat(Enumerable.Range(0, _strips.Count).Where(i => !_stripDestinations.ContainsKey(i)).Select(i => strip[i]))
-            .DefaultIfEmpty(0).Max();
+        var latency = _toMaster.Where(n => !monitored[n]).Select(n => nodeOutput[n]).Concat(strip).DefaultIfEmpty(0).Max();
+
+        // When a signal must have reached a strip: the strip's own alignment, or the graph's latency for a monitored strip.
+        int Due(int s) => monitoredStrip[s] ? latency : strip[s];
 
         AudioGraph.EdgeDelay Edge(object source, object destination, int kind, int frames)
         {
@@ -336,7 +344,7 @@ public sealed class AudioGraphBuilder
             int[] inputs = [.. inputEdges.Select(e => nodePosition[e.From])];
             AudioGraph.EdgeDelay[] inputDelays = [.. inputEdges.Select(e => Edge(_nodes[e.From], node, 0, monitored[index] ? 0 : nodeInput[index] - nodeOutput[e.From]))];
             var strips = _toStrips.Where(e => e.Node == index).Select(e => e.Strip).Distinct().ToList();
-            AudioGraph.EdgeDelay[] stripDelays = [.. strips.Select(s => Edge(node, _strips[s].State, 0, monitored[index] ? 0 : strip[s] - nodeOutput[index]))];
+            AudioGraph.EdgeDelay[] stripDelays = [.. strips.Select(s => Edge(node, _strips[s].State, 0, monitored[index] ? 0 : Due(s) - nodeOutput[index]))];
             var toMaster = _toMaster.Contains(index);
             var masterDelay = toMaster ? Edge(node, master, 0, monitored[index] ? 0 : latency - nodeOutput[index]) : default;
             var compensated = stripDelays.Select(d => d.Frames).Append(masterDelay.Frames).Max();
@@ -364,14 +372,14 @@ public sealed class AudioGraphBuilder
             var gain = audible[index] ? fader : 0f;
             var hasDestination = _stripDestinations.TryGetValue(index, out var d);
             var destination = hasDestination ? stripPosition[d] : -1;
-            var outputDelay = hasDestination ? Edge(state, _strips[d].State, 0, strip[d] - strip[index]) : Edge(state, master, 0, latency - strip[index]);
+            var outputDelay = Edge(state, hasDestination ? _strips[d].State : master, 0, monitoredStrip[index] ? 0 : (hasDestination ? Due(d) : latency) - strip[index]);
             var sends = _sends.Where(s => s.Strip == index).Select(send =>
             {
                 var carries = !settings.Muted && (!anySolo || audible[index] || _strips[send.Destination].Settings.Soloed);
                 var level = carries ? PanLaw.DecibelsToGain(send.LevelDecibels) : 0f;
                 var (sendLeft, sendRight) = send.PreFader ? (level, level) : (level * fader * left, level * fader * right);
                 var target = _strips[send.Destination].State;
-                return new AudioGraph.SendEntry(state.SendTo(target), stripPosition[send.Destination], sendLeft, sendRight, Edge(state, target, 1, strip[send.Destination] - strip[index]));
+                return new AudioGraph.SendEntry(state.SendTo(target), stripPosition[send.Destination], sendLeft, sendRight, Edge(state, target, 1, monitoredStrip[index] ? 0 : Due(send.Destination) - strip[index]));
             }).ToArray();
             state.KeepSendsTo(_sends.Where(s => s.Strip == index).Select(s => _strips[s.Destination].State).ToHashSet());
             return new AudioGraph.StripEntry(state, gain * left, gain * right, destination, new float[2 * blockFrames], sends, outputDelay);
