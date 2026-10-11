@@ -66,7 +66,8 @@ The UI tests send mouse and keyboard input through the headless platform and che
 models afterwards. They cover the inspector's Track, Routing, Voice, Devices, Connections, Racks, and Mixer
 sections (including a refused connection and its message), dragging, resizing, and renaming clips, drawing,
 selecting, and moving notes in the piano roll, the keyboard shortcuts (undo and redo, delete, play and stop,
-mute and solo, copy and paste), and the Plugins view. Frames are saved to `bin/.../frames/` for looking at.
+mute and solo, copy and paste), the Plugins view, and the mixer console (a fader dragged and undone, a send added,
+meters fed from a meter source). Frames are saved to `bin/.../frames/` for looking at.
 `Avalonia.Headless.XUnit` targets an older xUnit than the repository's, so the tests drive
 `HeadlessUnitTestSession` directly. The headless platform has no macOS menu bar, so the window under test
 uses its own menu and key bindings, as on Windows and Linux; one test checks the macOS menu's items and
@@ -105,7 +106,8 @@ Interfaces exist only where something is actually substituted:
 - `IChainObserver`: what the signal graph needs from inside a chain (taps, instrument inputs).
 - `IUserInteraction`, `IUiDispatcher`: keep the UI framework out of the view models.
 - `IAudioRenderer`: what a device stream calls (the audio engine, a test renderer); `IAudioTimeline`: the transport the
-  audio engine follows (the MIDI playback engine, a test timeline).
+  audio engine follows (the MIDI playback engine, a test timeline); `IAudioBackend` and `IAudioOutput`: where output
+  streams come from (the operating system's devices through cpal, or a test backend whose devices come and go).
 
 Everything else is concrete. SysEx dialects, for example, are static classes chosen by a `switch`
 on the manufacturer ID, because nothing needs to swap them at run time.
@@ -262,8 +264,8 @@ Project
 A track has one type and a role (ADR 0021). The role says what the track is for; it is stored and is
 widened, never narrowed, to fit content, and changing it never discards anything. Clips decide what a
 track holds (ADR 0020): `NoteClip` holds events relative to its content origin and shows a window of
-them, so trimming loses nothing; `AudioClip` holds a reference to an audio file; the audio engine plays it
-from disk (ADR 0032). Clips on a track never overlap. `Track.ArrangedEvents` is what
+them, so trimming loses nothing; `AudioClip` holds a reference to an audio file, a gain, and fades (lengths in
+ticks from its edges, linear or equal-power); the audio engine plays it from disk (ADR 0032). Clips on a track never overlap. `Track.ArrangedEvents` is what
 the note clips play. `TrackRendering` adds MIDI automation lanes, sampled into channel events, and
 returns device automation separately as parameter changes.
 
@@ -321,7 +323,12 @@ devices on the way.
 
 In the app, the inspector's Devices strip edits the selected track's chain, or a rack's chain after
 "Edit" in the Racks section; Connections follows whichever chain the strip shows. The Mixer section
-edits channels, their outputs, and the master gain; they are heard while audio runs (ADR 0032). Every edit is a command, and one that would add a routing error is refused with a message.
+edits channels, their outputs, and the master gain; they are heard while audio runs (ADR 0032). The mixer console
+(File ▸ Mixer…, or Window ▸ Mixer on macOS) shows the same `MixerViewModel` as one strip per channel and the
+master: name, what feeds it (and whether it is a group's, a bus, or a return), output, sends (level, pre or post
+fader), pan, fader, mute, solo, and a peak and RMS meter with a two-second peak hold and a clip light. The meters
+are read from the engine's lock-free meters on a 30 Hz UI timer without allocating. The inspector's Audio Clip
+section edits the selected audio clip's gain and fades; the arrangement draws the fades. Every edit is a command, and one that would add a routing error is refused with a message.
 Consecutive edits with the same merge key within a second (a slider drag) are one undo step.
 
 ### Automation
@@ -367,11 +374,12 @@ These are deliberate for now and are where MIDI 2.0 work will start:
   sequences as it sends them, as the MIDI 2.0 translation rules describe.
 - **Sixteen channels.** `MidiChannel` is 1 to 16. UMP adds 16 groups. The group belongs to an external
   instrument's port and its endpoint, not to the music or to connections.
-- **Audio engine limits (ADR 0032).** Audio clips, plugin instruments and effects, audio connections, and the
-  mixer sound while an audio device is open, but: plugin latency is reported, not compensated; there are no sends,
-  clip gain, or fades (not in the domain); only WAVE and AIFF files play; built-in devices make no sound; plugin
-  instances run at 48 kHz, so another device rate leaves them silent; the default render-ahead queue adds 21 ms of
-  output latency (measured need: .NET garbage collection pauses). Device output has been heard on macOS only.
+- **Audio engine limits (ADR 0032).** Audio clips (with gain and fades), plugin instruments and effects, audio
+  connections, and the mixer with sends sound while an audio device is open, but: plugin latency is reported, not
+  compensated; only WAVE and AIFF files play; built-in devices make no sound; a change of device rate restarts
+  every plugin instance (its live state is carried over; an open editor closes); the default render-ahead queue
+  adds 21 ms of output latency (measured need: .NET garbage collection pauses). Device output has been heard on
+  macOS only; losing and regaining a device is tested with a test backend, not by unplugging hardware.
 - **Plugin MIDI effects are rendered, not played live.** When the plan is compiled, each plugin MIDI effect
   runs in its own worker over the arrangement (ADR 0028), so its output is routed downstream. A worker that
   is gone or hung leaves the events unchanged, with a diagnostic. Live input does not pass through plugins.
@@ -432,8 +440,8 @@ data yet, so it waits.
 Built as boundaries and tested where cheap, but not finished:
 
 - **Audio engine, remaining**: plugin delay compensation across the graph (latencies are reported per device),
-  sends, audio input and recording, compressed audio formats, a mixer console view with meters (the meters exist),
-  and recovery from a lost device beyond reporting it.
+  audio input and recording, compressed audio formats, send and fader automation, and fade curves other than
+  linear and equal power.
 - **Third-party plugins beyond the first slice**: VST3 and CLAP load, process, keep state, recover, and show editors
   (ADR 0033, docs/plugin-hosting.md), but editors on Windows and Linux are not verified on hardware, editors are
   separate windows (not embedded), and there are no second-architecture workers, SysEx to native plugins, note

@@ -66,7 +66,9 @@ indices, only stable identifiers and identity hints.
         "source": { "type": "rack", "id": "…" }, "destination": { "type": "mixer", "id": "…" } }
     ],
     "mixer": { "masterGain": 0,
-      "channels": [ { "id": "…", "name": "Synth bus", "gain": -3.5, "pan": 0, "muted": false, "soloed": false } ] }
+      "channels": [ { "id": "…", "name": "Synth bus", "gain": -3.5, "pan": 0, "muted": false, "soloed": false,
+                      "sends": [ { "target": "…", "level": -12, "preFader": false } ] },
+                    { "id": "…", "name": "Reverb", "gain": 0, "pan": 0, "muted": false, "soloed": false } ] }
   },
   "extensions": { "org.example.feature": { } }
 }
@@ -87,6 +89,9 @@ indices, only stable identifiers and identity hints.
   arrangement (ADR 0030).
 - A clip's `type` is `note`, holding the events below, or `audio`, holding a `source` (`location`,
   `sampleRate`, `frames`, `channels`). The audio engine plays audio clips while audio output is on (ADR 0032); the stored rate, length, and channels are informational, and the file's own header is used for playback.
+  An audio clip may also have a `gain` in dB (-120 to 24; omitted at 0), a `fadeIn` and a `fadeOut` in ticks from
+  its start and before its end (omitted at 0), and a `fadeShape` (`linear`, the default and omitted, or
+  `equalPower`). Fades that add up to more than the clip are kept and played shortened (the fade-in first).
 - Event IDs are unique across all clips of a track.
 - `automation` (optional; omitted when empty) holds a track's automation lanes, in display order. A
   lane's `target` is a `controller` (with a `controller` number, not bank select, 32–63, data entry or
@@ -123,7 +128,11 @@ indices, only stable identifiers and identity hints.
 - `parkedConnections` (optional; omitted when empty) are a grouped track's own outputs, set aside when it
   joined its group and put back when it leaves (ADR 0030). They have the shape of `connections` but are not
   routing: nothing plays or validates them. An ID may not appear in both lists.
-- `mixer` holds the master gain and mixer channels, which are independent of tracks.
+- `mixer` holds the master gain and mixer channels, which are independent of tracks. A channel's `output` (optional)
+  is the channel it feeds instead of the master; its `sends` (optional; omitted when empty) copy its audio to other
+  channels: a `target` channel, a `level` in dB (-120 to 24), and `preFader` (taken before the fader and pan). A
+  channel sends to a target at most once and never to itself (a format error); a send to a missing channel or one
+  that closes a loop is kept and reported.
 - `extensions` and any other unrecognised top-level properties are preserved on save.
 - Reading is strict: any invalid value fails with the JSON path of the problem.
 
@@ -143,6 +152,11 @@ route's channel and selecting its voice, and, for a non-zero transposition, a Tr
 track's chain. A route for a track that no longer exists is kept as a connection, which validation
 reports. Every track gets the `instrument` role and the mixer starts empty. Migrated projects send
 byte-identical MIDI (`Format3EquivalenceTests`).
+
+Mixer `sends` and audio clip `gain`, `fadeIn`, `fadeOut`, and `fadeShape` (ADR 0032) were also added to format 4
+without a new version: all are optional and written only when used, so files without them are unchanged. A Bluestone
+build that predates them ignores them: it plays such a file without sends, clip gain, or fades, and drops them if it
+saves the file.
 
 Instrument automation targets (ADR 0031) were added to format 4 without a new version: files without them
 are unchanged. A format 4 reader that predates them refuses a file that has one, with the path of the lane's

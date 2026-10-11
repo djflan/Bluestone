@@ -522,7 +522,9 @@ transport; plugins run every block, playing or not. On a start, stop, seek, loop
 edit, the notes the node started are released first. A worker that fails gives silence under the instance's failure
 policy, never stale audio, and the engine carries on (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`). Each
 node's latency (`ReportedLatencyFrames`) is reported per device; nothing compensates for it yet. Instances must run
-at the device's rate and accept the engine's block size, or they are reported and left silent.
+at the device's rate and accept the engine's block size, or they are reported and left silent; each time an audio
+device opens, `PluginDeviceHost.SetSampleRateAsync` restarts every instance at its rate from its captured live state
+(`PluginDeviceHostTests.ARateChange_*`).
 
 Tests (real workers, offline driver): `AudioPluginTests` (the Sine at its pitch through a mixer strip after one
 block of latency, the Gain processing connected audio, a killed worker, release on locate, zero allocation) and
