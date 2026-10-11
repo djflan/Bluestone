@@ -76,7 +76,7 @@ public sealed class LiveInputPluginTests
         await using var rig = await Rig.CreateAsync(host, transpose: 12);
         rig.Driver.Render(2 * Block, Block);
         rig.Live.Post(rig.Track, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(127)), rig.Clock.Now);
-        Assert.Contains(rig.Driver.Render(8 * Block, Block), s => s != 0f);
+        await HeardAsync(rig.Driver);
 
         rig.Session.Execute(DeviceCommands.SetBypassed(rig.Effect.Id, true, rig.Devices.Lookup));
         rig.Update();
@@ -150,7 +150,7 @@ public sealed class LiveInputPluginTests
         await using var host = new PluginTestHost(o => o with { CollectWait = TimeSpan.FromMilliseconds(5) });
         await using var rig = await Rig.CreateAsync(host, transpose: 0);
         rig.Live.Post(rig.Track, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(127)), rig.Clock.Now);
-        Assert.Contains(rig.Driver.Render(10 * Block, Block), s => s != 0f);
+        await HeardAsync(rig.Driver);
 
         KillProcess(rig.Instrument.WorkerProcessId!.Value);
         await WaitForStateAsync(rig.Instrument, PluginInstanceState.Unavailable);
@@ -163,7 +163,7 @@ public sealed class LiveInputPluginTests
         Assert.All(rig.Driver.Render(8 * Block, Block), s => Assert.Equal(0f, s));
 
         rig.Live.Post(rig.Track, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(64), new Velocity(127)), rig.Clock.Now);
-        Assert.Contains(rig.Driver.Render(10 * Block, Block), s => s != 0f);
+        await HeardAsync(rig.Driver);
     }
 
     [Fact]
@@ -235,6 +235,11 @@ public sealed class LiveInputPluginTests
 
     // The reference Transpose maps [0, 1] to -24..+24 semitones.
     private static double NormalizedFor(int semitones) => (semitones + 24) / 48.0;
+
+    // The offline driver does not wait for real time, so a worker that wakes late (a Windows timer tick is about
+    // 15.6 ms against the collect wait) can miss many blocks in a row: render until sound arrives.
+    private static Task HeardAsync(OfflineAudioDriver driver) =>
+        WaitUntilAsync(() => driver.Render(4 * Block, Block).Any(s => s != 0f), TimeSpan.FromSeconds(10), "sound");
 
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
