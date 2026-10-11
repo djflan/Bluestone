@@ -122,7 +122,9 @@ public sealed partial class AudioViewModel : ObservableObject
     private void Start()
     {
         var started = _audio.Start(Settings with { Enabled = true });
-        _store.Save(Settings with { Enabled = started });
+
+        // Waiting for an unplugged device still counts as on: it opens when it returns, also after a restart.
+        _store.Save(Settings with { Enabled = started || _audio.IsWaitingForDevice });
         UpdateStatus();
     }
 
@@ -181,7 +183,20 @@ public sealed partial class AudioViewModel : ObservableObject
         if (_audio.Output is { } output && _audio.Engine is { } engine)
         {
             var queue = output.QueuedFrames > 0 ? string.Create(CultureInfo.InvariantCulture, $", {output.QueuedFrames * 1000.0 / output.SampleRate:0.#} ms render-ahead") : string.Empty;
+            if (output.RenderThreadPolicy is { } policy)
+            {
+                queue += $" ({policy})";
+            }
+
             Status = string.Create(CultureInfo.InvariantCulture, $"Audio is on: {output.SampleRate} Hz, {output.Channels} channels, {engine.BlockFrames}-frame blocks{queue}.");
+            if (_audio.Problem is { } fallback)
+            {
+                Status += $" {fallback}";
+            }
+        }
+        else if (_audio.IsWaitingForDevice)
+        {
+            Status = $"Audio is waiting for its device: {_audio.Problem}";
         }
         else
         {

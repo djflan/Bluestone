@@ -93,7 +93,7 @@ public sealed class AudioDeviceException(string message) : Exception(message);
 /// the queue filled. Either way it is called from <see cref="Start"/> until <see cref="Stop"/> or <see cref="Dispose"/>,
 /// and never after Dispose. Control methods are for one control thread at a time.
 /// </summary>
-public sealed unsafe class AudioOutput : IDisposable
+public sealed unsafe class AudioOutput : IAudioOutput
 {
     private const int ErrorCapacity = 512;
     private readonly IAudioRenderer _renderer;
@@ -104,11 +104,18 @@ public sealed unsafe class AudioOutput : IDisposable
     private int _renderBlock;
     private Thread? _renderThread;
     private volatile bool _rendering;
+    private volatile string? _renderThreadPolicy;
 
     private AudioOutput(IAudioRenderer renderer) => _renderer = renderer;
 
     /// <summary>Frames the render thread keeps queued (buffered mode), or 0 in direct mode.</summary>
     public int QueuedFrames => _queued;
+
+    /// <summary>
+    /// How the render-ahead thread is scheduled (see <see cref="RenderThreadScheduling"/>), once it runs; null in direct
+    /// mode, where the device's own audio thread renders.
+    /// </summary>
+    public string? RenderThreadPolicy => _renderThreadPolicy;
 
     /// <summary>The rate the stream runs at.</summary>
     public int SampleRate { get; private set; }
@@ -299,6 +306,7 @@ public sealed unsafe class AudioOutput : IDisposable
     // code, so this thread is not where a garbage collection holds it; a collection only delays the next block.
     private void RenderAhead()
     {
+        _renderThreadPolicy = RenderThreadScheduling.PromoteCurrentThread(TimeSpan.FromSeconds((double)_queued / SampleRate));
         var channels = Channels;
         var block = new float[_renderBlock * channels];
         var latency = ReadOutputLatency();

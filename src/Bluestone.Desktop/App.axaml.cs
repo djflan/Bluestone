@@ -88,7 +88,12 @@ public partial class App : Avalonia.Application
     /// <summary>The audio engine (ADR 0032): off until the user starts it or the saved settings say it was on.</summary>
     private static void ComposeAudio(MainWindow window, ProjectSession session, PlaybackController playback, PluginDeviceHost devices)
     {
-        var audio = new AudioPlayback(playback, session, devices.InstanceOf);
+        // Plugins run at the device's rate: each time a device opens, they are restarted at its rate on the UI thread.
+        var audio = new AudioPlayback(
+            playback,
+            session,
+            devices.InstanceOf,
+            prepareSampleRate: rate => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetSampleRateAsync(rate)));
         _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher());
         window.AttachAudio(_audio);
         window.Closed += (_, _) => audio.Dispose();
