@@ -32,6 +32,28 @@ jobs:
         with:
           global-json-file: global.json
 
+      # cpal's ALSA backend links libasound.
+      - name: Install ALSA development files
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      # Rust is preinstalled on the hosted runners; print the versions so a missing toolchain fails here.
+      - name: Rust toolchain
+        run: |
+          cargo --version
+          rustc --version
+
+      - name: Test native crates
+        working-directory: native
+        run: cargo test --locked
+
+      - name: Check native formatting and lints
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: native
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+
       - name: Restore
         run: dotnet restore src/Bluestone.slnx
 
