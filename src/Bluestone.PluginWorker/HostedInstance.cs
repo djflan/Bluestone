@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Bluestone.Plugins.Protocol;
 using Bluestone.Plugins.Protocol.Exchange;
+using Bluestone.PluginWorker.Native;
 using Bluestone.PluginWorker.Plugins;
 
 namespace Bluestone.PluginWorker;
@@ -65,11 +66,37 @@ internal sealed class HostedInstance : IDisposable
         }
     }
 
-    public PluginStateData SaveState()
+    public bool IsDisposed => _stop;
+
+    /// <summary>Saves state; false with the plugin's reason when it could not.</summary>
+    public bool TrySaveState(out PluginStateData? state, out string? error)
     {
         lock (_gate)
         {
-            return _plugin.SaveState();
+            try
+            {
+                state = _plugin.SaveState();
+                error = null;
+                return true;
+            }
+            catch (InvalidOperationException ex)
+            {
+                state = null;
+                error = ex.Message;
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Opens the plugin's editor; null on success, else why not. Main thread.</summary>
+    public string? OpenEditor(string title) =>
+        _plugin is NativePlugin native ? native.OpenEditor(title) : $"{_plugin.Identity.DisplayName} has no editor.";
+
+    public void CloseEditor()
+    {
+        if (_plugin is NativePlugin native)
+        {
+            native.CloseEditor();
         }
     }
 
@@ -98,6 +125,11 @@ internal sealed class HostedInstance : IDisposable
         {
             // A plugin stuck inside Process: leave the mapping alone, the process is about to go anyway.
             return;
+        }
+
+        lock (_gate)
+        {
+            (_plugin as IDisposable)?.Dispose();
         }
 
         _exchange.Dispose();

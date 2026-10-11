@@ -5,8 +5,8 @@ using Bluestone.Plugins.Protocol.Exchange;
 namespace Bluestone.PluginWorker.Plugins;
 
 /// <summary>
-/// A plugin as the worker hosts it. Only the built-in reference plugins implement this; the worker never loads
-/// third-party binaries. Calls are serialized by the caller: processing and control never overlap.
+/// A plugin as the worker hosts it: a built-in reference plugin, or a VST3 or CLAP plugin in the native plugin host
+/// (<see cref="Native.NativePlugin"/>). Calls are serialized by the caller: processing and control never overlap.
 /// </summary>
 internal interface IHostedPlugin
 {
@@ -73,6 +73,8 @@ internal sealed class OutputEventList
     public OutputEventList(int capacity) => _events = new PluginEvent[capacity];
 
     public int Count { get; private set; }
+
+    public int Capacity => _events.Length;
 
     public int Dropped { get; private set; }
 

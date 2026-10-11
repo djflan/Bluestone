@@ -22,7 +22,7 @@ public sealed record PluginSummary(string Name, string Vendor, string Kind, stri
 /// <summary>One module file and what the last scan made of it. <see cref="Problem"/> says why it is not loaded.</summary>
 public sealed record PluginModuleSummary(string ModulePath, PluginModuleState State, ImmutableArray<PluginSummary> Plugins, string? Problem)
 {
-    public string Name => Path.GetFileName(ModulePath);
+    public string Name => Path.GetFileName(Path.TrimEndingDirectorySeparator(ModulePath));
 }
 
 /// <summary>How far a scan has got: <see cref="Done"/> of <see cref="Total"/> modules, and the one being read now (null at the end).</summary>
@@ -60,9 +60,65 @@ public sealed class PluginLibrary : IDisposable
 
     public ImmutableArray<string> Folders { get; }
 
-    /// <summary>The plugins found by the last scan, each once.</summary>
+    /// <summary>The plugins found by the last scan, each once (the first module that provides one wins).</summary>
     public ImmutableArray<PluginIdentity> Available =>
         [.. _results.SelectMany(r => r.Plugins).DistinctBy(PluginDeviceHost.DefinitionIdOf)];
+
+    /// <summary>The module each available plugin is loaded from.</summary>
+    public ImmutableDictionary<PluginIdentity, string> ModulePaths
+    {
+        get
+        {
+            var paths = ImmutableDictionary.CreateBuilder<PluginIdentity, string>();
+            foreach (var result in _results)
+            {
+                foreach (var plugin in result.Plugins)
+                {
+                    paths.TryAdd(plugin, result.ModulePath);
+                }
+            }
+
+            return paths.ToImmutable();
+        }
+    }
+
+    /// <summary>
+    /// The operating system's standard VST3 and CLAP folders, in the order they are searched: the user's own first.
+    /// macOS: ~/Library/Audio/Plug-Ins/VST3 and /Library/Audio/Plug-Ins/VST3 (and the same for CLAP). Windows:
+    /// %LocalAppData%\Programs\Common\VST3 and %CommonProgramFiles%\VST3 (and CLAP). Linux: ~/.vst3,
+    /// /usr/local/lib/vst3, /usr/lib/vst3, ~/.clap, /usr/local/lib/clap, /usr/lib/clap.
+    /// </summary>
+    public static ImmutableArray<string> StandardFolders()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (OperatingSystem.IsMacOS())
+        {
+            return
+            [
+                Path.Combine(home, "Library", "Audio", "Plug-Ins", "VST3"),
+                "/Library/Audio/Plug-Ins/VST3",
+                Path.Combine(home, "Library", "Audio", "Plug-Ins", "CLAP"),
+                "/Library/Audio/Plug-Ins/CLAP",
+            ];
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Common");
+            var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles);
+            return [Path.Combine(local, "VST3"), Path.Combine(common, "VST3"), Path.Combine(local, "CLAP"), Path.Combine(common, "CLAP")];
+        }
+
+        return
+        [
+            Path.Combine(home, ".vst3"),
+            "/usr/local/lib/vst3",
+            "/usr/lib/vst3",
+            Path.Combine(home, ".clap"),
+            "/usr/local/lib/clap",
+            "/usr/lib/clap",
+        ];
+    }
 
     /// <summary>Every module the last scan looked at, in folder order.</summary>
     public ImmutableArray<PluginModuleSummary> Modules
@@ -77,16 +133,64 @@ public sealed class PluginLibrary : IDisposable
     private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     /// <summary>
-    /// The module files in <see cref="Folders"/>: every file directly in each folder, by name, leaving out hidden files
-    /// (such as .DS_Store). Formats whose modules are bundles (directories) add them here.
+    /// The modules in <see cref="Folders"/>, by name: every file directly in each folder, leaving out hidden files (such
+    /// as .DS_Store); every VST3 or CLAP bundle (a <c>.vst3</c> or <c>.clap</c> directory); and, in subfolders (vendors
+    /// often install into one), the <c>.vst3</c> and <c>.clap</c> modules, files or bundles, up to <see cref="MaxDepth"/>
+    /// levels down. A bundle is a module, never searched inside.
     /// </summary>
     public IReadOnlyList<string> FindModules() =>
         [.. Folders
             .Where(Directory.Exists)
-            .SelectMany(folder => Directory.EnumerateFiles(folder).Order(StringComparer.Ordinal))
-            .Where(path => !Path.GetFileName(path).StartsWith('.'))
+            .SelectMany(folder => ModulesIn(folder, depth: 0))
             .Select(Path.GetFullPath)
             .Distinct(PathComparer)];
+
+    /// <summary>How many levels of subfolders are searched for VST3 and CLAP modules.</summary>
+    public const int MaxDepth = 3;
+
+    private static IEnumerable<string> ModulesIn(string folder, int depth)
+    {
+        IEnumerable<string> entries;
+        try
+        {
+            entries = [.. Directory.EnumerateFileSystemEntries(folder).Order(StringComparer.Ordinal)];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            yield break;
+        }
+
+        foreach (var entry in entries)
+        {
+            if (Path.GetFileName(entry).StartsWith('.'))
+            {
+                continue;
+            }
+
+            var isModule = IsPluginModuleName(entry);
+            if (Directory.Exists(entry))
+            {
+                if (isModule)
+                {
+                    yield return entry;
+                }
+                else if (depth < MaxDepth)
+                {
+                    foreach (var nested in ModulesIn(entry, depth + 1))
+                    {
+                        yield return nested;
+                    }
+                }
+            }
+            else if (depth == 0 || isModule)
+            {
+                yield return entry;
+            }
+        }
+    }
+
+    private static bool IsPluginModuleName(string path) =>
+        Path.GetExtension(path).Equals(".vst3", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(path).Equals(".clap", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Scans every module, using the scanner's cache and skipping quarantined modules: what the app does at start.</summary>
     public Task ScanAsync(Action<PluginScanProgress>? progress = null, CancellationToken cancellationToken = default) =>
@@ -179,6 +283,7 @@ public sealed class PluginLibrary : IDisposable
             var problem = failure.Kind switch
             {
                 ScanFailureKind.Malformed => $"Not a plugin module Bluestone can read: {failure.Message}",
+                ScanFailureKind.Unsupported => $"Cannot run here: {failure.Message}",
                 ScanFailureKind.ProtocolError => $"The scanner misbehaved: {failure.Message}",
                 _ => failure.Message,
             };
