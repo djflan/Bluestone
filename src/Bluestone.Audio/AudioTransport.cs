@@ -152,7 +152,8 @@ public sealed class AudioTransport
             wrapOffset = (int)(_loopEnd - _frame);
         }
 
-        var context = new AudioRenderContext(frames, sampleRate, _playing, _frame, _jumped, _tempo, wrapOffset, wrapOffset > 0 ? _loopStart : 0);
+        var looping = _loopEnd > _loopStart;
+        var context = new AudioRenderContext(frames, sampleRate, _playing, _frame, _jumped, _tempo, wrapOffset, wrapOffset > 0 ? _loopStart : 0, LoopStart: looping ? _loopStart : 0, LoopEnd: looping ? _loopEnd : 0);
         _jumped = false;
         return context;
     }

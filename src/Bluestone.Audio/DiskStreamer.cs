@@ -2,8 +2,9 @@ namespace Bluestone.Audio;
 
 /// <summary>
 /// The engine's disk thread: every few milliseconds (or when a graph is published) it lets each disk source of the
-/// current graph read ahead, and closes the files of sources that left the graph. The audio thread only reads
-/// buffers this thread has filled.
+/// current graph read ahead. It never closes a source that left the graph (whoever built the source closes it: a
+/// pass acting on an older graph must not close a source a newer graph reuses); it closes the sources of the last
+/// graph it served when the engine is disposed. The audio thread only reads buffers this thread has filled.
 /// </summary>
 internal sealed class DiskStreamer : IDisposable
 {
@@ -38,26 +39,16 @@ internal sealed class DiskStreamer : IDisposable
         _stop.Dispose();
     }
 
-    /// <summary>Services every source of <paramref name="graph"/>; closes sources in <paramref name="open"/> that are no longer in it.</summary>
-    public static void ServiceOnce(AudioGraph graph, HashSet<IStreamedSource> open)
+    /// <summary>Services every source of <paramref name="graph"/>; <paramref name="served"/> becomes its sources (to close on dispose).</summary>
+    public static void ServiceOnce(AudioGraph graph, HashSet<IStreamedSource> served)
     {
         foreach (var source in graph.Streams)
         {
             source.Service();
         }
 
-        var current = graph.Streams;
-        open.RemoveWhere(source =>
-        {
-            if (current.Contains(source))
-            {
-                return false;
-            }
-
-            source.Close();
-            return true;
-        });
-        open.UnionWith(current);
+        served.Clear();
+        served.UnionWith(graph.Streams);
     }
 
     private void Run()

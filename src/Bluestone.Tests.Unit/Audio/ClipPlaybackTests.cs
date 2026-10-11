@@ -147,6 +147,96 @@ public sealed class ClipPlaybackTests : IDisposable
     }
 
     [Fact]
+    public void ReplayingFromTheStart_AfterPlayingPastThePreload_HasNoUnderruns()
+    {
+        var samples = TestAudioFiles.Sine(96_000, 2, 1000, 48_000);
+        var path = TestAudioFiles.Wave(_directory, "k.wav", "float32", 48_000, 2, samples);
+        var (engine, driver) = Play(48_000, new AudioClipRegion(path, 0, 96_000, 0), preload: TimeSpan.FromSeconds(0.1), ring: TimeSpan.FromSeconds(0.25));
+        driver.Render(24_064, Block);
+
+        engine.Transport.Locate(0);
+        var output = driver.Render(24_000, Block);
+
+        Assert.Equal(0, ((ClipPlayerNode)engine.Graph.Nodes.Single()).UnderrunFrames);
+        AssertPlays(samples, output, Enumerable.Range(0, 24_000).Select(n => (long)n));
+        engine.Dispose();
+    }
+
+    [Fact]
+    public void ALoopAtTheClipStart_WrapsIntoThePreloadAndBeyond_WithoutUnderruns()
+    {
+        var samples = TestAudioFiles.Sine(96_000, 2, 1000, 48_000);
+        var path = TestAudioFiles.Wave(_directory, "l.wav", "float32", 48_000, 2, samples);
+        var (engine, driver) = Play(48_000, new AudioClipRegion(path, 0, 96_000, 0), preload: TimeSpan.FromSeconds(0.1), ring: TimeSpan.FromSeconds(0.25));
+
+        // 0.3 s loops: each pass plays the 0.1 s preload, then the ring; the loop end falls inside a block.
+        engine.Transport.SetLoop(0, 14_400);
+        var output = driver.Render(48_000, Block);
+
+        Assert.Equal(0, ((ClipPlayerNode)engine.Graph.Nodes.Single()).UnderrunFrames);
+        AssertPlays(samples, output, Enumerable.Range(0, 48_000).Select(n => (long)(n % 14_400)));
+        engine.Dispose();
+    }
+
+    [Fact]
+    public void ALoopStartingInsideALongClip_WrapsWithoutUnderruns_AndALoopMovedLaterToo()
+    {
+        var samples = TestAudioFiles.Sine(192_000, 2, 1000, 48_000);
+        var path = TestAudioFiles.Wave(_directory, "m.wav", "float32", 48_000, 2, samples);
+        var (engine, driver) = Play(48_000, new AudioClipRegion(path, 0, 192_000, 0), preload: TimeSpan.FromSeconds(0.1), ring: TimeSpan.FromSeconds(0.25));
+        var node = (ClipPlayerNode)engine.Graph.Nodes.Single();
+
+        // The seek lands outside every preload (silent until the disk delivers); the wraps after it must not.
+        engine.Transport.SetLoop(100_000, 110_000);
+        engine.Transport.Locate(95_000);
+        driver.Render(2048, Block);
+        var underruns = node.UnderrunFrames;
+        var output = driver.Render(40_960, Block);
+
+        Assert.Equal(underruns, node.UnderrunFrames);
+        AssertPlays(samples, output, Looped(97_048, 100_000, 110_000, 40_960));
+
+        engine.Transport.SetLoop(150_000, 160_000);
+        engine.Transport.Locate(146_000);
+        driver.Render(2048, Block);
+        underruns = node.UnderrunFrames;
+        output = driver.Render(40_960, Block);
+
+        Assert.Equal(underruns, node.UnderrunFrames);
+        AssertPlays(samples, output, Looped(148_048, 150_000, 160_000, 40_960));
+        engine.Dispose();
+    }
+
+    [Fact]
+    public void AResampledClip_WrappingToALoopStartInsideIt_PlaysWhatItPlaysWithoutTheLoop()
+    {
+        var path = TestAudioFiles.Wave(_directory, "n.wav", "pcm16", 44_100, 2, TestAudioFiles.Sine(176_400, 2, 1000, 44_100));
+        var region = new AudioClipRegion(path, 0, 192_000, 0);
+        var (reference, referenceDriver) = Play(48_000, region, preload: TimeSpan.FromSeconds(4));
+        var straight = referenceDriver.Render(110_000, Block);
+        reference.Dispose();
+        var (engine, driver) = Play(48_000, region, preload: TimeSpan.FromSeconds(0.1), ring: TimeSpan.FromSeconds(0.25));
+        var node = (ClipPlayerNode)engine.Graph.Nodes.Single();
+        engine.Transport.SetLoop(100_000, 110_000);
+        engine.Transport.Locate(95_000);
+        driver.Render(2048, Block);
+        var underruns = node.UnderrunFrames;
+
+        var output = driver.Render(40_000, Block);
+
+        Assert.Equal(underruns, node.UnderrunFrames);
+        var i = 0;
+        foreach (var frame in Looped(97_048, 100_000, 110_000, 40_000))
+        {
+            Assert.Equal(straight[2 * frame], output[2 * i], 6);
+            Assert.Equal(straight[(2 * frame) + 1], output[(2 * i) + 1], 6);
+            i++;
+        }
+
+        engine.Dispose();
+    }
+
+    [Fact]
     public void AMissingFile_IsReported_AndTheOtherClipsStillPlay()
     {
         var path = TestAudioFiles.Wave(_directory, "h.wav", "float32", 48_000, 1, TestAudioFiles.Sine(1000, 1, 1000, 48_000));
@@ -196,6 +286,29 @@ public sealed class ClipPlaybackTests : IDisposable
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
         engine.Dispose();
+    }
+
+    // Song frames heard from `from` on, wrapping from loopEnd to loopStart.
+    private static IEnumerable<long> Looped(long from, long loopStart, long loopEnd, int count)
+    {
+        var frame = from;
+        for (var i = 0; i < count; i++)
+        {
+            yield return frame;
+            frame = frame + 1 == loopEnd ? loopStart : frame + 1;
+        }
+    }
+
+    // Each output frame is exactly the stereo sample of the song (= source) frame listed for it.
+    private static void AssertPlays(double[] samples, float[] output, IEnumerable<long> frames)
+    {
+        var i = 0;
+        foreach (var frame in frames)
+        {
+            Assert.Equal((float)samples[2 * frame], output[2 * i]);
+            Assert.Equal((float)samples[(2 * frame) + 1], output[(2 * i) + 1]);
+            i++;
+        }
     }
 
     private static (AudioEngine Engine, OfflineAudioDriver Driver) Play(int rate, AudioClipRegion region, TimeSpan? preload = null, int? limitReading = null, TimeSpan? ring = null)

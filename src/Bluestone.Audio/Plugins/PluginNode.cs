@@ -7,7 +7,9 @@ namespace Bluestone.Audio.Plugins;
 /// A plugin instance (in its worker process) driven by the audio engine: every block it hands the instance the
 /// node's input audio, the scheduled events and parameter changes that fall in the block, and the transport, through
 /// <see cref="PluginInstance.ProcessBlock"/>. Plugins run every block, playing or not, so tails ring out. On a jump
-/// (start, stop, seek, loop wrap) and when its schedule is replaced, every note the node started is released first.
+/// (start, stop, seek, loop wrap) every note the node started is released first. When its schedule is replaced during
+/// playback, the notes the new schedule still holds at the play position keep sounding and the others are released
+/// (a note the new schedule starts before the play position is not started late).
 /// The instance's failure policy decides the output when the worker cannot deliver: silence, never stale audio.
 /// The output lags by <see cref="LatencyFrames"/> (pipelining plus the plugin's own latency); the graph compensates
 /// (ADR 0035). Live input reaches the instrument through <see cref="LiveSource"/>, at the next block.
@@ -90,9 +92,13 @@ public sealed class PluginNode : AudioNode
         var request = _instance.Request;
         var count = 0;
         var schedule = Volatile.Read(ref _schedule);
-        if (context.Jumped || !ReferenceEquals(schedule, _cursorSchedule) || context.SongFrame != _expectedFrame)
+        if (context.Jumped || context.SongFrame != _expectedFrame)
         {
             count = Relocate(schedule, context.SongFrame, 0, count);
+        }
+        else if (!ReferenceEquals(schedule, _cursorSchedule))
+        {
+            count = Replace(schedule, context.SongFrame, count);
         }
 
         if (context.Playing)
@@ -154,6 +160,25 @@ public sealed class PluginNode : AudioNode
     private int Relocate(PluginSchedule schedule, long songFrame, int offset, int count)
     {
         count = ReleaseSounding(count, offset);
+        _cursorSchedule = schedule;
+        _nextEvent = schedule.FirstEventAt(songFrame);
+        _nextParameter = schedule.FirstParameterAt(songFrame);
+        return count;
+    }
+
+    // Takes a new schedule at a continuous song position: notes it still holds there keep sounding (their note-offs come
+    // from it), the others are released.
+    private int Replace(PluginSchedule schedule, long songFrame, int count)
+    {
+        for (var slot = 0; slot < NoteSlots && count < _events.Length; slot++)
+        {
+            if (_sounding[slot] && !schedule.Sounds(slot, songFrame))
+            {
+                _sounding[slot] = false;
+                _events[count++] = PluginEvent.NoteOff(0, slot >> 7, slot & 127);
+            }
+        }
+
         _cursorSchedule = schedule;
         _nextEvent = schedule.FirstEventAt(songFrame);
         _nextParameter = schedule.FirstParameterAt(songFrame);
@@ -237,13 +262,9 @@ public sealed class PluginNode : AudioNode
 
     private void Track(in PluginEvent e)
     {
-        if (e.Kind == PluginEventKind.NoteOn && e.Data2 > 0)
+        if (e.Kind is PluginEventKind.NoteOn or PluginEventKind.NoteOff)
         {
-            _sounding[(e.Channel << 7) | e.Data1] = true;
-        }
-        else if (e.Kind == PluginEventKind.NoteOff || (e.Kind == PluginEventKind.NoteOn && e.Data2 == 0))
-        {
-            _sounding[(e.Channel << 7) | e.Data1] = false;
+            _sounding[PluginSchedule.SlotOf(e)] = PluginSchedule.IsNoteOn(e);
         }
     }
 }

@@ -230,6 +230,46 @@ public sealed class ProjectAudioGraphTests : IDisposable
         Assert.False(((ClipPlayerNode)again.Graph.Nodes.Single()).IsClosed);
     }
 
+    [Fact]
+    public void ANodeReusedByANewBuild_IsNotClosedByADiskPassOverAnOlderGraph()
+    {
+        // A three-second clip: it streams past its one-second preload.
+        var long_ = TestAudioFiles.Sine(Rate * 3, 1, 1000, Rate);
+        TestAudioFiles.Wave(_directory, "long.wav", "float32", Rate, 1, long_);
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var clip = new AudioClip(ClipId.New(), new Tick(0), new TickSpan(2880), new TickSpan(0), new AudioSource("long.wav", Rate, Rate * 3, 1));
+        var playing = project with { Sequence = project.Sequence.WithTrack(track.RemoveClip(track.Clips[0].Id).WithClip(clip)) };
+        var muted = playing with { Sequence = playing.Sequence.WithTrack(playing.Sequence.FindTrack(track.Id)!.WithMuted(true)) };
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(Build(playing).Graph);
+        engine.ServiceStreams();
+        var node = Assert.IsType<ClipPlayerNode>(engine.Graph.Nodes.Single());
+
+        // Muted, then unmuted: the new build reuses the node. A disk pass that read the muted graph runs before the
+        // new graph is published.
+        engine.Publish(Build(muted).Graph);
+        var unmuted = Build(playing).Graph;
+        engine.ServiceStreams();
+        engine.Publish(unmuted);
+        engine.Transport.Play(0);
+        var output = Left(new OfflineAudioDriver(engine).Render(Rate * 2, Block));
+
+        Assert.Same(node, unmuted.Nodes.Single());
+        Assert.False(node.IsClosed);
+        Assert.Equal(0, node.UnderrunFrames);
+        for (var n = 0; n < Rate * 2; n += 97)
+        {
+            Assert.Equal(long_[n], output[n], 6);
+        }
+
+        engine.Dispose();
+        graphs.Dispose();
+        Assert.True(node.IsClosed);
+
+        ProjectAudioGraphResult Build(Project p) => graphs.Build(p, SignalGraph.Evaluate(p, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)

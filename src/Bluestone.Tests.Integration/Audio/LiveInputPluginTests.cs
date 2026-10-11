@@ -166,6 +166,63 @@ public sealed class LiveInputPluginTests
         Assert.Contains(rig.Driver.Render(10 * Block, Block), s => s != 0f);
     }
 
+    [Fact]
+    public async Task TwoTracksPlayingOnePluginInstrument_AreBothHeard_InTurnAndTogether()
+    {
+        // Track A has no instrument; its events go to track Z, which holds the Reference Sine.
+        await using var host = new PluginTestHost();
+        var session = new ProjectSession();
+        var clock = new VirtualClock(Origin);
+        var a = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Keys", []);
+        var z = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Synth", []);
+        var sine = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());
+        var project = session.Project with
+        {
+            Sequence = new Sequence(TempoMap.Constant(new Ppqn(480), Tempo.Default), MeterMap.Constant(new Ppqn(480), TimeSignature.CommonTime), [a, z], []),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Events, SignalNode.Track(a.Id), SignalNode.Track(z.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(z.Id), SignalNode.Master),
+            ],
+        };
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(z.Id)) with { Devices = [sine] });
+        session.Execute(new ProjectCommand("Set up", _ => project));
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Sine], Rate, Block);
+        await bridge.SyncAsync(session.Project, Ct);
+        host.Track(bridge.InstanceOf(sine.Id)!);
+        var devices = bridge.Extend(DeviceCatalog.BuiltIn);
+        using var playback = new PlaybackEngine(clock, project.Sequence.TempoMap);
+        using var live = new LiveInput(playback, clock);
+        live.UsePlugins(bridge.InstanceOf);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        var driver = new OfflineAudioDriver(engine, serviceStreams: false);
+        using var graphs = new ProjectAudioGraph(Rate, Block, bridge.InstanceOf);
+        var result = graphs.Build(session.Project, SignalGraph.Evaluate(session.Project, devices), devices, null);
+        engine.Publish(result.Graph);
+        live.Update(session.Project, devices, (_, _) => null, new Dictionary<EndpointId, IMidiOutput>());
+        live.UseInstruments(graphs.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);
+        var channel = MidiChannel.FromIndex(0);
+        float Peak() => Left(driver.Render(8 * Block, Block))[(4 * Block)..].Max();
+        float Play(TrackId track, int note, int velocity)
+        {
+            Assert.True(live.Post(track, ChannelMessage.NoteOn(channel, new NoteNumber(note), new Velocity(velocity)), clock.Now));
+            var peak = Peak();
+            live.Post(track, ChannelMessage.NoteOff(channel, new NoteNumber(note), Velocity.DefaultRelease), clock.Now);
+            driver.Render(8 * Block, Block);
+            return peak;
+        }
+
+        Assert.True(Play(a.Id, 60, 127) > 0.2f);
+        Assert.True(Play(z.Id, 64, 127) > 0.2f);
+        Assert.True(Play(a.Id, 67, 127) > 0.2f);
+        Assert.All(driver.Render(4 * Block, Block), s => Assert.Equal(0f, s));
+
+        // Together: A at velocity 127 (peak 0.25) and Z at 64 (peak about 0.126).
+        live.Post(a.Id, ChannelMessage.NoteOn(channel, new NoteNumber(60), new Velocity(127)), clock.Now);
+        live.Post(z.Id, ChannelMessage.NoteOn(channel, new NoteNumber(72), new Velocity(64)), clock.Now);
+        Assert.True(Peak() > 0.3f);
+    }
+
     private static void Pump(PlaybackController controller, VirtualClock clock, int milliseconds)
     {
         for (var i = 0; i < milliseconds; i++)
@@ -249,7 +306,7 @@ public sealed class LiveInputPluginTests
             var result = _graphs.Build(project, SignalGraph.Evaluate(project, Devices), Devices, null);
             Engine.Publish(result.Graph);
             Live.Update(project, Devices, (_, _) => null, new Dictionary<EndpointId, IMidiOutput>());
-            Live.UseInstruments(_graphs.PluginNodes, node => result.Graph.CompensationOf(node) ?? 0);
+            Live.UseInstruments(_graphs.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);
         }
 
         public async ValueTask DisposeAsync()

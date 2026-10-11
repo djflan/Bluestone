@@ -455,8 +455,9 @@ public sealed class ProjectAudioGraph : IDisposable
                 return null;
             }
 
-            // Only the gain or fades changed: the node keeps its streams. Anything else (or a node the engine closed
-            // while the track was silent) opens the clips again.
+            // Only the gain or fades changed: the node keeps its streams. Anything else (or a node closed elsewhere)
+            // opens the clips again. The engine never closes a node that leaves its graph, so a node kept for a muted
+            // track is still open when the track plays again.
             var entry = owner._clips.GetValueOrDefault(track.Id);
             if (entry is not null && !entry.Node.IsClosed && entry.Regions.Length == regions.Length && entry.Regions.Zip(regions).All(p => p.First.SameStream(p.Second)))
             {
@@ -523,7 +524,13 @@ public sealed class ProjectAudioGraph : IDisposable
 
             var feed = signal.SoftwareInstruments.FirstOrDefault(f => f.Device == device.Id);
             var parameters = signal.Parameters.FirstOrDefault(f => f.Device == device.Id);
-            node.Schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
+            // An unchanged schedule keeps its instance: replacing it would make the node look for notes to release.
+            var schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
+            if (!schedule.HasSameContent(node.Schedule))
+            {
+                node.Schedule = schedule;
+            }
+
             _latency[device.Id] = node.LatencyFrames;
             return node;
         }

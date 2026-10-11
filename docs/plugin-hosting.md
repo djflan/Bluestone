@@ -567,8 +567,10 @@ unchanged with a reason, and a restart brings the transposition back.
 When an audio device is open (ADR 0032), each plugin instrument or audio effect in a chain whose audio is connected
 somewhere becomes a `PluginNode` in the render graph. Every block it calls `ProcessBlock` with the chain's audio so far
 (effects), the software-instrument feed's events and the device's automation scheduled in that block, and the
-transport; plugins run every block, playing or not. On a start, stop, seek, loop wrap, or a new schedule after an
-edit, the notes the node started are released first. A worker that fails gives silence under the instance's failure
+transport; plugins run every block, playing or not. On a start, stop, seek, or loop wrap, the notes the node started
+are released first. An edit that changes the schedule releases only the notes the new schedule no longer holds at the
+play position; an edit that leaves it unchanged (a fader, a send, a clip gain) keeps it, so held notes sound on
+(`AudioPluginTests.ReplacingTheSchedule_*`, `SoftwareInstrumentAudioTests.AMixerEdit_*`). A worker that fails gives silence under the instance's failure
 policy, never stale audio, and the engine carries on (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`). Each
 node's latency (`ReportedLatencyFrames`) is compensated across the graph (see below). Instances must run
 at the device's rate and accept the engine's block size, or they are reported and left silent; each time an audio
@@ -591,7 +593,8 @@ restarted plugin). The reference plugin `reference.delay` delays its input by ex
 announces a change when its Latency parameter or state is set, so this is tested sample by sample with real workers
 (`DelayCompensationTests`: two paths with different plugin latencies impulse-aligned at the master, realigned after a
 latency change; a send to a return with a latent plugin aligned with the dry channel). Low-latency monitoring skips
-the compensation of the instrument played live.
+the compensation of the instrument played live all the way to the master; the channels, buses, and returns it passes
+through delay their other inputs instead, so those stay aligned.
 
 ### Live input through plugins
 

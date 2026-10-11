@@ -95,7 +95,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         Statistics.Record(Stopwatch.GetTimestamp() - started, frames, SampleRate, block.Discontinuity);
     }
 
-    /// <summary>Stops the disk streamer and closes the files of the disk sources it served.</summary>
+    /// <summary>Stops the disk streamer and closes the files of the disk sources of the last graph it served.</summary>
     public void Dispose()
     {
         _streamer?.Dispose();

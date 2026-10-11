@@ -45,11 +45,14 @@ built-in devices, and plugin delay compensation, in scope for this epic.
   not reference the application): input is queued lock-free and goes into the next block at its first frame;
   generated events (arpeggio steps) land on their own frame. Any other route runs on the thread that posts the input,
   so MIDI thru stays immediate, and on a live thread every millisecond for what happens later (arpeggio steps,
-  plugin effect blocks of 64 frames). One thread processes a route at a time.
+  plugin effect blocks of 64 frames). One thread processes a route at a time. Several tracks can play one plugin
+  instrument at once (a track whose events go to the track holding it, and that track): the node's live source is a
+  `LiveSourceSet` of every route that ends there, rendered in turn. A route's input queue holds at most 4096 events;
+  more are dropped and counted.
 - **Nothing hangs.** The target keeps the notes it sounds and sends a release only for a note that sounds. When a
   route changes (a device added, removed, bypassed, or edited; a connection; the target), the old route releases
-  every note it sounds before the new one takes over (on the audio thread for plugin instruments: the node asks the
-  source it replaces). A plugin effect whose worker dies releases what it put out. Panic releases every live note.
+  every note it sounds before the new one takes over (on the audio thread for plugin instruments: the set asks the
+  route it drops). A plugin effect whose worker dies releases what it put out. Panic releases every live note.
   A key released after its route changed finds nothing sounding and sends nothing.
 - **Recording records the input**, before any device, as before. The devices run again when the take plays, so
   recording their output would apply them twice. Recording the processed output is not offered; it would need a
@@ -84,7 +87,10 @@ built-in devices, and plugin delay compensation, in scope for this epic.
   (`LiveInputPluginTests`: a key played 5 ms before the next block is heard sounds two pipeline blocks after that
   block, through a real plugin MIDI effect and instrument, and the latency meter reports exactly that).
 - `LiveInput.Latency` measures every live note into a plugin instrument (input timestamp to heard, the plugins'
-  latency and compensation included); the Audio window shows it.
+  latency and compensation included); the Audio window shows it. After the instrument it counts everything on the
+  way to the master (`AudioGraph.DelayToMasterOf`): compensation delays at every channel and bus, and the latency of
+  plugin effects after the instrument (before 2026-10-11 it counted only the delay on the instrument's own output
+  and under-reported).
 
 ### Plugin delay compensation
 
@@ -104,10 +110,15 @@ built-in devices, and plugin delay compensation, in scope for this epic.
   reference plugins gained `reference.delay`, which delays its input by exactly the latency it reports and announces
   changes, so compensation is tested sample by sample with real workers.
 - **Low-latency monitoring** (an Audio setting, off by default, as in other hosts): the plugin instrument the
-  monitored track plays live is not delayed for compensation on its way to the first mixer channel or the master,
-  and does not hold the others back; buses and returns after that stay compensated. Its own playback is then early
-  against the other tracks by the compensation it skips, while it is monitored. Recording is not affected: it uses
-  input timestamps.
+  monitored track plays live (and the plugin effects after it) is not delayed for compensation anywhere on its way to
+  the master, and does not hold the others back, so it is heard after its own latency. A mixer channel, bus, or
+  return it passes through cannot delay its output without delaying the instrument, so it delays its other inputs to
+  the graph's latency on the way in instead: everything else (the track's clips, the other channels on the bus)
+  stays aligned (`LatencyCompensationTests.AMonitoredInstrument_Through*`). Audio that goes through the same plugin
+  effects as the instrument is early with it. The instrument's own playback is early against the other tracks by
+  the compensation it skips, while it is monitored. Recording is not affected: it uses input timestamps.
+  (Before 2026-10-11 the channel after the instrument delayed its output to the graph's latency, so the monitored
+  instrument was heard later than without monitoring.)
 
 ## Consequences
 

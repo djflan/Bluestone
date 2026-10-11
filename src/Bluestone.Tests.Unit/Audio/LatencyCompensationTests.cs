@@ -183,7 +183,68 @@ public sealed class LatencyCompensationTests
         Assert.Equal(30, graph.LatencyFrames);
         Assert.Equal([30, 70], Impulses(left));
         Assert.Equal(2f, left[30]);
-        Assert.Equal(0, graph.CompensationOf(graph.Nodes.OfType<LatentNode>().Single(n => n.Latency == 70)));
+        Assert.Equal(0, graph.DelayToMasterOf(graph.Nodes.OfType<LatentNode>().Single(n => n.Latency == 70)));
+    }
+
+    [Fact]
+    public void AMonitoredInstrument_ThroughItsChannelABusAndAReturn_IsHeardAfterItsOwnLatency_AndTheRestStaysAligned()
+    {
+        // Channel T: the monitored instrument (128) and a clip; T → bus B, and a send to return R. Channel V: a clip,
+        // into B. Channel U: a 480-frame plugin and a clip, to the master, and a send to R.
+        var builder = new AudioGraphBuilder();
+        var t = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var v = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var u = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var bus = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var ret = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var instrument = Path(builder, latency: 128);
+        builder.Monitor(instrument);
+        builder.ConnectToStrip(instrument, t);
+        builder.ConnectToStrip(builder.AddNode(new ImpulseNode()), t);
+        builder.ConnectToStrip(builder.AddNode(new ImpulseNode()), v);
+        builder.ConnectToStrip(Path(builder, latency: 480), u);
+        builder.ConnectToStrip(builder.AddNode(new ImpulseNode()), u);
+        builder.RouteStrip(t, bus);
+        builder.RouteStrip(v, bus);
+        builder.SendStrip(t, ret, 0, preFader: true);
+        builder.SendStrip(u, ret, 0, preFader: true);
+        var graph = builder.Build(Block, new MixerStripState());
+
+        var left = Left(Render(graph, 1024));
+
+        Assert.Equal(480, graph.LatencyFrames);
+        Assert.Equal([128, 480], Impulses(left));
+
+        // The instrument through B and R; T's clip through B and R, V's clip, and U's plugin and clip, direct and through R.
+        Assert.Equal(2f, left[128]);
+        Assert.Equal(7f, left[480]);
+    }
+
+    [Theory]
+    [InlineData(false, 236)]
+    [InlineData(true, 50)]
+    public void DelayToMasterOf_AnInstrument_IsEverythingBetweenItsOutputAndTheMaster(bool monitor, int expected)
+    {
+        // Instrument (64) → effect (50) → channel → master, and a slower path (300) through another channel. Unmonitored,
+        // the instrument is heard 300 frames after its input: 64 its own, 50 the effect's, 186 compensation.
+        var builder = new AudioGraphBuilder();
+        var channel = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var other = builder.AddStrip(new MixerStripState(), new MixerStripSettings());
+        var instrument = Path(builder, latency: 64);
+        var effect = builder.AddNode(new LatentNode(50));
+        builder.Connect(instrument, effect);
+        builder.ConnectToStrip(effect, channel);
+        builder.ConnectToStrip(Path(builder, latency: 300), other);
+        if (monitor)
+        {
+            builder.Monitor(instrument);
+        }
+
+        var graph = builder.Build(Block, new MixerStripState());
+        var node = graph.Nodes.OfType<LatentNode>().Single(n => n.Latency == 64);
+
+        Assert.Equal(expected, graph.DelayToMasterOf(node));
+        Assert.Equal(64 + expected, Impulses(Left(Render(graph, 1024)))[0]);
     }
 
     [Fact]

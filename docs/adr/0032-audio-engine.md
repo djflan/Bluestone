@@ -67,15 +67,21 @@ and in the worst case within the buffer period; garbage-collection pauses during
 - Streaming: the first second of each clip is decoded when the graph is built (starts never wait for the disk);
   a disk-streamer thread keeps a 4-second ring per clip filled ahead of the play position. The audio thread never
   reads a file; data that is late plays as silence and is counted (`UnderrunFrames`), never as other audio. Seeking
-  into a clip beyond its preload is silent until the ring has the data (a few milliseconds).
+  into a clip beyond its preload is silent until the ring has the data (a few milliseconds). On every jump or loop
+  wrap the ring is asked for the first frame no preload holds from the new position, so playing the start again
+  never waits. When the loop starts inside a clip, the disk thread also decodes one preload length at the loop start
+  (again when the loop moves), so wraps are seamless. The audio thread does not wake the disk thread (that is a
+  system call); the disk thread polls every 5 ms, less than one 256-frame block at 48 kHz.
 - A clip's source plays at its own rate from the song time of its origin, at the clip's gain and with its fades (see
   below); there are no clip loops. A missing or unreadable file is a problem in the graph result, never an exception.
 
 ### Plugins and the project
 
 - `PluginNode` drives a `PluginInstance` each block: input audio, the events and parameter changes scheduled in the
-  block, the transport. Plugins run every block, playing or not. On a jump (start, stop, seek, loop wrap) and when the
-  schedule is replaced, notes the node started are released. A worker failure gives silence (the instance's
+  block, the transport. Plugins run every block, playing or not. On a jump (start, stop, seek, loop wrap), notes the
+  node started are released. When the schedule is replaced during playback, notes the new schedule still holds at
+  the play position keep sounding and the others are released; a rebuild that does not change a device's events,
+  automation, or their frames (a fader move, a send, a clip gain) keeps its schedule. A worker failure gives silence (the instance's
   failure policy), never stale audio. `LatencyFrames` (pipelining plus the plugin's own) is reported per device in
   `ProjectAudioGraphResult.LatencyFrames`; nothing compensates yet.
 - `ProjectAudioGraph` (Application) builds the graph from the project: a chain's audio starts with the owner's
@@ -216,8 +222,10 @@ not force collections, so this is a bound, not the expected case.
 
 The project graph owns the clip nodes it opens. A node it replaces (a clip moved or trimmed) is closed at the next
 build, when the graph that replaced it is the one playing; disposing the project graph (when audio stops) closes
-the rest. Closing is idempotent and serialized with disk reads, so the engine's disk thread closing the same node
-is harmless, and a node the disk thread closed while its track was silent is opened again when the track plays. A
+the rest. It is the only owner: the engine's disk thread stops reading a node that leaves the graph but does not
+close it (a pass acting on an older graph once closed a node a newer build had just reused, leaving the track silent
+after its preload); a disposed engine closes the nodes of its last graph. Closing is idempotent and serialized with
+disk reads. A node kept for a muted track stays open, so the track plays again at once. A
 file that fails while streaming (deleted, or its disk gone) plays as silence and is counted; it no longer stops
 the disk thread.
 
