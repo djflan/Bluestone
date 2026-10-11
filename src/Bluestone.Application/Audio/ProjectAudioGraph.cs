@@ -523,7 +523,13 @@ public sealed class ProjectAudioGraph : IDisposable
 
             var feed = signal.SoftwareInstruments.FirstOrDefault(f => f.Device == device.Id);
             var parameters = signal.Parameters.FirstOrDefault(f => f.Device == device.Id);
-            node.Schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
+            // An unchanged schedule keeps its instance: replacing it would make the node look for notes to release.
+            var schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
+            if (!schedule.HasSameContent(node.Schedule))
+            {
+                node.Schedule = schedule;
+            }
+
             _latency[device.Id] = node.LatencyFrames;
             return node;
         }

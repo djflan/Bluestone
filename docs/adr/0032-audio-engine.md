@@ -74,8 +74,10 @@ and in the worst case within the buffer period; garbage-collection pauses during
 ### Plugins and the project
 
 - `PluginNode` drives a `PluginInstance` each block: input audio, the events and parameter changes scheduled in the
-  block, the transport. Plugins run every block, playing or not. On a jump (start, stop, seek, loop wrap) and when the
-  schedule is replaced, notes the node started are released. A worker failure gives silence (the instance's
+  block, the transport. Plugins run every block, playing or not. On a jump (start, stop, seek, loop wrap), notes the
+  node started are released. When the schedule is replaced during playback, notes the new schedule still holds at
+  the play position keep sounding and the others are released; a rebuild that does not change a device's events,
+  automation, or their frames (a fader move, a send, a clip gain) keeps its schedule. A worker failure gives silence (the instance's
   failure policy), never stale audio. `LatencyFrames` (pipelining plus the plugin's own) is reported per device in
   `ProjectAudioGraphResult.LatencyFrames`; nothing compensates yet.
 - `ProjectAudioGraph` (Application) builds the graph from the project: a chain's audio starts with the owner's

@@ -57,6 +57,33 @@ public sealed class SoftwareInstrumentAudioTests
     }
 
     [Fact]
+    public async Task AMixerEdit_WhileANoteIsHeld_KeepsTheSchedule_AndTheNoteSounding()
+    {
+        await using var host = new PluginTestHost();
+        var (session, device, channel) = InstrumentProject(noteTicks: 1920);
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Sine], Rate, Block);
+        await bridge.SyncAsync(session.Project, Ct);
+        host.Track(bridge.InstanceOf(device.Id)!);
+        var devices = bridge.Extend(DeviceCatalog.BuiltIn);
+        using var graphs = new ProjectAudioGraph(Rate, Block, bridge.InstanceOf);
+        var project = session.Project;
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(graphs.Build(project, SignalGraph.Evaluate(project, devices), devices, null).Graph);
+        engine.Transport.Play(0);
+        var driver = new OfflineAudioDriver(engine);
+        driver.Render(Rate, Block);
+        var schedule = graphs.PluginNodeOf(device.Id)!.Schedule;
+
+        // The note sounds from 0.5 s to 2.5 s; a fader move at 1 s rebuilds the graph.
+        var quieter = project with { Mixer = project.Mixer.With(channel with { GainDecibels = -1 }) };
+        engine.Publish(graphs.Build(quieter, SignalGraph.Evaluate(quieter, devices), devices, null).Graph);
+        var after = driver.Render(Rate / 2, Block).Where((_, i) => i % 2 == 0).ToArray();
+
+        Assert.All(after.Chunk(Block), block => Assert.True(block.Max() > 0.2f));
+        Assert.Same(schedule, graphs.PluginNodeOf(device.Id)!.Schedule);
+    }
+
+    [Fact]
     public async Task APluginRunningAtAnotherRate_IsReported_AndLeftSilent()
     {
         await using var host = new PluginTestHost();
@@ -72,10 +99,10 @@ public sealed class SoftwareInstrumentAudioTests
         Assert.Empty(result.Graph.Nodes);
     }
 
-    private static (ProjectSession Session, DeviceInstance Device, MixerChannel Channel) InstrumentProject()
+    private static (ProjectSession Session, DeviceInstance Device, MixerChannel Channel) InstrumentProject(long noteTicks = 480)
     {
         var session = new ProjectSession();
-        var note = new NoteEvent(new Tick(480), new TickSpan(480), MidiChannel.FromIndex(0), new NoteNumber(69), new Velocity(127));
+        var note = new NoteEvent(new Tick(480), new TickSpan(noteTicks), MidiChannel.FromIndex(0), new NoteNumber(69), new Velocity(127));
         var track = Track.FromEvents(TrackId.New(), "Lead", [note]);
         var device = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());
         var channel = MixerChannel.Create("Lead");

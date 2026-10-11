@@ -104,6 +104,32 @@ public sealed class AudioPluginTests
     }
 
     [Fact]
+    public async Task ReplacingTheSchedule_KeepsTheNotesItStillHolds_AndReleasesTheOthers()
+    {
+        await using var host = new PluginTestHost();
+        var sine = await host.CreateRunningAsync(new PluginInstanceRequest(Sine, Rate, Block, 0, 2));
+        ScheduledEvent[] held = [new(0, PluginEvent.NoteOn(0, 0, 60, 127)), new(Rate * 10, PluginEvent.NoteOff(0, 0, 60))];
+        ScheduledEvent[] other = [new(0, PluginEvent.NoteOn(0, 0, 64, 64)), new(Rate * 10, PluginEvent.NoteOff(0, 0, 64))];
+        var node = new PluginNode(sine, "Sine", Block) { Schedule = new PluginSchedule([.. held, .. other], []) };
+        using var engine = Engine(node, out _);
+        engine.Transport.Play(0);
+        var driver = new OfflineAudioDriver(engine);
+        Assert.True(Left(driver.Render(Block * 20, Block))[(Block * 10)..].Max() > 0.3f);
+
+        // Note 64 is gone and a later note was added; note 60 (peak 0.25) still holds at the play position.
+        node.Schedule = new PluginSchedule([.. held, new(Rate * 20, PluginEvent.NoteOn(0, 0, 67, 127)), new(Rate * 21, PluginEvent.NoteOff(0, 0, 67))], []);
+        var kept = Left(driver.Render(Block * 20, Block))[(Block * 4)..];
+
+        Assert.InRange(kept.Max(), 0.24f, 0.26f);
+        Assert.All(kept.Chunk(Block), block => Assert.True(block.Max() > 0.2f));
+
+        // A schedule without note 60 at the play position releases it.
+        node.Schedule = new PluginSchedule([new(Rate * 20, PluginEvent.NoteOn(0, 0, 67, 127)), new(Rate * 21, PluginEvent.NoteOff(0, 0, 67))], []);
+        driver.Render(Block * 4, Block);
+        Assert.All(driver.Render(Block * 8, Block), s => Assert.Equal(0f, s));
+    }
+
+    [Fact]
     public async Task Rendering_APluginInstrument_AllocatesNothing()
     {
         await using var host = new PluginTestHost();
@@ -131,6 +157,8 @@ public sealed class AudioPluginTests
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
+
+    private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private static PluginSchedule Note(int note, long from, long to) =>
         new([new ScheduledEvent(from, PluginEvent.NoteOn(0, 0, note, 127)), new ScheduledEvent(to, PluginEvent.NoteOff(0, 0, note))], []);

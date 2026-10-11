@@ -567,8 +567,10 @@ unchanged with a reason, and a restart brings the transposition back.
 When an audio device is open (ADR 0032), each plugin instrument or audio effect in a chain whose audio is connected
 somewhere becomes a `PluginNode` in the render graph. Every block it calls `ProcessBlock` with the chain's audio so far
 (effects), the software-instrument feed's events and the device's automation scheduled in that block, and the
-transport; plugins run every block, playing or not. On a start, stop, seek, loop wrap, or a new schedule after an
-edit, the notes the node started are released first. A worker that fails gives silence under the instance's failure
+transport; plugins run every block, playing or not. On a start, stop, seek, or loop wrap, the notes the node started
+are released first. An edit that changes the schedule releases only the notes the new schedule no longer holds at the
+play position; an edit that leaves it unchanged (a fader, a send, a clip gain) keeps it, so held notes sound on
+(`AudioPluginTests.ReplacingTheSchedule_*`, `SoftwareInstrumentAudioTests.AMixerEdit_*`). A worker that fails gives silence under the instance's failure
 policy, never stale audio, and the engine carries on (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`). Each
 node's latency (`ReportedLatencyFrames`) is compensated across the graph (see below). Instances must run
 at the device's rate and accept the engine's block size, or they are reported and left silent; each time an audio
