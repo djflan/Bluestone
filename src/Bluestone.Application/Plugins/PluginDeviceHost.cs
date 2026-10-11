@@ -15,11 +15,15 @@ using WorkerParameterValue = Bluestone.Plugins.Protocol.ParameterValue;
 
 namespace Bluestone.Application.Plugins;
 
+/// <summary>A parameter a plugin changed itself, for the device that hosts it.</summary>
+public sealed record PluginParameterEdit(DeviceId Device, uint ParameterId, double Value);
+
 /// <summary>A plugin device's run-time status, in words for the device strip.</summary>
 /// <param name="Text">"Running", "Crashed", "Not installed", …</param>
 /// <param name="NeedsAttention">The musician should know: the device is not doing its job.</param>
 /// <param name="CanRestart">A restart (or reload) can be asked for now.</param>
-public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart);
+/// <param name="CanOpenEditor">The plugin is a running VST3 or CLAP plugin, whose editor can be asked for.</param>
+public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart, bool CanOpenEditor = false);
 
 /// <summary>
 /// Connects the project's plugin devices to plugin instances in worker processes (ADR 0025). The project
@@ -33,9 +37,15 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 {
     public const string DefinitionPrefix = "plugin:";
 
+    // Values closer than this are the same: the project stores 32-bit fractions, plugins often 32-bit floats.
+    private const double ParameterTolerance = 1e-6;
+
     private readonly PluginHostManager _manager;
     private readonly ProjectSession _session;
     private volatile ImmutableDictionary<DeviceDefinitionId, PluginIdentity> _plugins;
+    private volatile ImmutableDictionary<PluginIdentity, string> _modulePaths = ImmutableDictionary<PluginIdentity, string>.Empty;
+    private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginParameterEditedEventArgs>> _editHandlers = new();
+    private readonly ConcurrentDictionary<DeviceId, EventHandler<NotificationKind>> _changeHandlers = new();
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
@@ -55,8 +65,17 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
     /// <summary>A bridge whose available plugins follow <paramref name="library"/>: after every scan, rescan, or retry.</summary>
     public PluginDeviceHost(PluginHostManager manager, ProjectSession session, PluginLibrary library, double sampleRate = 48_000, int maxBlockFrames = 256)
-        : this(manager, session, (library ?? throw new ArgumentNullException(nameof(library))).Available, sampleRate, maxBlockFrames) =>
-        library.Changed += (_, _) => SetAvailable(library.Available);
+        : this(manager, session, (library ?? throw new ArgumentNullException(nameof(library))).Available, sampleRate, maxBlockFrames)
+    {
+        _modulePaths = library.ModulePaths;
+        library.Changed += (_, _) => SetAvailable(library.Available, library.ModulePaths);
+    }
+
+    /// <summary>
+    /// The plugin changed a parameter itself (in its editor, or by loading one of its presets). Raised on any thread;
+    /// pass it to <see cref="RecordEdit"/> on the UI thread so the project, the authority, holds the value.
+    /// </summary>
+    public event EventHandler<PluginParameterEdit>? ParameterEdited;
 
     /// <summary>Raised when a device's plugin status changes; the argument is the device.</summary>
     public event EventHandler<DeviceId>? StatusChanged;
@@ -68,12 +87,71 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     /// </summary>
     public event EventHandler? AvailableChanged;
 
-    /// <summary>Replaces the available plugins, for example after a rescan.</summary>
-    public void SetAvailable(IEnumerable<PluginIdentity> available)
+    /// <summary>
+    /// Replaces the available plugins, for example after a rescan. <paramref name="modulePaths"/> gives the module each
+    /// third-party plugin is loaded from; the built-in reference plugins need none.
+    /// </summary>
+    public void SetAvailable(IEnumerable<PluginIdentity> available, ImmutableDictionary<PluginIdentity, string>? modulePaths = null)
     {
         ArgumentNullException.ThrowIfNull(available);
+        _modulePaths = modulePaths ?? ImmutableDictionary<PluginIdentity, string>.Empty;
         _plugins = available.DistinctBy(DefinitionIdOf).ToImmutableDictionary(DefinitionIdOf, p => p);
         AvailableChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Stores a parameter the plugin changed itself in the project (one undo step per parameter while it keeps moving).</summary>
+    public void RecordEdit(PluginParameterEdit edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        if (_session.Project.FindDevice(edit.Device) is not null && _instances.TryGetValue(edit.Device, out var instance)
+            && instance.Parameters.Any(p => p.Id == edit.ParameterId && p.IsUserFacing))
+        {
+            _session.Execute(DeviceCommands.SetParameter(edit.Device, new ParameterId(edit.ParameterId), ControlValue.FromFraction(edit.Value)));
+        }
+    }
+
+    /// <summary>Whether the device's plugin is running with its editor window open.</summary>
+    public bool IsEditorOpen(DeviceId device) => _instances.TryGetValue(device, out var instance) && instance.IsEditorOpen;
+
+    /// <summary>
+    /// Opens the device's plugin editor in a window of its worker. Returns null on success, else why it could not
+    /// (not running, or the plugin has no editor).
+    /// </summary>
+    public async Task<string?> OpenEditorAsync(DeviceId device, CancellationToken cancellationToken = default)
+    {
+        if (!_instances.TryGetValue(device, out var instance) || instance.Status.State != PluginInstanceState.Running)
+        {
+            return "The plugin is not running.";
+        }
+
+        var title = instance.Plugin.DisplayName;
+        try
+        {
+            await instance.OpenEditorAsync(title, cancellationToken).ConfigureAwait(false);
+            StatusChanged?.Invoke(this, device);
+            return null;
+        }
+        catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
+        {
+            return ex.Message;
+        }
+    }
+
+    public async Task CloseEditorAsync(DeviceId device, CancellationToken cancellationToken = default)
+    {
+        if (_instances.TryGetValue(device, out var instance))
+        {
+            try
+            {
+                await instance.CloseEditorAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
+            {
+                // The worker is gone; its window went with it.
+            }
+
+            StatusChanged?.Invoke(this, device);
+        }
     }
 
     public static DeviceDefinitionId DefinitionIdOf(PluginIdentity plugin)
@@ -106,7 +184,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             Consumes = consumes,
             Produces = produces,
             Handles = handles,
-            Parameters = [.. (parameters ?? []).Select(p => new DeviceParameter(new ParameterId(p.Id), p.Name, 0, 1, p.DefaultValue, p.StepCount))],
+            Parameters = [.. (parameters ?? []).Where(p => p.IsUserFacing).Select(p => new DeviceParameter(new ParameterId(p.Id), p.Name, 0, 1, p.DefaultValue, p.StepCount, p.Units))],
         };
     }
 
@@ -173,6 +251,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             if (_instances.TryRemove(id, out _))
             {
                 instance.StatusChanged -= Handler(id);
+                instance.ParameterEdited -= EditHandler(id);
+                instance.Changed -= ChangeHandler(id);
                 await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -212,7 +292,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         var status = instance.Status;
         return status.State switch
         {
-            PluginInstanceState.Running => new DeviceRuntimeStatus("Running", false, false),
+            PluginInstanceState.Running => new DeviceRuntimeStatus(instance.IsEditorOpen ? "Running, editor open" : "Running", false, false, CanOpenEditor: instance.Plugin.Format is "vst3" or "clap"),
             PluginInstanceState.Starting or PluginInstanceState.Restarting => new DeviceRuntimeStatus("Starting", false, false),
             PluginInstanceState.Quarantined => new DeviceRuntimeStatus("Stopped after repeated crashes", true, true),
             PluginInstanceState.Unavailable => new DeviceRuntimeStatus(status.Reason switch
@@ -255,8 +335,27 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             if (!wanted.ContainsKey(id) && _instances.TryRemove(id, out _))
             {
                 instance.StatusChanged -= Handler(id);
+                instance.ParameterEdited -= EditHandler(id);
+                instance.Changed -= ChangeHandler(id);
                 await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
                 StatusChanged?.Invoke(this, id);
+            }
+        }
+
+        // Values changed in the project (in the device strip, or by undo) go to the running plugins.
+        foreach (var device in wanted.Values)
+        {
+            if (_instances.TryGetValue(device.Id, out var running) && running.Status.State == PluginInstanceState.Running)
+            {
+                var known = running.GetCachedParameterValues().ToDictionary(v => v.Id, v => v.Value);
+                foreach (var parameter in device.Parameters)
+                {
+                    var value = parameter.Value.ToFraction();
+                    if (known.TryGetValue(parameter.Id.Value, out var current) && Math.Abs(current - value) > ParameterTolerance)
+                    {
+                        await running.SetParameterAsync(parameter.Id.Value, value, cancellationToken).ConfigureAwait(false);
+                    }
+                }
             }
         }
 
@@ -267,6 +366,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             var captured = restore?.GetValueOrDefault(device.Id);
             var request = new PluginInstanceRequest(plugin, _sampleRate, _maxBlockFrames, plugin.Kind == PluginKind.AudioEffect ? 2 : 0, plugin.Kind == PluginKind.MidiEffect ? 0 : 2)
             {
+                ModulePath = _modulePaths.GetValueOrDefault(plugin),
                 RestoreFrom = captured ?? (device.State is { } saved
                     ? new PluginStateSnapshot(plugin, new PluginStateData(saved.Format, [.. saved.Data.Span]), parameters, DateTimeOffset.UnixEpoch)
                     : null),
@@ -279,12 +379,19 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             }
 
             instance.StatusChanged += Handler(device.Id);
+            instance.ParameterEdited += EditHandler(device.Id);
+            instance.Changed += ChangeHandler(device.Id);
             if (device.State is null && captured is null && instance.Status.State == PluginInstanceState.Running)
             {
-                // No saved state: the stored parameter values are the configuration to restore.
+                // No saved state: the stored parameter values are the configuration to restore. Only values that differ
+                // from the plugin's own are sent (a plugin may have thousands of parameters).
+                var known = instance.GetCachedParameterValues().ToDictionary(v => v.Id, v => v.Value);
                 foreach (var parameter in parameters)
                 {
-                    await instance.SetParameterAsync(parameter.Id, parameter.Value, cancellationToken).ConfigureAwait(false);
+                    if (known.TryGetValue(parameter.Id, out var current) && Math.Abs(current - parameter.Value) > ParameterTolerance)
+                    {
+                        await instance.SetParameterAsync(parameter.Id, parameter.Value, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
 
@@ -307,7 +414,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         var snapshot = await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false);
         var state = new PluginState(ByteBlock.Copy(snapshot.State.Data.AsSpan()), snapshot.State.Format);
         var commands = new List<IProjectCommand> { DeviceCommands.SetPluginState(device, state) };
-        commands.AddRange(snapshot.ParameterValues.Select(p => DeviceCommands.SetParameter(device, new ParameterId(p.Id), ControlValue.FromFraction(p.Value))));
+        var shown = instance.Parameters.Where(p => p.IsUserFacing).Select(p => p.Id).ToHashSet();
+        commands.AddRange(snapshot.ParameterValues.Where(p => shown.Contains(p.Id)).Select(p => DeviceCommands.SetParameter(device, new ParameterId(p.Id), ControlValue.FromFraction(p.Value))));
         _session.Execute(ProjectCommands.Batch("Store Plugin State", commands));
         return true;
     }
@@ -349,4 +457,16 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     // One handler per device, so the same delegate can be removed again.
     private EventHandler<PluginStatusChangedEventArgs> Handler(DeviceId device) =>
         _handlers.GetOrAdd(device, id => (_, _) => StatusChanged?.Invoke(this, id));
+
+    private EventHandler<PluginParameterEditedEventArgs> EditHandler(DeviceId device) =>
+        _editHandlers.GetOrAdd(device, id => (_, e) => ParameterEdited?.Invoke(this, new PluginParameterEdit(id, e.ParameterId, e.Value)));
+
+    private EventHandler<NotificationKind> ChangeHandler(DeviceId device) =>
+        _changeHandlers.GetOrAdd(device, id => (_, kind) =>
+        {
+            if (kind is NotificationKind.EditorClosed or NotificationKind.LatencyChanged)
+            {
+                StatusChanged?.Invoke(this, id);
+            }
+        });
 }

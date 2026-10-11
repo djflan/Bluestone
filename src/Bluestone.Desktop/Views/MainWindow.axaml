@@ -275,6 +275,8 @@
                           </Grid>
                           <Button Classes="raised" Content="Restart" IsVisible="{Binding CanRestart}" Command="{Binding RestartCommand}" HorizontalAlignment="Left"
                                   ToolTip.Tip="Start the plugin again from its last saved state" AutomationProperties.Name="Restart plugin" />
+                          <Button Classes="raised" Content="Open editor" IsVisible="{Binding CanOpenEditor}" Command="{Binding OpenEditorCommand}" HorizontalAlignment="Left"
+                                  ToolTip.Tip="Show the plugin's own editor in a separate window" AutomationProperties.Name="Open plugin editor" />
                           <Button Classes="link" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}" HorizontalAlignment="Left"
                                   ToolTip.Tip="This device's output is also sent here. Open the connections." />
                           <Button Classes="link" Content="Route from here…" IsVisible="{Binding !HasRouting}" Command="{Binding ShowRoutingCommand}" HorizontalAlignment="Left" FontSize="10" />

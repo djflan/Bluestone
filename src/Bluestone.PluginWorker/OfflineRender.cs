@@ -20,12 +20,24 @@ internal static class OfflineRender
             return new ErrorReply(ErrorCode.NotSupported, $"{request.Plugin.DisplayName} is not a MIDI effect; only MIDI effects are rendered offline.");
         }
 
-        var plugin = ReferencePluginCatalog.Create(request.Plugin);
+        var plugin = HostedPlugins.Create(request.Plugin, request.ModulePath, out var createError);
         if (plugin is null)
         {
-            return new ErrorReply(ErrorCode.PluginNotFound, $"Plugin {request.Plugin} is not available in this worker.");
+            return new ErrorReply(ErrorCode.PluginNotFound, createError ?? $"Plugin {request.Plugin} is not available in this worker.");
         }
 
+        try
+        {
+            return Render(plugin, request);
+        }
+        finally
+        {
+            (plugin as IDisposable)?.Dispose();
+        }
+    }
+
+    private static ProtocolMessage Render(IHostedPlugin plugin, RenderEvents request)
+    {
         try
         {
             plugin.Prepare(request.SampleRate, request.BlockFrames, 0, 0);

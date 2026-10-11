@@ -8,10 +8,59 @@ namespace Bluestone.Plugins.Scanning;
 /// <summary>Size and last-write time of a module file. A change means the cached result is stale.</summary>
 public readonly record struct ModuleFingerprint(long Size, long LastWriteUtcTicks)
 {
+    /// <summary>
+    /// A file's size and last write time; for a bundle (a VST3 or CLAP directory), the total size and latest write time
+    /// of its binaries and Info.plist, so a reinstalled or updated plugin is scanned again. Null when nothing is there.
+    /// </summary>
     public static ModuleFingerprint? Of(string path)
     {
         var info = new FileInfo(path);
-        return info.Exists ? new ModuleFingerprint(info.Length, info.LastWriteTimeUtc.Ticks) : null;
+        if (info.Exists)
+        {
+            return new ModuleFingerprint(info.Length, info.LastWriteTimeUtc.Ticks);
+        }
+
+        var directory = new DirectoryInfo(path);
+        if (!directory.Exists)
+        {
+            return null;
+        }
+
+        long size = 0;
+        var latest = directory.LastWriteTimeUtc.Ticks;
+        foreach (var file in BundleFiles(directory))
+        {
+            size += file.Length;
+            latest = Math.Max(latest, file.LastWriteTimeUtc.Ticks);
+        }
+
+        return new ModuleFingerprint(size, latest);
+    }
+
+    private static IEnumerable<FileInfo> BundleFiles(DirectoryInfo bundle)
+    {
+        var contents = new DirectoryInfo(Path.Combine(bundle.FullName, "Contents"));
+        if (!contents.Exists)
+        {
+            yield break;
+        }
+
+        var plist = new FileInfo(Path.Combine(contents.FullName, "Info.plist"));
+        if (plist.Exists)
+        {
+            yield return plist;
+        }
+
+        foreach (var folder in contents.EnumerateDirectories())
+        {
+            if (folder.Name == "MacOS" || folder.Name.EndsWith("-win", StringComparison.Ordinal) || folder.Name.EndsWith("-linux", StringComparison.Ordinal))
+            {
+                foreach (var file in folder.EnumerateFiles("*", SearchOption.AllDirectories))
+                {
+                    yield return file;
+                }
+            }
+        }
     }
 }
 

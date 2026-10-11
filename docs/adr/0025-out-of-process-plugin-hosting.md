@@ -1,6 +1,6 @@
 # 0025. Plugins run out of process; isolation is crash isolation, not a sandbox
 
-- Status: Accepted; amended by 0028 (plan compilation renders plugin MIDI effects in their worker)
+- Status: Accepted; amended by 0028 (plan compilation renders plugin MIDI effects in their worker) and 0033 (VST3 and CLAP through a Rust host in the worker)
 - Date: 2026-10-10
 
 ## Context

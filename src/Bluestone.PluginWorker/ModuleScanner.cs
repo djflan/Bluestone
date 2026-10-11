@@ -2,14 +2,17 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using Bluestone.Plugins.Protocol;
+using Bluestone.PluginWorker.Native;
 using Bluestone.PluginWorker.Plugins;
 
 namespace Bluestone.PluginWorker;
 
 /// <summary>
-/// Scan mode: reads one module file and reports the plugins it declares. A module is a small JSON manifest with the
-/// <see cref="ModuleExtension"/> extension; every other file is <see cref="ScanFailureKind.Malformed"/>. Nothing is
-/// ever loaded as code. Two documented first-line markers exist for tests only: <see cref="CrashMarker"/> makes the
+/// Scan mode: reads one module and reports the plugins it provides. A VST3 bundle (<c>.vst3</c>) or CLAP module
+/// (<c>.clap</c>) is loaded by the native plugin host on the main thread and asked for its plugins; a module built for
+/// another processor architecture is <see cref="ScanFailureKind.Unsupported"/> and is not loaded. A reference module
+/// is a small JSON manifest with the <see cref="ModuleExtension"/> extension, never loaded as code. Every other file is
+/// <see cref="ScanFailureKind.Malformed"/>. Two documented first-line markers exist for tests only: <see cref="CrashMarker"/> makes the
 /// scanner call <see cref="Environment.FailFast(string)"/>, and <see cref="HangMarker"/> makes it hang, so the host's
 /// crash and timeout handling can be exercised with a real process.
 /// </summary>
@@ -23,6 +26,11 @@ internal static class ModuleScanner
 
     public static ScanResult Scan(string path)
     {
+        if (NativeModules.FormatOf(path) is { } format)
+        {
+            return ScanNative(path, format);
+        }
+
         if (!path.EndsWith(ModuleExtension, StringComparison.OrdinalIgnoreCase))
         {
             return Malformed(path, $"Not a Bluestone reference plugin module (expected a {ModuleExtension} file).");
@@ -67,6 +75,36 @@ internal static class ModuleScanner
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidDataException or ArgumentException or InvalidOperationException or FormatException)
         {
             return Malformed(path, $"The manifest is invalid: {ex.Message}");
+        }
+    }
+
+    private static ScanResult ScanNative(string path, string format)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            return Malformed(path, "The module does not exist.");
+        }
+
+        if (BinaryArchitecture.Check(path) is { } unsupported)
+        {
+            return new ScanResult(path, [], ScanFailureKind.Unsupported, unsupported);
+        }
+
+        var main = WorkerMainThread.Current ?? throw new InvalidOperationException("Native modules are scanned on the worker's main thread.");
+        try
+        {
+            var plugins = main.Invoke(() => NativeModules.Describe(format, path));
+            return plugins.IsEmpty
+                ? Malformed(path, $"The {format.ToUpperInvariant()} module provides no plugins Bluestone can host.")
+                : new ScanResult(path, plugins, null, null);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new ScanResult(path, [], ScanFailureKind.Unsupported, ex.Message);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException or ArgumentException or KeyNotFoundException or FormatException)
+        {
+            return Malformed(path, ex.Message);
         }
     }
 

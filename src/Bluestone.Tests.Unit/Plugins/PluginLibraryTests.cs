@@ -21,6 +21,41 @@ public sealed class PluginLibraryTests
     }
 
     [Fact]
+    public void FindModules_FindsVst3AndClapBundles_AndModulesInVendorSubfolders_WithoutLookingInsideBundles()
+    {
+        using var folder = new TestDirectory();
+        Directory.CreateDirectory(Path.Combine(folder.Path, "Synth.vst3", "Contents", "MacOS"));
+        File.WriteAllText(Path.Combine(folder.Path, "Synth.vst3", "Contents", "MacOS", "Synth"), string.Empty);
+        Directory.CreateDirectory(Path.Combine(folder.Path, "Effects.clap", "Contents"));
+        Directory.CreateDirectory(Path.Combine(folder.Path, "Vendor", "Deeper"));
+        File.WriteAllText(Path.Combine(folder.Path, "Vendor", "Legacy.vst3"), string.Empty);
+        File.WriteAllText(Path.Combine(folder.Path, "Vendor", "readme.txt"), string.Empty);
+        Directory.CreateDirectory(Path.Combine(folder.Path, "Vendor", "Deeper", "Nested.clap"));
+        File.WriteAllText(folder.File("Top.clap"), string.Empty);
+        using var library = new PluginLibrary(new FakePluginScanner(), [folder.Path]);
+
+        var modules = library.FindModules();
+
+        Assert.Equal(
+            [folder.File("Effects.clap"), folder.File("Synth.vst3"), folder.File("Top.clap"), Path.Combine(folder.Path, "Vendor", "Deeper", "Nested.clap"), Path.Combine(folder.Path, "Vendor", "Legacy.vst3")],
+            modules);
+    }
+
+    [Fact]
+    public void StandardFolders_AreTheOperatingSystemsVst3AndClapFolders()
+    {
+        var folders = PluginLibrary.StandardFolders();
+
+        Assert.Contains(folders, f => f.EndsWith("VST3", StringComparison.Ordinal) || f.EndsWith("vst3", StringComparison.Ordinal));
+        Assert.Contains(folders, f => f.EndsWith("CLAP", StringComparison.Ordinal) || f.EndsWith("clap", StringComparison.Ordinal));
+        if (OperatingSystem.IsMacOS())
+        {
+            Assert.Contains("/Library/Audio/Plug-Ins/VST3", folders);
+            Assert.Contains("/Library/Audio/Plug-Ins/CLAP", folders);
+        }
+    }
+
+    [Fact]
     public async Task Scan_SummarizesEachModule_AndListsItsPluginsAsAvailable()
     {
         using var folder = new TestDirectory();

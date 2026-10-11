@@ -126,7 +126,7 @@ public sealed class PluginScanner : IDisposable, IPluginScanner
 
             if (ModuleFingerprint.Of(path) is not { } fingerprint)
             {
-                return new ModuleScanResult(path, ModuleScanStatus.Failed, [], new ScanFailure(ScanFailureKind.Malformed, "The module file does not exist."));
+                return new ModuleScanResult(path, ModuleScanStatus.Failed, [], new ScanFailure(ScanFailureKind.Malformed, "The module does not exist."));
             }
 
             if (useCache && _cache.TryGet(path, fingerprint, out var cachedPlugins, out var cachedFailure))
@@ -143,7 +143,7 @@ public sealed class PluginScanner : IDisposable, IPluginScanner
             else if (blameModule)
             {
                 _quarantine.Remove(path);
-                if (failure is null or { Kind: ScanFailureKind.Malformed })
+                if (failure is null or { Kind: ScanFailureKind.Malformed or ScanFailureKind.Unsupported })
                 {
                     _cache.Set(path, fingerprint, plugins, failure);
                 }
@@ -181,6 +181,7 @@ public sealed class PluginScanner : IDisposable, IPluginScanner
             {
                 ScanResult { Failure: null } r => (r.Plugins, null, true),
                 ScanResult { Failure: ScanFailureKind.Malformed } r => ([], new ScanFailure(ScanFailureKind.Malformed, r.Message ?? "Malformed module."), true),
+                ScanResult { Failure: ScanFailureKind.Unsupported } r => ([], new ScanFailure(ScanFailureKind.Unsupported, r.Message ?? "The module cannot run here."), true),
                 _ => ([], new ScanFailure(ScanFailureKind.ProtocolError, $"The scanner answered {reply.Type}."), true),
             };
         }

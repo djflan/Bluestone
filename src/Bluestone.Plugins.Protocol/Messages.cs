@@ -27,6 +27,9 @@ public enum MessageType : ushort
     InduceTestFault = 20,
     RenderEvents = 21,
     RenderedEvents = 22,
+    OpenEditor = 23,
+    CloseEditor = 24,
+    PluginNotification = 25,
 }
 
 /// <summary>What a worker process was launched to do.</summary>
@@ -56,6 +59,9 @@ public enum ScanFailureKind : byte
     TimedOut = 2,
     Malformed = 3,
     ProtocolError = 4,
+
+    /// <summary>The module cannot run in this worker (for example a binary for another processor architecture). Cached, not quarantined.</summary>
+    Unsupported = 5,
 }
 
 /// <summary>Failure behaviours a worker can be told to show. Test-only: reachable only through <see cref="InduceTestFault"/>.</summary>
@@ -100,7 +106,8 @@ public sealed record Pong(long Sequence) : ProtocolMessage
 
 /// <summary>
 /// Creates a plugin instance. The worker creates the data-plane file in <paramref name="DataPlaneDirectory"/>, stamped with
-/// <paramref name="Generation"/>, and restores <paramref name="State"/> if given.
+/// <paramref name="Generation"/>, and restores <paramref name="State"/> if given. <paramref name="ModulePath"/> is the
+/// plugin binary (a VST3 bundle or CLAP module) for third-party plugins; null for the built-in reference plugins.
 /// </summary>
 public sealed record CreateInstance(
     PluginInstanceId InstanceId,
@@ -109,7 +116,8 @@ public sealed record CreateInstance(
     ExchangeOptions Exchange,
     uint Generation,
     string DataPlaneDirectory,
-    PluginStateData? State) : ProtocolMessage
+    PluginStateData? State,
+    string? ModulePath = null) : ProtocolMessage
 {
     public override MessageType Type => MessageType.CreateInstance;
 }
@@ -203,7 +211,8 @@ public sealed record ScanResult(string ModulePath, ImmutableArray<PluginIdentity
 /// <paramref name="State"/> then <paramref name="Parameters"/>, processes the timeline in blocks of
 /// <paramref name="BlockFrames"/> from frame 0 to <paramref name="EndFrame"/>, with <paramref name="Events"/> and
 /// <paramref name="Changes"/> at their frames and the transport following <paramref name="Tempo"/>. The worker's live
-/// instances are not touched. Frames are absolute positions on the timeline.
+/// instances are not touched. Frames are absolute positions on the timeline. <paramref name="ModulePath"/> is as in
+/// <see cref="CreateInstance"/>.
 /// </summary>
 public sealed record RenderEvents(
     PluginIdentity Plugin,
@@ -214,7 +223,8 @@ public sealed record RenderEvents(
     long EndFrame,
     ImmutableArray<TimelineTempo> Tempo,
     ImmutableArray<TimelineEvent> Events,
-    ImmutableArray<TimelineParameterChange> Changes) : ProtocolMessage
+    ImmutableArray<TimelineParameterChange> Changes,
+    string? ModulePath = null) : ProtocolMessage
 {
     public override MessageType Type => MessageType.RenderEvents;
 }
@@ -237,6 +247,50 @@ public readonly record struct TimelineParameterChange(long Frame, uint Parameter
 
 /// <summary>The tempo, in beats per minute, from <paramref name="Frame"/> on.</summary>
 public readonly record struct TimelineTempo(long Frame, double BeatsPerMinute);
+
+/// <summary>
+/// Opens the instance's editor in a top-level window owned by the worker (titled <paramref name="Title"/>). Replies
+/// <see cref="Ack"/>, or <see cref="ErrorReply"/> with <see cref="ErrorCode.NotSupported"/> when the plugin has no editor.
+/// </summary>
+public sealed record OpenEditor(PluginInstanceId InstanceId, string Title) : ProtocolMessage
+{
+    public override MessageType Type => MessageType.OpenEditor;
+}
+
+/// <summary>Closes the instance's editor if it is open. Replies <see cref="Ack"/>.</summary>
+public sealed record CloseEditor(PluginInstanceId InstanceId) : ProtocolMessage
+{
+    public override MessageType Type => MessageType.CloseEditor;
+}
+
+/// <summary>What a plugin did on its own, reported by the worker without being asked.</summary>
+public enum NotificationKind : byte
+{
+    /// <summary>The plugin changed a parameter itself (its editor, a preset): <see cref="PluginNotification.ParameterId"/> and <see cref="PluginNotification.Value"/>.</summary>
+    ParameterEdited = 1,
+
+    /// <summary>The plugin's own latency changed; <see cref="PluginNotification.Value"/> is the new latency in frames.</summary>
+    LatencyChanged = 2,
+
+    /// <summary>The plugin's state changed in a way that is not a parameter; it should be captured before the next save.</summary>
+    StateDirty = 3,
+
+    /// <summary>The editor window was closed by the user or the plugin.</summary>
+    EditorClosed = 4,
+
+    /// <summary>The plugin's parameter list or names changed.</summary>
+    ParametersChanged = 5,
+}
+
+/// <summary>
+/// Sent by the worker with request id 0, never as a reply. <paramref name="Value"/> is a normalized parameter value
+/// for <see cref="NotificationKind.ParameterEdited"/>, a frame count for <see cref="NotificationKind.LatencyChanged"/>,
+/// and 0 otherwise.
+/// </summary>
+public sealed record PluginNotification(PluginInstanceId InstanceId, NotificationKind Kind, uint ParameterId, double Value) : ProtocolMessage
+{
+    public override MessageType Type => MessageType.PluginNotification;
+}
 
 /// <summary>Test-only: tells the worker to misbehave. Never sent by production code paths.</summary>
 public sealed record InduceTestFault(TestFault Fault) : ProtocolMessage

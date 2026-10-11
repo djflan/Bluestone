@@ -126,3 +126,11 @@ public enum FailurePolicy
     /// </summary>
     BypassInput,
 }
+
+/// <summary>A parameter the plugin changed itself, with its new normalized value.</summary>
+public sealed class PluginParameterEditedEventArgs(uint parameterId, double value) : EventArgs
+{
+    public uint ParameterId { get; } = parameterId;
+
+    public double Value { get; } = value;
+}

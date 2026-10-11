@@ -289,7 +289,7 @@ public sealed class PluginHostManager : IAsyncDisposable
             var options = new ExchangeOptions(request.MaxBlockFrames, request.InputChannels, request.OutputChannels, _options.SlotCount, request.EventCapacity, request.ParameterChangeCapacity);
             var reply = await RequestAsync(
                 worker,
-                new CreateInstance(instance.Id, request.Plugin, request.SampleRate, options, generation, DataDirectory, instance.LastSnapshot?.State),
+                new CreateInstance(instance.Id, request.Plugin, request.SampleRate, options, generation, DataDirectory, instance.LastSnapshot?.State, request.ModulePath),
                 token).ConfigureAwait(false);
             var created = reply switch
             {
@@ -318,10 +318,17 @@ public sealed class PluginHostManager : IAsyncDisposable
             var table = instance.EnsureParameterTable(created.Parameters);
             if (hadValues)
             {
-                // Recovery: the snapshot's state went in with CreateInstance; the remembered values are newer.
+                // Recovery: the snapshot's state went in with CreateInstance; the remembered values are newer. Only the
+                // values that differ from what the restored plugin holds are sent (a plugin may have thousands).
+                var live = await RequestAsync(worker, new GetParameters(instance.Id), token).ConfigureAwait(false) is ParameterValues current
+                    ? current.Values.ToDictionary(v => v.Id, v => v.Value)
+                    : [];
                 foreach (var value in table.Snapshot())
                 {
-                    await RequestAsync(worker, new SetParameter(instance.Id, value.Id, value.Value), token).ConfigureAwait(false);
+                    if (!live.TryGetValue(value.Id, out var now) || Math.Abs(now - value.Value) > 1e-9)
+                    {
+                        await RequestAsync(worker, new SetParameter(instance.Id, value.Id, value.Value), token).ConfigureAwait(false);
+                    }
                 }
             }
             else if (await RequestAsync(worker, new GetParameters(instance.Id), token).ConfigureAwait(false) is ParameterValues values)
@@ -442,6 +449,7 @@ public sealed class PluginHostManager : IAsyncDisposable
                 HeartbeatInterval = _options.HeartbeatInterval,
                 HeartbeatTimeout = _options.HeartbeatTimeout,
                 ShutdownTimeout = _options.ShutdownTimeout,
+                OnNotification = OnNotification,
             },
             OnWorkerTerminated,
             _shutdown.Token).ConfigureAwait(false);
@@ -492,6 +500,21 @@ public sealed class PluginHostManager : IAsyncDisposable
         if (toDispose is not null)
         {
             await toDispose.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    // Runs on a worker's read loop: something a plugin did on its own.
+    private void OnNotification(WorkerProcess worker, PluginNotification notification)
+    {
+        PluginInstance? target;
+        lock (_gate)
+        {
+            target = _instances.FirstOrDefault(i => i.Id == notification.InstanceId);
+        }
+
+        if (target is not null && target.Link?.Worker == worker)
+        {
+            target.OnNotification(notification);
         }
     }
 

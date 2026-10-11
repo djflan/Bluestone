@@ -434,8 +434,10 @@ Built as boundaries and tested where cheap, but not finished:
 - **Audio engine, remaining**: plugin delay compensation across the graph (latencies are reported per device),
   sends, audio input and recording, compressed audio formats, a mixer console view with meters (the meters exist),
   and recovery from a lost device beyond reporting it.
-- **Third-party plugin formats** (VST3 loading, parameter enumeration) and **plugin editors** (windows, focus,
-  DPI, a worker dying with its editor open). The worker hosts Bluestone's reference plugins today.
+- **Third-party plugins beyond the first slice**: VST3 and CLAP load, process, keep state, recover, and show editors
+  (ADR 0033, docs/plugin-hosting.md), but editors on Windows and Linux are not verified on hardware, editors are
+  separate windows (not embedded), and there are no second-architecture workers, SysEx to native plugins, note
+  expressions, or MPE.
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
 - **Operating-system sandboxing** of plugin workers.
@@ -466,16 +468,26 @@ Built as boundaries and tested where cheap, but not finished:
 | A group's mute and solo reach its members; joining a group routes into it | ADR 0030 |
 | Hardware parameters are automated through profile parameter maps, translated at plan compile | ADR 0031 |
 | Audio: cpal output in Rust, the graph in C# rendered ahead into a ring, one transport | ADR 0032 |
+| VST3 and CLAP through a Rust plugin host loaded only in the worker | ADR 0033 |
 
 ## Native technology
 
 C# is the default for all code (ADR 0026). Rust is used for a component only when a measurement shows
 managed code cannot meet a real-time or throughput requirement after tuning, or when a native interface
 (such as plugin binaries) requires it; it replaces C or C++ for new Bluestone-owned native code. C and C++
-appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. The first Rust component is
-`native/crates/bluestone_audio` (ADR 0032): audio device output through cpal, and the device callback, which only
-copies from a ring because the measurement showed a .NET collection holding a managed callback past its deadline.
-The render graph stays in C#.
+appear only as third-party libraries, vendor SDK requirements, or thin ABI shims.
+
+Rust code lives in a Cargo workspace, `native/`, one crate per component (`native/crates/*`), each a cdylib with a
+small, versioned C ABI; `dotnet build` builds the crates a project names (`src/Native.targets`) and copies the
+library beside the assemblies. The components:
+
+- `bluestone_audio` (ADR 0032): audio device output through cpal, and the device callback, which only copies from a
+  ring because the measurement showed a .NET collection holding a managed callback past its deadline. The render
+  graph stays in C#.
+- `bluestone_plugin_host` (ADR 0033): loads VST3 and CLAP plugin binaries, which is ADR 0026's native-interface
+  reason. Only `Bluestone.PluginWorker` loads it, so no plugin code ever runs in Bluestone's process. The data plane,
+  supervision, and everything else in plugin hosting stay C#.
+- `bluestone_test_plugins`: small VST3 and CLAP plugins for the tests.
 
 ## Acceptance scenarios and their tests
 

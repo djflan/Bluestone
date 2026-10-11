@@ -1,11 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Out-of-process plugin worker: hosts plugin instances or scans one module, talking to Bluestone over
-       Bluestone.Plugins.Protocol. It hosts only the built-in reference plugins; it never loads native libraries.
-       See docs/plugin-hosting.md. -->
+       Bluestone.Plugins.Protocol. It hosts the built-in reference plugins and, through the Rust plugin host
+       (native/crates/bluestone_plugin_host), VST3 and CLAP plugins. Only this process ever loads that library.
+       See docs/plugin-hosting.md and ADR 0033. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Bluestone.PluginWorker</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Bluestone.Tests.Unit" />
@@ -13,4 +15,8 @@
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Plugins.Protocol/Bluestone.Plugins.Protocol.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <RustCrate Include="bluestone_plugin_host" />
+  </ItemGroup>
+  <Import Project="../Native.targets" />
 </Project>

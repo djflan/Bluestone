@@ -141,7 +141,7 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>The folders scanned for plugin modules, in order. Formats with OS-standard folders add theirs here.</summary>
-    public static IReadOnlyList<string> PluginFolders => [UserPluginDirectory];
+    public static IReadOnlyList<string> PluginFolders => [UserPluginDirectory, .. PluginLibrary.StandardFolders()];
 
     /// <summary>The scanner's cache and quarantine list.</summary>
     public static string PluginCacheDirectory =>
