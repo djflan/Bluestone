@@ -19,11 +19,12 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
     private readonly FakeBackend _backend = new();
     private readonly List<int> _prepared = [];
     private readonly AudioPlayback _audio;
+    private readonly VirtualClock _clock = new();
 
     public AudioPlaybackRecoveryTests()
     {
         var session = new ProjectSession();
-        _playback = new PlaybackController(session, _endpoints, ProfileCatalog.Empty, new VirtualClock(), startThread: false);
+        _playback = new PlaybackController(session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
         _audio = new AudioPlayback(_playback, session, _ => null, backend: _backend, prepareSampleRate: Prepare, checkInterval: Timeout.InfiniteTimeSpan);
     }
 
@@ -144,6 +145,44 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         Assert.False(_audio.IsOnFallback);
         Assert.Equal("headset", _backend.Opened[^1].Device);
         Assert.Equal(32_000, _audio.Engine!.SampleRate);
+    }
+
+    [Fact]
+    public void LiveInput_ShrinksTheQueue_UntilItHasBeenQuietForTheHoldTime()
+    {
+        _backend.Devices.Add(Device("built-in", "Speakers", 48_000, isDefault: true));
+        _audio.Start(new AudioSettings(true, QueuedFrames: 1024, LiveQueuedFrames: 256));
+        var output = _backend.Opened[^1];
+        Assert.Equal(1024, output.QueuedFrames);
+
+        _audio.OnLiveInput();
+        Assert.Equal(256, output.QueuedFrames);
+        Assert.True(_audio.IsLiveQueue);
+
+        _clock.Advance(AudioPlayback.LiveHold / 2);
+        _audio.OnLiveInput();
+        _clock.Advance(AudioPlayback.LiveHold / 2);
+        _audio.CheckLiveQueue();
+        Assert.Equal(256, output.QueuedFrames);
+
+        _clock.Advance(AudioPlayback.LiveHold);
+        _audio.CheckLiveQueue();
+        Assert.Equal(1024, output.QueuedFrames);
+        Assert.False(_audio.IsLiveQueue);
+    }
+
+    [Theory]
+    [InlineData(0, 1024)]
+    [InlineData(2048, 1024)]
+    public void ALiveQueueThatIsOffOrNotSmaller_LeavesThePlaybackQueue(int live, int expected)
+    {
+        _backend.Devices.Add(Device("built-in", "Speakers", 48_000, isDefault: true));
+        _audio.Start(new AudioSettings(true, QueuedFrames: 1024, LiveQueuedFrames: live));
+
+        _audio.OnLiveInput();
+
+        Assert.Equal(expected, _backend.Opened[^1].QueuedFrames);
+        Assert.False(_audio.IsLiveQueue);
     }
 
     private sealed class FakeBackend : IAudioBackend

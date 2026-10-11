@@ -45,6 +45,7 @@ public sealed class AudioPlayback : IDisposable
     private string? _waitingReason;
     private string _devicesTried = string.Empty;
     private bool _testTone;
+    private TimeSpan _liveSince;
 
     /// <param name="playback">The MIDI playback controller whose transport the audio follows.</param>
     /// <param name="session">The project.</param>
@@ -80,8 +81,11 @@ public sealed class AudioPlayback : IDisposable
                 _ = Task.Run(Rebuild);
             }
         };
-        _playback.Live.SoftwareInput += (_, _) => UseLiveQueue();
+        _playback.Live.SoftwareInput += (_, _) => OnLiveInput();
     }
+
+    /// <summary>Measured latency of live notes played into plugin instruments, input timestamp to heard (ADR 0035).</summary>
+    public Live.LiveLatency LiveLatency => _playback.Live.Latency.Read();
 
     /// <summary>Whether the smaller live queue is in use because live input is playing a plugin instrument.</summary>
     public bool IsLiveQueue { get; private set; }
@@ -361,8 +365,8 @@ public sealed class AudioPlayback : IDisposable
     {
         lock (_control)
         {
-            if (IsLiveQueue && _output is { } output && _wanted is { } wanted
-                && _playback.Engine.Clock.Now - _playback.Live.LastSoftwareInput >= LiveHold)
+            var last = _playback.Live.LastSoftwareInput > _liveSince ? _playback.Live.LastSoftwareInput : _liveSince;
+            if (IsLiveQueue && _output is { } output && _wanted is { } wanted && _playback.Engine.Clock.Now - last >= LiveHold)
             {
                 output.SetQueuedFrames(wanted.QueuedFrames);
                 IsLiveQueue = false;
@@ -371,8 +375,9 @@ public sealed class AudioPlayback : IDisposable
     }
 
     // Live input reached a plugin instrument: render closer to the device until it has been quiet for a while.
-    private void UseLiveQueue()
+    internal void OnLiveInput()
     {
+        _liveSince = _playback.Engine.Clock.Now;
         if (IsLiveQueue || _wanted is not { LiveQueuedFrames: > 0 } wanted || _output is not { QueuedFrames: > 0 } output || wanted.LiveQueuedFrames >= wanted.QueuedFrames)
         {
             return;

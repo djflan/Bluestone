@@ -40,6 +40,15 @@ public sealed partial class AudioViewModel : ObservableObject
     private int _queuedFrames;
 
     [ObservableProperty]
+    private int _liveQueuedFrames;
+
+    [ObservableProperty]
+    private bool _lowLatencyMonitoring;
+
+    [ObservableProperty]
+    private string _latency = string.Empty;
+
+    [ObservableProperty]
     private string _status = "Audio is off.";
 
     [ObservableProperty]
@@ -62,6 +71,8 @@ public sealed partial class AudioViewModel : ObservableObject
         _sampleRate = settings.SampleRate;
         _bufferFrames = settings.BufferFrames;
         _queuedFrames = settings.QueuedFrames;
+        _liveQueuedFrames = settings.LiveQueuedFrames;
+        _lowLatencyMonitoring = settings.LowLatencyMonitoring;
         LoadDevices(settings.DeviceId);
         _audio.Changed += (_, _) => _dispatcher.Post(UpdateStatus);
         UpdateStatus();
@@ -74,6 +85,8 @@ public sealed partial class AudioViewModel : ObservableObject
     public IReadOnlyList<int> BufferSizes { get; } = AudioSettings.BufferSizes;
 
     public IReadOnlyList<int> QueueSizes { get; } = AudioSettings.QueueSizes;
+
+    public IReadOnlyList<int> LiveQueueSizes { get; } = AudioSettings.LiveQueueSizes;
 
     public bool IsRunning => _audio.IsRunning;
 
@@ -92,7 +105,7 @@ public sealed partial class AudioViewModel : ObservableObject
     }
 
     /// <summary>The settings as chosen in the view.</summary>
-    public AudioSettings Settings => new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames);
+    public AudioSettings Settings => new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring);
 
     /// <summary>Opens the device the saved settings name, when they say audio was on. For start-up.</summary>
     public void StartIfEnabled()
@@ -115,6 +128,26 @@ public sealed partial class AudioViewModel : ObservableObject
 
         var reading = graph.Master.Meter.Read();
         MasterLevel = string.Create(CultureInfo.InvariantCulture, $"Master peak {Decibels(reading.PeakLeft)} / {Decibels(reading.PeakRight)} dBFS");
+        Latency = LatencyText();
+    }
+
+    // Delay compensation in the graph, the queue in use, and what live notes measured.
+    private string LatencyText()
+    {
+        if (_audio.Engine is not { } engine || _audio.Output is not { } output)
+        {
+            return string.Empty;
+        }
+
+        var rate = (double)engine.SampleRate;
+        var text = string.Create(CultureInfo.InvariantCulture, $"Delay compensation {engine.Graph.LatencyFrames / rate * 1000:0.#} ms; render-ahead {output.QueuedFrames / rate * 1000:0.#} ms{(_audio.IsLiveQueue ? " (live)" : string.Empty)}.");
+        var live = _audio.LiveLatency;
+        if (live.Count > 0)
+        {
+            text += string.Create(CultureInfo.InvariantCulture, $" Live notes heard after {live.Average.TotalMilliseconds:0.#} ms (min {live.Min.TotalMilliseconds:0.#}, max {live.Max.TotalMilliseconds:0.#}, {live.Count} notes).");
+        }
+
+        return text;
     }
 
     /// <summary>Opens (or reopens) the device with the chosen settings and saves them.</summary>
