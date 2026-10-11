@@ -1,8 +1,10 @@
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
 using Bluestone.Application.Plugins;
+using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Services;
 using Bluestone.Desktop.Views;
+using Bluestone.Plugins;
 using Bluestone.Plugins.Scanning;
 using Bluestone.Presentation;
 
@@ -91,6 +93,45 @@ public sealed class PluginsViewTests : IDisposable
 
         Assert.IsType<PluginsViewModel>(OpenedPlugins(app).DataContext);
         OpenedPlugins(app).Close();
+    });
+
+    [Fact]
+    public Task TheHostingSettings_AreChosenWithTheMouse_SavedAndAppliedToTheDeviceHost() => HeadlessApp.RunAsync(async () =>
+    {
+        await _library.ScanAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await using var manager = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(_directory, "data") });
+        var store = new PluginHostingSettingsStore(Path.Combine(_directory, "plugin-hosting.json"));
+        var session = new ProjectSession();
+        await using var bridge = new PluginDeviceHost(manager, session, _library, hosting: store.Load());
+        var dispatcher = new AvaloniaDispatcher();
+        await using var app = await AppUnderTest.OpenAsync(session, _ => bridge, pluginLibrary: new PluginsViewModel(_library, dispatcher, bridge, store));
+
+        app.Click(app.Find<DropDownButton>("FileMenuButton"));
+        app.Click(OpenedMenuItem(app, "Plugins…"));
+        var view = OpenedPlugins(app);
+        var plugins = Assert.IsType<PluginsViewModel>(view.DataContext);
+        Assert.True(view.FindControl<StackPanel>("HostingSection")!.IsEffectivelyVisible);
+        Assert.Equal("By plugin", view.FindControl<ComboBox>("GlobalHosting")!.SelectionBoxItem?.ToString());
+
+        app.Choose(view.FindControl<ComboBox>("GlobalHosting")!, i => i is HostingChoice { Mode: HostingMode.Together });
+        await AppUnderTest.WaitUntilAsync(() => !plugins.IsBusy, "the hosting change to finish");
+        app.Click(view.FindControl<CheckBox>("AutoRestart")!);
+        await AppUnderTest.WaitUntilAsync(() => !plugins.IsBusy, "the restart setting to apply");
+        var gainRow = AppUnderTest.Within<ComboBox>(view.FindControl<ItemsControl>("PluginList")!, c => c.DataContext is PluginRow { Name: "Reference Gain" });
+        Assert.Equal("Global (Together)", gainRow.SelectionBoxItem?.ToString());
+        app.Choose(gainRow, i => i is HostingChoice { Mode: HostingMode.Individually });
+        await AppUnderTest.WaitUntilAsync(() => !plugins.IsBusy, "the plugin's hosting to apply");
+        app.SaveFrame("plugins-view-hosting", view);
+
+        var saved = store.Load();
+        Assert.Equal(HostingMode.Together, saved.Mode);
+        Assert.True(saved.AutoRestart);
+        Assert.Equal(HostingMode.Individually, saved.ModeFor(plugins.Plugins.Single(p => p.Name == "Reference Gain").Definition));
+        Assert.Equal(HostingMode.Together, saved.ModeFor(plugins.Plugins.Single(p => p.Name == "Reference Transpose").Definition));
+        Assert.Equal(saved, bridge.Hosting);
+        Assert.Equal("Reference Gain is now hosted individually.", view.FindControl<TextBlock>("StatusLine")!.Text);
+        Assert.Equal(0, manager.WorkerLaunchCount);
+        view.Close();
     });
 
     private static MenuItem OpenedMenuItem(AppUnderTest app, string header)
