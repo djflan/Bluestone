@@ -63,7 +63,7 @@ internal static class ProjectSamples
         var sequence = new Sequence(
             new TempoMap(ppqn, [new TempoChange(new Tick(960), new Tempo(400_000))]),
             new MeterMap(ppqn, [new MeterChange(new Tick(1920), new TimeSignature(7, 8))]),
-            [bass, drums, lead.WithGroup(group.Id), group],
+            [bass, drums, lead.WithGroup(group.Id), group.WithFolded(true)],
             [new Marker(new Tick(480), "Verse \"A\"")]);
 
         var rack = DeviceChain.Create(ChainOwner.Rack, "Shared synth") with { Devices = [plugin] };
@@ -103,6 +103,7 @@ internal static class ProjectSamples
                 SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Master),
                 SignalConnection.Create(SignalKind.Events, SignalNode.Track(TrackId.New()), SignalNode.ExternalPart(qy.Id)),
             }),
+            ParkedConnections = [SignalConnection.Create(SignalKind.Events, SignalNode.Track(lead.Id), SignalNode.ExternalPart(qy.Id, "B")) with { Mapping = ChannelMapping.ForceTo(MidiChannel.FromNumber(5)) }],
         };
     }
 
@@ -119,7 +120,7 @@ internal static class ProjectSamples
         };
         foreach (var track in s.Tracks)
         {
-            lines.Add($"track {track.Id} {track.Name} m={track.IsMuted} s={track.IsSoloed} role={track.Role} group={track.Group}");
+            lines.Add($"track {track.Id} {track.Name} m={track.IsMuted} s={track.IsSoloed} role={track.Role} group={track.Group} folded={track.IsFolded}");
             lines.AddRange(track.Automation.Select(l => $"  lane {l.Id} {l.Target} {string.Join(",", l.Points)}"));
             lines.AddRange(track.Clips.OfType<AudioClip>().Select(c => $"  audio {c.Id} {c.Start}+{c.Length} offset={c.ContentOffset} \"{c.Name}\" {c.Source}"));
             foreach (var clip in track.Clips.OfType<NoteClip>())
@@ -148,10 +149,13 @@ internal static class ProjectSamples
                 $"  device {d.Id} {d.Definition} \"{d.Name}\" bypassed={d.IsBypassed} {string.Join(",", d.Parameters)} state={d.State?.Format}:{(d.State is null ? string.Empty : Convert.ToHexString(d.State.Data.Span))}"));
         }
 
-        lines.AddRange(project.Connections.Select(c =>
-            $"connection {c.Id} {c.Kind} {c.Source} -> {c.Destination} only={string.Join(",", c.Mapping.Only)} force={c.Mapping.Force} remap={string.Join(",", c.Mapping.Remap)} voice={c.Voice}"));
+        lines.AddRange(project.Connections.Select(c => Describe("connection", c)));
+        lines.AddRange(project.ParkedConnections.Select(c => Describe("parked", c)));
         lines.Add($"mixer master={project.Mixer.MasterGainDecibels}");
         lines.AddRange(project.Mixer.Channels.Select(c => $"  channel {c}"));
         return string.Join("\n", lines);
     }
+
+    private static string Describe(string what, SignalConnection c) =>
+        $"{what} {c.Id} {c.Kind} {c.Source} -> {c.Destination} only={string.Join(",", c.Mapping.Only)} force={c.Mapping.Force} remap={string.Join(",", c.Mapping.Remap)} voice={c.Voice}";
 }
