@@ -17,7 +17,13 @@ public sealed record SmfExportResult(SmfFile File, IReadOnlyList<SmfDiagnostic> 
 /// </summary>
 public static class SmfExporter
 {
-    public static SmfExportResult Export(Sequence sequence, string? title = null)
+    /// <param name="sequence">The sequence to export.</param>
+    /// <param name="title">The file's title, if any.</param>
+    /// <param name="translate">
+    /// Turns an external instrument parameter lane into the MIDI it sends (ADR 0031), or returns null when it
+    /// cannot. Without it, every such lane is reported as not exported.
+    /// </param>
+    public static SmfExportResult Export(Sequence sequence, string? title = null, Func<AutomationLane, IReadOnlyList<TrackEvent>?>? translate = null)
     {
         ArgumentNullException.ThrowIfNull(sequence);
         var diagnostics = new DiagnosticBag();
@@ -30,7 +36,7 @@ public static class SmfExporter
 
         for (var i = 0; i < sequence.Tracks.Length; i++)
         {
-            chunks.Add(BuildTrack(sequence.Tracks[i], sequence.Ppqn, i + 1, diagnostics));
+            chunks.Add(BuildTrack(sequence.Tracks[i], sequence.Ppqn, i + 1, diagnostics, translate));
         }
 
         var file = new SmfFile(SmfFormat.MultiTrack, SmfDivision.Metrical(sequence.Ppqn.TicksPerQuarterNote), [.. chunks]);
@@ -66,7 +72,7 @@ public static class SmfExporter
         return new SmfTrack(ordered, ordered.Count == 0 ? 0 : ordered[^1].Tick);
     }
 
-    private static SmfTrack BuildTrack(Track track, Ppqn ppqn, int fileTrackIndex, DiagnosticBag diagnostics)
+    private static SmfTrack BuildTrack(Track track, Ppqn ppqn, int fileTrackIndex, DiagnosticBag diagnostics, Func<AutomationLane, IReadOnlyList<TrackEvent>?>? translate)
     {
         var scheduled = new List<(long Tick, EventPhase Phase, int Sequence, SmfEvent Event)>();
         if (track.Name.Length > 0)
@@ -81,13 +87,32 @@ public static class SmfExporter
             diagnostics.Info(SmfDiagnosticCodes.AutomationReplacedEvents, $"{rendered.SuppressedEvents} events in clips were left out because the track's automation replaces them.", fileTrackIndex);
         }
 
-        var deviceLanes = track.Automation.Count(l => !l.Target.IsMidi && !l.Points.IsEmpty);
+        var deviceLanes = track.Automation.Count(l => l.Target.IsDevice && !l.Points.IsEmpty);
         if (deviceLanes > 0)
         {
             diagnostics.Warn(SmfDiagnosticCodes.DeviceAutomationNotExported, string.Create(CultureInfo.InvariantCulture, $"{deviceLanes} automation lanes control device parameters, which a MIDI file cannot hold; they are not in the file."), fileTrackIndex);
         }
 
+        // Instrument parameter automation is MIDI on the wire, so it is written as the MIDI it becomes, after
+        // the track's own events at the same tick and phase. A MIDI file has no ports: it goes on the part's channel.
         var events = rendered.Events;
+        var untranslated = 0;
+        foreach (var lane in track.Automation.Where(l => l.Target.IsInstrument && !l.Points.IsEmpty))
+        {
+            if (translate?.Invoke(lane) is { } translated)
+            {
+                events = events.AddRange(translated);
+            }
+            else
+            {
+                untranslated++;
+            }
+        }
+
+        if (untranslated > 0)
+        {
+            diagnostics.Warn(SmfDiagnosticCodes.DeviceAutomationNotExported, string.Create(CultureInfo.InvariantCulture, $"{untranslated} automation lanes control external instrument parameters that could not be translated to MIDI (the instrument, its profile, or the parameter is missing); they are not in the file."), fileTrackIndex);
+        }
         for (var i = 0; i < events.Length; i++)
         {
             var e = events[i];
