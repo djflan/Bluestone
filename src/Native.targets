@@ -1,0 +1,31 @@
+<Project>
+  <!-- Builds Bluestone's Rust crates (native/crates/*) with cargo and copies each library beside the assemblies.
+       Use: <ItemGroup><RustCrate Include="bluestone_audio" /></ItemGroup> and
+            <Import Project="../Native.targets" /> after it.
+       The package name and [lib] name must both equal the item (underscores); crate-type must include "cdylib".
+       Cargo.lock is committed and builds pass the locked flag: after changing dependencies run `cargo build` in native/ once.
+       Debug builds use cargo's dev profile; Release builds use the release profile. -->
+  <PropertyGroup>
+    <BluestoneNativeRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../native/'))</BluestoneNativeRoot>
+    <BluestoneCargoTargetDir>$(BluestoneNativeRoot)target/</BluestoneCargoTargetDir>
+    <BluestoneCargoProfileDir Condition="'$(Configuration)' == 'Release'">release</BluestoneCargoProfileDir>
+    <BluestoneCargoProfileDir Condition="'$(Configuration)' != 'Release'">debug</BluestoneCargoProfileDir>
+    <BluestoneCargoProfileArg Condition="'$(Configuration)' == 'Release'">--release</BluestoneCargoProfileArg>
+    <BluestoneNativePrefix Condition="!$([MSBuild]::IsOSPlatform('Windows'))">lib</BluestoneNativePrefix>
+    <BluestoneNativeExtension Condition="$([MSBuild]::IsOSPlatform('Windows'))">.dll</BluestoneNativeExtension>
+    <BluestoneNativeExtension Condition="$([MSBuild]::IsOSPlatform('OSX'))">.dylib</BluestoneNativeExtension>
+    <BluestoneNativeExtension Condition="$([MSBuild]::IsOSPlatform('Linux'))">.so</BluestoneNativeExtension>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="@(RustCrate->'$(BluestoneCargoTargetDir)$(BluestoneCargoProfileDir)/$(BluestoneNativePrefix)%(Identity)$(BluestoneNativeExtension)')"
+          Link="%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+
+  <Target Name="BluestoneBuildRustCrates" BeforeTargets="PrepareForBuild" Condition="'@(RustCrate)' != ''">
+    <Exec Command="cargo build --locked --manifest-path &quot;$(BluestoneNativeRoot)Cargo.toml&quot; $(BluestoneCargoProfileArg) @(RustCrate->'-p %(Identity)', ' ')"
+          WorkingDirectory="$(BluestoneNativeRoot)" />
+  </Target>
+</Project>
