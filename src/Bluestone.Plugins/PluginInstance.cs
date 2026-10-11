@@ -55,6 +55,8 @@ public sealed class PluginInstance
     private uint _generation;
     private CancellationTokenSource? _pendingRestart;
     private CancellationTokenSource? _snapshotLoop;
+    private RestartPolicy _restartPolicy;
+    private volatile WorkerLoss? _lastWorkerLoss;
 
     internal PluginInstance(PluginHostManager manager, PluginInstanceRequest request, int pipelineDepth, TimeSpan collectWait)
     {
@@ -71,7 +73,9 @@ public sealed class PluginInstance
         _historyBlock = new long[historyBlocks];
         _historyFrames = new int[historyBlocks];
         Array.Fill(_historyBlock, -1);
+        _restartPolicy = request.RestartPolicy;
         Guard = new RestartGuard(request.RestartPolicy);
+        Hosting = request.Hosting;
     }
 
     public event EventHandler<PluginStatusChangedEventArgs>? StatusChanged;
@@ -131,13 +135,58 @@ public sealed class PluginInstance
     /// <summary>The current worker's process id, or null when there is none.</summary>
     public int? WorkerProcessId => _link?.Worker.ProcessId;
 
+    /// <summary>How this instance shares a worker now: the request's mode until <see cref="PluginHostManager.ChangeHostingAsync"/> moves it.</summary>
+    public HostingMode Hosting { get; internal set; }
+
+    /// <summary>The <see cref="WorkerKeys">key</see> of the worker this instance runs on or is starting on; null when it has none.</summary>
+    public string? WorkerKey => Slot?.Key;
+
+    /// <summary>
+    /// When to restart after a failure; the request's policy until changed. Changing it forgets the restart history, and
+    /// turning automatic restart off cancels a restart that is waiting for its back-off.
+    /// </summary>
+    public RestartPolicy RestartPolicy
+    {
+        get
+        {
+            lock (GuardGate)
+            {
+                return _restartPolicy;
+            }
+        }
+
+        set
+        {
+            var guard = new RestartGuard(value);
+            lock (GuardGate)
+            {
+                _restartPolicy = value;
+                Guard = guard;
+            }
+
+            if (!value.AutoRestart)
+            {
+                CancelPendingRestart();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The last time this instance's worker ended under it: which process, why, and every instance that was running in
+    /// that worker (this one included), so the user can be told what went down together. Cleared when it runs again.
+    /// </summary>
+    public WorkerLoss? LastWorkerLoss => _lastWorkerLoss;
+
     /// <summary>The data-plane generation; it changes on every (re)creation and on every worker loss.</summary>
     public uint Generation => Volatile.Read(ref _generation);
 
     /// <summary>Parameter changes dropped because the per-block queue was full.</summary>
     public long ParameterChangesDropped => Interlocked.Read(ref _parameterChangesDropped);
 
-    internal RestartGuard Guard { get; }
+    /// <summary>The restart history. Read and use it only while holding <see cref="GuardGate"/>.</summary>
+    internal RestartGuard Guard { get; private set; }
+
+    internal Lock GuardGate { get; } = new();
 
     internal SemaphoreSlim Lifecycle { get; } = new(1, 1);
 
@@ -400,6 +449,7 @@ public sealed class PluginInstance
             PluginLatencyFrames = pluginLatency;
             LastStateRestoreError = stateRestoreError;
             _editorOpen = false;
+            _lastWorkerLoss = null;
             _link = link;
             SetStatusLocked(PluginInstanceStatus.Running);
         }
@@ -413,7 +463,7 @@ public sealed class PluginInstance
     /// the link, bumps the generation, and reports Unavailable once. Returns the old link for cleanup, or null if this
     /// worker was not (or no longer) the instance's.
     /// </summary>
-    internal ActiveLink? Detach(WorkerProcess worker, PluginInstanceStatus unavailable)
+    internal ActiveLink? Detach(WorkerProcess worker, PluginInstanceStatus unavailable, WorkerLoss loss)
     {
         ActiveLink? link;
         lock (_statusGate)
@@ -426,8 +476,36 @@ public sealed class PluginInstance
 
             link.Exchange.MarkFaulted();
             _link = null;
+            _lastWorkerLoss = loss;
             NextGeneration();
             SetStatusLocked(unavailable);
+        }
+
+        DispatchStatusEvents();
+        return link;
+    }
+
+    /// <summary>
+    /// A planned move to another worker: Running to Restarting. Faults the exchange first (the audio thread then outputs
+    /// the failure policy), drops the link, and bumps the generation. Returns the old link for cleanup, or null if the
+    /// instance was not running (its worker may have just died).
+    /// </summary>
+    internal ActiveLink? Suspend()
+    {
+        ActiveLink? link;
+        lock (_statusGate)
+        {
+            link = _link;
+            if (link is null || _status.State != PluginInstanceState.Running)
+            {
+                return null;
+            }
+
+            link.Exchange.MarkFaulted();
+            _link = null;
+            _editorOpen = false;
+            NextGeneration();
+            SetStatusLocked(PluginInstanceStatus.Restarting);
         }
 
         DispatchStatusEvents();
@@ -591,6 +669,12 @@ public sealed class PluginInstance
         }
     }
 }
+
+/// <summary>
+/// A worker process that ended under running instances: its process id, why (Crashed, Hung, or ProtocolError), and every
+/// instance that was running in it. With a shared worker that is more than one: they went down together.
+/// </summary>
+public sealed record WorkerLoss(int ProcessId, UnavailableReason Reason, ImmutableArray<PluginInstance> Instances);
 
 /// <summary>The live connection of a running instance: its worker and its mapped exchange.</summary>
 internal sealed record ActiveLink(WorkerProcess Worker, HostBlockExchange Exchange);
