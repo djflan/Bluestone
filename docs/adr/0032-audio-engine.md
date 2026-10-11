@@ -67,7 +67,11 @@ and in the worst case within the buffer period; garbage-collection pauses during
 - Streaming: the first second of each clip is decoded when the graph is built (starts never wait for the disk);
   a disk-streamer thread keeps a 4-second ring per clip filled ahead of the play position. The audio thread never
   reads a file; data that is late plays as silence and is counted (`UnderrunFrames`), never as other audio. Seeking
-  into a clip beyond its preload is silent until the ring has the data (a few milliseconds).
+  into a clip beyond its preload is silent until the ring has the data (a few milliseconds). On every jump or loop
+  wrap the ring is asked for the first frame no preload holds from the new position, so playing the start again
+  never waits. When the loop starts inside a clip, the disk thread also decodes one preload length at the loop start
+  (again when the loop moves), so wraps are seamless. The audio thread does not wake the disk thread (that is a
+  system call); the disk thread polls every 5 ms, less than one 256-frame block at 48 kHz.
 - A clip's source plays at its own rate from the song time of its origin, at the clip's gain and with its fades (see
   below); there are no clip loops. A missing or unreadable file is a problem in the graph result, never an exception.
 

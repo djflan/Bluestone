@@ -22,7 +22,9 @@ namespace Bluestone.Audio;
 /// When the master puts out the block's first frame at the device, in <see cref="System.Diagnostics.Stopwatch"/> ticks
 /// (0 when unknown). Live input is measured against it.
 /// </param>
-public readonly record struct AudioRenderContext(int Frames, int SampleRate, bool Playing, long SongFrame, bool Jumped, double Tempo = 120, int WrapOffset = 0, long WrapFrame = 0, long HeardTimestamp = 0)
+/// <param name="LoopStart">Start of the loop, when one is set; disk sources preload it so a wrap never waits.</param>
+/// <param name="LoopEnd">End of the loop (exclusive); equal to <paramref name="LoopStart"/> when no loop is set.</param>
+public readonly record struct AudioRenderContext(int Frames, int SampleRate, bool Playing, long SongFrame, bool Jumped, double Tempo = 120, int WrapOffset = 0, long WrapFrame = 0, long HeardTimestamp = 0, long LoopStart = 0, long LoopEnd = 0)
 {
     /// <summary>The loop wraps inside this block.</summary>
     public bool Wraps => WrapOffset > 0 && WrapOffset < Frames;

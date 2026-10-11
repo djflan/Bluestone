@@ -57,21 +57,23 @@ public sealed record AudioClipEnvelope(float Gain, long FadeInFrames, long FadeO
 
 /// <summary>
 /// One clip's audio, ready for the audio thread: the first part of the region decoded in memory (so starting at the
-/// clip's beginning never waits for the disk), and a ring the disk thread keeps filled ahead of the play position.
-/// Output frames are computed from their song position alone (see <see cref="ResamplingKernel"/>), so a jump needs no
-/// history. Data that has not arrived in time is played as silence and counted, never as other audio.
+/// clip's beginning never waits for the disk), the same at the loop start when the loop starts inside the clip (so a
+/// wrap never waits either), and a ring the disk thread keeps filled ahead of the play position. On a jump or wrap the
+/// ring is asked for the first frame a preload does not hold. Output frames are computed from their song position
+/// alone (see <see cref="ResamplingKernel"/>), so a jump needs no history. Data that has not arrived in time is played
+/// as silence and counted, never as other audio.
 /// </summary>
 internal sealed class ClipSource : IDisposable
 {
     private const int ReadChunkFrames = 4096;
+    private const long NoLoop = long.MinValue;
     private readonly AudioFileReader _reader;
     private readonly ResamplingKernel _kernel;
     private readonly bool _direct;
+    private readonly int _halo;
     private readonly double _sourceStart;
-    private readonly float[] _preloadLeft;
-    private readonly float[] _preloadRight;
-    private readonly long _preloadStart;
-    private readonly long _preloadEnd;
+    private readonly long _preloadFrames;
+    private readonly Preload _start;
     private readonly SourceRing _ring;
     private readonly float[] _scratchLeft;
     private readonly float[] _scratchRight;
@@ -82,6 +84,15 @@ internal sealed class ClipSource : IDisposable
     private readonly float[] _outRight;
     private AudioClipEnvelope _envelope;
     private long _underrunFrames;
+
+    // Audio thread: the song frame after the last one rendered (a different next frame is a jump or wrap).
+    private long _nextSongFrame = long.MinValue;
+
+    // The loop start to preload, as a song frame (written by the audio thread), and its preload (written by the disk
+    // thread, replaced whole). _loopLoadedFor is the disk thread's own record of what it last loaded.
+    private long _loopWanted = NoLoop;
+    private long _loopLoadedFor = NoLoop;
+    private Preload? _loop;
 
     private ClipSource(AudioClipRegion region, AudioFileReader reader, int outputRate, int blockFrames, TimeSpan preload, TimeSpan ringLength)
     {
@@ -95,8 +106,8 @@ internal sealed class ClipSource : IDisposable
         // A start within a millionth of a frame of a whole frame is that frame (seconds do not hold frames exactly).
         _sourceStart = Math.Abs(start - Math.Round(start)) < 1e-6 ? Math.Round(start) : start;
         _direct = format.SampleRate == outputRate && _sourceStart == Math.Floor(_sourceStart);
-        var halo = _direct ? 0 : _kernel.HalfTaps;
-        var scratch = (int)Math.Ceiling(blockFrames * _kernel.Ratio) + (2 * halo) + 2;
+        _halo = _direct ? 0 : _kernel.HalfTaps;
+        var scratch = (int)Math.Ceiling(blockFrames * _kernel.Ratio) + (2 * _halo) + 2;
         _scratchLeft = new float[scratch];
         _scratchRight = new float[scratch];
         _readInterleaved = new float[ReadChunkFrames * format.Channels];
@@ -106,15 +117,10 @@ internal sealed class ClipSource : IDisposable
         _outRight = new float[blockFrames];
         _envelope = region.Envelope;
 
-        _preloadStart = Math.Clamp((long)Math.Floor(_sourceStart) - halo, 0, SourceFrames);
-        _preloadEnd = Math.Min(SourceFrames, _preloadStart + (long)(preload.TotalSeconds * format.SampleRate));
-        var preloadFrames = (int)(_preloadEnd - _preloadStart);
-        _preloadLeft = new float[preloadFrames];
-        _preloadRight = new float[preloadFrames];
-        ReadStereo(_preloadStart, _preloadLeft, _preloadRight);
-
+        _preloadFrames = (long)(preload.TotalSeconds * format.SampleRate);
+        _start = Load(Math.Clamp((long)Math.Floor(_sourceStart) - _halo, 0, SourceFrames));
         _ring = new SourceRing(Math.Max(scratch * 4, (int)(ringLength.TotalSeconds * format.SampleRate)));
-        _ring.Request(_preloadEnd);
+        _ring.Request(_start.End);
     }
 
     public AudioClipRegion Region { get; }
@@ -154,6 +160,12 @@ internal sealed class ClipSource : IDisposable
     /// <summary>Adds this clip's part of the block to <paramref name="output"/>, on both sides of a loop wrap. Audio thread.</summary>
     public void Render(in AudioRenderContext context, StereoBuffer output)
     {
+        var loop = context.LoopEnd > context.LoopStart && context.LoopStart > Region.SongStartFrame && context.LoopStart < Region.SongEndFrame ? context.LoopStart : NoLoop;
+        if (loop != _loopWanted)
+        {
+            Volatile.Write(ref _loopWanted, loop);
+        }
+
         RenderRange(context.SongFrame, context.FirstLength, 0, output);
         if (context.Wraps)
         {
@@ -164,6 +176,12 @@ internal sealed class ClipSource : IDisposable
     // Song frames [songFrame, songFrame + frames) into output frames from outputOffset.
     private void RenderRange(long songFrame, int frames, int outputOffset, StereoBuffer output)
     {
+        if (songFrame != _nextSongFrame)
+        {
+            Reposition(songFrame);
+        }
+
+        _nextSongFrame = songFrame + frames;
         var blockStart = songFrame - outputOffset;
         var from = Math.Max(songFrame, Region.SongStartFrame);
         var to = Math.Min(songFrame + frames, Region.SongEndFrame);
@@ -175,8 +193,8 @@ internal sealed class ClipSource : IDisposable
         var ratio = _kernel.Ratio;
         var x0 = _sourceStart + ((from - Region.SongStartFrame) * ratio);
         var xLast = x0 + ((to - from - 1) * ratio);
-        var halo = _direct ? 0 : _kernel.HalfTaps;
-        var first = (long)Math.Floor(x0) - halo + (_direct ? 0 : 1);
+        var halo = _halo;
+        var first = FirstSourceFrame(x0);
         var end = (long)Math.Floor(xLast) + halo + 1;
         var count = (int)(end - first);
         var left = _scratchLeft.AsSpan(0, count);
@@ -222,8 +240,44 @@ internal sealed class ClipSource : IDisposable
 
         // The next block needs nothing before the next frame's window.
         var next = x0 + (length * ratio);
-        _ring.Consume(Math.Max(_preloadEnd, (long)Math.Floor(next) - halo));
+        _ring.Consume((long)Math.Floor(next) - halo);
     }
+
+    // After a jump or wrap to a song frame: the ring is asked for the first source frame no preload holds from there,
+    // unless it already holds (or is reading) it.
+    private void Reposition(long songFrame)
+    {
+        var at = Math.Max(songFrame, Region.SongStartFrame);
+        if (at >= Region.SongEndFrame)
+        {
+            return;
+        }
+
+        var first = Math.Max(0, FirstSourceFrame(_sourceStart + ((at - Region.SongStartFrame) * _kernel.Ratio)));
+        var target = first;
+        if (_start.Holds(first))
+        {
+            target = _start.End;
+        }
+        else if (Volatile.Read(ref _loop) is { } loop && loop.Holds(first))
+        {
+            target = loop.End;
+        }
+
+        var read = _ring.ReadFrame;
+        var available = _ring.AvailableEnd;
+        if (target >= read && target <= (available ?? read))
+        {
+            _ring.Consume(target);
+        }
+        else
+        {
+            _ring.Request(target);
+        }
+    }
+
+    // The first source frame the window of the output frame at source position x needs.
+    private long FirstSourceFrame(double x) => (long)Math.Floor(x) - _halo + (_direct ? 0 : 1);
 
     // Frames [first, first + left.Length) of the clip, scaled by the gain and the fades they fall in.
     private void ApplyEnvelope(AudioClipEnvelope envelope, long first, Span<float> left, Span<float> right)
@@ -245,9 +299,16 @@ internal sealed class ClipSource : IDisposable
         }
     }
 
-    /// <summary>Reads ahead into the ring. Disk thread.</summary>
+    /// <summary>Loads the loop start's preload when the loop moved, and reads ahead into the ring. Disk thread.</summary>
     public void Fill()
     {
+        var loop = Volatile.Read(ref _loopWanted);
+        if (loop != _loopLoadedFor)
+        {
+            _loopLoadedFor = loop;
+            Volatile.Write(ref _loop, LoadLoop(loop));
+        }
+
         var budget = MaxFramesPerFill;
         while (budget > 0)
         {
@@ -270,6 +331,27 @@ internal sealed class ClipSource : IDisposable
 
     public void Dispose() => _reader.Dispose();
 
+    // The preload for a loop starting at a song frame, or null when there is no loop or the clip's own preload holds it.
+    private Preload? LoadLoop(long songFrame)
+    {
+        if (songFrame == NoLoop)
+        {
+            return null;
+        }
+
+        var first = Math.Clamp(FirstSourceFrame(_sourceStart + ((songFrame - Region.SongStartFrame) * _kernel.Ratio)), 0, SourceFrames);
+        return _start.Holds(first) ? null : Load(first);
+    }
+
+    // Decodes up to the preload length from a source frame.
+    private Preload Load(long start)
+    {
+        var frames = (int)(Math.Min(SourceFrames, start + _preloadFrames) - start);
+        var preload = new Preload(start, new float[frames], new float[frames]);
+        ReadStereo(start, preload.Left, preload.Right);
+        return preload;
+    }
+
     // Copies source frames [first, first + count) into left/right: zeros outside the file, the preload where it has
     // them, the ring for the rest. False when the ring cannot supply its part yet (it is then asked to).
     private bool Fetch(long first, Span<float> left, Span<float> right)
@@ -284,13 +366,10 @@ internal sealed class ClipSource : IDisposable
             return true;
         }
 
-        var fromPreload = Math.Min(hi, _preloadEnd);
-        if (lo < fromPreload && lo >= _preloadStart)
+        lo = _start.Copy(lo, hi, first, left, right);
+        if (Volatile.Read(ref _loop) is { } loop)
         {
-            var n = (int)(fromPreload - lo);
-            _preloadLeft.AsSpan((int)(lo - _preloadStart), n).CopyTo(left[(int)(lo - first)..]);
-            _preloadRight.AsSpan((int)(lo - _preloadStart), n).CopyTo(right[(int)(lo - first)..]);
-            lo = fromPreload;
+            lo = loop.Copy(lo, hi, first, left, right);
         }
 
         if (lo >= hi)
@@ -336,6 +415,34 @@ internal sealed class ClipSource : IDisposable
             }
 
             done += got;
+        }
+    }
+
+    /// <summary>Decoded source frames [Start, End), immutable once published.</summary>
+    private sealed class Preload(long start, float[] left, float[] right)
+    {
+        public long Start { get; } = start;
+
+        public long End => Start + Left.Length;
+
+        public float[] Left { get; } = left;
+
+        public float[] Right { get; } = right;
+
+        public bool Holds(long frame) => frame >= Start && frame < End;
+
+        // Copies what it holds of source frames [lo, hi) into left/right (indexed from `first`); returns where it stopped.
+        public long Copy(long lo, long hi, long first, Span<float> left, Span<float> right)
+        {
+            if (!Holds(lo))
+            {
+                return lo;
+            }
+
+            var n = (int)(Math.Min(hi, End) - lo);
+            Left.AsSpan((int)(lo - Start), n).CopyTo(left[(int)(lo - first)..]);
+            Right.AsSpan((int)(lo - Start), n).CopyTo(right[(int)(lo - first)..]);
+            return lo + n;
         }
     }
 }
