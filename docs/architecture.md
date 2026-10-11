@@ -57,6 +57,16 @@ Tests: `Bluestone.Tests.Unit` (fast, deterministic), `Bluestone.Tests.Integratio
 operating-system MIDI, and plugin worker processes), and `Bluestone.Tests.Ui` (Bluestone's own app and
 main window on Avalonia's headless platform: real views, bindings, and UI thread, with no display).
 
+The UI tests send mouse and keyboard input through the headless platform and check the project and view
+models afterwards. They cover the inspector's Track, Routing, Voice, Devices, Connections, Racks, and Mixer
+sections (including a refused connection and its message), dragging, resizing, and renaming clips, drawing,
+selecting, and moving notes in the piano roll, the keyboard shortcuts (undo and redo, delete, play and stop,
+mute and solo, copy and paste), and the Plugins view. Frames are saved to `bin/.../frames/` for looking at.
+`Avalonia.Headless.XUnit` targets an older xUnit than the repository's, so the tests drive
+`HeadlessUnitTestSession` directly. The headless platform has no macOS menu bar, so the window under test
+uses its own menu and key bindings, as on Windows and Linux; one test checks the macOS menu's items and
+gestures directly.
+
 ### Where does this belong?
 
 | You are adding… | Put it in |
@@ -317,7 +327,10 @@ feed for their worker.
 Third-party plugins are hosted in separate worker processes (ADR 0025), never loaded into Bluestone's own
 process. Process isolation is crash isolation, not a security sandbox. When the plan is compiled, a
 plugin MIDI effect runs in its worker over the arrangement and its output joins the chain like a
-built-in device's (ADR 0028). See [docs/plugin-hosting.md](plugin-hosting.md).
+built-in device's (ADR 0028). Modules are scanned in their own scanner processes from a list of plugin
+folders; the Plugins view (Window ▸ Plugins… on macOS, File ▸ Plugins… elsewhere) rescans them and retries
+quarantined modules, and plugins it finds join the device catalog without a restart. See
+[docs/plugin-hosting.md](plugin-hosting.md).
 
 ## Known compromises
 

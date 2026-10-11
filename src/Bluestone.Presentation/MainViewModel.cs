@@ -128,6 +128,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     _ = RefreshAsync();
                 }
             });
+
+            // A rescan that finds or loses plugins changes the catalog; devices whose plugin was found start.
+            _plugins.AvailableChanged += (_, _) => _dispatcher.Post(() => _ = OnPluginsChangedAsync());
         }
 
         foreach (var failure in _playback.Profiles.Failures)
@@ -178,6 +181,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>The project's mixer channels.</summary>
     public MixerViewModel Mixer { get; }
+
+    /// <summary>The plugins view: scanned plugins, failures, and quarantined modules. Null when the host does not offer it.</summary>
+    public PluginsViewModel? Plugins { get; init; }
 
     /// <summary>The devices chains can use: built-ins, and plugins as data (they run in worker processes).</summary>
     internal DeviceCatalog Devices => _playback.Devices;
@@ -231,6 +237,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             AddMessage(MessageSeverity.Warning, "Plugins", $"Plugins could not be started: {ex.Message}");
         }
+    }
+
+    private async Task OnPluginsChangedAsync()
+    {
+        await SyncPluginsAsync();
+        SyncSelection();
+        await RefreshAsync();
     }
 
     /// <summary>

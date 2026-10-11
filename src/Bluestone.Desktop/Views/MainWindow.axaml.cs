@@ -25,6 +25,12 @@ public partial class MainWindow : Window
 
     public MainWindow() => InitializeComponent();
 
+    /// <summary>
+    /// Whether the macOS menu bar carries the menu and its shortcuts. Otherwise the window shows its own menu and binds
+    /// the shortcuts itself, as on Windows and Linux. Set before <see cref="Attach"/>.
+    /// </summary>
+    internal bool UseNativeMenuBar { get; init; } = OperatingSystem.IsMacOS();
+
     public void Attach(MainViewModel viewModel)
     {
         _viewModel = viewModel;
@@ -116,7 +122,7 @@ public partial class MainWindow : Window
         MeterBox.LostFocus += (_, _) => viewModel.CommitMeter(MeterBox.Text ?? string.Empty);
 
         var command = CommandModifier;
-        var nativeMenuBar = OperatingSystem.IsMacOS();
+        var nativeMenuBar = UseNativeMenuBar;
         if (nativeMenuBar)
         {
             AppMenu.Install(this, viewModel, command);
@@ -706,6 +712,17 @@ public partial class MainWindow : Window
 
     internal void ShowShortcuts() => _ = Shortcuts.CreateWindow().ShowDialog(this);
 
+    /// <summary>Opens the plugins view (Window ▸ Plugins… in the macOS menu bar, File ▸ Plugins… elsewhere), when the host offers it.</summary>
+    internal void ShowPlugins()
+    {
+        if (_viewModel?.Plugins is { } plugins)
+        {
+            _ = new PluginsWindow { DataContext = plugins }.ShowDialog(this);
+        }
+    }
+
+    private void OnShowPlugins(object? sender, RoutedEventArgs e) => ShowPlugins();
+
     /// <summary>
     /// Single-key and navigation shortcuts. Runs before focused controls (tunnel) so that, for
     /// example, Space plays even when the track list has focus, but never while text is being edited.
@@ -738,7 +755,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (IsEditorFocused && modifiers == command && e.Key is Key.C or Key.X or Key.V or Key.D && !OperatingSystem.IsMacOS())
+        if (IsEditorFocused && modifiers == command && e.Key is Key.C or Key.X or Key.V or Key.D && !UseNativeMenuBar)
         {
             switch (e.Key)
             {
@@ -817,7 +834,7 @@ public partial class MainWindow : Window
                 SelectAll();
                 e.Handled = true;
                 break;
-            case Key.D when modifiers == command && !OperatingSystem.IsMacOS():
+            case Key.D when modifiers == command && !UseNativeMenuBar:
                 Duplicate();
                 e.Handled = true;
                 break;

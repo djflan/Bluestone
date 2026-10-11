@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -67,16 +68,25 @@ internal sealed class AppUnderTest : IAsyncDisposable
     /// <summary>A loopback output named "Synth" that tracks can be routed to.</summary>
     public LoopbackPort Port { get; }
 
-    public static async Task<AppUnderTest> OpenAsync(ProjectSession? session = null, Func<ProjectSession, PluginDeviceHost>? plugins = null)
+    /// <summary>
+    /// Opens the window. It uses the in-window menu and key bindings (as on Windows and Linux) unless
+    /// <paramref name="nativeMenuBar"/>: the headless platform has no system menu bar to deliver the macOS menu's shortcuts.
+    /// </summary>
+    public static async Task<AppUnderTest> OpenAsync(
+        ProjectSession? session = null,
+        Func<ProjectSession, PluginDeviceHost>? plugins = null,
+        ProfileCatalog? profiles = null,
+        PluginsViewModel? pluginLibrary = null,
+        bool nativeMenuBar = false)
     {
         session ??= new ProjectSession();
         var clock = SystemMonotonicClock.Instance;
         var provider = new LoopbackMidiProvider(clock);
         var port = provider.CreatePort("Synth", "synth");
         var endpoints = new EndpointDirectory([provider]);
-        var playback = new PlaybackController(session, endpoints, ProfileCatalog.Empty, clock, startThread: false);
-        var window = new MainWindow { Width = 1440, Height = 1600 };
-        var viewModel = new MainViewModel(session, playback, endpoints, new NoDialogs(), new AvaloniaDispatcher(), plugins: plugins?.Invoke(session));
+        var playback = new PlaybackController(session, endpoints, profiles ?? ProfileCatalog.Empty, clock, startThread: false);
+        var window = new MainWindow { Width = 1440, Height = 1600, UseNativeMenuBar = nativeMenuBar };
+        var viewModel = new MainViewModel(session, playback, endpoints, new NoDialogs(), new AvaloniaDispatcher(), plugins: plugins?.Invoke(session)) { Plugins = pluginLibrary };
         window.Attach(viewModel);
         window.Show();
         await viewModel.InitializeAsync();
@@ -103,20 +113,112 @@ internal sealed class AppUnderTest : IAsyncDisposable
         scope.GetLogicalDescendants().OfType<T>().FirstOrDefault(match)
         ?? throw new InvalidOperationException($"No matching {typeof(T).Name} in {scope.Name ?? scope.GetType().Name}.");
 
-    /// <summary>Clicks <paramref name="control"/> with the mouse, as a musician would: scrolled into view, then pressed and released.</summary>
+    /// <summary>
+    /// Clicks <paramref name="control"/> with the mouse, as a musician would: scrolled into view, then pressed and released.
+    /// The click goes to the control's own top level: the main window, another window, or a popup.
+    /// </summary>
     public void Click(Control control)
     {
+        var root = TopLevel.GetTopLevel(control) ?? throw new InvalidOperationException($"{control} is not in a window.");
         control.BringIntoView();
-        Window.UpdateLayout();
+        root.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
-        var centre = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), Window)
-            ?? throw new InvalidOperationException($"{control} is not in the window.");
+        var centre = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), root)
+            ?? throw new InvalidOperationException($"{control} is not in its window.");
         Assert.True(control.IsEffectivelyVisible, $"{control} should be visible to be clicked.");
-        Window.MouseDown(centre, MouseButton.Left);
-        Window.MouseUp(centre, MouseButton.Left);
-        Dispatcher.UIThread.RunJobs();
-        Window.UpdateLayout();
+        root.MouseDown(centre, MouseButton.Left);
+        root.MouseUp(centre, MouseButton.Left);
+        Settle();
     }
+
+    /// <summary>The platform's command key (⌘ on macOS, Ctrl elsewhere), as the window reads it.</summary>
+    public static RawInputModifiers Command =>
+        (Avalonia.Application.Current?.PlatformSettings?.HotkeyConfiguration.CommandModifiers ?? KeyModifiers.Control) switch
+        {
+            KeyModifiers.Meta => RawInputModifiers.Meta,
+            _ => RawInputModifiers.Control,
+        };
+
+    /// <summary><paramref name="local"/> in <paramref name="control"/>'s coordinates, in the window's.</summary>
+    public Point InWindow(Control control, Point local) =>
+        control.TranslatePoint(local, Window) ?? throw new InvalidOperationException($"{control} is not in the window.");
+
+    /// <summary>Presses and releases the left button at <paramref name="local"/> in <paramref name="control"/>.</summary>
+    public void ClickAt(Control control, Point local, RawInputModifiers modifiers = RawInputModifiers.None)
+    {
+        var at = InWindow(control, local);
+        Window.MouseDown(at, MouseButton.Left, modifiers);
+        Window.MouseUp(at, MouseButton.Left, modifiers);
+        Settle();
+    }
+
+    /// <summary>Two clicks in quick succession at <paramref name="local"/> in <paramref name="control"/>: a double-click.</summary>
+    public void DoubleClickAt(Control control, Point local)
+    {
+        var at = InWindow(control, local);
+        Window.MouseDown(at, MouseButton.Left);
+        Window.MouseUp(at, MouseButton.Left);
+        Window.MouseDown(at, MouseButton.Left);
+        Window.MouseUp(at, MouseButton.Left);
+        Settle();
+    }
+
+    /// <summary>Presses at <paramref name="from"/>, moves to <paramref name="to"/> in a few steps, and releases there.</summary>
+    public void Drag(Control control, Point from, Point to, RawInputModifiers modifiers = RawInputModifiers.None)
+    {
+        var start = InWindow(control, from);
+        var end = InWindow(control, to);
+        Window.MouseMove(start, modifiers);
+        Window.MouseDown(start, MouseButton.Left, modifiers);
+        const int Steps = 4;
+        for (var step = 1; step <= Steps; step++)
+        {
+            var at = start + ((end - start) * step / Steps);
+            Window.MouseMove(at, modifiers | RawInputModifiers.LeftMouseButton);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Window.MouseUp(end, MouseButton.Left, modifiers);
+        Settle();
+    }
+
+    /// <summary>Presses and releases a key, as typed on a keyboard.</summary>
+    public void Press(Key key, RawInputModifiers modifiers = RawInputModifiers.None)
+    {
+        Window.KeyPress(key, modifiers, PhysicalKey.None, null);
+        Window.KeyRelease(key, modifiers, PhysicalKey.None, null);
+        Settle();
+    }
+
+    /// <summary>Types text into the focused control.</summary>
+    public void Type(string text)
+    {
+        Window.KeyTextInput(text);
+        Settle();
+    }
+
+    /// <summary>
+    /// Opens <paramref name="box"/> with a click and clicks the first item matching <paramref name="item"/> in its drop-down,
+    /// which is a popup with its own top level.
+    /// </summary>
+    public void Choose(ComboBox box, Func<object?, bool> item)
+    {
+        Click(box);
+        Assert.True(box.IsDropDownOpen, $"{AutomationProperties.GetName(box)} should open when clicked.");
+        var index = box.Items.IndexOf(box.Items.First(item));
+        box.ScrollIntoView(index);
+        Settle();
+        Click(box.ContainerFromIndex(index) ?? throw new InvalidOperationException($"Item {index} of {AutomationProperties.GetName(box)} is not realized."));
+        Assert.False(box.IsDropDownOpen, $"{AutomationProperties.GetName(box)} should close after a choice.");
+    }
+
+    /// <summary>The combo box with the accessible name <paramref name="name"/> inside <paramref name="scope"/>.</summary>
+    public static ComboBox ComboNamed(Control scope, string name) =>
+        Within<ComboBox>(scope, c => AutomationProperties.GetName(c) == name);
+
+    /// <summary>The section (expander) with the header <paramref name="header"/>.</summary>
+    public Expander Section(string header) =>
+        Within<Expander>(Window, e => Equals(e.Header, header));
 
     /// <summary>Waits, letting the UI thread run, until <paramref name="condition"/> holds.</summary>
     public static async Task WaitUntilAsync(Func<bool> condition, string what)
@@ -134,11 +236,20 @@ internal sealed class AppUnderTest : IAsyncDisposable
         }
     }
 
-    /// <summary>Renders the window and saves the frame as a PNG in the test output, for looking at.</summary>
-    public string SaveFrame(string name)
+    /// <summary>Renders a frame now: some views settle their scroll position while drawing.</summary>
+    public void Render()
     {
         Window.UpdateLayout();
-        using var frame = Window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
+        using var frame = Window.CaptureRenderedFrame();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>Renders the main window, or <paramref name="window"/>, and saves the frame as a PNG in the test output, for looking at.</summary>
+    public string SaveFrame(string name, TopLevel? window = null)
+    {
+        window ??= Window;
+        window.UpdateLayout();
+        using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
         var directory = Path.Combine(AppContext.BaseDirectory, "frames");
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"{name}.png");
