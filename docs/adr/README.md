@@ -25,7 +25,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0018](0018-midi-protocol-layering.md) | MIDI protocol layering: a protocol-independent domain with MIDI 1.0 first | Accepted |
 | [0019](0019-sysex-preservation-and-interpretation.md) | SysEx: preserved losslessly, interpreted optionally by dialect | Accepted |
 | [0020](0020-hybrid-tracks-clips-and-automation.md) | Hybrid tracks: typed clips and track automation lanes | Accepted; amended by 0021 and 0024 |
-| [0021](0021-track-roles.md) | Track roles: persisted, reconciled with content, never destructive | Accepted |
+| [0021](0021-track-roles.md) | Track roles: persisted, reconciled with content, never destructive | Accepted; amended by 0030 |
 | [0022](0022-device-chains.md) | Device chains: definitions, instances, ownership, and processing semantics | Accepted; amended by 0028 |
 | [0023](0023-signal-routing-model.md) | One signal routing model: connections, external instruments, and mixer channels | Accepted; supersedes 0008 |
 | [0024](0024-device-automation.md) | Device parameter automation is separate from signal flow | Accepted; amends 0020 |
@@ -34,6 +34,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0027](0027-project-format-4.md) | Project format 4 and the migration from per-track routes | Accepted; amends 0009 |
 | [0028](0028-plugin-midi-effects-at-plan-time.md) | Plugin MIDI effects run in their worker when the plan is compiled | Accepted; amends 0022 and 0025 |
 | [0029](0029-rename-to-bluestone.md) | The project is renamed Bluestone, with no compatibility for Cadence files | Accepted |
+| [0030](0030-group-tracks.md) | Group tracks: mute and solo reach members, membership routes, folding is saved | Accepted; amends 0021 |
 
 ## Template
 

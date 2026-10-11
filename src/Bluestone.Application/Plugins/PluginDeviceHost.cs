@@ -35,7 +35,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
     private readonly PluginHostManager _manager;
     private readonly ProjectSession _session;
-    private readonly ImmutableDictionary<DeviceDefinitionId, PluginIdentity> _plugins;
+    private volatile ImmutableDictionary<DeviceDefinitionId, PluginIdentity> _plugins;
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
@@ -52,8 +52,28 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         _maxBlockFrames = maxBlockFrames;
     }
 
+    /// <summary>A bridge whose available plugins follow <paramref name="library"/>: after every scan, rescan, or retry.</summary>
+    public PluginDeviceHost(PluginHostManager manager, ProjectSession session, PluginLibrary library, double sampleRate = 48_000, int maxBlockFrames = 256)
+        : this(manager, session, (library ?? throw new ArgumentNullException(nameof(library))).Available, sampleRate, maxBlockFrames) =>
+        library.Changed += (_, _) => SetAvailable(library.Available);
+
     /// <summary>Raised when a device's plugin status changes; the argument is the device.</summary>
     public event EventHandler<DeviceId>? StatusChanged;
+
+    /// <summary>
+    /// Raised when the available plugins change. <see cref="Extend"/> then gives a different catalog, and
+    /// <see cref="SyncAsync"/> starts devices whose plugin was found and stops those whose plugin is gone.
+    /// May be raised on any thread.
+    /// </summary>
+    public event EventHandler? AvailableChanged;
+
+    /// <summary>Replaces the available plugins, for example after a rescan.</summary>
+    public void SetAvailable(IEnumerable<PluginIdentity> available)
+    {
+        ArgumentNullException.ThrowIfNull(available);
+        _plugins = available.DistinctBy(DefinitionIdOf).ToImmutableDictionary(DefinitionIdOf, p => p);
+        AvailableChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public static DeviceDefinitionId DefinitionIdOf(PluginIdentity plugin)
     {
@@ -159,7 +179,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     public async Task SyncAsync(Project project, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var wanted = project.Chains.SelectMany(c => c.Devices).Where(d => _plugins.ContainsKey(d.Definition.Id)).ToDictionary(d => d.Id);
+        var available = _plugins;
+        var wanted = project.Chains.SelectMany(c => c.Devices).Where(d => available.ContainsKey(d.Definition.Id)).ToDictionary(d => d.Id);
         foreach (var (id, instance) in _instances.ToList())
         {
             if (!wanted.ContainsKey(id) && _instances.TryRemove(id, out _))
@@ -172,7 +193,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
         foreach (var device in wanted.Values.Where(d => !_instances.ContainsKey(d.Id)))
         {
-            var plugin = _plugins[device.Definition.Id];
+            var plugin = available[device.Definition.Id];
             var parameters = device.Parameters.Select(p => new WorkerParameterValue(p.Id.Value, p.Value.ToFraction())).ToImmutableArray();
             var request = new PluginInstanceRequest(plugin, _sampleRate, _maxBlockFrames, plugin.Kind == PluginKind.AudioEffect ? 2 : 0, plugin.Kind == PluginKind.MidiEffect ? 0 : 2)
             {
