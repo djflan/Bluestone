@@ -46,7 +46,7 @@ public sealed record PluginScannerOptions
 /// <see cref="RescanAsync"/> with <c>ignoreQuarantine</c> or <see cref="ClearQuarantine"/>. A malformed file is an
 /// ordinary failure (cached, not quarantined). Scanning never throws because of a bad module.
 /// </summary>
-public sealed class PluginScanner : IDisposable
+public sealed class PluginScanner : IDisposable, IPluginScanner
 {
     public const string CacheFileName = "scan-cache.json";
     public const string QuarantineFileName = "scan-quarantine.json";
