@@ -90,12 +90,22 @@ internal sealed class ClipSource : IDisposable
         }
     }
 
-    /// <summary>Adds this clip's part of the block to <paramref name="output"/>. Audio thread.</summary>
+    /// <summary>Adds this clip's part of the block to <paramref name="output"/>, on both sides of a loop wrap. Audio thread.</summary>
     public void Render(in AudioRenderContext context, StereoBuffer output)
     {
-        var blockStart = context.SongFrame;
-        var from = Math.Max(blockStart, Region.SongStartFrame);
-        var to = Math.Min(blockStart + context.Frames, Region.SongEndFrame);
+        RenderRange(context.SongFrame, context.FirstLength, 0, output);
+        if (context.Wraps)
+        {
+            RenderRange(context.WrapFrame, context.Frames - context.WrapOffset, context.WrapOffset, output);
+        }
+    }
+
+    // Song frames [songFrame, songFrame + frames) into output frames from outputOffset.
+    private void RenderRange(long songFrame, int frames, int outputOffset, StereoBuffer output)
+    {
+        var blockStart = songFrame - outputOffset;
+        var from = Math.Max(songFrame, Region.SongStartFrame);
+        var to = Math.Min(songFrame + frames, Region.SongEndFrame);
         if (from >= to)
         {
             return;

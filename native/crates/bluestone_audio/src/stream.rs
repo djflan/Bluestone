@@ -13,6 +13,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use crate::ring::Ring;
+
 /// Called once per device callback with an interleaved buffer of `frames * channels` samples to fill.
 pub type RenderFn = unsafe extern "C" fn(
     user_data: *mut c_void,
@@ -95,6 +97,10 @@ pub struct StreamStatus {
     pub render_total_ns: u64,
     /// Render calls that took longer than the block they filled lasts.
     pub late_renders: u64,
+    /// Buffered streams: the ring's size, the frames in it now, and frames the device found missing.
+    pub ring_capacity: u64,
+    pub ring_fill: u64,
+    pub ring_underrun_frames: u64,
 }
 
 /// Width of one render-duration histogram bucket, in nanoseconds.
@@ -150,6 +156,37 @@ impl Shared {
 }
 
 struct UserData(*mut c_void);
+
+/// Where a callback's audio comes from.
+enum Source {
+    /// The render function, called on the audio thread.
+    Direct { render: RenderFn, user: UserData },
+    /// A ring a .NET render thread writes ahead into; the callback only copies.
+    Buffered(Arc<Ring>),
+}
+
+impl Source {
+    /// Fills `data` (interleaved, silent on entry) for one block. Audio thread.
+    fn fill(
+        &self,
+        shared: &Shared,
+        data: &mut [f32],
+        frames: u32,
+        channels: u32,
+        block: &BlockInfo,
+    ) {
+        let started = Instant::now();
+        match self {
+            Source::Direct { render, user } => {
+                // SAFETY: `data` holds frames * channels samples for the duration of the call; the function
+                // pointer and user data were registered by .NET and stay valid until the stream is closed.
+                unsafe { render(user.0, data.as_mut_ptr(), frames, channels, block) };
+            }
+            Source::Buffered(ring) => ring.read(data),
+        }
+        shared.record_render(started.elapsed(), frames, block.sample_rate);
+    }
+}
 
 // SAFETY: the pointer is opaque to Rust; the .NET side guarantees it stays valid and may be used from the
 // audio thread until the stream is closed.
@@ -211,6 +248,7 @@ pub(crate) fn is_discontinuity(elapsed_ns: u128, previous_frames: u32, sample_ra
 
 pub struct OutputStream {
     stream: cpal::Stream,
+    ring: Option<Arc<Ring>>,
     shared: Arc<Shared>,
     sample_rate: u32,
     channels: u32,
@@ -219,11 +257,38 @@ pub struct OutputStream {
 }
 
 impl OutputStream {
+    /// Opens a stream whose callback calls `render` (direct mode).
     pub fn open(
         device_id: Option<&str>,
         request: &StreamRequest,
         render: RenderFn,
         user_data: *mut c_void,
+    ) -> Result<OutputStream, String> {
+        Self::open_with(device_id, request, |_| Source::Direct {
+            render,
+            user: UserData(user_data),
+        })
+    }
+
+    /// Opens a stream whose callback copies from a ring of `ring_frames` frames (buffered mode).
+    pub fn open_buffered(
+        device_id: Option<&str>,
+        request: &StreamRequest,
+        ring_frames: usize,
+    ) -> Result<OutputStream, String> {
+        Self::open_with(device_id, request, |channels| {
+            Source::Buffered(Arc::new(Ring::new(ring_frames, channels)))
+        })
+    }
+
+    pub fn ring(&self) -> Option<&Ring> {
+        self.ring.as_deref()
+    }
+
+    fn open_with(
+        device_id: Option<&str>,
+        request: &StreamRequest,
+        source: impl FnOnce(usize) -> Source,
     ) -> Result<OutputStream, String> {
         let host = cpal::default_host();
         let device = match device_id {
@@ -250,30 +315,31 @@ impl OutputStream {
             BufferSize::Fixed(n) => n as usize,
             BufferSize::Default => 0,
         });
-        let user = UserData(user_data);
+        let source = source(channels as usize);
+        let ring = match &source {
+            Source::Buffered(ring) => Some(Arc::clone(ring)),
+            Source::Direct { .. } => None,
+        };
         let stream = match format {
-            SampleFormat::F32 => build_f32(&device, config, render, user, Arc::clone(&shared))?,
+            SampleFormat::F32 => build_f32(&device, config, source, Arc::clone(&shared))?,
             SampleFormat::I16 => build_converted::<i16>(
                 &device,
                 config,
-                render,
-                user,
+                source,
                 Arc::clone(&shared),
                 capacity_frames,
             )?,
             SampleFormat::I32 => build_converted::<i32>(
                 &device,
                 config,
-                render,
-                user,
+                source,
                 Arc::clone(&shared),
                 capacity_frames,
             )?,
             SampleFormat::U16 => build_converted::<u16>(
                 &device,
                 config,
-                render,
-                user,
+                source,
                 Arc::clone(&shared),
                 capacity_frames,
             )?,
@@ -281,6 +347,7 @@ impl OutputStream {
         };
         Ok(OutputStream {
             stream,
+            ring,
             shared,
             sample_rate: config.sample_rate,
             channels,
@@ -345,6 +412,9 @@ impl OutputStream {
             render_max_ns: s.render_max_ns.load(Ordering::Relaxed),
             render_total_ns: s.render_total_ns.load(Ordering::Relaxed),
             late_renders: s.late_renders.load(Ordering::Relaxed),
+            ring_capacity: self.ring.as_ref().map_or(0, |r| r.capacity()),
+            ring_fill: self.ring.as_ref().map_or(0, |r| r.fill()),
+            ring_underrun_frames: self.ring.as_ref().map_or(0, |r| r.underrun_frames()),
         }
     }
 
@@ -382,8 +452,7 @@ fn error_callback(shared: Arc<Shared>) -> impl FnMut(cpal::Error) + Send + 'stat
 fn build_f32(
     device: &Device,
     config: StreamConfig,
-    render: RenderFn,
-    user: UserData,
+    source: Source,
     shared: Arc<Shared>,
 ) -> Result<cpal::Stream, String> {
     let channels = u32::from(config.channels);
@@ -398,15 +467,10 @@ fn build_f32(
         .build_output_stream::<f32, _, _>(
             config,
             move |data, info| {
-                let user = &user;
                 let frames = (data.len() / channels as usize) as u32;
                 let block = clock.block(&shared, info, frames);
                 data.fill(0.0);
-                // SAFETY: `data` holds frames * channels samples for the duration of the call; the function
-                // pointer and user data were registered by .NET and stay valid until the stream is closed.
-                let started = Instant::now();
-                unsafe { render(user.0, data.as_mut_ptr(), frames, channels, &block) };
-                shared.record_render(started.elapsed(), frames, block.sample_rate);
+                source.fill(&shared, data, frames, channels, &block);
             },
             errors,
             None,
@@ -417,8 +481,7 @@ fn build_f32(
 fn build_converted<T>(
     device: &Device,
     config: StreamConfig,
-    render: RenderFn,
-    user: UserData,
+    source: Source,
     shared: Arc<Shared>,
     capacity_frames: usize,
 ) -> Result<cpal::Stream, String>
@@ -438,7 +501,6 @@ where
         .build_output_stream::<T, _, _>(
             config,
             move |data: &mut [T], info| {
-                let user = &user;
                 let frames = (data.len() / channels as usize) as u32;
                 let block = clock.block(&shared, info, frames);
                 if data.len() > scratch.len() {
@@ -448,10 +510,7 @@ where
                 }
                 let buffer = &mut scratch[..data.len()];
                 buffer.fill(0.0);
-                // SAFETY: as for the f32 path; the buffer is ours and holds frames * channels samples.
-                let started = Instant::now();
-                unsafe { render(user.0, buffer.as_mut_ptr(), frames, channels, &block) };
-                shared.record_render(started.elapsed(), frames, block.sample_rate);
+                source.fill(&shared, buffer, frames, channels, &block);
                 for (out, &sample) in data.iter_mut().zip(buffer.iter()) {
                     *out = T::from_sample(sample.clamp(-1.0, 1.0));
                 }
@@ -549,7 +608,7 @@ mod tests {
     #[test]
     fn the_status_struct_has_a_stable_size() {
         // The .NET side checks this size; change both together and bump the ABI version.
-        assert_eq!(size_of::<StreamStatus>(), 120);
+        assert_eq!(size_of::<StreamStatus>(), 144);
         assert_eq!(size_of::<BlockInfo>(), 32);
         assert_eq!(size_of::<StreamRequest>(), 16);
     }

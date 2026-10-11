@@ -9,6 +9,7 @@
 
 mod devices;
 mod json;
+mod ring;
 mod stream;
 
 use std::ffi::{CStr, c_char, c_void};
@@ -78,16 +79,12 @@ pub unsafe extern "C" fn bluestone_audio_open_output(
         unsafe { write_error(error, error_capacity, "No render function.") };
         return std::ptr::null_mut();
     };
-    let id = if device_id.is_null() {
-        None
-    } else {
-        // SAFETY: the caller guarantees a NUL-terminated string.
-        match unsafe { CStr::from_ptr(device_id) }.to_str() {
-            Ok(id) => Some(id),
-            Err(_) => {
-                unsafe { write_error(error, error_capacity, "The device id is not UTF-8.") };
-                return std::ptr::null_mut();
-            }
+    // SAFETY: the caller guarantees a NUL-terminated string or null.
+    let id = match unsafe { device_id_from(device_id) } {
+        Ok(id) => id,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, message) };
+            return std::ptr::null_mut();
         }
     };
     match OutputStream::open(id, request, render, user_data) {
@@ -97,6 +94,98 @@ pub unsafe extern "C" fn bluestone_audio_open_output(
             std::ptr::null_mut()
         }
     }
+}
+
+/// Opens a buffered output stream (stopped): the device callback copies from a ring of `ring_frames` frames that
+/// one .NET thread fills with `bluestone_audio_ring_write`, so the callback never enters .NET. Returns null on
+/// failure, with the reason in `error`.
+///
+/// # Safety
+/// As for `bluestone_audio_open_output`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_open_output_buffered(
+    device_id: *const c_char,
+    request: *const StreamRequest,
+    ring_frames: u32,
+    error: *mut u8,
+    error_capacity: usize,
+) -> *mut OutputStream {
+    // SAFETY: the caller guarantees `request` is null or valid.
+    let Some(request) = (unsafe { request.as_ref() }) else {
+        unsafe { write_error(error, error_capacity, "No stream request.") };
+        return std::ptr::null_mut();
+    };
+    if request.struct_size as usize != size_of::<StreamRequest>() {
+        unsafe {
+            write_error(
+                error,
+                error_capacity,
+                "The stream request has the wrong size.",
+            )
+        };
+        return std::ptr::null_mut();
+    }
+    // SAFETY: as above.
+    let id = match unsafe { device_id_from(device_id) } {
+        Ok(id) => id,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, message) };
+            return std::ptr::null_mut();
+        }
+    };
+    match OutputStream::open_buffered(id, request, ring_frames.max(1) as usize) {
+        Ok(stream) => Box::into_raw(Box::new(stream)),
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, &message) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Buffered streams: copies up to `frames` interleaved frames into the ring; returns how many fitted (or -1 when
+/// the stream is not buffered). One writer thread only.
+///
+/// # Safety
+/// `stream` must be a live handle or null; `samples` must hold `frames * channels` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_ring_write(
+    stream: *const OutputStream,
+    samples: *const f32,
+    frames: u32,
+) -> i64 {
+    // SAFETY: the caller guarantees a live handle or null.
+    let Some(ring) = (unsafe { stream.as_ref() }).and_then(OutputStream::ring) else {
+        return -1;
+    };
+    if samples.is_null() {
+        return -1;
+    }
+    let channels = unsafe { &*stream }.status().channels as usize;
+    // SAFETY: the caller guarantees `frames * channels` readable floats.
+    let input = unsafe { std::slice::from_raw_parts(samples, frames as usize * channels) };
+    ring.write(input) as i64
+}
+
+/// Buffered streams: blocks the calling (writer) thread until fewer than `below_frames` frames are queued or
+/// `timeout_us` passes; returns the frames queued (or -1 when the stream is not buffered). The thread is not a
+/// .NET-managed wait, so a garbage collection does not hold it.
+///
+/// # Safety
+/// `stream` must be a live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_ring_wait(
+    stream: *const OutputStream,
+    below_frames: u32,
+    timeout_us: u32,
+) -> i64 {
+    // SAFETY: the caller guarantees a live handle or null.
+    let Some(ring) = (unsafe { stream.as_ref() }).and_then(OutputStream::ring) else {
+        return -1;
+    };
+    ring.wait(
+        u64::from(below_frames),
+        std::time::Duration::from_micros(u64::from(timeout_us)),
+    ) as i64
 }
 
 /// Starts (or resumes) the stream.
@@ -199,6 +288,19 @@ pub unsafe extern "C" fn bluestone_audio_close(stream: *mut OutputStream) {
         // SAFETY: the caller hands back ownership of a handle created by `Box::into_raw`.
         drop(unsafe { Box::from_raw(stream) });
     }
+}
+
+/// # Safety
+/// `device_id` must be null or a NUL-terminated string that outlives the result.
+unsafe fn device_id_from<'a>(device_id: *const c_char) -> Result<Option<&'a str>, &'static str> {
+    if device_id.is_null() {
+        return Ok(None);
+    }
+    // SAFETY: the caller guarantees a NUL-terminated string.
+    unsafe { CStr::from_ptr(device_id) }
+        .to_str()
+        .map(Some)
+        .map_err(|_| "The device id is not UTF-8.")
 }
 
 /// Writes `message` as UTF-8 plus a terminating NUL, truncated on a character boundary to fit.

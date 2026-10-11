@@ -29,6 +29,16 @@ internal static unsafe partial class NativeMethods
         byte* error,
         nuint errorCapacity);
 
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_open_output_buffered")]
+    public static partial nint OpenOutputBuffered(byte* deviceId, StreamRequest* request, uint ringFrames, byte* error, nuint errorCapacity);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_ring_write")]
+    public static partial long RingWrite(nint stream, float* samples, uint frames);
+
+    /// <summary>Blocks in native code (so a .NET garbage collection does not hold the thread there).</summary>
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_ring_wait")]
+    public static partial long RingWait(nint stream, uint belowFrames, uint timeoutMicroseconds);
+
     [LibraryImport(Library, EntryPoint = "bluestone_audio_start")]
     public static partial int Start(nint stream, byte* error, nuint errorCapacity);
 
@@ -87,6 +97,9 @@ internal static unsafe partial class NativeMethods
         public long RenderMaxNanoseconds;
         public ulong RenderTotalNanoseconds;
         public ulong LateRenders;
+        public ulong RingCapacity;
+        public ulong RingFill;
+        public ulong RingUnderrunFrames;
     }
 
     /// <summary>Whether the library can be loaded and speaks this ABI version; the reason when it cannot.</summary>

@@ -6,13 +6,15 @@ namespace Bluestone.Audio;
 /// <summary>
 /// Renders the current <see cref="AudioGraph"/> for an audio device (as its <see cref="IAudioRenderer"/>) or for the
 /// <see cref="OfflineAudioDriver"/>. Control threads publish graphs and transport changes; the audio thread picks them
-/// up between blocks without waiting. A device callback longer than <see cref="BlockFrames"/> is rendered in blocks
-/// of at most that size, and every block is cut at the loop end, so nodes always see a contiguous song range.
+/// up between blocks without waiting. The graph always renders blocks of exactly <see cref="BlockFrames"/> (plugins
+/// need one block size throughout); device callbacks of another size are served from the last rendered block, which
+/// adds less than one block of latency when the device's buffer is not a multiple of the block size.
 /// </summary>
 public sealed class AudioEngine : IAudioRenderer, IDisposable
 {
     private readonly float[] _master;
     private readonly float[] _tone;
+    private int _pending;
     private readonly DiskStreamer? _streamer;
     private readonly HashSet<IStreamedSource> _serviced = [];
     private AudioGraph _graph;
@@ -107,27 +109,40 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
 
     private void RenderBlocks(Span<float> interleaved, int frames, int channels, in AudioDeviceBlock block)
     {
-        Transport.BeginCallback(block.HeardTimestamp, SampleRate);
-        var graph = Volatile.Read(ref _graph);
-        var tone = Volatile.Read(ref _testTone);
         var done = 0;
         while (done < frames)
         {
-            var context = Transport.Next(Math.Min(frames - done, BlockFrames), SampleRate);
-            var master = StereoBuffer.Of(_master, BlockFrames, context.Frames);
-            graph.Render(context, master);
-            if (tone is not null)
+            if (_pending == 0)
             {
-                var toneBlock = StereoBuffer.Of(_tone, BlockFrames, context.Frames);
-                toneBlock.Clear();
-                tone.Render(context, toneBlock, toneBlock);
-                master.Add(toneBlock);
+                // This block's first frame is heard after what this callback has already filled.
+                Transport.BeginBlock(block.HeardTimestamp + (done * Stopwatch.Frequency / SampleRate), SampleRate);
+                RenderBlock();
+                _pending = BlockFrames;
             }
 
-            Interleave(master, interleaved.Slice(done * channels, context.Frames * channels), channels);
-            Transport.Advance(context.Frames);
-            done += context.Frames;
+            var count = Math.Min(frames - done, _pending);
+            var from = BlockFrames - _pending;
+            var master = new StereoBuffer(_master.AsSpan(from, count), _master.AsSpan(BlockFrames + from, count));
+            Interleave(master, interleaved.Slice(done * channels, count * channels), channels);
+            _pending -= count;
+            done += count;
         }
+    }
+
+    private void RenderBlock()
+    {
+        var context = Transport.Next(BlockFrames, SampleRate);
+        var master = StereoBuffer.Of(_master, BlockFrames, BlockFrames);
+        Volatile.Read(ref _graph).Render(context, master);
+        if (Volatile.Read(ref _testTone) is { } tone)
+        {
+            var toneBlock = StereoBuffer.Of(_tone, BlockFrames, BlockFrames);
+            toneBlock.Clear();
+            tone.Render(context, toneBlock, toneBlock);
+            master.Add(toneBlock);
+        }
+
+        Transport.Advance(context);
     }
 
     private static void Interleave(StereoBuffer source, Span<float> destination, int channels)

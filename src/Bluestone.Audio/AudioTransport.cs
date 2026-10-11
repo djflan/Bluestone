@@ -23,7 +23,7 @@ public interface IAudioTimeline
 /// The audio engine's song position. The device's sample clock advances it: each block moves it by exactly the
 /// block's frames, so audio is continuous. It is either driven directly (<see cref="Play"/>, <see cref="Stop"/>,
 /// <see cref="Locate"/>, <see cref="SetLoop"/>; tests and the offline driver) or follows an <see cref="IAudioTimeline"/>:
-/// once per callback it compares its own position with the timeline's position at the moment the block will be heard,
+/// once per block it compares its own position with the timeline's position at the moment the block will be heard,
 /// and only relocates when they differ by more than the tolerance (a seek, a start, a stop). The small, slow
 /// difference between the device clock and the timeline is measured (<see cref="TakeDrift"/>) so the timeline can be
 /// moved towards the audio, never the other way round. See ADR 0032.
@@ -91,7 +91,7 @@ public sealed class AudioTransport
     }
 
     /// <summary>Applies requests, or synchronises with the timeline for a block heard at <paramref name="heardTimestamp"/>. Audio thread.</summary>
-    internal void BeginCallback(long heardTimestamp, int sampleRate)
+    internal void BeginBlock(long heardTimestamp, int sampleRate)
     {
         var timeline = Volatile.Read(ref _timeline);
         if (timeline is null)
@@ -135,29 +135,32 @@ public sealed class AudioTransport
         Interlocked.Increment(ref _driftCount);
     }
 
-    /// <summary>The context for the next block of at most <paramref name="frames"/>, cut at the loop end. Audio thread.</summary>
+    /// <summary>The context for the next block, with the wrap when the loop end falls inside it. Audio thread.</summary>
     internal AudioRenderContext Next(int frames, int sampleRate)
     {
-        if (_playing && _loopEnd > _loopStart && _frame < _loopEnd)
+        var wrapOffset = 0;
+        if (_playing && _loopEnd > _loopStart && _frame < _loopEnd && _frame + frames > _loopEnd)
         {
-            frames = (int)Math.Min(frames, _loopEnd - _frame);
+            wrapOffset = (int)(_loopEnd - _frame);
         }
 
-        var context = new AudioRenderContext(frames, sampleRate, _playing, _frame, _jumped, _tempo);
+        var context = new AudioRenderContext(frames, sampleRate, _playing, _frame, _jumped, _tempo, wrapOffset, wrapOffset > 0 ? _loopStart : 0);
         _jumped = false;
         return context;
     }
 
     /// <summary>Moves past a rendered block, wrapping at the loop end. Audio thread.</summary>
-    internal void Advance(int frames)
+    internal void Advance(in AudioRenderContext context)
     {
         if (_playing)
         {
             var engaged = _loopEnd > _loopStart && _frame < _loopEnd;
-            _frame += frames;
+            _frame = context.EndFrame;
             if (engaged && _frame >= _loopEnd)
             {
-                _frame = _loopStart;
+                // At the boundary, or a loop shorter than a block: back into the loop.
+                var length = _loopEnd - _loopStart;
+                _frame = _loopStart + ((_frame - _loopEnd) % length);
                 _jumped = true;
             }
         }

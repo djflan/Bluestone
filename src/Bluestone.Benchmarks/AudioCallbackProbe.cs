@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.Tracing;
 using System.Globalization;
 using System.Runtime;
@@ -28,6 +29,7 @@ internal static class AudioCallbackProbe
         var pressure = Option(args, "--pressure") ?? "full";
         var buffers = (Option(args, "--buffers") ?? "64,128,256").Split(',').Select(b => int.Parse(b, CultureInfo.InvariantCulture)).ToArray();
         var strips = int.Parse(Option(args, "--strips") ?? "32", CultureInfo.InvariantCulture);
+        var queue = int.Parse(Option(args, "--queue") ?? "0", CultureInfo.InvariantCulture);
         if (args.Contains("--sustained"))
         {
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
@@ -43,19 +45,20 @@ internal static class AudioCallbackProbe
         Console.WriteLine($"GC: server={GCSettings.IsServerGC} latency={GCSettings.LatencyMode} concurrent={Environment.GetEnvironmentVariable("DOTNET_gcConcurrent") ?? "default"} " +
                           $"gen0size={Environment.GetEnvironmentVariable("DOTNET_GCgen0size") ?? "default"} tieredPGO={Environment.GetEnvironmentVariable("DOTNET_TieredPGO") ?? "default"}");
         Console.WriteLine($"Pressure: {pressure}; {strips} tone nodes into {strips} strips into 4 buses; {seconds} s per buffer size at {SampleRate} Hz");
+        Console.WriteLine(queue == 0 ? "Mode: direct (the device callback calls .NET)" : $"Mode: buffered, {queue} frames queued ({queue * 1000.0 / SampleRate:0.0} ms) by a .NET render thread");
         Console.WriteLine();
-        Console.WriteLine("buffer | period | callbacks | late (native) | late (managed) | xruns | gaps | p50 | p99 | p99.9 | max | gen0 | gen1 | gen2 | GC pause total | GC pause max | pauses > period");
+        Console.WriteLine("buffer | period | callbacks | late (native) | late (managed) | xruns | gaps | p50 | p99 | p99.9 | max | gen0 | gen1 | gen2 | GC pause total | GC pause max | pauses > period | queue underrun frames");
         foreach (var buffer in buffers)
         {
-            Console.WriteLine(Measure(buffer, seconds, pressure, strips));
+            Console.WriteLine(Measure(buffer, seconds, pressure, strips, queue));
         }
     }
 
-    private static string Measure(int buffer, int seconds, string pressure, int strips)
+    private static string Measure(int buffer, int seconds, string pressure, int strips, int queue)
     {
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(Graph(buffer, strips));
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(SampleRate: SampleRate, BufferFrames: buffer));
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
         output.Start();
         Thread.Sleep(500); // warm-up: tiering, first callbacks
         engine.Statistics.Reset();
@@ -69,6 +72,11 @@ internal static class AudioCallbackProbe
         using var stop = new CancellationTokenSource();
         using var pauses = new GcPauseListener();
         var threads = new List<Thread>();
+        if (pressure == "app")
+        {
+            threads.Add(Start(() => Application(stop.Token)));
+        }
+
         if (pressure is "churn" or "full")
         {
             threads.Add(Start(() => Churn(stop.Token)));
@@ -109,6 +117,7 @@ internal static class AudioCallbackProbe
             Ms(GC.GetTotalPauseDuration() - paused),
             Ms(pauses.Max),
             pauses.LongerThan(period).ToString(CultureInfo.InvariantCulture),
+            (after.QueueUnderrunFrames - before.QueueUnderrunFrames).ToString(CultureInfo.InvariantCulture),
         ]);
     }
 
@@ -170,6 +179,45 @@ internal static class AudioCallbackProbe
                 _ => new List<int>(random.Next(1, 64)),
             };
         }
+    }
+
+    // Roughly what an editing session does: a 200 MB retained heap (the project, undo history, caches), about
+    // 50 MB/s of short-lived allocations in small objects, a quarter of them kept for a while, and no forced collections.
+    private static void Application(CancellationToken stop)
+    {
+        var retained = new List<byte[]>();
+        for (var i = 0; i < 200_000; i++)
+        {
+            retained.Add(new byte[1000]);
+        }
+
+        var recent = new object[200_000];
+        var random = new Random(3);
+        var i2 = 0;
+        var clock = Stopwatch.StartNew();
+        long allocated = 0;
+        while (!stop.IsCancellationRequested)
+        {
+            for (var k = 0; k < 500; k++)
+            {
+                var size = random.Next(16, 400);
+                var item = new byte[size];
+                allocated += size + 24;
+                if (k % 4 == 0)
+                {
+                    recent[i2++ % recent.Length] = item;
+                }
+            }
+
+            // Pace to about 50 MB/s.
+            var due = TimeSpan.FromSeconds(allocated / 50e6);
+            if (clock.Elapsed < due)
+            {
+                Thread.Sleep(due - clock.Elapsed);
+            }
+        }
+
+        GC.KeepAlive(retained);
     }
 
     // A large retained object graph that keeps changing, collected with forced, blocking, compacting gen2 collections.

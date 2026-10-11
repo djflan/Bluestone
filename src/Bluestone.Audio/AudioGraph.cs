@@ -38,7 +38,7 @@ public sealed class AudioGraph
     /// <summary>A graph that renders silence.</summary>
     public static AudioGraph Silent(int blockFrames) => new AudioGraphBuilder().Build(blockFrames, new MixerStripState());
 
-    /// <summary>Renders one block of at most <see cref="BlockFrames"/> frames into <paramref name="output"/>. Audio thread.</summary>
+    /// <summary>Renders one block of <see cref="BlockFrames"/> frames into <paramref name="output"/>. Audio thread.</summary>
     internal void Render(in AudioRenderContext context, StereoBuffer output)
     {
         var frames = context.Frames;

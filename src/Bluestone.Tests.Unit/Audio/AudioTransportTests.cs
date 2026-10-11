@@ -16,21 +16,38 @@ public sealed class AudioTransportTests
 
         driver.Render(200, 100);
 
-        Assert.Equal([(1000L, 64, true), (1064, 36, false), (1100, 64, false), (1164, 36, false)], recorder.Blocks);
-        Assert.Equal(1200, engine.Transport.Position);
+        // Blocks are always 64 frames; callbacks of 100 are served from them, so four blocks cover 200 frames.
+        Assert.Equal([(1000L, 64, true), (1064, 64, false), (1128, 64, false), (1192, 64, false)], recorder.Blocks);
+        Assert.Equal(1256, engine.Transport.Position);
         Assert.True(engine.Transport.IsPlaying);
     }
 
     [Fact]
-    public void Loop_CutsTheBlockAtTheLoopEnd_AndWrapsWithAJump()
+    public void Loop_WrapsInsideTheBlock_AndTheNextBlockContinuesAfterTheWrap()
     {
         var (engine, recorder, driver) = Setup();
         engine.Transport.SetLoop(100, 150);
         engine.Transport.Play(120);
 
-        driver.Render(64, 64);
+        driver.Render(128, 64);
 
-        Assert.Equal([(120L, 30, true), (100, 34, true)], recorder.Blocks);
+        var first = recorder.Contexts[0];
+        Assert.True(first.Wraps);
+        Assert.Equal((120L, 30, 100L, 30), (first.SongFrame, first.WrapOffset, first.WrapFrame, first.FirstLength));
+        Assert.Equal(134, first.EndFrame);
+        Assert.Equal((134L, false), (recorder.Contexts[1].SongFrame, recorder.Contexts[1].Jumped));
+    }
+
+    [Fact]
+    public void Loop_ShorterThanABlock_StaysInsideTheLoop()
+    {
+        var (engine, recorder, driver) = Setup();
+        engine.Transport.SetLoop(100, 110);
+        engine.Transport.Play(100);
+
+        driver.Render(256, 64);
+
+        Assert.All(recorder.Contexts, c => Assert.InRange(c.SongFrame, 100, 109));
     }
 
     [Fact]
@@ -139,11 +156,11 @@ public sealed class AudioTransportTests
 
         driver.Render(1024, 64);
 
-        // 480 frames per pass: the block at 448 is cut to 32 frames and the rest of that callback starts the next
-        // pass at 0. Every jump is a wrap to 0 (or the start); none is a relocation.
-        Assert.Contains((448L, 32, false), recorder.Blocks);
-        Assert.Contains((0L, 32, true), recorder.Blocks);
-        Assert.Equal(3, recorder.Blocks.Count(b => b.Jumped));
+        // 480 frames per pass: the block at 448 wraps after 32 frames and the next starts at 32; the second pass ends
+        // exactly on a block boundary. The only jumps are the start and that boundary wrap; none is a relocation.
+        Assert.Contains(recorder.Contexts, c => c.SongFrame == 448 && c.WrapOffset == 32 && c.WrapFrame == 0);
+        Assert.Contains((32L, 64, false), recorder.Blocks);
+        Assert.Equal(2, recorder.Blocks.Count(b => b.Jumped));
         Assert.All(recorder.Blocks.Where(b => b.Jumped), b => Assert.Equal(0, b.Frame));
     }
 

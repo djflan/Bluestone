@@ -2,18 +2,33 @@ namespace Bluestone.Audio;
 
 /// <summary>
 /// What a node needs to know about the block it renders. Positions are in frames at the engine's sample rate on the
-/// song timeline: frame 0 is the song's start, so frame f is song time f / <see cref="SampleRate"/>.
+/// song timeline: frame 0 is the song's start, so frame f is song time f / <see cref="SampleRate"/>. Every block has
+/// the engine's block size. When the loop end falls inside the block, the song position jumps there: frames
+/// [0, <see cref="WrapOffset"/>) play from <see cref="SongFrame"/> and frames [WrapOffset, Frames) from
+/// <see cref="WrapFrame"/> (the loop start).
 /// </summary>
-/// <param name="Frames">Frames in this block (at most the engine's block size).</param>
+/// <param name="Frames">Frames in this block (the engine's block size).</param>
 /// <param name="SampleRate">The engine's rate in Hz.</param>
 /// <param name="Playing">Whether the transport is playing. When stopped, <paramref name="SongFrame"/> is the stopped position.</param>
 /// <param name="SongFrame">Song position of the block's first frame.</param>
 /// <param name="Jumped">
-/// The song position is not the previous block's end: playback started, stopped, sought, or wrapped at the loop end.
-/// Nodes that follow the song (clips, scheduled events) must relocate; sounding notes must be released.
+/// The song position at the block's start is not the previous block's end: playback started, stopped, sought, or
+/// wrapped exactly at the block boundary. Nodes that follow the song must relocate; sounding notes must be released.
 /// </param>
 /// <param name="Tempo">Beats per minute at the block's start, for plugins that ask (informational).</param>
-public readonly record struct AudioRenderContext(int Frames, int SampleRate, bool Playing, long SongFrame, bool Jumped, double Tempo = 120);
+/// <param name="WrapOffset">Where in the block the loop wraps, or 0 when it does not.</param>
+/// <param name="WrapFrame">The song frame playing from <paramref name="WrapOffset"/> on.</param>
+public readonly record struct AudioRenderContext(int Frames, int SampleRate, bool Playing, long SongFrame, bool Jumped, double Tempo = 120, int WrapOffset = 0, long WrapFrame = 0)
+{
+    /// <summary>The loop wraps inside this block.</summary>
+    public bool Wraps => WrapOffset > 0 && WrapOffset < Frames;
+
+    /// <summary>Frames played from <see cref="SongFrame"/>.</summary>
+    public int FirstLength => Wraps ? WrapOffset : Frames;
+
+    /// <summary>The song frame after the block's last frame.</summary>
+    public long EndFrame => Wraps ? WrapFrame + (Frames - WrapOffset) : SongFrame + Frames;
+}
 
 /// <summary>
 /// A source or processor in the render graph (a test tone, a track's audio clips, a plugin). Output is stereo.
