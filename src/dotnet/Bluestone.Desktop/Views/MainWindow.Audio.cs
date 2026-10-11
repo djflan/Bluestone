@@ -12,7 +12,10 @@ public partial class MainWindow
     /// <summary>Gives the window the audio settings to show; without it the menu item does nothing.</summary>
     public void AttachAudio(AudioViewModel audio) => _audio = audio;
 
-    private void OnAudioSettingsClick(object? sender, RoutedEventArgs e)
+    private void OnAudioSettingsClick(object? sender, RoutedEventArgs e) => ShowAudioSettings();
+
+    /// <summary>Opens the audio settings (Window ▸ Audio Settings… in the macOS menu bar, File ▸ Audio Settings… elsewhere).</summary>
+    internal void ShowAudioSettings()
     {
         if (_audio is { } audio)
         {
