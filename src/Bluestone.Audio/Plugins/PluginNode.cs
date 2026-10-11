@@ -9,7 +9,8 @@ namespace Bluestone.Audio.Plugins;
 /// <see cref="PluginInstance.ProcessBlock"/>. Plugins run every block, playing or not, so tails ring out. On a jump
 /// (start, stop, seek, loop wrap) and when its schedule is replaced, every note the node started is released first.
 /// The instance's failure policy decides the output when the worker cannot deliver: silence, never stale audio.
-/// The output lags by <see cref="LatencyFrames"/> (pipelining plus the plugin's own latency); nothing compensates yet.
+/// The output lags by <see cref="LatencyFrames"/> (pipelining plus the plugin's own latency); the graph compensates
+/// (ADR 0035). Live input reaches the instrument through <see cref="LiveSource"/>, at the next block.
 /// </summary>
 public sealed class PluginNode : AudioNode
 {
@@ -22,6 +23,8 @@ public sealed class PluginNode : AudioNode
     private readonly bool[] _sounding = new bool[NoteSlots];
     private PluginSchedule _schedule = PluginSchedule.Empty;
     private PluginSchedule? _cursorSchedule;
+    private ILiveEventSource? _liveSource;
+    private ILiveEventSource? _liveActive;
     private int _nextEvent;
     private int _nextParameter;
     private long _expectedFrame = long.MinValue;
@@ -62,6 +65,16 @@ public sealed class PluginNode : AudioNode
         set => Volatile.Write(ref _schedule, value ?? throw new ArgumentNullException(nameof(value)));
     }
 
+    /// <summary>
+    /// Where live input for this instrument comes from (ADR 0035), or null. Any thread; the audio thread picks it up at
+    /// the next block, after asking the source it replaces to release what it sounds.
+    /// </summary>
+    public ILiveEventSource? LiveSource
+    {
+        get => Volatile.Read(ref _liveSource);
+        set => Volatile.Write(ref _liveSource, value);
+    }
+
     /// <summary>Blocks processed.</summary>
     public long Blocks => Interlocked.Read(ref _blocks);
 
@@ -92,6 +105,7 @@ public sealed class PluginNode : AudioNode
             }
         }
 
+        count = CollectLive(context, count);
         var end = context.EndFrame;
         _expectedFrame = context.Playing ? end : context.SongFrame;
         var inputAudio = _input.AsSpan(0, request.InputChannels * frames);
@@ -114,6 +128,26 @@ public sealed class PluginNode : AudioNode
             outputAudio[..frames].CopyTo(output.Left);
             outputAudio[..frames].CopyTo(output.Right);
         }
+    }
+
+    // Live events after the scheduled ones; a replaced source releases its notes first.
+    private int CollectLive(in AudioRenderContext context, int count)
+    {
+        var source = Volatile.Read(ref _liveSource);
+        var free = _events.AsSpan(count);
+        if (!ReferenceEquals(source, _liveActive))
+        {
+            if (_liveActive is { } replaced)
+            {
+                var released = replaced.Release(free);
+                count += released;
+                free = free[released..];
+            }
+
+            _liveActive = source;
+        }
+
+        return source is null ? count : count + source.Render(context, free);
     }
 
     // Releases what sounds (at the given offset) and moves the cursors to a song frame.

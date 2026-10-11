@@ -114,9 +114,12 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         {
             if (_pending == 0)
             {
-                // This block's first frame is heard after what this callback has already filled.
-                Transport.BeginBlock(block.HeardTimestamp + (done * Stopwatch.Frequency / SampleRate), SampleRate);
-                RenderBlock();
+                // This block's first frame is heard after what this callback has already filled. The graph's latency is
+                // rendered ahead of the transport, so what the master puts out is what the transport plays then.
+                var heard = block.HeardTimestamp + (done * Stopwatch.Frequency / SampleRate);
+                var graph = Volatile.Read(ref _graph);
+                Transport.BeginBlock(heard, SampleRate, graph.LatencyFrames);
+                RenderBlock(graph, heard);
                 _pending = BlockFrames;
             }
 
@@ -129,11 +132,11 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         }
     }
 
-    private void RenderBlock()
+    private void RenderBlock(AudioGraph graph, long heard)
     {
-        var context = Transport.Next(BlockFrames, SampleRate);
+        var context = Transport.Next(BlockFrames, SampleRate) with { HeardTimestamp = heard };
         var master = StereoBuffer.Of(_master, BlockFrames, BlockFrames);
-        Volatile.Read(ref _graph).Render(context, master);
+        graph.Render(context, master);
         if (Volatile.Read(ref _testTone) is { } tone)
         {
             var toneBlock = StereoBuffer.Of(_tone, BlockFrames, BlockFrames);

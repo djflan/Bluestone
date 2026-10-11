@@ -154,9 +154,29 @@ public sealed class ReferencePluginTests
     }
 
     [Fact]
+    public void Delay_PutsOutItsInputExactlyItsReportedLatencyLate_AcrossBlocks()
+    {
+        var delay = new DelayPlugin();
+        delay.Prepare(48_000, 64, 1, 1);
+        Assert.True(delay.TrySetParameter(DelayPlugin.LatencyParameter, 100.0 / DelayPlugin.MaxLatency));
+        Assert.Equal(100, delay.LatencyFrames);
+        var input = new float[64];
+        input[5] = 1;
+        var heard = new List<float>();
+        for (var block = 0; block < 4; block++)
+        {
+            var output = new float[64];
+            delay.Process(Args(64, block == 0 ? input : new float[64], output), new OutputEventList(1));
+            heard.AddRange(output);
+        }
+
+        Assert.Equal([105], Enumerable.Range(0, heard.Count).Where(i => heard[i] != 0));
+    }
+
+    [Fact]
     public void Catalog_KnowsTheReferencePlugins_AndNothingElse()
     {
-        Assert.Equal(["reference.gain", "reference.sine", "reference.transpose"], ReferencePluginCatalog.Identities.Select(i => i.PluginId));
+        Assert.Equal(["reference.gain", "reference.sine", "reference.transpose", "reference.delay"], ReferencePluginCatalog.Identities.Select(i => i.PluginId));
         Assert.IsType<SinePlugin>(ReferencePluginCatalog.Create(ReferencePluginCatalog.Identities[1]));
         Assert.Null(ReferencePluginCatalog.Create(new PluginIdentity("another-format", "m", "reference.gain", "x", "y", PluginKind.AudioEffect, "1")));
     }

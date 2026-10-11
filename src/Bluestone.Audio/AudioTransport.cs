@@ -44,6 +44,7 @@ public sealed class AudioTransport
     private long _loopEnd;
     private bool _jumped = true;
     private double _tempo = 120;
+    private int _compensation;
 
     // Published for other threads.
     private long _position;
@@ -90,8 +91,13 @@ public sealed class AudioTransport
         return count == 0 ? (0, 0) : ((double)sum / count, count);
     }
 
-    /// <summary>Applies requests, or synchronises with the timeline for a block heard at <paramref name="heardTimestamp"/>. Audio thread.</summary>
-    internal void BeginBlock(long heardTimestamp, int sampleRate)
+    /// <summary>
+    /// Applies requests, or synchronises with the timeline for a block heard at <paramref name="heardTimestamp"/>. Audio
+    /// thread. When following a timeline, the block renders <paramref name="compensationFrames"/> ahead of the timeline's
+    /// position (the graph's latency, ADR 0035), so the master puts out the timeline's position when it is heard; a change
+    /// of that amount relocates.
+    /// </summary>
+    internal void BeginBlock(long heardTimestamp, int sampleRate, int compensationFrames = 0)
     {
         var timeline = Volatile.Read(ref _timeline);
         if (timeline is null)
@@ -115,9 +121,11 @@ public sealed class AudioTransport
         _loopStart = (long)Math.Round(position.LoopStartSeconds * sampleRate);
         _loopEnd = (long)Math.Round(position.LoopEndSeconds * sampleRate);
         _tempo = position.Tempo;
-        if (!_playing)
+        expected = Ahead(expected, compensationFrames);
+        if (!_playing || compensationFrames != _compensation)
         {
             _playing = true;
+            _compensation = compensationFrames;
             _frame = expected;
             _jumped = true;
             return;
@@ -167,6 +175,18 @@ public sealed class AudioTransport
 
         Volatile.Write(ref _position, _frame);
         Volatile.Write(ref _isPlaying, _playing ? 1 : 0);
+    }
+
+    // A position moved ahead by some frames, wrapping into the loop when it is engaged.
+    private long Ahead(long frame, int frames)
+    {
+        var ahead = frame + frames;
+        if (_loopEnd > _loopStart && frame < _loopEnd && ahead >= _loopEnd)
+        {
+            ahead = _loopStart + ((ahead - _loopEnd) % (_loopEnd - _loopStart));
+        }
+
+        return ahead;
     }
 
     private void ApplyRequest()

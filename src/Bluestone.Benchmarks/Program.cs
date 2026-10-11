@@ -14,6 +14,12 @@ if (args is ["--jitter", ..])
     return;
 }
 
+if (args is ["--live", ..])
+{
+    LiveLatencyProbe.Run(args);
+    return;
+}
+
 if (args is ["--audio", ..])
 {
     AudioCallbackProbe.Run(args);

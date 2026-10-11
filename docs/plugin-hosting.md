@@ -6,7 +6,7 @@ Bluestone keeps running, the affected instances report a status, their audio out
 user can restart them without closing the project.
 
 **Scope today.** The worker hosts Bluestone's built-in **reference plugins** (`reference.gain`, `reference.sine`,
-`reference.transpose`) and third-party **VST3** and **CLAP** plugins through a Rust plugin host loaded only in the
+`reference.transpose`, `reference.delay`) and third-party **VST3** and **CLAP** plugins through a Rust plugin host loaded only in the
 worker (ADR 0033). Scanning, loading, parameters, state, processing, MIDI effects at plan time, crash recovery, and
 editor windows work; exactly what was verified on which plugin and machine is in
 [Third-party plugins](#third-party-plugins-vst3-and-clap). The audio engine (ADR 0032) drives plugin instances through
@@ -449,7 +449,7 @@ Restart the editor opens again. Keyboard focus is whatever the operating system 
 | macOS arm64, this machine | The Legend HZ (VST3), Airwindows Consolidated (CLAP), with a development probe | Editor windows appear on screen at the plugin's size (checked through the window list; the screen was locked, so not by eye); Airwindows sent parameter edits from its editor |
 | macOS arm64, this machine | SuperClassic, Scaler 3, Scaler 3 Audio, Melody Sauce 3 (VST3) | Scanned by the app at start and loaded, processed, and saved by the probe; not covered by tests |
 
-Not verified: editors on Windows and Linux (the code compiles and runs headless in CI; no window was opened on
+Not verified: live input and delay compensation with third-party plugins (tested with the reference plugins), editors on Windows and Linux (the code compiles and runs headless in CI; no window was opened on
 those systems), closing or resizing an editor window by hand (no one was at the machine), plugin MIDI output from a
 third-party MIDI effect (none of the installed plugins is a VST3 or CLAP MIDI effect; Scaler 3 and Melody Sauce 3
 are instruments that also put out MIDI, which Bluestone does not route from an instrument), Intel-only plugins on
@@ -570,7 +570,7 @@ somewhere becomes a `PluginNode` in the render graph. Every block it calls `Proc
 transport; plugins run every block, playing or not. On a start, stop, seek, loop wrap, or a new schedule after an
 edit, the notes the node started are released first. A worker that fails gives silence under the instance's failure
 policy, never stale audio, and the engine carries on (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`). Each
-node's latency (`ReportedLatencyFrames`) is reported per device; nothing compensates for it yet. Instances must run
+node's latency (`ReportedLatencyFrames`) is compensated across the graph (see below). Instances must run
 at the device's rate and accept the engine's block size, or they are reported and left silent; each time an audio
 device opens, `PluginDeviceHost.SetSampleRateAsync` restarts every instance at its rate from its captured live state
 (`PluginDeviceHostTests.ARateChange_*`).
@@ -579,6 +579,33 @@ Tests (real workers, offline driver): `AudioPluginTests` (the Sine at its pitch 
 block of latency, the Gain processing connected audio, a killed worker, release on locate, zero allocation) and
 `SoftwareInstrumentAudioTests` (an instrument track through the signal graph, the plugin bridge, and the project audio
 graph).
+
+### Delay compensation
+
+The render graph compensates every plugin's latency (ADR 0035): each node's output lags by its pipelining plus the
+plugin's own latency, every summing point (a node's input, a mixer channel, the master, through outputs and sends)
+waits for its slowest input, and faster inputs are delayed to match. The audio engine renders the longest path's
+latency ahead of the transport, so plugin audio, clips, and external MIDI line up. A `LatencyChanged` notification
+from a worker gets the graph rebuilt, and a once-a-second check catches a latency that changed without one (a
+restarted plugin). The reference plugin `reference.delay` delays its input by exactly the latency it reports and
+announces a change when its Latency parameter or state is set, so this is tested sample by sample with real workers
+(`DelayCompensationTests`: two paths with different plugin latencies impulse-aligned at the master, realigned after a
+latency change; a send to a return with a latent plugin aligned with the dry channel). Low-latency monitoring skips
+the compensation of the instrument played live.
+
+### Live input through plugins
+
+Live input (MIDI thru, the on-screen keyboard, auditioned notes) passes through every device on the track's live
+route (ADR 0035). A plugin MIDI effect on the route is processed live by its own running instance through the data
+plane (`PluginLiveStage`: the plan-time render above is separate and untouched); its output comes one pipeline block
+later. While its worker cannot deliver, events pass through unchanged, and every note it had put out is released
+first. A plugin instrument at the end of the route gets the notes in its `PluginNode` on the audio thread, at the
+first frame of the next block, so they are heard after the render-ahead queue, the effects' pipelines, and its own.
+Routes that change release what they sound. Tests (`LiveInputPluginTests`, real workers, offline driver): a note
+through the reference Transpose into the reference Sine at the transposed pitch after exactly the measured latency;
+arpeggio steps landing 6000 frames apart through a plugin effect; bypassing the effect while a key is held releases
+the note; a killed effect worker releases the note it sent to an external instrument; a killed and restarted
+instrument leaves nothing hanging.
 
 ## Acceptance scenarios
 
@@ -602,6 +629,8 @@ are covered by `NativePluginTests`, `ThirdPartyPluginDeviceTests`, and, with ins
 | Exchange state machine, withdraw, late-result discard, pipelining, faults, generations, disposal, dropped counts | `BlockExchangeTests`, `PipelineLatencyTests` |
 | Zero allocation on submit and collect; two-thread stress with pattern-checked audio | `BlockExchangeTests.HostSubmitAndCollect_AllocateNothing`, `BlockExchangeTests.TwoThreads_UnderStress_NeverDeliverAnotherBlocksAudio` |
 | Plugin MIDI effects rendered into the plan: transposition, automation, taps, killed and hung workers | `PluginMidiInThePlanTests`, `ChainRunnerTests.AnOutOfProcessDevice_*` |
+| Live input through a plugin MIDI effect and instrument; killed workers leave no hanging note; measured latency | `LiveInputPluginTests` |
+| Delay compensation sample by sample with the reference Delay; a latency change recompensates | `DelayCompensationTests`, `LatencyCompensationTests` |
 | The same across a real worker | `PluginDataPlaneProcessTests` |
 | Reference plugins (sample-accurate gain, polyphonic deterministic sine, transpose passing controllers and SysEx), state | `ReferencePluginTests`, `ReferencePluginProcessTests` |
 | Kill mid-stream, Unavailable(Crashed) once, silence at once, restart restores state and parameters | `PluginCrashRecoveryTests.KillingTheWorkerMidStream_MarksCrashedOnce_SilencesAtOnce_AndRestartRestoresStateAndParameters` |
@@ -628,10 +657,8 @@ and run as one non-parallel collection. The integration project references the w
   note expression, CLAP note expressions and parameter modulation, MPE, audio-port configurations, side-chain
   inputs, routing the MIDI output of an instrument plugin, reloading a VST3 component on `kReloadComponent`.
 - **Editors embedded in Bluestone's own window**, and editors on Windows and Linux verified on hardware.
-- **Plugin delay compensation across a graph.** Instances report their latency; nothing compensates for it yet.
 - **Operating-system sandboxing** of workers (not planned: the owner chose crash isolation with hosting modes; ADR 0034).
 - **Wake-up primitives** (futex, eventfd, Windows events) for the data plane.
 - **MIDI 2.0** events on the data plane.
 - **In-process hosting** of trusted plugins.
-- **Live input through plugins.** Plugin MIDI effects reach the plan by rendering (above); live input does not pass
-  through plugins.
+

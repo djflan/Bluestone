@@ -94,14 +94,14 @@ internal sealed class InstanceHostSession(Stream pipe, WorkerMainThread mainThre
         CaptureState capture => WithInstance(capture.InstanceId, i => i.TrySaveState(out var state, out var error)
             ? new StateResult(i.Id, state!)
             : new ErrorReply(ErrorCode.PluginError, error ?? "The plugin did not save its state.")),
-        RestoreState restore => WithInstance(restore.InstanceId, i =>
+        RestoreState restore => WithInstance(restore.InstanceId, i => ReportingLatency(i, () =>
         {
             var error = i.TryLoadState(restore.State);
             return new RestoreStateResult(i.Id, error is null, error);
-        }),
-        SetParameter set => WithInstance(set.InstanceId, i => i.TrySetParameter(set.ParameterId, set.Value)
+        })),
+        SetParameter set => WithInstance(set.InstanceId, i => ReportingLatency(i, () => i.TrySetParameter(set.ParameterId, set.Value)
             ? new Ack()
-            : new ErrorReply(ErrorCode.InvalidRequest, $"Unknown parameter {set.ParameterId}.")),
+            : new ErrorReply(ErrorCode.InvalidRequest, $"Unknown parameter {set.ParameterId}."))),
         GetParameters get => WithInstance(get.InstanceId, i => new ParameterValues(i.Id, [.. i.GetParameters()])),
         RenderEvents render => OfflineRender.Run(render),
         OpenEditor open => WithInstance(open.InstanceId, i => i.OpenEditor(open.Title) is { } error
@@ -114,6 +114,21 @@ internal sealed class InstanceHostSession(Stream pipe, WorkerMainThread mainThre
         }),
         _ => new ErrorReply(ErrorCode.InvalidRequest, $"{message.Type} is not a request this worker serves."),
     };
+
+    // A parameter or state that changes a plugin's latency is announced, as native plugins announce theirs. The reply
+    // is written first, so the host sees the notification after the request completes.
+    private ProtocolMessage ReportingLatency(HostedInstance instance, Func<ProtocolMessage> action)
+    {
+        var before = instance.LatencyFrames;
+        var reply = action();
+        var after = instance.LatencyFrames;
+        if (after != before)
+        {
+            _notifications.Writer.TryWrite(new PluginNotification(instance.Id, NotificationKind.LatencyChanged, 0, after));
+        }
+
+        return reply;
+    }
 
     private ProtocolMessage Create(CreateInstance request)
     {

@@ -58,6 +58,18 @@ internal sealed class HostedInstance : IDisposable
         }
     }
 
+    /// <summary>The latency the plugin reports now, in frames.</summary>
+    public int LatencyFrames
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _plugin.LatencyFrames;
+            }
+        }
+    }
+
     public ParameterValue[] GetParameters()
     {
         lock (_gate)
