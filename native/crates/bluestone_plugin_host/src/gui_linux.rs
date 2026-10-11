@@ -30,10 +30,13 @@ struct Display {
     delete_window: Atom,
     net_wm_name: Atom,
     utf8_string: Atom,
-    windows: HashMap<Window_, (WindowCallback, Rc<Cell<(u32, u32)>>)>,
+    windows: HashMap<Window_, WindowEntry>,
 }
 
 type Window_ = u32;
+
+/// A window's callback and its last known content size.
+type WindowEntry = (WindowCallback, Rc<Cell<(u32, u32)>>);
 
 struct FdHandler {
     id: u64,
@@ -43,7 +46,7 @@ struct FdHandler {
 
 thread_local! {
     static DISPLAY: RefCell<Option<Display>> = const { RefCell::new(None) };
-    static FDS: RefCell<(u64, Vec<FdHandler>)> = RefCell::new((0, Vec::new()));
+    static FDS: RefCell<(u64, Vec<FdHandler>)> = const { RefCell::new((0, Vec::new())) };
 }
 
 pub fn init() -> Result<(), String> {
@@ -196,13 +199,12 @@ fn process_x_events() {
                         }
                     }
                 }
-                Event::ClientMessage(e) => {
+                Event::ClientMessage(e)
                     if e.type_ == display.protocols
-                        && e.data.as_data32()[0] == display.delete_window
-                    {
-                        if let Some((callback, _)) = display.windows.get(&e.window) {
-                            dispatch.push((callback.clone(), WindowEvent::CloseRequested));
-                        }
+                        && e.data.as_data32()[0] == display.delete_window =>
+                {
+                    if let Some((callback, _)) = display.windows.get(&e.window) {
+                        dispatch.push((callback.clone(), WindowEvent::CloseRequested));
                     }
                 }
                 _ => {}
