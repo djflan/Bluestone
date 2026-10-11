@@ -220,7 +220,7 @@ public static class ProjectCommands
                     track.IsSoloed,
                     track.Automation.Select(l => new AutomationLane(
                         AutomationLaneId.New(),
-                        !l.Target.IsMidi && devices.TryGetValue(l.Target.Device, out var device) ? AutomationTarget.ForDevice(device, l.Target.DeviceParameter) : l.Target,
+                        l.Target.IsDevice && devices.TryGetValue(l.Target.Device, out var device) ? AutomationTarget.ForDevice(device, l.Target.DeviceParameter) : l.Target,
                         l.Points)),
                     track.Role,
                     track.Group,

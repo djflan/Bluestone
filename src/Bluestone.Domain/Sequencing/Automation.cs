@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Time;
 
 namespace Bluestone.Domain.Sequencing;
@@ -21,11 +22,18 @@ public enum AutomationParameter
 
     /// <summary>A parameter of one device instance. It is delivered to the device, never sent as MIDI (ADR 0024).</summary>
     DeviceParameter,
+
+    /// <summary>
+    /// A parameter of an external instrument's part, named by its key in the instrument's profile. It is
+    /// translated into the MIDI the profile maps it to (CC, RPN, NRPN, or SysEx) when the plan is compiled (ADR 0031).
+    /// </summary>
+    InstrumentParameter,
 }
 
 /// <summary>
 /// What an automation lane controls. Either MIDI performance data on one channel: a controller, pitch
-/// bend, or channel pressure (ADR 0020); or one parameter of one device instance (ADR 0024).
+/// bend, or channel pressure (ADR 0020); or one parameter of one device instance (ADR 0024); or one
+/// parameter of an external instrument's part (ADR 0031).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -38,9 +46,18 @@ public enum AutomationParameter
 /// ID, so moving the device within or between chains retargets nothing. Its values are normalized
 /// (0 to 1, see <see cref="ControlValue.FromFraction"/>).
 /// </para>
+/// <para>
+/// An instrument target names the part: the external instrument, its port, and the channel, and the
+/// parameter by its key in the instrument's profile (its parameter map). Its values are normalized too,
+/// and scaled to the parameter's range when they are translated. It is not tied to the track's
+/// connections: a lane on any track can set any part's parameter.
+/// </para>
 /// </remarks>
 public readonly record struct AutomationTarget
 {
+    /// <summary>The longest port ID or parameter key an instrument target holds.</summary>
+    public const int MaxKeyLength = 64;
+
     private AutomationTarget(AutomationParameter parameter, MidiChannel channel, ControllerNumber controller, DeviceId device = default, ParameterId deviceParameter = default)
     {
         Parameter = parameter;
@@ -50,9 +67,18 @@ public readonly record struct AutomationTarget
         DeviceParameter = deviceParameter;
     }
 
+    private AutomationTarget(ExternalInstrumentId instrument, string port, MidiChannel channel, string parameter)
+    {
+        Parameter = AutomationParameter.InstrumentParameter;
+        Channel = channel;
+        Instrument = instrument;
+        Port = port;
+        InstrumentParameter = parameter;
+    }
+
     public AutomationParameter Parameter { get; }
 
-    /// <summary>The channel, for MIDI targets. Meaningless for device targets.</summary>
+    /// <summary>The channel, for MIDI and instrument targets. Meaningless for device targets.</summary>
     public MidiChannel Channel { get; }
 
     /// <summary>The controller, for <see cref="AutomationParameter.Controller"/> targets.</summary>
@@ -64,14 +90,30 @@ public readonly record struct AutomationTarget
     /// <summary>The device's parameter, for <see cref="AutomationParameter.DeviceParameter"/> targets.</summary>
     public ParameterId DeviceParameter { get; }
 
-    /// <summary>True for targets that become MIDI events; false for device parameters.</summary>
-    public bool IsMidi => Parameter != AutomationParameter.DeviceParameter;
+    /// <summary>The external instrument, for <see cref="AutomationParameter.InstrumentParameter"/> targets.</summary>
+    public ExternalInstrumentId Instrument { get; }
+
+    /// <summary>The instrument's port ID, for <see cref="AutomationParameter.InstrumentParameter"/> targets.</summary>
+    public string? Port { get; }
+
+    /// <summary>The parameter's key in the instrument's profile, for <see cref="AutomationParameter.InstrumentParameter"/> targets.</summary>
+    public string? InstrumentParameter { get; }
+
+    /// <summary>True for targets that become MIDI events of the track; false for device and instrument parameters.</summary>
+    public bool IsMidi => Parameter is AutomationParameter.Controller or AutomationParameter.PitchBend or AutomationParameter.ChannelPressure;
+
+    /// <summary>True for a device parameter target.</summary>
+    public bool IsDevice => Parameter == AutomationParameter.DeviceParameter;
+
+    /// <summary>True for an external instrument parameter target.</summary>
+    public bool IsInstrument => Parameter == AutomationParameter.InstrumentParameter;
 
     /// <summary>False for a target not made by one of the factories, such as <c>default</c>.</summary>
     public bool IsValid => Parameter switch
     {
         AutomationParameter.Controller => IsAutomatable(Controller),
         AutomationParameter.DeviceParameter => Device.Value != Guid.Empty,
+        AutomationParameter.InstrumentParameter => Instrument.Value != Guid.Empty && !string.IsNullOrEmpty(Port) && !string.IsNullOrEmpty(InstrumentParameter),
         _ => true,
     };
 
@@ -91,6 +133,34 @@ public readonly record struct AutomationTarget
             ? new(AutomationParameter.DeviceParameter, default, default, device, parameter)
             : throw new ArgumentException("A device target needs a device.", nameof(device));
 
+    /// <summary>A parameter of the part of <paramref name="instrument"/> on <paramref name="port"/> and <paramref name="channel"/>.</summary>
+    /// <param name="instrument">The external instrument.</param>
+    /// <param name="port">The instrument's port ID, such as "A".</param>
+    /// <param name="channel">The part's channel.</param>
+    /// <param name="parameter">The parameter's key in the instrument's profile.</param>
+    /// <exception cref="ArgumentException">The instrument ID is empty, or the port or key is empty or too long.</exception>
+    public static AutomationTarget ForInstrument(ExternalInstrumentId instrument, string port, MidiChannel channel, string parameter)
+    {
+        if (instrument.Value == Guid.Empty)
+        {
+            throw new ArgumentException("An instrument target needs an instrument.", nameof(instrument));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(port);
+        ArgumentException.ThrowIfNullOrWhiteSpace(parameter);
+        if (port.Length > MaxKeyLength)
+        {
+            throw new ArgumentException($"Port IDs are at most {MaxKeyLength} characters.", nameof(port));
+        }
+
+        if (parameter.Length > MaxKeyLength)
+        {
+            throw new ArgumentException($"Parameter keys are at most {MaxKeyLength} characters.", nameof(parameter));
+        }
+
+        return new(instrument, port, channel, parameter);
+    }
+
     public static bool IsAutomatable(ControllerNumber controller) =>
         !(controller.IsBankSelect || controller.Value is >= 32 and <= 63 or 6 or 96 or 97 || controller.IsParameterNumberSelector || controller.IsChannelMode);
 
@@ -108,27 +178,28 @@ public readonly record struct AutomationTarget
         _ => null,
     };
 
-    /// <summary>The same target on <paramref name="channel"/>. A device target has no channel and is returned unchanged.</summary>
+    /// <summary>The same target on <paramref name="channel"/>. Device and instrument targets are returned unchanged.</summary>
     public AutomationTarget WithChannel(MidiChannel channel) => IsMidi ? new(Parameter, channel, Controller) : this;
 
     /// <summary>
     /// <paramref name="value"/> as the target is sent, scaled back up: as MIDI 1.0 sends a MIDI target, and
-    /// unchanged for a device parameter, which is delivered at full resolution.
+    /// unchanged for a device or instrument parameter, which is delivered (or translated) at full resolution.
     /// </summary>
     public ControlValue AtMidi1Resolution(ControlValue value) => Parameter switch
     {
         AutomationParameter.PitchBend => ControlValue.FromFourteenBit(value.ToFourteenBit()),
-        AutomationParameter.DeviceParameter => value,
+        AutomationParameter.DeviceParameter or AutomationParameter.InstrumentParameter => value,
         _ => ControlValue.FromSevenBit(value.ToSevenBit()),
     };
 
     /// <summary>An event setting this target to <paramref name="value"/>. It is rendered, not stored, so it has no ID.</summary>
-    /// <exception cref="InvalidOperationException">The target is a device parameter, which is not MIDI.</exception>
+    /// <exception cref="InvalidOperationException">The target is a device or instrument parameter, which is not a track event.</exception>
     public ChannelEvent CreateEvent(Tick position, ControlValue value) => Parameter switch
     {
         AutomationParameter.PitchBend => new PitchBendEvent(default, position, Channel, value),
         AutomationParameter.ChannelPressure => new ChannelPressureEvent(default, position, Channel, value),
         AutomationParameter.DeviceParameter => throw new InvalidOperationException("A device parameter is not a MIDI event."),
+        AutomationParameter.InstrumentParameter => throw new InvalidOperationException("An instrument parameter is translated through its profile, not rendered as one event."),
         _ => new ControllerEvent(default, position, Channel, Controller, value),
     };
 }
@@ -233,7 +304,12 @@ public sealed class AutomationLane
         target.IsValid
             ? target
             : throw new ArgumentException(
-                target.Parameter == AutomationParameter.DeviceParameter ? "A device target needs a device." : $"Controller {target.Controller} cannot be automated.",
+                target.Parameter switch
+                {
+                    AutomationParameter.DeviceParameter => "A device target needs a device.",
+                    AutomationParameter.InstrumentParameter => "An instrument target needs an instrument, a port, and a parameter.",
+                    _ => $"Controller {target.Controller} cannot be automated.",
+                },
                 nameof(target));
 
     private static ImmutableArray<AutomationPoint> Sort(IEnumerable<AutomationPoint> points)

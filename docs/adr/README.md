@@ -11,7 +11,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0004](0004-musical-time-representation.md) | Musical time representation | Accepted |
 | [0005](0005-midi-endpoint-contracts.md) | MIDI endpoint contracts | Accepted |
 | [0006](0006-playback-engine.md) | Playback engine: prepared plans, dual cursors, runtime releases | Accepted; loop-wrap chase superseded by 0020 |
-| [0007](0007-device-profile-format.md) | Data-first device profiles | Accepted |
+| [0007](0007-device-profile-format.md) | Data-first device profiles | Accepted; amended by 0031 |
 | [0008](0008-routing-and-rebinding.md) | Routing: profiles and endpoints bound independently | Superseded by 0023 |
 | [0009](0009-project-persistence.md) | Project persistence: versioned JSON with atomic saves | Accepted; amended by 0027 |
 | [0010](0010-desktop-ui-framework.md) | Desktop UI framework: Avalonia | Accepted |
@@ -28,13 +28,14 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0021](0021-track-roles.md) | Track roles: persisted, reconciled with content, never destructive | Accepted; amended by 0030 |
 | [0022](0022-device-chains.md) | Device chains: definitions, instances, ownership, and processing semantics | Accepted; amended by 0028 |
 | [0023](0023-signal-routing-model.md) | One signal routing model: connections, external instruments, and mixer channels | Accepted; supersedes 0008 |
-| [0024](0024-device-automation.md) | Device parameter automation is separate from signal flow | Accepted; amends 0020 |
+| [0024](0024-device-automation.md) | Device parameter automation is separate from signal flow | Accepted; amends 0020; amended by 0031 |
 | [0025](0025-out-of-process-plugin-hosting.md) | Plugins run out of process; isolation is crash isolation, not a sandbox | Accepted; amended by 0028 |
 | [0026](0026-native-technology-policy.md) | Native technology policy: C# first, Rust where measurements or native interfaces demand it | Accepted |
 | [0027](0027-project-format-4.md) | Project format 4 and the migration from per-track routes | Accepted; amends 0009 |
 | [0028](0028-plugin-midi-effects-at-plan-time.md) | Plugin MIDI effects run in their worker when the plan is compiled | Accepted; amends 0022 and 0025 |
 | [0029](0029-rename-to-bluestone.md) | The project is renamed Bluestone, with no compatibility for Cadence files | Accepted |
 | [0030](0030-group-tracks.md) | Group tracks: mute and solo reach members, membership routes, folding is saved | Accepted; amends 0021 |
+| [0031](0031-hardware-parameter-automation.md) | Hardware parameter automation through profile parameter maps | Accepted; amends 0007 and 0024 |
 
 ## Template
 

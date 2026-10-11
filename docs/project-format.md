@@ -33,7 +33,10 @@ indices, only stable identifiers and identity hints.
               "points": [ { "tick": 0, "value": 0, "curve": "linear" },
                           { "tick": 7680, "value": 3355443200, "curve": "hold" } ] },
             { "id": "…", "target": { "type": "device", "device": "…", "parameter": 1 },
-              "points": [ { "tick": 0, "value": 2147483648, "curve": "hold" } ] }
+              "points": [ { "tick": 0, "value": 2147483648, "curve": "hold" } ] },
+            { "id": "…", "target": { "type": "instrument", "instrument": "…", "port": "A", "channel": 2,
+                                     "parameter": "filter-cutoff" },
+              "points": [ { "tick": 0, "value": 2147483648, "curve": "linear" } ] }
           ] }
       ]
     },
@@ -89,9 +92,12 @@ indices, only stable identifiers and identity hints.
   lane's `target` is a `controller` (with a `controller` number, not bank select, 32–63, data entry or
   increment/decrement, RPN/NRPN selectors, or channel mode), `pitchBend`, or `channelPressure`, on a
   `channel`; or a `device` parameter, by device ID and parameter ID, which is delivered to that device
-  and never sent as MIDI (ADR 0024). No two lanes on a track share a target. Its `points` have timeline
+  and never sent as MIDI (ADR 0024); or an `instrument` parameter, by external instrument ID, `port`,
+  `channel`, and the `parameter`'s key in the instrument's profile, which is translated into the MIDI the
+  profile maps it to (ADR 0031). No two lanes on a track share a target. Its `points` have timeline
   `tick`s, at most one per tick, 32-bit `value`s (normalized for device parameters), and a `curve`
-  (`hold` or `linear`) for the way to the next point. A lane whose device is missing is kept.
+  (`hold` or `linear`) for the way to the next point. A lane whose device, instrument, port, profile, or
+  parameter is missing is kept.
 - Channel events describe what is played, not MIDI 1.0 bytes:
   - `note`: a note with its length, attack velocity, and release velocity.
   - `noteOff`: a release with no matching note, kept from an import.
@@ -137,6 +143,10 @@ route's channel and selecting its voice, and, for a non-zero transposition, a Tr
 track's chain. A route for a track that no longer exists is kept as a connection, which validation
 reports. Every track gets the `instrument` role and the mixer starts empty. Migrated projects send
 byte-identical MIDI (`Format3EquivalenceTests`).
+
+Instrument automation targets (ADR 0031) were added to format 4 without a new version: files without them
+are unchanged. A format 4 reader that predates them refuses a file that has one, with the path of the lane's
+`type`, and never overwrites it.
 
 Format 3 put each track's events in clips. A format 2 track's events move into one note clip, with
 the track's ID, from the bar of its first event to the bar line after its latest end, so it plays

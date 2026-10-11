@@ -97,7 +97,7 @@ public static class TrackRendering
     {
         var interval = AutomationRenderer.DefaultInterval(ppqn);
         var changes = track.Automation
-            .Where(l => !l.Target.IsMidi && !l.Points.IsEmpty)
+            .Where(l => l.Target.IsDevice && !l.Points.IsEmpty)
             .SelectMany(lane => AutomationRenderer.Sample(lane, interval).Select(s => new ParameterChange(s.Position, lane.Target.Device, lane.Target.DeviceParameter, s.Value)))
             .OrderBy(c => c.Position)
             .ToImmutableArray();
