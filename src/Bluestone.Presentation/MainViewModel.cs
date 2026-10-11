@@ -639,8 +639,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return notes;
     }
 
-    private static bool IsAudible(Sequence sequence, Track track) =>
-        sequence.Tracks.Any(t => t.IsSoloed) ? track.IsSoloed : !track.IsMuted;
+    private static bool IsAudible(Sequence sequence, Track track) => GroupTracks.Plays(sequence, track);
 
     public Task AutosaveAsync() => _session.AutosaveAsync();
 
