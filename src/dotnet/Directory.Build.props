@@ -1,5 +1,5 @@
 <Project>
-  <!-- Shared build conventions for every project under src/. See docs/adr/0002-build-and-test-conventions.md. -->
+  <!-- Shared build conventions for every project under src/dotnet/. See docs/adr/0002-build-and-test-conventions.md. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>

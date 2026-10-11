@@ -94,7 +94,7 @@ gestures directly.
 | How a built-in device runs on live input | its live processor in `Bluestone.Signal/Live`, registered beside its plan-time one in `DeviceCatalog.BuiltIn` |
 | How live input finds and plays its route | `Bluestone.Application/Live` (`LiveRoutePlan`, `LiveInput`) |
 | How a project becomes audio (clips, chains, connections, mixer) | `Bluestone.Application/Audio/ProjectAudioGraph.cs` |
-| Audio device access (a backend, a stream setting) | `native/crates/bluestone_audio` (Rust), its C ABI in `Bluestone.Audio/Devices/NativeMethods.cs` |
+| Audio device access (a backend, a stream setting) | `src/native/crates/bluestone_audio` (Rust), its C ABI in `Bluestone.Audio/Devices/NativeMethods.cs` |
 | How something is shown or edited | `Bluestone.Presentation` (logic), `Bluestone.Desktop` (views) |
 
 ### Abstractions
@@ -510,8 +510,8 @@ managed code cannot meet a real-time or throughput requirement after tuning, or 
 (such as plugin binaries) requires it; it replaces C or C++ for new Bluestone-owned native code. C and C++
 appear only as third-party libraries, vendor SDK requirements, or thin ABI shims.
 
-Rust code lives in a Cargo workspace, `native/`, one crate per component (`native/crates/*`), each a cdylib with a
-small, versioned C ABI; `dotnet build` builds the crates a project names (`src/Native.targets`) and copies the
+Rust code lives in a Cargo workspace, `src/native/`, one crate per component (`src/native/crates/*`), each a cdylib with a
+small, versioned C ABI; `dotnet build` builds the crates a project names (`src/dotnet/Native.targets`) and copies the
 library beside the assemblies. The components:
 
 - `bluestone_audio` (ADR 0032): audio device output through cpal, and the device callback, which only copies from a

@@ -487,5 +487,5 @@ AGENT_HANDOFF.md
 # Yamaha XG MIDI samples (not distributed)
 samples/xg/
 
-# Rust build output (native/)
-native/target/
+# Rust build output (src/native/)
+src/native/target/

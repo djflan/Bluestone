@@ -36,10 +36,10 @@ macOS, Windows).
 ## 2. Build environment
 
 Use the README commands on a machine with SDK 10.0.300 (`global.json`) and a Rust toolchain (`cargo`; the hosted
-CI runners have one). `dotnet build` builds the Rust crates through `src/Native.targets` (`cargo build --locked`;
-after changing Rust dependencies run `cargo build` in `native/` once). Linux needs `libasound2-dev`. One test project:
-`dotnet test --project src/Bluestone.Tests.Unit/Bluestone.Tests.Unit.csproj -- --filter-namespace "Bluestone.Tests.Unit.Signal"`.
-Rust: `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` in `native/`.
+CI runners have one). `dotnet build` builds the Rust crates through `src/dotnet/Native.targets` (`cargo build --locked`;
+after changing Rust dependencies run `cargo build` in `src/native/` once). Linux needs `libasound2-dev`. One test project:
+`dotnet test --project src/dotnet/Bluestone.Tests.Unit/Bluestone.Tests.Unit.csproj -- --filter-namespace "Bluestone.Tests.Unit.Signal"`.
+Rust: `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` in `src/native/`.
 
 - `CoreMidiProviderTests` fail intermittently on macOS under load (real CoreMIDI timing; up to three of them in a
   full run while other builds run; they pass alone). CI leaves them out. Not a regression.
@@ -64,7 +64,7 @@ Rust: `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warni
 - `CA1822`: a property returning a static (`=> ChannelOption.All`) must be an initialized auto-property to bind from AXAML.
 - Namespaces: in `Bluestone.Tests.Unit`, `Domain.Routing.X` resolves to the test namespace; import `Bluestone.Domain.Routing` instead. In `Bluestone.Application.Plugins`, `Plugins.Protocol.X` resolves to the Application namespace; use `using` aliases.
 - `EventOrder.Compare` boxes `EventPhase` (`Enum.CompareTo(object)`); on hot paths compare `(int)phase`.
-- `dotnet format` reorders imports after edits; run `dotnet format src/Bluestone.slnx` before `--verify-no-changes`.
+- `dotnet format` reorders imports after edits; run `dotnet format src/dotnet/Bluestone.slnx` before `--verify-no-changes`.
 
 ## 4. What exists, and the decisions behind it (do not re-decide these)
 
@@ -142,7 +142,7 @@ Asserted by `Format3EquivalenceTests` through the **new** pipeline (migration, s
 | `format3-routing-full` | `2F73C9A155441A5E` | `BAD8DAA4476B28E9` | 3 | 158 |
 | `format3-canon` | `1B5E6E6E27359652` | `6F9AA00B419CABFC` | 3 | 1407 |
 
-Hash = `PlanDump.Hash(PlanDump.PlaybackStream(plan))` / `ExportStream`. Old diagnostics for `format3-routing-full`: Orphan, Settings only, Unrouted are "not routed"; Pad has 1 clip event replaced by automation and 1 lane dropped after the channel override. `MidiOneOutputGoldenTests` and `PlanEquivalenceTests` (format 2 fixtures) must stay green unchanged. The fixtures live in `src/Bluestone.Tests.Unit/Infrastructure/Fixtures/` and must never be regenerated.
+Hash = `PlanDump.Hash(PlanDump.PlaybackStream(plan))` / `ExportStream`. Old diagnostics for `format3-routing-full`: Orphan, Settings only, Unrouted are "not routed"; Pad has 1 clip event replaced by automation and 1 lane dropped after the channel override. `MidiOneOutputGoldenTests` and `PlanEquivalenceTests` (format 2 fixtures) must stay green unchanged. The fixtures live in `src/dotnet/Bluestone.Tests.Unit/Infrastructure/Fixtures/` and must never be regenerated.
 
 Ordering that must be preserved: plan events sort by `(tick, EventPhase, source track index, index within source)`; initial voice events use negative indexes so they precede the track's events in the same phase; split SysEx joining is per source track.
 
@@ -164,14 +164,10 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 
 Nothing here blocks the epic. Suggested order:
 
-1. **Repository layout (owner request, after this epic, as its own PR):** move everything under `src/` to
-   `src/dotnet/` and `native/` to `src/native/`. `Native.targets`' `../native/` path then still resolves; update the
-   solution path in CI and docs, CI's `working-directory: native`, `.gitignore`, Dependabot (add a Cargo entry), and
-   check tests that find the repository root by walking up folders.
-2. **Audio engine, remaining:** audio input and recording, compressed formats (FLAC, MP3, Ogg), send and fader
+1. **Audio engine, remaining:** audio input and recording, compressed formats (FLAC, MP3, Ogg), send and fader
    automation, real-time-priority verification on Windows and Linux.
-3. **Plugins, remaining:** editors verified on Windows and Linux, embedded (not floating) editors, second-architecture
+2. **Plugins, remaining:** editors verified on Windows and Linux, embedded (not floating) editors, second-architecture
    workers (Rosetta), SysEx to native plugins, note expressions, a protocol message for a worker-side idle-handler
    failure (today it is logged to stderr and that instance's notifications stop).
-4. **Groups:** drag and drop into a group; a folded group's lane summarizing its members' clips.
-5. **Deferred by design:** MIDI 2.0/UMP, MPE, visual node-graph editing, feedback routing.
+3. **Groups:** drag and drop into a group; a folded group's lane summarizing its members' clips.
+4. **Deferred by design:** MIDI 2.0/UMP, MPE, visual node-graph editing, feedback routing.

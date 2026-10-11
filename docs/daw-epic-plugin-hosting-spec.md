@@ -24,7 +24,7 @@ the main branch, then connected to the project by `PluginDeviceHost`. The result
 - Style: file-scoped namespaces, braces always, sparse comments that explain why, tests named `Subject_Condition_Expectation`.
 - Everything builds with 0 warnings; the whole existing suite still passes; format check passes.
 
-## Projects (under `src/`, each added to `src/Bluestone.slnx`)
+## Projects (under `src/`, each added to `src/dotnet/Bluestone.slnx`)
 
 ### 1. `Bluestone.Plugins.Protocol` (library, BCL only)
 
@@ -95,7 +95,7 @@ In scan mode, files ending `.bluestone-reference-plugin` (a small manifest) are 
 
 ## Tests (meaningful, passing)
 
-Fast tests in `src/Bluestone.Tests.Unit/Plugins/`; process-spawning tests in `src/Bluestone.Tests.Integration/Plugins/`
+Fast tests in `src/dotnet/Bluestone.Tests.Unit/Plugins/`; process-spawning tests in `src/dotnet/Bluestone.Tests.Integration/Plugins/`
 (the integration project references the worker with `ReferenceOutputAssembly="false"` so it is built and copied; verify with a clean build).
 
 - Protocol: round-trip every message; CsCheck fuzz that arbitrary bytes, truncations, and oversize lengths throw only `ProtocolException`; version mismatch rejected.
@@ -113,7 +113,7 @@ Fast tests in `src/Bluestone.Tests.Unit/Plugins/`; process-spawning tests in `sr
 
 ## Wiring (only shared files that may change)
 
-`src/Bluestone.slnx`; the two test csproj files; `DependencyDirectionTests` (Protocol references nothing, Plugins references Protocol, PluginWorker references Protocol; none reference other Bluestone assemblies);
+`src/dotnet/Bluestone.slnx`; the two test csproj files; `DependencyDirectionTests` (Protocol references nothing, Plugins references Protocol, PluginWorker references Protocol; none reference other Bluestone assemblies);
 `.github/workflows/ci.yml` only if the integration tests need it to find the worker.
 
 ## Documentation

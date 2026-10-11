@@ -25,6 +25,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Shipped device profiles are data, copied beside the executable. -->
-    <None Include="../../profiles/*.bluestone-profile.json" Link="profiles/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../profiles/*.bluestone-profile.json" Link="profiles/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
