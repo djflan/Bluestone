@@ -1,4 +1,5 @@
 using System.Reflection;
+using Bluestone.Tests.Unit.Playback;
 
 namespace Bluestone.Tests.Unit.Architecture;
 
@@ -61,4 +62,22 @@ public sealed class DependencyDirectionTests
         Assert.DoesNotContain(
             Assembly.Load("Bluestone.Plugins").GetReferencedAssemblies(),
             r => r.Name == "Bluestone.PluginWorker");
+
+    [Fact]
+    public void OnlyTheWorker_BuildsOrImportsTheNativePluginHost_SoNoPluginCodeLoadsInBluestonesProcess()
+    {
+        var source = Path.Combine(PlanDump.RepositoryRoot, "src");
+        var projects = Directory.EnumerateFiles(source, "*.csproj", SearchOption.AllDirectories)
+            .Where(p => File.ReadAllText(p).Contains("bluestone_plugin_host", StringComparison.Ordinal))
+            .Select(Path.GetFileNameWithoutExtension);
+        var importers = Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories)
+            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(p => File.ReadAllText(p).Contains("\"bluestone_plugin_host\"", StringComparison.Ordinal))
+            .Select(p => Path.GetRelativePath(source, p).Split(Path.DirectorySeparatorChar)[0])
+            .Where(project => !project.StartsWith("Bluestone.Tests.", StringComparison.Ordinal))
+            .Distinct();
+
+        Assert.Equal(["Bluestone.PluginWorker"], projects);
+        Assert.Equal(["Bluestone.PluginWorker"], importers);
+    }
 }
