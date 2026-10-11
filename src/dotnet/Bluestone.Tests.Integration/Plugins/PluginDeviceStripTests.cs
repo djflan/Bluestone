@@ -35,9 +35,8 @@ public sealed class PluginDeviceStripTests
         try
         {
             await vm.InitializeAsync();
-            var strip = vm.DeviceStrip;
-            strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Reference Gain");
-            strip.AddDeviceCommand.Execute(null);
+            var strip = vm.DeviceView!;
+            Assert.True(vm.Browser.InsertIntoActive(vm.Browser.Items.Single(d => d.Name == "Reference Gain")));
             await WaitUntilAsync(() => strip.Devices.Count == 1 && strip.Devices[0].Status == "Running", StatusTimeout, "the plugin to run");
             var device = strip.Devices[0];
             var instance = bridge.InstanceOf(device.Id)!;
@@ -86,11 +85,10 @@ public sealed class PluginDeviceStripTests
         try
         {
             await vm.InitializeAsync();
-            var strip = vm.DeviceStrip;
+            var strip = vm.DeviceView!;
             foreach (var name in new[] { "Lead Gain", "Echo Gain" })
             {
-                strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Reference Gain");
-                strip.AddDeviceCommand.Execute(null);
+                Assert.True(vm.Browser.InsertIntoActive(vm.Browser.Items.Single(d => d.Name == "Reference Gain")));
                 var added = session.Project.ChainOf(session.Project.Sequence.Tracks[0].Id)!.Devices[^1];
                 session.Execute(DeviceCommands.RenameDevice(added.Id, name));
             }

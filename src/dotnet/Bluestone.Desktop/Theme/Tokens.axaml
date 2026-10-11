@@ -138,7 +138,7 @@
   <SolidColorBrush x:Key="Transport.Cycle" Color="{StaticResource Transport.CycleColor}" />
   <SolidColorBrush x:Key="Track.Mute" Color="{StaticResource Track.MuteColor}" />
   <SolidColorBrush x:Key="Track.Solo" Color="{StaticResource Track.SoloColor}" />
-  <SolidColorBrush x:Key="Lcd." Color="{StaticResource Lcd.Color}" />
+  <SolidColorBrush x:Key="Lcd" Color="{StaticResource Lcd.Color}" />
   <SolidColorBrush x:Key="Lcd.Text" Color="{StaticResource Lcd.TextColor}" />
   <SolidColorBrush x:Key="Lcd.Label" Color="{StaticResource Lcd.LabelColor}" />
   <SolidColorBrush x:Key="Lcd.Edge" Color="{StaticResource Lcd.EdgeColor}" />
@@ -177,7 +177,7 @@
   <SolidColorBrush x:Key="Tab.Focus" Color="{StaticResource Tab.FocusColor}" />
   <SolidColorBrush x:Key="List.Alternate" Color="{StaticResource List.AlternateColor}" />
   <SolidColorBrush x:Key="List.CellHover" Color="{StaticResource List.CellHoverColor}" />
-  <SolidColorBrush x:Key="TrackRow." Color="{StaticResource TrackRow.Color}" />
+  <SolidColorBrush x:Key="TrackRow" Color="{StaticResource TrackRow.Color}" />
   <SolidColorBrush x:Key="TrackRow.Hover" Color="{StaticResource TrackRow.HoverColor}" />
   <SolidColorBrush x:Key="TrackRow.Selected" Color="{StaticResource TrackRow.SelectedColor}" />
   <SolidColorBrush x:Key="Overlay.Scrim" Color="{StaticResource Overlay.ScrimColor}" />

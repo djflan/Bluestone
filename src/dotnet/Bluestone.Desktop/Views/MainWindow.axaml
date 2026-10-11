@@ -457,7 +457,7 @@
       </Panel>
 
       <!-- Arrangement above, the detail region below -->
-      <Grid x:Name="MainArea" Grid.Column="2" RowDefinitions="*,Auto,Auto,300">
+      <Grid x:Name="MainArea" Grid.Column="2" RowDefinitions="*,Auto,Auto,330">
 
         <Grid Grid.Row="0" RowDefinitions="28,30,*" ColumnDefinitions="252,*">
           <!-- Arrangement header -->

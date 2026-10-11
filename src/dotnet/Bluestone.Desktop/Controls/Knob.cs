@@ -10,8 +10,8 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// A compact rotary parameter control for device panels. Drag vertically to change it (Shift for fine), scroll, or use the
-/// arrow keys; double-click returns it to its default. While dragging, the knob previews the value and commits it once on
-/// release, so one gesture is one undo step.
+/// arrow keys; double-click returns it to its default. Dragging writes the value live, so the change is heard as it is
+/// made; the project's history coalesces consecutive edits of one parameter into a single undo step.
 /// </summary>
 public sealed class Knob : Control
 {
@@ -149,6 +149,7 @@ public sealed class Knob : Control
         var scale = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 0.1 : 1;
         var delta = (_dragStart.Y - e.GetPosition(this).Y) / PixelsForFullRange * Range * scale;
         _preview = Math.Clamp(_dragStartValue + delta, Minimum, Maximum);
+        SetCurrentValue(ValueProperty, _preview.Value);
         InvalidateVisual();
         e.Handled = true;
     }

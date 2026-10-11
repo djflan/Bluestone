@@ -141,7 +141,7 @@ public sealed class PluginsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task PluginsFoundByARescan_JoinTheDeviceStrip_WithoutARestart()
+    public async Task PluginsFoundByARescan_JoinTheBrowser_WithoutARestart()
     {
         using var data = new TestDirectory();
         await _library.ScanAsync(cancellationToken: Ct);
@@ -157,14 +157,14 @@ public sealed class PluginsViewModelTests : IDisposable
         await using var main = new MainViewModel(session, playback, endpoints, new NoUi(), dispatcher, plugins: bridge) { Plugins = new PluginsViewModel(_library, dispatcher) };
         await main.InitializeAsync();
         main.Select(main.Tracks[0]);
-        Assert.Contains(main.DeviceStrip.AvailableDevices, d => d.Name == "Bass");
-        Assert.DoesNotContain(main.DeviceStrip.AvailableDevices, d => d.Name == "Kit");
+        Assert.Contains(main.Browser.Items, d => d.Name == "Bass");
+        Assert.DoesNotContain(main.Browser.Items, d => d.Name == "Kit");
         File.WriteAllText(_folder.File("drums.plugin"), "plugins: Kit");
 
         await main.Plugins!.RescanAllCommand.ExecuteAsync(null);
 
-        Assert.Contains(main.DeviceStrip.AvailableDevices, d => d.Name == "Kit");
-        Assert.Contains(main.DeviceStrip.AvailableDevices, d => d.Name == "Bass");
+        Assert.Contains(main.Browser.Items, d => d.Name == "Kit");
+        Assert.Contains(main.Browser.Items, d => d.Name == "Bass");
         Assert.Equal(0, manager.WorkerLaunchCount);
     }
 

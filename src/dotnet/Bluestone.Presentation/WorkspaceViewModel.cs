@@ -156,7 +156,7 @@ public sealed partial class WorkspaceViewModel : ObservableObject
 {
     public const double DefaultLeftExtent = 248;
     public const double DefaultRightExtent = 272;
-    public const double DefaultDetailExtent = 300;
+    public const double DefaultDetailExtent = 330;
     public const double MinimumSideExtent = 200;
     public const double MaximumSideExtent = 520;
     public const double MinimumDetailExtent = 180;

@@ -601,7 +601,7 @@
   <Style Selector="ListBox.tracks ListBoxItem">
     <Setter Property="Padding" Value="0" />
     <Setter Property="Height" Value="50" />
-    <Setter Property="Background" Value="{StaticResource TrackRow.}" />
+    <Setter Property="Background" Value="{StaticResource TrackRow}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Edge}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
   </Style>

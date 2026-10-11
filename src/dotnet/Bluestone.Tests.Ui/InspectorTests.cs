@@ -37,34 +37,35 @@ public sealed class InspectorTests
         app.ViewModel.Select(app.ViewModel.Tracks[0]);
         app.Settle();
 
-        Assert.Equal("Devices", Header(app.Find<Expander>("DevicesSection")));
-        Assert.True(app.Find<Expander>("DevicesSection").IsEffectivelyVisible);
         Assert.Equal("Racks", Header(app.Find<Expander>("RacksSection")));
         Assert.Equal("Mixer", Header(app.Find<Expander>("MixerSection")));
         Assert.True(File.Exists(app.SaveFrame("inspector")));
     });
 
     [Fact]
-    public Task NewRack_SwitchesTheDevicesSectionToTheRack_AndBackToTheTrack_ByMouse() => HeadlessApp.RunAsync(async () =>
+    public Task NewRack_LocksTheDeviceViewToTheRack_AndBackToTheTrack_ByMouse() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync(OneTrack());
         app.ViewModel.Select(app.ViewModel.Tracks[0]);
         var racks = app.Find<Expander>("RacksSection");
-        var devices = app.Find<Expander>("DevicesSection");
         racks.IsExpanded = true;
         app.Settle();
 
         app.Click(AppUnderTest.Within<Button>(racks, b => Equals(b.Content, "New rack")));
+        app.Settle();
 
-        Assert.Equal("Rack: Rack 1", Header(devices));
-        var back = AppUnderTest.Within<Button>(devices, b => b.Content is string text && text.Contains("Back to the selected track", StringComparison.Ordinal));
+        var view = app.Find<Control>("DockedDeviceView");
+        var heading = AppUnderTest.Within<TextBlock>(view, t => t.Name == "HeadingText");
+        Assert.Equal("Rack: Rack 1", heading.Text);
+        var back = AppUnderTest.Within<Button>(view, b => b.Content is string text && text.Contains("Back to the selected track", StringComparison.Ordinal));
         Assert.True(back.IsEffectivelyVisible);
         Assert.Single(app.Session.Project.Chains, c => c.Owner.Kind == ChainOwnerKind.Rack);
         app.SaveFrame("rack-in-devices");
 
         app.Click(back);
+        app.Settle();
 
-        Assert.Equal("Devices", Header(devices));
+        Assert.Equal("Lead", heading.Text);
         Assert.False(back.IsEffectivelyVisible);
     });
 
@@ -118,7 +119,7 @@ public sealed class InspectorTests
 
         app.ViewModel.Select(app.ViewModel.Tracks[0]);
         app.Settle();
-        var strip = app.ViewModel.DeviceStrip.Devices.Single();
+        var strip = app.ViewModel.DeviceView!.Devices.Single();
         await AppUnderTest.WaitUntilAsync(() => strip.Status == "Running", "the plugin to run");
         using (var worker = System.Diagnostics.Process.GetProcessById(bridge!.InstanceOf(device.Id)!.WorkerProcessId!.Value))
         {

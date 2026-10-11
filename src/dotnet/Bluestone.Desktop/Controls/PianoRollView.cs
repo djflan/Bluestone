@@ -1092,7 +1092,7 @@ public sealed class PianoRollView : Control
 
     private void EnsureCentered(Track track)
     {
-        if (_centeredFor == track.Id && _scrollY >= 0)
+        if ((_centeredFor == track.Id && _scrollY >= 0) || GridHeight <= 0)
         {
             return;
         }
