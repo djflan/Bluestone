@@ -109,7 +109,7 @@ public static partial class ProfileLoader
 
         w.RejectUnknown(root, path, "$schema", "format", "schemaVersion", "id", "version", "name", "manufacturer", "model", "description",
             "notices", "provenance", "protocols", "identity", "drumChannels", "banks", "drumKits", "controllers", "parameters", "sysex",
-            "initialization", "limitations", "extensions");
+            "parameterMap", "initialization", "limitations", "extensions");
 
         var format = w.String(root, "format", path, required: true, 64);
         if (format is not null && format != FormatName)
@@ -152,6 +152,7 @@ public static partial class ProfileLoader
             Controllers = ReadControllers(root, w),
             Parameters = ReadParameters(root, w),
             Templates = sysEx,
+            ParameterMap = ReadParameterMap(root, w),
             Initialization = ReadInitialization(root, w, sysEx),
             Limitations = w.Strings(root, "limitations", path, required: false, 64, 512),
             Extensions = ReadExtensions(root, w),

@@ -124,6 +124,9 @@ public sealed record DeviceProfile
 
     public ImmutableArray<SysExTemplate> Templates { get; init; } = [];
 
+    /// <summary>Named parameters and the MIDI that sets each, for automating them (ADR 0031).</summary>
+    public ImmutableArray<ParameterMapping> ParameterMap { get; init; } = [];
+
     /// <summary>Messages to send only when the user explicitly asks to initialize the instrument.</summary>
     public ImmutableArray<InitializationStep> Initialization { get; init; } = [];
 
@@ -135,4 +138,6 @@ public sealed record DeviceProfile
     public ProfileBank? FindBank(string id) => Banks.FirstOrDefault(b => b.Id == id);
 
     public SysExTemplate? FindTemplate(string id) => Templates.FirstOrDefault(t => t.Id == id);
+
+    public ParameterMapping? FindMapping(string id) => ParameterMap.FirstOrDefault(m => m.Id == id);
 }
