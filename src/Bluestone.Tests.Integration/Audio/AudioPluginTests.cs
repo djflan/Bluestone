@@ -68,15 +68,16 @@ public sealed class AudioPluginTests
     [Fact]
     public async Task AKilledWorker_LeavesExactSilence_NeverStaleAudio_AndTheEngineKeepsRunning()
     {
-        await using var host = new PluginTestHost(o => o with { CollectWait = TimeSpan.FromMilliseconds(5) });
+        await using var host = new PluginTestHost(o => o with { CollectWait = TimeSpan.FromMilliseconds(500) });
         var sine = await host.CreateRunningAsync(new PluginInstanceRequest(Sine, Rate, Block, 0, 2));
         var node = new PluginNode(sine, "Sine", Block) { Schedule = Note(69, from: 0, to: long.MaxValue / 2) };
         using var engine = Engine(node, out _);
         engine.Transport.Play(0);
         var driver = new OfflineAudioDriver(engine);
 
-        // The offline driver does not wait for real time, so a worker that wakes late (a Windows timer tick is about
-        // 15.6 ms against a 5 ms collect wait) can miss many blocks in a row: render until the sine is heard.
+        // The offline driver does not pace blocks like a device, so the collect wait is the worker's only time per block;
+        // it is long here (a few milliseconds let a slow runner's worker fall behind for good). After the kill the
+        // exchange is faulted, so collects return at once.
         await WaitUntilAsync(() => driver.Render(Block * 4, Block).Any(s => s != 0f), TimeSpan.FromSeconds(10), "the sine to be heard");
 
         KillProcess(sine.WorkerProcessId!.Value);

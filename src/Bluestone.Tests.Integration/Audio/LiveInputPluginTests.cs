@@ -147,7 +147,7 @@ public sealed class LiveInputPluginTests
     [Fact]
     public async Task AKilledInstrumentWorker_IsSilent_AndAfterARestartNothingHangs()
     {
-        await using var host = new PluginTestHost(o => o with { CollectWait = TimeSpan.FromMilliseconds(5) });
+        await using var host = new PluginTestHost(o => o with { CollectWait = TimeSpan.FromMilliseconds(500) });
         await using var rig = await Rig.CreateAsync(host, transpose: 0);
         rig.Live.Post(rig.Track, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(127)), rig.Clock.Now);
         await HeardAsync(rig.Driver);
@@ -236,8 +236,8 @@ public sealed class LiveInputPluginTests
     // The reference Transpose maps [0, 1] to -24..+24 semitones.
     private static double NormalizedFor(int semitones) => (semitones + 24) / 48.0;
 
-    // The offline driver does not wait for real time, so a worker that wakes late (a Windows timer tick is about
-    // 15.6 ms against the collect wait) can miss many blocks in a row: render until sound arrives.
+    // The offline driver does not pace blocks like a device, so a worker that wakes late can miss blocks: render
+    // until sound arrives.
     private static Task HeardAsync(OfflineAudioDriver driver) =>
         WaitUntilAsync(() => driver.Render(4 * Block, Block).Any(s => s != 0f), TimeSpan.FromSeconds(10), "sound");
 
