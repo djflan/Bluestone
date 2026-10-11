@@ -148,8 +148,7 @@ public sealed class LiveProcessorTests
 
         RunOnce();
         var input = new LiveEvent[3];
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 100; i++)
+        void Step()
         {
             output.Clear();
             for (var k = 0; k < chord.Length; k++)
@@ -163,7 +162,7 @@ public sealed class LiveProcessorTests
             tick += 1000;
         }
 
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, Allocations.InSteadyState(Step, 100));
     }
 
     private static LiveChain LiveChainOf(params DeviceInstance[] devices) =>

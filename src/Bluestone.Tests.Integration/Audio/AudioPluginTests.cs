@@ -153,13 +153,7 @@ public sealed class AudioPluginTests
             driver.Render(buffer, Block);
         }
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 400; i++)
-        {
-            driver.Render(buffer, Block);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, Allocations.InSteadyState(() => driver.Render(buffer, Block), 200));
     }
 
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];

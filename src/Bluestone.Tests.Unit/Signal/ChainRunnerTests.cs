@@ -239,10 +239,13 @@ public sealed class ChainRunnerTests
             runner.Run(SignalBlock.Everything, events, output, default, observer);
         }
 
-        output.Clear();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        runner.Run(SignalBlock.Everything, events, output, default, observer);
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        var allocated = Allocations.InSteadyState(
+            () =>
+            {
+                output.Clear();
+                runner.Run(SignalBlock.Everything, events, output, default, observer);
+            },
+            1);
 
         Assert.Equal(0, allocated);
         Assert.Equal(events, output.Events.ToArray());

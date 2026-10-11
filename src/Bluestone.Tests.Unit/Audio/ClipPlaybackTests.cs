@@ -278,21 +278,7 @@ public sealed class ClipPlaybackTests : IDisposable
             driver.Render(buffer, 256);
         }
 
-        // Measured in rounds, the last one asserted: an allocation in every block fails every round, while a one-time
-        // runtime allocation on a slow machine (seen on a CI runner, not reproducible locally) lands in an earlier one.
-        long allocated = 0;
-        for (var round = 0; round < 3; round++)
-        {
-            var before = GC.GetAllocatedBytesForCurrentThread();
-            for (var i = 0; i < 100; i++)
-            {
-                driver.Render(buffer, 256);
-            }
-
-            allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        }
-
-        Assert.Equal(0, allocated);
+        Assert.Equal(0, Allocations.InSteadyState(() => driver.Render(buffer, 256), 100));
         engine.Dispose();
     }
 

@@ -55,13 +55,7 @@ public sealed class LiveSourceSetTests
         var events = new PluginEvent[16];
         set.Render(Context, events);
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 100; i++)
-        {
-            set.Render(Context, events);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, Allocations.InSteadyState(() => set.Render(Context, events), 100));
     }
 
     // Puts out a note-on for its note every block; a release is one note-off.
