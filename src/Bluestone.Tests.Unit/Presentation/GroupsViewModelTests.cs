@@ -166,6 +166,20 @@ public sealed class GroupsViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UseOutputForAllTracks_LeavesMembersGoingThroughTheirGroup()
+    {
+        var group = await GroupBassAndKeysAsync();
+        _vm.Selection.Output = _vm.Selection.OutputChoices.Single(o => o.Name == "Synth");
+        await Settle();
+
+        _vm.UseOutputForAllTracksCommand.Execute(null);
+        await Settle();
+
+        var bass = _session.Project.ConnectionsFrom(SignalNode.Track(Row("Bass").Id)).Single();
+        Assert.Equal(SignalNode.Track(group.Id), bass.Destination);
+    }
+
+    [Fact]
     public async Task ARefusedGrouping_IsExplainedInAMessage()
     {
         var group = await GroupBassAndKeysAsync();

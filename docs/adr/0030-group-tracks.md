@@ -91,7 +91,11 @@ members; members silenced by their group are dimmed, in the list and in the arra
 - Existing projects whose tracks were already members (format 4 allowed it) keep their connections on load; only the
   group's mute and solo now reach those members. Taking such a track out of its group removes its connection into
   the group (if any) and restores nothing, because nothing was parked.
+- The inspector's Output fields still edit a member's own direct connection: one set while the track is grouped sends
+  alongside the group. "Use Output for All Tracks" leaves members alone, so they keep going through their group.
 - There is no drag-and-drop into groups yet, and a folded group's lane does not summarize its members' clips.
+  Dragging clips from several tracks at once across a folded group counts the hidden tracks when it moves the clips
+  that are not under the pointer.
 - Tests: `GroupTracksTests`, `SignalGraphTests.AGroupsMuteAndSolo_ReachItsMembers_ButNotTracksMerelyRoutedIntoIt`,
   `GroupCommandsTests`, `ProjectSerializerTests` (round trip, optional fields), `GroupsViewModelTests`, and the
   headless `GroupTests` in `Bluestone.Tests.Ui`.

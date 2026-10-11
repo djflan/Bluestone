@@ -1113,7 +1113,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Execute(ProjectCommands.RemoveTracks([.. tracks.Select(t => t.Id)]));
     }
 
-    /// <summary>Routes every track to the output shown in the inspector.</summary>
+    /// <summary>Routes every track to the output shown in the inspector, except tracks in a group: they go through their group.</summary>
     [RelayCommand]
     private void UseOutputForAllTracks()
     {
@@ -1123,7 +1123,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         var reference = Application.Routing.RouteResolver.ReferenceTo(endpoint);
-        foreach (var track in Project.Sequence.Tracks)
+        foreach (var track in Project.Sequence.Tracks.Where(t => t.Group is null))
         {
             Execute(ProjectCommands.SetTrackOutput(track.Id, TrackOutputs.Read(Project, track.Id) with { Endpoint = reference }));
         }
