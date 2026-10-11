@@ -694,6 +694,17 @@
   <Style Selector="Button.railItem:pointerover">
     <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
   </Style>
+  <!-- A docked side tool's icon is marked as open; a click collapses it again. -->
+  <Style Selector="Button.railItem.open">
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+  </Style>
+  <Style Selector="Border.rail.left Button.railItem.open">
+    <Setter Property="BorderThickness" Value="2,0,0,0" />
+  </Style>
+  <Style Selector="Border.rail.right Button.railItem.open">
+    <Setter Property="BorderThickness" Value="0,0,2,0" />
+  </Style>
   <!-- A detached view's icon is lit: its window is open elsewhere. One awaiting a missing monitor is dimmed. -->
   <Style Selector="Button.railItem.detached">
     <Setter Property="Foreground" Value="{StaticResource Control.CheckedForeground}" />
@@ -931,6 +942,51 @@
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     <Setter Property="MaxWidth" Value="60" />
+  </Style>
+  <!-- On/off parameters: a row with a small lamp that is lit when on. -->
+  <Style Selector="ToggleButton.paramSwitch">
+    <Setter Property="Width" Value="{StaticResource DevicePanel.SwitchWidth}" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.SwitchHeight}" />
+    <Setter Property="Margin" Value="0,0,0,2" />
+    <Setter Property="Padding" Value="6,0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="ToggleButton.paramSwitch:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="ToggleButton.paramSwitch:checked /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="ToggleButton.paramSwitch:checked:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="ToggleButton.paramSwitch:focus-visible /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.switchLamp">
+    <Setter Property="Width" Value="{StaticResource DevicePanel.LampSize}" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.LampSize}" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Round}" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{StaticResource Surface.Overlay}" />
+  </Style>
+  <Style Selector="ToggleButton.paramSwitch:checked Border.switchLamp">
+    <Setter Property="Background" Value="{StaticResource Signal.Note}" />
+  </Style>
+  <Style Selector="TextBlock.switchLabel">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="ToggleButton.paramSwitch:checked TextBlock.switchLabel">
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
   </Style>
   <Style Selector="StackPanel.deviceNotice">
     <Setter Property="Spacing" Value="6" />

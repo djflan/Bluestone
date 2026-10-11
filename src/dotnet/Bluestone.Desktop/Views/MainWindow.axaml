@@ -18,7 +18,7 @@
   <Window.Resources>
     <!-- A collapsed or detached view on a border rail: an icon and its name running up the rail. Click to open it docked. -->
     <DataTemplate x:Key="RailItem" x:DataType="vm:WorkspaceView">
-      <Button Classes="railItem" Classes.detached="{Binding IsDetached}" Classes.awaiting="{Binding IsAwaitingDisplay}"
+      <Button Classes="railItem" Classes.open="{Binding IsDocked}" Classes.detached="{Binding IsDetached}" Classes.awaiting="{Binding IsAwaitingDisplay}"
               Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding Title}" AutomationProperties.Name="{Binding RailLabel}">
         <StackPanel Spacing="8">
           <PathIcon Classes="stroke" Data="{Binding Kind, Converter={x:Static theme:WorkspaceIconConverter.Instance}}" />

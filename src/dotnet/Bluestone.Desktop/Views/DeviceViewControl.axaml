@@ -125,13 +125,21 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                               <DataTemplate x:DataType="vm:ParameterViewModel">
-                                <StackPanel Classes="knobCell" ToolTip.Tip="{Binding Name}">
-                                  <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}"
-                                                 Accent="{Binding $parent[ItemsControl;1].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue=#4C8DDB}"
-                                                 AutomationProperties.Name="{Binding Name}" />
-                                  <TextBlock Classes="knobLabel" Text="{Binding Name}" />
-                                  <TextBlock Classes="knobValue" Text="{Binding ValueText}" />
-                                </StackPanel>
+                                <Panel>
+                                  <StackPanel Classes="knobCell" ToolTip.Tip="{Binding Name}" IsVisible="{Binding !IsSwitch}">
+                                    <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}"
+                                                   Accent="{Binding $parent[ItemsControl].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue=#4C8DDB}"
+                                                   AutomationProperties.Name="{Binding Name}" />
+                                    <TextBlock Classes="knobLabel" Text="{Binding Name}" />
+                                    <TextBlock Classes="knobValue" Text="{Binding ValueText}" />
+                                  </StackPanel>
+                                  <ToggleButton Classes="paramSwitch" IsVisible="{Binding IsSwitch}" IsChecked="{Binding IsOn}" ToolTip.Tip="{Binding Name}" AutomationProperties.Name="{Binding Name}">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                      <Border Classes="switchLamp" />
+                                      <TextBlock Grid.Column="1" Classes="switchLabel" Text="{Binding Name}" />
+                                    </Grid>
+                                  </ToggleButton>
+                                </Panel>
                               </DataTemplate>
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>

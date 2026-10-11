@@ -258,8 +258,8 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     {
         var view = Add(CreateDeviceView(null));
         Retitle();
-        ActiveDeviceView = view.DeviceView;
         Show(view);
+        _owner.SyncDeviceViews();
         return view;
     }
 

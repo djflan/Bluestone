@@ -10,16 +10,20 @@ namespace Bluestone.Presentation;
 /// <summary>A window's position and size in screen pixels, as the platform reports them.</summary>
 public readonly record struct WindowBounds(double X, double Y, double Width, double Height)
 {
+    [JsonIgnore]
     public double Right => X + Width;
 
+    [JsonIgnore]
     public double Bottom => Y + Height;
 }
 
 /// <summary>A display's working area (excluding task bars and menu bars) in screen pixels.</summary>
 public readonly record struct ScreenArea(double X, double Y, double Width, double Height)
 {
+    [JsonIgnore]
     public double Right => X + Width;
 
+    [JsonIgnore]
     public double Bottom => Y + Height;
 
     public bool Contains(double x, double y) => x >= X && x < Right && y >= Y && y < Bottom;

@@ -737,13 +737,24 @@ public sealed partial class ParameterViewModel : ObservableObject
     [ObservableProperty]
     public partial double Value { get; set; }
 
+    /// <summary>An on/off parameter (one step), shown as a toggle rather than a knob.</summary>
+    public bool IsSwitch => Descriptor.Steps == 1;
+
+    /// <summary>A switch's state; setting it writes the maximum or minimum.</summary>
+    public bool IsOn
+    {
+        get => Value > (Minimum + Maximum) / 2;
+        set => Value = value ? Maximum : Minimum;
+    }
+
     /// <summary>The value's position in its range, 0 to 1, for a knob.</summary>
     public double Normalized => Maximum > Minimum ? (Value - Minimum) / (Maximum - Minimum) : 0;
 
     /// <summary>The value a reset (double-click) returns to.</summary>
     public double DefaultPlain => Descriptor.ToPlain(Descriptor.DefaultValue);
 
-    public string ValueText => Descriptor.Steps > 0
+    public string ValueText => IsSwitch ? (IsOn ? "On" : "Off")
+        : Descriptor.Steps > 0
         ? string.Create(CultureInfo.InvariantCulture, $"{Value:0.##} {Descriptor.Unit}").Trim()
         : string.Create(CultureInfo.InvariantCulture, $"{Value:0.###} {Descriptor.Unit}").Trim();
 
@@ -764,6 +775,7 @@ public sealed partial class ParameterViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ValueText));
         OnPropertyChanged(nameof(Normalized));
+        OnPropertyChanged(nameof(IsOn));
         if (!_syncing)
         {
             _device.SetParameter(Id, Descriptor.ToStored(Math.Clamp(value, Minimum, Maximum)));
