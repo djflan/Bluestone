@@ -40,6 +40,8 @@
                 <Separator />
                 <MenuItem Header="Import MIDI File…" Command="{Binding ImportMidiCommand}" InputGesture="Ctrl+I" />
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
+                <Separator />
+                <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>

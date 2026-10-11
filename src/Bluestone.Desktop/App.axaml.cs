@@ -1,5 +1,6 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Bluestone.Application.Audio;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Services;
@@ -16,6 +17,8 @@ namespace Bluestone.Desktop;
 
 public partial class App : Avalonia.Application
 {
+    private static AudioViewModel? _audio;
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
@@ -27,6 +30,7 @@ public partial class App : Avalonia.Application
             var plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
             var viewModel = Compose(window, platformProviders, plugins);
             window.Attach(viewModel);
+            _audio?.StartIfEnabled();
             desktop.MainWindow = window;
             desktop.Exit += (_, _) => Shutdown(viewModel, platformProviders, plugins);
 
@@ -65,8 +69,22 @@ public partial class App : Avalonia.Application
         var devices = new PluginDeviceHost(plugins, session, ScanPlugins());
         var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), new AvaloniaDispatcher(), monitor, new ComputerKeyboardViewModel(keyboard), devices);
         _ = viewModel.InitializeAsync();
+        ComposeAudio(window, session, playback, devices);
         return viewModel;
     }
+
+    /// <summary>The audio engine (ADR 0032): off until the user starts it or the saved settings say it was on.</summary>
+    private static void ComposeAudio(MainWindow window, ProjectSession session, PlaybackController playback, PluginDeviceHost devices)
+    {
+        var audio = new AudioPlayback(playback, session, devices.InstanceOf);
+        _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher());
+        window.AttachAudio(_audio);
+        window.Closed += (_, _) => audio.Dispose();
+    }
+
+    /// <summary>Where the audio settings are kept, e.g. ~/Library/Application Support/Bluestone/audio-settings.json on macOS.</summary>
+    public static string AudioSettingsPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "audio-settings.json");
 
     /// <summary>
     /// Stops playback (releasing sounding notes), closes MIDI ports, and releases platform providers.
