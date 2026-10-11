@@ -8,6 +8,7 @@ using Bluestone.Signal;
 
 namespace Bluestone.Tests.Integration.Playback;
 
+[Collection(TimingTests.Name)]
 public sealed class PlaybackThreadTests
 {
     private static readonly Ppqn Resolution = new(500); // 1 tick = 1 ms at 120 BPM

@@ -16,6 +16,7 @@ namespace Bluestone.Tests.Integration.Platform;
 /// bus. These tests never send to physical hardware.
 /// </summary>
 [SupportedOSPlatform("macos")]
+[Collection(TimingTests.Name)]
 public sealed class CoreMidiProviderTests
 {
     private static readonly SystemMonotonicClock Clock = SystemMonotonicClock.Instance;

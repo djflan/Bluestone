@@ -60,10 +60,12 @@ jobs:
       - name: Build
         run: dotnet build src/Bluestone.slnx --no-restore --configuration Release
 
+      # One test assembly at a time: the integration tests measure real-time delivery, which the other assemblies'
+      # work would make late on the few cores of a hosted runner.
       # CoreMIDI on hosted macOS runners is unreliable (the MIDI server may not start and virtual
       # ports can time out), so those tests run only on developer machines.
       - name: Test
-        run: dotnet test src/Bluestone.slnx --no-build --configuration Release --filter-not-class Bluestone.Tests.Integration.Platform.CoreMidiProviderTests
+        run: dotnet test src/Bluestone.slnx --no-build --configuration Release --max-parallel-test-modules 1 --filter-not-class Bluestone.Tests.Integration.Platform.CoreMidiProviderTests
 
       - name: Check formatting
         if: matrix.os == 'ubuntu-latest'
