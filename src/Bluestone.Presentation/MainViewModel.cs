@@ -819,7 +819,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             await RunAsync("Export", async () =>
             {
-                ReportMidi("Export", await _session.ExportMidiAsync(path));
+                ReportMidi("Export", await _session.ExportMidiAsync(path, _playback.Profiles));
                 AddMessage(MessageSeverity.Info, "Export", $"Exported {Path.GetFileName(path)}.");
             });
         }

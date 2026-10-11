@@ -13,10 +13,11 @@ public sealed class DependencyDirectionTests
         { "Bluestone.Profiles", ["Bluestone.Domain"] },
         { "Bluestone.Signal", ["Bluestone.Domain"] },
         { "Bluestone.Playback", ["Bluestone.Domain", "Bluestone.Midi", "Bluestone.Signal"] },
-        { "Bluestone.Application", ["Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Plugins", "Bluestone.Plugins.Protocol", "Bluestone.Profiles", "Bluestone.Signal"] },
+        { "Bluestone.Application", ["Bluestone.Audio", "Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Plugins", "Bluestone.Plugins.Protocol", "Bluestone.Profiles", "Bluestone.Signal"] },
         { "Bluestone.Infrastructure", ["Bluestone.Domain"] },
-        { "Bluestone.Presentation", ["Bluestone.Application", "Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Profiles", "Bluestone.Signal"] },
+        { "Bluestone.Presentation", ["Bluestone.Application", "Bluestone.Audio", "Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Profiles", "Bluestone.Signal"] },
         { "Bluestone.Plugins.Protocol", [] },
+        { "Bluestone.Audio", ["Bluestone.Plugins", "Bluestone.Plugins.Protocol"] },
         { "Bluestone.Plugins", ["Bluestone.Plugins.Protocol"] },
         { "Bluestone.PluginWorker", ["Bluestone.Plugins.Protocol"] },
     };

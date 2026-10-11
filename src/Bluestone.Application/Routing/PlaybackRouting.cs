@@ -27,9 +27,12 @@ public sealed record PreparedRouting(
     ImmutableArray<ResolvedTrackOutput> Tracks,
     SignalGraphResult Graph)
 {
+    /// <summary>Translated external instrument parameter automation (ADR 0031), after <see cref="Parts"/> in plan order.</summary>
+    public ImmutableArray<ParameterPart> ParameterParts { get; init; } = [];
+
     public ResolvedTrackOutput? FindTrack(TrackId track) => Tracks.FirstOrDefault(t => t.Track == track);
 
-    public PlaybackPlan Compile(Sequence sequence) => PlaybackPlanCompiler.Compile(sequence, Parts, Diagnostics);
+    public PlaybackPlan Compile(Sequence sequence) => PlaybackPlanCompiler.Compile(sequence, Parts, Diagnostics, ParameterParts);
 }
 
 /// <summary>Outputs opened for a <see cref="PreparedRouting"/>. Disposing closes every port.</summary>
@@ -64,7 +67,8 @@ public static class PlaybackRouting
     /// Evaluates the signal graph, gives each distinct available endpoint an output slot (in track order of
     /// the connections that use it), and turns each external-instrument part into a plan part, with its
     /// voice selection from the instrument's profile. Parts whose endpoint is unavailable are left out, and a
-    /// playing track that then reaches nothing is reported as not routed.
+    /// playing track that then reaches nothing is reported as not routed. External instrument parameter lanes are
+    /// translated into MIDI for their parts (<see cref="HardwareAutomation"/>).
     /// </summary>
     public static PreparedRouting Prepare(Project project, DeviceCatalog devices, ProfileCatalog profiles, IReadOnlyList<EndpointDescriptor> endpoints)
     {
@@ -142,7 +146,12 @@ public static class PlaybackRouting
             }
         }
 
-        return new PreparedRouting([.. slots], parts.ToImmutable(), diagnostics.ToImmutable(), instruments, RouteResolver.ResolveTracks(project, instruments), graph);
+        // Hardware parameter automation goes to its part's endpoint; a new endpoint gets a slot after the others.
+        var parameterParts = HardwareAutomation.Plan(project, instruments, slots, diagnostics);
+        return new PreparedRouting([.. slots], parts.ToImmutable(), diagnostics.ToImmutable(), instruments, RouteResolver.ResolveTracks(project, instruments), graph)
+        {
+            ParameterParts = parameterParts,
+        };
     }
 
     /// <summary>Opens one output per slot. Failures leave the slot empty and are reported, not thrown.</summary>

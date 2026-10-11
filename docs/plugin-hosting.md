@@ -9,13 +9,15 @@ user can restart them without closing the project.
 `reference.transpose`) and third-party **VST3** and **CLAP** plugins through a Rust plugin host loaded only in the
 worker (ADR 0033). Scanning, loading, parameters, state, processing, MIDI effects at plan time, crash recovery, and
 editor windows work; exactly what was verified on which plugin and machine is in
-[Third-party plugins](#third-party-plugins-vst3-and-clap). Bluestone has no audio engine yet, so plugins process
-blocks when asked (as the tests do) but nothing drives them from playback.
+[Third-party plugins](#third-party-plugins-vst3-and-clap). The audio engine (ADR 0032) drives plugin instances through
+the same `PluginInstance.ProcessBlock` whatever their format; playing third-party plugins through it was not checked by
+ear (the machine was locked).
 
 **Process isolation is crash isolation, not a security sandbox.** See [Security limitations](#security-limitations).
 
 Everything here is C# except the plugin host, which is Rust because it loads native plugin binaries (ADR 0026's
-native-interface reason; ADR 0033). The data plane stays C#: it has not been measured to need anything else.
+native-interface reason; ADR 0033). The plugin data plane stays C#: it has not been measured to need anything else.
+(The audio device callback is Rust for a measured reason; ADR 0032.)
 
 ## Projects
 
@@ -169,8 +171,9 @@ everything and is not included):
 Depth 1 adds no pipeline blocks, but the worker's wake-up, the plugin's processing, and the hand-back must all fit
 inside the same audio callback while the host spins; any scheduling hiccup becomes a late block and silence. It is
 not "zero additional latency": it moves the cost into the callback and into dropouts. Depth 2 gives the worker a
-whole block period. Larger depths tolerate more jitter at the cost of more latency. None of these figures has
-been measured under a real audio device yet; the tests prove ordering and correctness, not real-time performance.
+whole block period. Larger depths tolerate more jitter at the cost of more latency. The audio engine now drives instances from
+its render thread, but plugin timing under a real device has only been exercised with the reference plugins, not
+measured; the tests prove ordering and correctness, not real-time performance.
 
 ### Worker wake-up: spin, then back off
 
@@ -407,8 +410,8 @@ Not verified: editors on Windows and Linux (the code compiles and runs headless 
 those systems), closing or resizing an editor window by hand (no one was at the machine), plugin MIDI output from a
 third-party MIDI effect (none of the installed plugins is a VST3 or CLAP MIDI effect; Scaler 3 and Melody Sauce 3
 are instruments that also put out MIDI, which Bluestone does not route from an instrument), Intel-only plugins on
-Apple silicon (refused as `Unsupported`, by a unit test on synthetic headers), real-time behaviour under an audio
-device (there is no audio engine).
+Apple silicon (refused as `Unsupported`, by a unit test on synthetic headers), third-party plugins played through the
+audio engine on a real audio device (the engine's plugin tests use the reference plugins; the machine was locked).
 
 The installed-plugin and editor tests skip with a reason when the plugin is missing (and the editor tests on CI and
 outside macOS). Test subjects downloaded for this: Airwindows Consolidated (MIT) and Surge XT 1.3.4 (GPL-3.0), from
@@ -510,6 +513,22 @@ bytes reach a loopback port while SysEx and controllers go around it; its automa
 its tick on and a tap carries its output to another track; a killed worker and a hung worker both leave the notes
 unchanged with a reason, and a restart brings the transposition back.
 
+## Plugins in the audio engine
+
+When an audio device is open (ADR 0032), each plugin instrument or audio effect in a chain whose audio is connected
+somewhere becomes a `PluginNode` in the render graph. Every block it calls `ProcessBlock` with the chain's audio so far
+(effects), the software-instrument feed's events and the device's automation scheduled in that block, and the
+transport; plugins run every block, playing or not. On a start, stop, seek, loop wrap, or a new schedule after an
+edit, the notes the node started are released first. A worker that fails gives silence under the instance's failure
+policy, never stale audio, and the engine carries on (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`). Each
+node's latency (`ReportedLatencyFrames`) is reported per device; nothing compensates for it yet. Instances must run
+at the device's rate and accept the engine's block size, or they are reported and left silent.
+
+Tests (real workers, offline driver): `AudioPluginTests` (the Sine at its pitch through a mixer strip after one
+block of latency, the Gain processing connected audio, a killed worker, release on locate, zero allocation) and
+`SoftwareInstrumentAudioTests` (an instrument track through the signal graph, the plugin bridge, and the project audio
+graph).
+
 ## Acceptance scenarios
 
 | # | Scenario | Tests (real worker processes) |
@@ -560,6 +579,5 @@ and run as one non-parallel collection. The integration project references the w
 - **Wake-up primitives** (futex, eventfd, Windows events) for the data plane.
 - **MIDI 2.0** events on the data plane.
 - **In-process hosting** of trusted plugins.
-- **Audio from plugins into a mixer.** There is no audio engine: plugin instances process blocks when asked (as the
-  tests do), but nothing drives them from playback yet. Plugin MIDI effects reach the plan by rendering (above); live
-  input does not pass through plugins.
+- **Live input through plugins.** Plugin MIDI effects reach the plan by rendering (above); live input does not pass
+  through plugins.

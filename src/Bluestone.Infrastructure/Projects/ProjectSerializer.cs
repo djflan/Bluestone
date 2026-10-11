@@ -295,11 +295,19 @@ public sealed class ProjectSerializer
             AutomationParameter.PitchBend => "pitchBend",
             AutomationParameter.ChannelPressure => "channelPressure",
             AutomationParameter.DeviceParameter => "device",
+            AutomationParameter.InstrumentParameter => "instrument",
             _ => "controller",
         });
         if (target.IsMidi)
         {
             writer.WriteNumber("channel", target.Channel.Number);
+        }
+        else if (target.IsInstrument)
+        {
+            writer.WriteString("instrument", target.Instrument.Value.ToString("D"));
+            writer.WriteString("port", target.Port);
+            writer.WriteNumber("channel", target.Channel.Number);
+            writer.WriteString("parameter", target.InstrumentParameter);
         }
         else
         {
@@ -829,6 +837,11 @@ public sealed class ProjectSerializer
             "pitchBend" => AutomationTarget.ForPitchBend(Channel(target, at)),
             "channelPressure" => AutomationTarget.ForChannelPressure(Channel(target, at)),
             "device" => Guard(at, () => AutomationTarget.ForDevice(new DeviceId(Guid(target, "device", at)), new ParameterId((uint)Long(target, "parameter", at, 0, uint.MaxValue)))),
+            "instrument" => Guard(at, () => AutomationTarget.ForInstrument(
+                new ExternalInstrumentId(Guid(target, "instrument", at)),
+                String(target, "port", at, AutomationTarget.MaxKeyLength),
+                Channel(target, at),
+                String(target, "parameter", at, AutomationTarget.MaxKeyLength))),
             _ => throw new ProjectFormatException($"{at}.type", $"\"{type}\" is not a known automation target."),
         };
         var array = Array(json, "points", path, Math.Min(AutomationLane.MaxPoints, MaxEventsPerTrack - pointCount));

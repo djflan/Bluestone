@@ -1,6 +1,6 @@
 # 0026. Native technology policy: C# first, Rust where measurements or native interfaces demand it
 
-- Status: Accepted; the first Rust component is the plugin host (0033)
+- Status: Accepted; first applied in ADR 0032 (audio device output and callback) and ADR 0033 (the plugin host)
 - Date: 2026-10-10
 
 ## Context

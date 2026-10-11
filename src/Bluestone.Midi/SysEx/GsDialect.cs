@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using Bluestone.Domain.Midi;
 
 namespace Bluestone.Midi.SysEx;
 
@@ -91,16 +92,7 @@ public static class GsDialect
     public const byte DataSet = 0x12;
 
     /// <summary>The Roland checksum of an address and its data: the value that makes their sum 0 (mod 128).</summary>
-    public static byte Checksum(ReadOnlySpan<byte> addressAndData)
-    {
-        var sum = 0;
-        foreach (var b in addressAndData)
-        {
-            sum += b;
-        }
-
-        return (byte)((128 - (sum & 0x7F)) & 0x7F);
-    }
+    public static byte Checksum(ReadOnlySpan<byte> addressAndData) => SysExChecksum.Compute(addressAndData);
 
     /// <param name="body">The message without <c>F0</c> and <c>F7</c>, starting with <c>41</c>.</param>
     internal static GsDataSet? Interpret(ReadOnlySpan<byte> body)

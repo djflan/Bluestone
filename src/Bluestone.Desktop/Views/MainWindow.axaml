@@ -42,6 +42,7 @@
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
                 <Separator />
                 <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, modules that could not be read, and quarantined modules" />
+                <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>
@@ -577,6 +578,16 @@
                               <Separator />
                               <MenuItem Header="{x:Static vm:AutomationOption.PitchBend}" Command="{Binding AddLaneCommand}" CommandParameter="{x:Static vm:AutomationOption.PitchBend}" />
                               <MenuItem Header="{x:Static vm:AutomationOption.ChannelPressure}" Command="{Binding AddLaneCommand}" CommandParameter="{x:Static vm:AutomationOption.ChannelPressure}" />
+                              <Separator IsVisible="{Binding HasHardwareParameters}" />
+                              <MenuItem Header="Instrument parameters" ItemsSource="{Binding HardwareParameters}" IsVisible="{Binding HasHardwareParameters}">
+                                <MenuItem.ItemContainerTheme>
+                                  <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:HardwareParameterOption">
+                                    <Setter Property="Header" Value="{Binding Name}" />
+                                    <Setter Property="Command" Value="{Binding Add}" />
+                                    <Setter Property="CommandParameter" Value="{Binding}" />
+                                  </ControlTheme>
+                                </MenuItem.ItemContainerTheme>
+                              </MenuItem>
                             </MenuFlyout>
                           </Button.Flyout>
                         </Button>
