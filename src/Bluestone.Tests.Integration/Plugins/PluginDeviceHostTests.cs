@@ -107,7 +107,7 @@ public sealed class PluginDeviceHostTests
         await using var host = new PluginTestHost();
         var (session, _, first) = ProjectWithGainOn("Vocals");
         var (_, _, second) = ProjectWithGainOn("Guitar", session);
-        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames, hosting: new PluginHostingSettings { Mode = HostingMode.Individually });
         await bridge.SyncAsync(session.Project, Ct);
         var a = bridge.InstanceOf(first.Id)!;
         var b = bridge.InstanceOf(second.Id)!;
@@ -125,6 +125,33 @@ public sealed class PluginDeviceHostTests
         Assert.All(Run(b), s => Assert.Equal(1.0f, s, 4));
         Assert.Same(project, session.Project);
         Assert.False(await bridge.CaptureStateAsync(first.Id, Ct));
+    }
+
+    [Fact]
+    public async Task ARateChange_RecreatesTheInstanceAtTheNewRate_FromItsLiveState_WithoutTouchingTheProject()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Vocals");
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var before = bridge.InstanceOf(device.Id)!;
+        host.Track(before);
+        await before.SetParameterAsync(GainParameter.Value, 0.25, Ct);
+        var project = session.Project;
+
+        await bridge.SetSampleRateAsync(44_100, Ct);
+
+        var after = bridge.InstanceOf(device.Id)!;
+        host.Track(after);
+        Assert.NotSame(before, after);
+        Assert.Equal((44_100.0, PluginInstanceState.Running), (after.Request.SampleRate, after.Status.State));
+        Assert.Equal(44_100.0, bridge.SampleRate);
+        Assert.All(Run(after), s => Assert.Equal(0.5f, s, 4));
+        Assert.Same(project, session.Project);
+
+        // The same rate again changes nothing.
+        await bridge.SetSampleRateAsync(44_100, Ct);
+        Assert.Same(after, bridge.InstanceOf(device.Id));
     }
 
     [Fact]
@@ -165,5 +192,36 @@ public sealed class PluginDeviceHostTests
 
         Assert.Null(bridge.InstanceOf(device.Id));
         await WaitUntilAsync(() => !IsRunning(pid), TimeSpan.FromSeconds(10), "the removed device's worker to exit");
+    }
+
+    [Fact]
+    public async Task ThePluginsOwnEdits_RecordedWhileItKeepsMoving_AreNotSentBackToIt()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Vocals");
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var instance = bridge.InstanceOf(device.Id)!;
+        host.Track(instance);
+        async Task<double> PluginGain() => (await instance.GetParametersAsync(Ct)).Single(p => p.Id == GainParameter.Value).Value;
+
+        // The plugin moves its gain itself (a drag in its editor); each edit reaches the project later, on the UI thread.
+        double[] moves = [0.2, 0.3, 0.4];
+        foreach (var value in moves)
+        {
+            await instance.SetParameterAsync(GainParameter.Value, value, Ct);
+        }
+
+        foreach (var value in moves)
+        {
+            bridge.RecordEdit(new PluginParameterEdit(device.Id, GainParameter.Value, value));
+            await bridge.SyncAsync(session.Project, Ct);
+            Assert.Equal(0.4, await PluginGain(), 6);
+        }
+
+        // An edit in the project still reaches the plugin.
+        session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.25)));
+        await bridge.SyncAsync(session.Project, Ct);
+        Assert.Equal(0.25, await PluginGain(), 6);
     }
 }

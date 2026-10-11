@@ -22,6 +22,32 @@ public sealed record PlanPart(int OutputSlot, ImmutableArray<SignalEvent> Events
     public ImmutableArray<SignalEvent> InitialEvents { get; init; } = [];
 }
 
+/// <summary>The MIDI one hardware parameter change becomes, sent together (ADR 0031).</summary>
+/// <param name="Position">When it is sent.</param>
+/// <param name="Sequence">The ordering index of its first event within its origin; event <c>k</c> uses <c>Sequence + k</c>.</param>
+/// <param name="Events">Controller and SysEx events, in the order they must be sent.</param>
+public sealed record ParameterSend(Tick Position, int Sequence, ImmutableArray<TrackEvent> Events);
+
+/// <summary>
+/// Translated automation of one external instrument parameter (ADR 0031): what an instrument parameter lane
+/// sends to one part. Its events are ordered with everything else by (tick, phase, origin, sequence, part).
+/// </summary>
+/// <param name="OutputSlot">Index into the outputs given to <see cref="PlaybackEngine.SetOutputs"/>.</param>
+/// <param name="Origin">The index of the lane's track.</param>
+/// <param name="Sends">The changes in position order.</param>
+public sealed record ParameterPart(int OutputSlot, int Origin, ImmutableArray<ParameterSend> Sends)
+{
+    /// <summary>
+    /// Whether the plan chases the parameter itself: on seek, play, and loop wrap, its latest change is sent
+    /// whole (an RPN or NRPN sequence, or a SysEx message). Controller mappings leave this off, because
+    /// controller chasing already covers them.
+    /// </summary>
+    public bool Chased { get; init; }
+}
+
+/// <summary>One change of a chased hardware parameter: when it was sent, which parameter, and what to resend.</summary>
+internal sealed record ParameterChase(long Tick, int Key, ChaseMessage[] Messages);
+
 /// <summary>Something the compiler left out of a plan, and why.</summary>
 public sealed record PlanDiagnostic(TrackId Track, string Message);
 
@@ -53,13 +79,14 @@ internal readonly struct PlanEvent(long tick, int slot, ChannelMessage message, 
 /// </summary>
 public sealed class PlaybackPlan
 {
-    internal PlaybackPlan(TempoMap tempoMap, MeterMap meterMap, PlanEvent[] events, ByteBlock[] payloads, IReadOnlyList<PlanDiagnostic> diagnostics)
+    internal PlaybackPlan(TempoMap tempoMap, MeterMap meterMap, PlanEvent[] events, ByteBlock[] payloads, IReadOnlyList<PlanDiagnostic> diagnostics, ParameterChase[]? parameterChases = null)
     {
         TempoMap = tempoMap;
         MeterMap = meterMap;
         Events = events;
         Payloads = payloads;
         Diagnostics = diagnostics;
+        ParameterChases = parameterChases ?? [];
     }
 
     public static PlaybackPlan Empty(TempoMap tempoMap)
@@ -80,6 +107,9 @@ public sealed class PlaybackPlan
     internal PlanEvent[] Events { get; }
 
     internal ByteBlock[] Payloads { get; }
+
+    /// <summary>Changes of chased hardware parameters, in tick order (see <see cref="ParameterPart.Chased"/>).</summary>
+    internal ParameterChase[] ParameterChases { get; }
 
     /// <summary>
     /// The first beat at or after <paramref name="tick"/>, and whether it is a bar's downbeat. A meter

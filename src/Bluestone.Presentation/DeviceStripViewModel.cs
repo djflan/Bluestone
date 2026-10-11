@@ -214,6 +214,8 @@ public sealed partial class DeviceStripViewModel : ObservableObject
     internal void ShowRouting(DeviceViewModel device) => _owner.Connections.RouteFrom(device.Id);
 
     internal Task RestartAsync(DeviceViewModel device) => _owner.RestartDeviceAsync(device.Id);
+
+    internal Task OpenEditorAsync(DeviceViewModel device) => _owner.OpenDeviceEditorAsync(device.Id);
 }
 
 /// <summary>One device in the strip, with its status in words, its routing taps, and its parameters.</summary>
@@ -249,6 +251,24 @@ public sealed partial class DeviceViewModel : ObservableObject
     [ObservableProperty]
     public partial bool CanRestart { get; private set; }
 
+    /// <summary>A running VST3 or CLAP plugin can show its own editor, in a window of its worker process.</summary>
+    [ObservableProperty]
+    public partial bool CanOpenEditor { get; private set; }
+
+    /// <summary>For a plugin, which worker process it runs in: "Hosted by plugin (Surge XT) · shares its process with Pad".</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasHosting))]
+    public partial string Hosting { get; private set; } = string.Empty;
+
+    public bool HasHosting => Hosting.Length > 0;
+
+    /// <summary>For a failed plugin, the other devices that went down with it because they shared its worker process.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDetail))]
+    public partial string Detail { get; private set; } = string.Empty;
+
+    public bool HasDetail => Detail.Length > 0;
+
     [ObservableProperty]
     public partial bool IsBypassed { get; set; }
 
@@ -280,6 +300,9 @@ public sealed partial class DeviceViewModel : ObservableObject
             Status = status.Text;
             NeedsAttention = status.NeedsAttention;
             CanRestart = status.CanRestart;
+            CanOpenEditor = status.CanOpenEditor;
+            Hosting = status.Hosting;
+            Detail = status.Detail;
             Title = status.NeedsAttention ? $"[{device.DisplayName}: {status.Text}]" : device.DisplayName;
             IsBypassed = device.IsBypassed;
             CanMoveUp = index > 0;
@@ -332,6 +355,9 @@ public sealed partial class DeviceViewModel : ObservableObject
 
     [RelayCommand]
     private Task RestartAsync() => _strip.RestartAsync(this);
+
+    [RelayCommand]
+    private Task OpenEditorAsync() => _strip.OpenEditorAsync(this);
 
     internal void SetParameter(ParameterId parameter, ControlValue value)
     {
@@ -397,8 +423,11 @@ public sealed partial class ParameterViewModel : ObservableObject
     }
 }
 
-/// <summary>A device's status in words, and whether it needs the musician's attention.</summary>
-public sealed record DeviceStatus(string Text, bool NeedsAttention = false, bool CanRestart = false)
+/// <summary>
+/// A device's status in words, and whether it needs the musician's attention. For a plugin, <c>Hosting</c> says which
+/// worker process it is in and <c>Detail</c> what else went down with it when it failed.
+/// </summary>
+public sealed record DeviceStatus(string Text, bool NeedsAttention = false, bool CanRestart = false, bool CanOpenEditor = false, string Hosting = "", string Detail = "")
 {
     public static DeviceStatus Of(DeviceInstance device, DeviceCatalog catalog)
     {

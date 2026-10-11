@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Routing;
+using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Midi.Endpoints;
@@ -64,8 +65,54 @@ public sealed partial class TrackViewModel : ObservableObject
 
     public ObservableCollection<AutomationLaneViewModel> Lanes { get; } = [];
 
-    /// <summary>The track's row plus its lanes when they are shown.</summary>
-    public double RowHeight => TrackRowHeight + (IsAutomationExpanded ? Lanes.Count * AutomationLaneHeight : 0);
+    /// <summary>The track's row plus its lanes when they are shown; nothing while a folded group hides it.</summary>
+    public double RowHeight => !IsShown ? 0 : TrackRowHeight + (IsAutomationExpanded ? Lanes.Count * AutomationLaneHeight : 0);
+
+    /// <summary>Whether this group track's members are hidden under it. Saved with the project, and undoable (ADR 0030).</summary>
+    [ObservableProperty]
+    public partial bool IsFolded { get; set; }
+
+    partial void OnIsFoldedChanged(bool value)
+    {
+        if (!_syncing)
+        {
+            _owner.Groups.Fold(this, value);
+        }
+    }
+
+    /// <summary>False while a group around the track is folded.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RowHeight))]
+    public partial bool IsShown { get; private set; } = true;
+
+    /// <summary>The name of the group the track is in, or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsInGroup))]
+    [NotifyPropertyChangedFor(nameof(StatusLine))]
+    public partial string? GroupName { get; private set; }
+
+    public bool IsInGroup => GroupName is not null;
+
+    /// <summary>How far the header is indented to show nesting, in device-independent pixels.</summary>
+    [ObservableProperty]
+    public partial double Indent { get; private set; }
+
+    /// <summary>Silenced because a group around it is muted (the track's own mute is off).</summary>
+    [ObservableProperty]
+    public partial bool IsMutedByGroup { get; private set; }
+
+    /// <summary>How many tracks are directly in this group track.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MembersText))]
+    public partial int MemberCount { get; private set; }
+
+    public bool IsGroup => Role == TrackRole.Group;
+
+    /// <summary>Grouping commands, for the track's context menu.</summary>
+    public GroupsViewModel Groups => _owner.Groups;
+
+    /// <summary>How many tracks the group holds, for the group's header.</summary>
+    public string MembersText => string.Create(CultureInfo.InvariantCulture, $"{MemberCount} track{(MemberCount == 1 ? string.Empty : "s")}");
 
     /// <summary>Adds a lane for <paramref name="option"/> on the track's channel, and shows the lanes.</summary>
     [RelayCommand]
@@ -73,6 +120,26 @@ public sealed partial class TrackViewModel : ObservableObject
 
     [RelayCommand]
     private void RemoveLane(AutomationLaneViewModel lane) => _owner.Execute(AutomationCommands.RemoveLane(Id, lane.Id));
+
+    /// <summary>The parameters of the track's external instrument part that its profile maps, for automation lanes (ADR 0031).</summary>
+    public IReadOnlyList<HardwareParameterOption> HardwareParameters { get; private set; } = [];
+
+    public bool HasHardwareParameters => HardwareParameters.Count > 0;
+
+    /// <summary>Adds a lane for a hardware parameter, and shows the lanes.</summary>
+    [RelayCommand]
+    private void AddHardwareLane(HardwareParameterOption option)
+    {
+        ArgumentNullException.ThrowIfNull(option);
+        _owner.Execute(AutomationCommands.AddLane(Id, AutomationLane.Create(option.Target)));
+        IsAutomationExpanded = true;
+    }
+
+    /// <summary>The profile's name for an instrument parameter target, or its key when the profile or parameter is missing.</summary>
+    internal string HardwareParameterName(AutomationTarget target) =>
+        _owner.Project.FindInstrument(target.Instrument)?.Profile is { } reference && _owner.FindProfile(reference.ProfileId)?.FindMapping(target.InstrumentParameter ?? string.Empty) is { } mapping
+            ? mapping.Name
+            : target.InstrumentParameter ?? string.Empty;
 
     /// <summary>One-based position in the track list.</summary>
     [ObservableProperty]
@@ -86,6 +153,7 @@ public sealed partial class TrackViewModel : ObservableObject
 
     /// <summary>The track's role: what it is for (ADR 0021).</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGroup))]
     public partial TrackRole Role { get; private set; }
 
     /// <summary>The track's output settings as the inspector edits them (see <see cref="TrackOutputs"/>).</summary>
@@ -116,8 +184,11 @@ public sealed partial class TrackViewModel : ObservableObject
         _ => "Offline",
     };
 
-    /// <summary>The output and, when it is not ready, a word for why: "Synth", "Synth · Check", "No output".</summary>
-    public string StatusLine => Health switch
+    /// <summary>
+    /// The output and, when it is not ready, a word for why: "Synth", "Synth · Check", "No output". A track in a
+    /// group shows the group, which is where its output goes.
+    /// </summary>
+    public string StatusLine => GroupName is { } group ? $"→ {group}" : Health switch
     {
         RouteHealth.Ready => Output.Name,
         RouteHealth.Attention => $"{Output.Name} · Check",
@@ -142,6 +213,7 @@ public sealed partial class TrackViewModel : ObservableObject
             Name = track.Name;
             IsMuted = track.IsMuted;
             IsSoloed = track.IsSoloed;
+            IsFolded = track.IsFolded;
             Summary = Summarize(track);
             SyncLanes(track);
             Role = track.Role;
@@ -161,6 +233,7 @@ public sealed partial class TrackViewModel : ObservableObject
                 _ => RouteHealth.Ready,
             };
             Problems = resolved?.Problems ?? [];
+            SyncHardwareParameters(track, resolved);
             RouteText = $"{Profile.Name} → {Output.Name}";
             OnPropertyChanged(nameof(HealthText));
             OnPropertyChanged(nameof(StatusLine));
@@ -168,6 +241,23 @@ public sealed partial class TrackViewModel : ObservableObject
             OnPropertyChanged(nameof(NeedsAttention));
             OnPropertyChanged(nameof(IsOffline));
             OnPropertyChanged(nameof(ColorIndex));
+        }
+        finally
+        {
+            _syncing = false;
+        }
+    }
+
+    internal void SyncGroup(string? group, int depth, bool shown, bool mutedByGroup, int members)
+    {
+        _syncing = true;
+        try
+        {
+            GroupName = group;
+            Indent = depth * GroupsViewModel.IndentPerLevel;
+            IsShown = shown;
+            IsMutedByGroup = mutedByGroup;
+            MemberCount = members;
         }
         finally
         {
@@ -196,6 +286,23 @@ public sealed partial class TrackViewModel : ObservableObject
         if (!_syncing)
         {
             _owner.Execute(ProjectCommands.SetSoloed(Id, value));
+        }
+    }
+
+    private void SyncHardwareParameters(Track track, ResolvedTrackOutput? resolved)
+    {
+        IReadOnlyList<HardwareParameterOption> options = [];
+        if (resolved is { Instrument: { Profile.Profile: { ParameterMap.Length: > 0 } profile } instrument, Port: { } port })
+        {
+            var channel = Route.Channel ?? track.FirstChannel ?? MidiChannel.FromIndex(0);
+            options = [.. profile.ParameterMap.Select(m => new HardwareParameterOption(m.Name, AutomationTarget.ForInstrument(instrument.Instrument.Id, port.Port.Id, channel, m.Id), AddHardwareLaneCommand))];
+        }
+
+        if (!options.Select(o => (o.Name, o.Target)).SequenceEqual(HardwareParameters.Select(o => (o.Name, o.Target))))
+        {
+            HardwareParameters = options;
+            OnPropertyChanged(nameof(HardwareParameters));
+            OnPropertyChanged(nameof(HasHardwareParameters));
         }
     }
 

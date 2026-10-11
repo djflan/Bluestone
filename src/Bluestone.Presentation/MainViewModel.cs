@@ -13,6 +13,7 @@ using Bluestone.Infrastructure.Projects;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Files;
 using Bluestone.Playback;
+using Bluestone.Plugins;
 using Bluestone.Profiles;
 using Bluestone.Signal;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -90,6 +91,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Mixer = new MixerViewModel(this);
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
+        AudioClip = new AudioClipViewModel(this);
+        Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
+        Groups = new GroupsViewModel(this);
         EventList = new EventListViewModel(this, Editor);
         SelectedTracks.CollectionChanged += (_, _) =>
         {
@@ -98,6 +102,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             SyncSelection();
             SyncEditor();
             Arrangement.KeepOnTracks([.. SelectedTracks.Select(t => t.Id)]);
+            Groups.SyncSelection();
             ApplyThru();
         };
         ApplyMetronome();
@@ -117,6 +122,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (_plugins is not null)
         {
             _playback.UseDevices(_plugins.Extend(DeviceCatalog.BuiltIn));
+            _playback.Live.UsePlugins(_plugins.InstanceOf);
             // A plugin MIDI effect that stops or comes back changes what goes into the plan, so recompile it too.
             _plugins.StatusChanged += (_, device) => _dispatcher.Post(() =>
             {
@@ -126,6 +132,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                     _ = RefreshAsync();
                 }
             });
+
+            // A parameter the plugin changed itself (in its editor) is stored in the project, which stays the authority.
+            _plugins.ParameterEdited += (_, edit) => _dispatcher.Post(() => _plugins.RecordEdit(edit));
+
+            // A worker process that ends takes every device in it down; say which ones went together.
+            _plugins.Crashed += (_, crash) => _dispatcher.Post(() =>
+            {
+                AddMessage(MessageSeverity.Warning, "Plugins", CrashMessage(crash));
+                SyncSelection();
+            });
+
+            // A rescan that finds or loses plugins changes the catalog; devices whose plugin was found start.
+            _plugins.AvailableChanged += (_, _) => _dispatcher.Post(() => _ = OnPluginsChangedAsync());
         }
 
         foreach (var failure in _playback.Profiles.Failures)
@@ -162,6 +181,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The clip selection and clip edits in the arrangement.</summary>
     public ArrangementViewModel Arrangement { get; }
 
+    /// <summary>Gain and fades of the selected audio clip.</summary>
+    public AudioClipViewModel AudioClip { get; }
+
+    /// <summary>Group tracks: grouping the selection, membership, and folding.</summary>
+    public GroupsViewModel Groups { get; }
+
     /// <summary>The selected track's device chain.</summary>
     public DeviceStripViewModel DeviceStrip { get; }
 
@@ -174,6 +199,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The project's mixer channels.</summary>
     public MixerViewModel Mixer { get; }
 
+    /// <summary>The plugins view: scanned plugins, failures, and quarantined modules. Null when the host does not offer it.</summary>
+    public PluginsViewModel? Plugins { get; init; }
+
     /// <summary>The devices chains can use: built-ins, and plugins as data (they run in worker processes).</summary>
     internal DeviceCatalog Devices => _playback.Devices;
 
@@ -182,8 +210,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>A device's status for the strip: a plugin's from its worker, otherwise from the catalog.</summary>
     internal DeviceStatus DeviceStatus(DeviceInstance device) =>
         _plugins?.StatusOf(device) is { } runtime
-            ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart)
+            ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
             : Presentation.DeviceStatus.Of(device, Devices);
+
+    private string CrashMessage(PluginCrash crash)
+    {
+        var names = crash.Devices.Select(d => Project.FindDevice(d)?.Device.DisplayName ?? "A plugin").ToList();
+        var what = crash.Reason switch
+        {
+            UnavailableReason.Hung => "stopped responding",
+            UnavailableReason.ProtocolError => "misbehaved",
+            _ => "crashed",
+        };
+        return names.Count == 1
+            ? $"{names[0]}'s plugin process {what}. Bluestone kept running; Restart starts it again from its last saved state."
+            : $"The plugin process shared by {string.Join(", ", names.Take(names.Count - 1))} and {names[^1]} {what}; all {names.Count} went down together. Restart on any of them starts them all again.";
+    }
 
     /// <summary>Restarts a crashed, hung, or quarantined plugin device and restores its last saved state.</summary>
     internal async Task RestartDeviceAsync(DeviceId device)
@@ -208,6 +250,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SyncSelection();
     }
 
+    /// <summary>Opens a plugin device's own editor in a window of its worker process.</summary>
+    internal async Task OpenDeviceEditorAsync(DeviceId device)
+    {
+        if (_plugins is null)
+        {
+            return;
+        }
+
+        if (await _plugins.OpenEditorAsync(device) is { } problem)
+        {
+            AddMessage(MessageSeverity.Warning, "Plugins", $"The plugin's editor could not be opened: {problem}");
+        }
+
+        SyncSelection();
+    }
+
     // Starts workers for plugin devices that need one and stops those whose device is gone. A failure is a message,
     // never a crash and never a fall-back to Bluestone's own process.
     private async Task SyncPluginsAsync()
@@ -226,6 +284,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             AddMessage(MessageSeverity.Warning, "Plugins", $"Plugins could not be started: {ex.Message}");
         }
+    }
+
+    private async Task OnPluginsChangedAsync()
+    {
+        await SyncPluginsAsync();
+        SyncSelection();
+        await RefreshAsync();
     }
 
     /// <summary>
@@ -547,9 +612,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        // Rows folded away under a group are skipped.
+        var shown = Tracks.Where(t => t.IsShown || SelectedTracks.Contains(t)).ToList();
         var anchor = SelectedTracks.Count > 0 ? SelectedTracks[^1] : null;
-        var index = anchor is null ? (delta > 0 ? 0 : Tracks.Count - 1) : Math.Clamp(Tracks.IndexOf(anchor) + delta, 0, Tracks.Count - 1);
-        var target = Tracks[index];
+        var index = anchor is null ? (delta > 0 ? 0 : shown.Count - 1) : Math.Clamp(shown.IndexOf(anchor) + delta, 0, shown.Count - 1);
+        var target = shown[index];
         if (extend)
         {
             if (!SelectedTracks.Contains(target))
@@ -639,8 +706,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return notes;
     }
 
-    private static bool IsAudible(Sequence sequence, Track track) =>
-        sequence.Tracks.Any(t => t.IsSoloed) ? track.IsSoloed : !track.IsMuted;
+    private static bool IsAudible(Sequence sequence, Track track) => GroupTracks.Plays(sequence, track);
 
     public Task AutosaveAsync() => _session.AutosaveAsync();
 
@@ -781,7 +847,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             await RunAsync("Export", async () =>
             {
-                ReportMidi("Export", await _session.ExportMidiAsync(path));
+                ReportMidi("Export", await _session.ExportMidiAsync(path, _playback.Profiles));
                 AddMessage(MessageSeverity.Info, "Export", $"Exported {Path.GetFileName(path)}.");
             });
         }
@@ -1107,7 +1173,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Execute(ProjectCommands.RemoveTracks([.. tracks.Select(t => t.Id)]));
     }
 
-    /// <summary>Routes every track to the output shown in the inspector.</summary>
+    /// <summary>Routes every track to the output shown in the inspector, except tracks in a group: they go through their group.</summary>
     [RelayCommand]
     private void UseOutputForAllTracks()
     {
@@ -1117,7 +1183,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         var reference = Application.Routing.RouteResolver.ReferenceTo(endpoint);
-        foreach (var track in Project.Sequence.Tracks)
+        foreach (var track in Project.Sequence.Tracks.Where(t => t.Group is null))
         {
             Execute(ProjectCommands.SetTrackOutput(track.Id, TrackOutputs.Read(Project, track.Id) with { Endpoint = reference }));
         }
@@ -1162,6 +1228,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SyncTracks();
         SyncEditor();
         Arrangement.Sync();
+        AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         await SyncPluginsAsync();
         await RefreshAsync();
     }
@@ -1268,8 +1335,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DeviceStrip.Sync(Project, single, Devices);
         Connections.Sync(Project, single, DeviceStrip.Rack);
         Racks.Sync(Project, DeviceStrip.Rack);
-        Mixer.Sync(Project.Mixer);
+        Mixer.Sync(Project);
     }
+
+    /// <summary>Runs <paramref name="action"/> later on the UI thread.</summary>
+    internal void Post(Action action) => _dispatcher.Post(action);
 
     /// <summary>Refreshes the device strip, routing inspector, racks, and mixer from the project.</summary>
     internal void SyncDeviceViews() => SyncSelection();
@@ -1313,6 +1383,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             existing.Sync(i + 1, tracks[i], _playback.Tracks.FirstOrDefault(r => r.Track == tracks[i].Id), outputs);
         }
 
+        Groups.Sync();
+
         if (ArmedTrack is { } armed && !Tracks.Contains(armed))
         {
             ArmedTrack = null;
@@ -1330,9 +1402,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             SelectedTracks.Add(Tracks[0]);
         }
-        else if (selectedIds.Count > 0)
+        else
         {
-            // Rows were updated in place; refresh the inspector from their new values.
+            // Rows were updated in place; refresh the inspector (and the mixer, which shows with no track too).
             SyncSelection();
         }
     }

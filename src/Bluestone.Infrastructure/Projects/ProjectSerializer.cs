@@ -213,6 +213,11 @@ public sealed class ProjectSerializer
                 writer.WriteString("group", group.Value.ToString("D"));
             }
 
+            if (track.IsFolded)
+            {
+                writer.WriteBoolean("folded", true);
+            }
+
             writer.WriteStartArray("clips");
             foreach (var clip in track.Clips)
             {
@@ -274,6 +279,25 @@ public sealed class ProjectSerializer
             writer.WriteNumber("frames", audio.Source.Frames);
             writer.WriteNumber("channels", audio.Source.Channels);
             writer.WriteEndObject();
+            if (audio.GainDecibels != 0)
+            {
+                writer.WriteNumber("gain", audio.GainDecibels);
+            }
+
+            if (audio.FadeIn.Value > 0)
+            {
+                writer.WriteNumber("fadeIn", audio.FadeIn.Value);
+            }
+
+            if (audio.FadeOut.Value > 0)
+            {
+                writer.WriteNumber("fadeOut", audio.FadeOut.Value);
+            }
+
+            if (audio.FadeShape != FadeShape.Linear)
+            {
+                writer.WriteString("fadeShape", "equalPower");
+            }
         }
 
         writer.WriteEndObject();
@@ -290,11 +314,19 @@ public sealed class ProjectSerializer
             AutomationParameter.PitchBend => "pitchBend",
             AutomationParameter.ChannelPressure => "channelPressure",
             AutomationParameter.DeviceParameter => "device",
+            AutomationParameter.InstrumentParameter => "instrument",
             _ => "controller",
         });
         if (target.IsMidi)
         {
             writer.WriteNumber("channel", target.Channel.Number);
+        }
+        else if (target.IsInstrument)
+        {
+            writer.WriteString("instrument", target.Instrument.Value.ToString("D"));
+            writer.WriteString("port", target.Port);
+            writer.WriteNumber("channel", target.Channel.Number);
+            writer.WriteString("parameter", target.InstrumentParameter);
         }
         else
         {
@@ -438,60 +470,77 @@ public sealed class ProjectSerializer
         writer.WriteStartArray("connections");
         foreach (var connection in project.Connections)
         {
-            writer.WriteStartObject();
-            writer.WriteString("id", connection.Id.Value.ToString("D"));
-            writer.WriteString("kind", connection.Kind == SignalKind.Events ? "events" : "audio");
-            WriteNode(writer, "source", connection.Source);
-            WriteNode(writer, "destination", connection.Destination);
-            if (!connection.Mapping.IsPreserving)
+            WriteConnection(writer, connection);
+        }
+
+        writer.WriteEndArray();
+
+        // Optional, so files without groups are unchanged and older readers ignore it (ADR 0030).
+        if (!project.ParkedConnections.IsEmpty)
+        {
+            writer.WriteStartArray("parkedConnections");
+            foreach (var connection in project.ParkedConnections)
             {
-                var mapping = connection.Mapping;
-                writer.WriteStartObject("mapping");
-                if (!mapping.Only.IsEmpty)
-                {
-                    writer.WriteStartArray("only");
-                    foreach (var channel in mapping.Only)
-                    {
-                        writer.WriteNumberValue(channel.Number);
-                    }
-
-                    writer.WriteEndArray();
-                }
-
-                if (mapping.Force is { } force)
-                {
-                    writer.WriteNumber("force", force.Number);
-                }
-
-                if (!mapping.Remap.IsEmpty)
-                {
-                    writer.WriteStartArray("remap");
-                    foreach (var remap in mapping.Remap)
-                    {
-                        writer.WriteStartObject();
-                        writer.WriteNumber("from", remap.From.Number);
-                        writer.WriteNumber("to", remap.To.Number);
-                        writer.WriteEndObject();
-                    }
-
-                    writer.WriteEndArray();
-                }
-
-                writer.WriteEndObject();
+                WriteConnection(writer, connection);
             }
 
-            if (connection.Voice is { } voice)
+            writer.WriteEndArray();
+        }
+    }
+
+    private static void WriteConnection(Utf8JsonWriter writer, SignalConnection connection)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("id", connection.Id.Value.ToString("D"));
+        writer.WriteString("kind", connection.Kind == SignalKind.Events ? "events" : "audio");
+        WriteNode(writer, "source", connection.Source);
+        WriteNode(writer, "destination", connection.Destination);
+        if (!connection.Mapping.IsPreserving)
+        {
+            var mapping = connection.Mapping;
+            writer.WriteStartObject("mapping");
+            if (!mapping.Only.IsEmpty)
             {
-                writer.WriteStartObject("voice");
-                writer.WriteString("bank", voice.BankId);
-                writer.WriteNumber("program", voice.Program.Number);
-                writer.WriteEndObject();
+                writer.WriteStartArray("only");
+                foreach (var channel in mapping.Only)
+                {
+                    writer.WriteNumberValue(channel.Number);
+                }
+
+                writer.WriteEndArray();
+            }
+
+            if (mapping.Force is { } force)
+            {
+                writer.WriteNumber("force", force.Number);
+            }
+
+            if (!mapping.Remap.IsEmpty)
+            {
+                writer.WriteStartArray("remap");
+                foreach (var remap in mapping.Remap)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("from", remap.From.Number);
+                    writer.WriteNumber("to", remap.To.Number);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
             }
 
             writer.WriteEndObject();
         }
 
-        writer.WriteEndArray();
+        if (connection.Voice is { } voice)
+        {
+            writer.WriteStartObject("voice");
+            writer.WriteString("bank", voice.BankId);
+            writer.WriteNumber("program", voice.Program.Number);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndObject();
     }
 
     /// <summary>Writes a chain: its owner, name, and devices with parameters, bypass, and plugin state.</summary>
@@ -606,6 +655,21 @@ public sealed class ProjectSerializer
                 writer.WriteString("output", output.Value.ToString("D"));
             }
 
+            if (channel.Sends.Length > 0)
+            {
+                writer.WriteStartArray("sends");
+                foreach (var send in channel.Sends)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("target", send.Target.Value.ToString("D"));
+                    writer.WriteNumber("level", send.LevelDecibels);
+                    writer.WriteBoolean("preFader", send.PreFader);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+            }
+
             writer.WriteEndObject();
         }
 
@@ -674,6 +738,14 @@ public sealed class ProjectSerializer
         var instruments = Array(json, "instruments", path, MaxInstruments).Select((node, i) => ReadInstrument(Object(node, $"{path}.instruments[{i}]"), $"{path}.instruments[{i}]")).ToList();
         var chains = Array(json, "chains", path, MaxChains).Select((node, i) => ReadChain(Object(node, $"{path}.chains[{i}]"), $"{path}.chains[{i}]")).ToList();
         var connections = Array(json, "connections", path, MaxConnections).Select((node, i) => ReadConnection(Object(node, $"{path}.connections[{i}]"), $"{path}.connections[{i}]")).ToList();
+        var parked = json["parkedConnections"] is null
+            ? []
+            : Array(json, "parkedConnections", path, MaxConnections).Select((node, i) => ReadConnection(Object(node, $"{path}.parkedConnections[{i}]"), $"{path}.parkedConnections[{i}]")).ToList();
+        if (parked.FirstOrDefault(p => connections.Any(c => c.Id == p.Id)) is { } twice)
+        {
+            throw new ProjectFormatException($"{path}.parkedConnections", $"connection {twice.Id} is also in connections.");
+        }
+
         var mixer = ReadMixer(Object(json, "mixer", path), $"{path}.mixer");
         return Guard($"{path}", () => new Project
         {
@@ -683,6 +755,7 @@ public sealed class ProjectSerializer
             Instruments = [.. instruments],
             Chains = [.. chains],
             Connections = [.. connections],
+            ParkedConnections = [.. parked],
             Mixer = mixer,
             Loop = loop,
         });
@@ -752,7 +825,8 @@ public sealed class ProjectSerializer
             var other => throw new ProjectFormatException($"{path}.role", $"\"{other}\" is not a known track role."),
         };
         TrackId? group = json["group"] is null ? null : new TrackId(Guid(json, "group", path));
-        var track = Guard($"{path}.clips", () => new Track(id, name, clips, muted, soloed, role: role, group: group));
+        var folded = Bool(json, "folded", path, false);
+        var track = Guard($"{path}.clips", () => new Track(id, name, clips, muted, soloed, role: role, group: group, isFolded: folded));
         return Guard($"{path}.automation", () => track.WithAutomation(lanes));
     }
 
@@ -779,7 +853,16 @@ public sealed class ProjectSerializer
                     Int(source, "sampleRate", at, 1000, 768_000),
                     Long(source, "frames", at, 0, long.MaxValue),
                     Int(source, "channels", at, 1, 64)));
-                return Guard(path, () => new AudioClip(id, start, length, offset, audio, name));
+                var gain = json["gain"] is null ? 0 : Double(json, "gain", path, AudioClip.MinGainDecibels, AudioClip.MaxGainDecibels);
+                var fadeIn = new TickSpan(json["fadeIn"] is null ? 0 : Long(json, "fadeIn", path, 0, long.MaxValue));
+                var fadeOut = new TickSpan(json["fadeOut"] is null ? 0 : Long(json, "fadeOut", path, 0, long.MaxValue));
+                var shape = (OptionalString(json, "fadeShape", path, 16) ?? "linear") switch
+                {
+                    "linear" => FadeShape.Linear,
+                    "equalPower" => FadeShape.EqualPower,
+                    var other => throw new ProjectFormatException($"{path}.fadeShape", $"\"{other}\" is not a known fade shape."),
+                };
+                return Guard(path, () => new AudioClip(id, start, length, offset, audio, name) { GainDecibels = gain, FadeIn = fadeIn, FadeOut = fadeOut, FadeShape = shape });
             default:
                 throw new ProjectFormatException($"{path}.type", $"\"{type}\" is not a known clip type.");
         }
@@ -797,6 +880,11 @@ public sealed class ProjectSerializer
             "pitchBend" => AutomationTarget.ForPitchBend(Channel(target, at)),
             "channelPressure" => AutomationTarget.ForChannelPressure(Channel(target, at)),
             "device" => Guard(at, () => AutomationTarget.ForDevice(new DeviceId(Guid(target, "device", at)), new ParameterId((uint)Long(target, "parameter", at, 0, uint.MaxValue)))),
+            "instrument" => Guard(at, () => AutomationTarget.ForInstrument(
+                new ExternalInstrumentId(Guid(target, "instrument", at)),
+                String(target, "port", at, AutomationTarget.MaxKeyLength),
+                Channel(target, at),
+                String(target, "parameter", at, AutomationTarget.MaxKeyLength))),
             _ => throw new ProjectFormatException($"{at}.type", $"\"{type}\" is not a known automation target."),
         };
         var array = Array(json, "points", path, Math.Min(AutomationLane.MaxPoints, MaxEventsPerTrack - pointCount));
@@ -1043,6 +1131,15 @@ public sealed class ProjectSerializer
         {
             var at = $"{path}.channels[{i}]";
             var item = Object(node, at);
+            var sends = item["sends"] is null ? [] : Array(item, "sends", at, MixerChannel.MaxSends).Select((sendNode, j) =>
+            {
+                var sendAt = $"{at}.sends[{j}]";
+                var send = Object(sendNode, sendAt);
+                return Guard(sendAt, () => new MixerSend(
+                    new MixerChannelId(Guid(send, "target", sendAt)),
+                    Double(send, "level", sendAt, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels),
+                    Bool(send, "preFader", sendAt, false)));
+            }).ToList();
             return Guard(at, () => new MixerChannel
             {
                 Id = new MixerChannelId(Guid(item, "id", at)),
@@ -1052,6 +1149,7 @@ public sealed class ProjectSerializer
                 IsMuted = Bool(item, "muted", at, false),
                 IsSoloed = Bool(item, "soloed", at, false),
                 Output = item["output"] is null ? null : new MixerChannelId(Guid(item, "output", at)),
+                Sends = [.. sends],
             });
         }).ToList();
         var master = Double(json, "masterGain", path, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels);

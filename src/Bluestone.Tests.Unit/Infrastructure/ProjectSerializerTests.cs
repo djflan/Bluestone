@@ -187,6 +187,35 @@ public sealed class ProjectSerializerTests
     }
 
     [Fact]
+    public void FoldingAndParkedConnections_AreWrittenOnlyWhenPresent_SoOtherFilesAreUnchanged()
+    {
+        var full = ToJson(ProjectSamples.Full());
+        var plain = ProjectSamples.Full();
+        plain = plain with
+        {
+            Sequence = plain.Sequence.WithTrack(plain.Sequence.Tracks[3].WithFolded(false)),
+            ParkedConnections = [],
+        };
+        var json = ToJson(plain);
+
+        Assert.True((bool)full["project"]!["sequence"]!["tracks"]![3]!["folded"]!);
+        Assert.Single(full["project"]!["parkedConnections"]!.AsArray());
+        Assert.Null(json["project"]!["sequence"]!["tracks"]![3]!["folded"]);
+        Assert.Null(json["project"]!["parkedConnections"]);
+    }
+
+    [Fact]
+    public void AParkedConnection_AlsoInConnections_IsAFormatError()
+    {
+        var json = ToJson(ProjectSamples.Full());
+        json["project"]!["parkedConnections"]![0]!["id"] = (string)json["project"]!["connections"]![0]!["id"]!;
+
+        var error = Assert.Throws<ProjectFormatException>(() => FromJson(json));
+
+        Assert.Equal("$.project.parkedConnections", error.JsonPath);
+    }
+
+    [Fact]
     public void Tracks_WithoutAutomation_DoNotWriteIt()
     {
         var json = ToJson(ProjectSamples.Full());

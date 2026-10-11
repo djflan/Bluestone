@@ -41,6 +41,9 @@ public enum RoutingIssueCode
 
     /// <summary>A lane's parameter is not one its device defines. The lane is kept.</summary>
     AutomationParameterUnknown,
+
+    /// <summary>A lane's external instrument, or its port, is not in the project. The lane is kept.</summary>
+    AutomationInstrumentMissing,
 }
 
 /// <summary>One finding about a project's routing, in words a musician can read.</summary>
@@ -91,6 +94,7 @@ public static class SignalRoutingValidator
             }
         }
 
+        CheckSends(project, issues);
         FindCycles(project, issues);
         CheckAutomation(project, definitions, issues);
         return issues.ToImmutable();
@@ -200,7 +204,18 @@ public static class SignalRoutingValidator
         }
     }
 
-    // A cycle is a path of connections (and mixer outputs) that returns to a node. Nodes are the things
+    private static void CheckSends(Project project, ImmutableArray<RoutingIssue>.Builder issues)
+    {
+        foreach (var channel in project.Mixer.Channels)
+        {
+            foreach (var send in channel.Sends.Where(s => project.Mixer.Find(s.Target) is null))
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Error, RoutingIssueCode.UnknownDestination, $"Mixer channel \"{channel.Name}\" sends to a channel that is not in the project."));
+            }
+        }
+    }
+
+    // A cycle is a path of connections (and mixer outputs and sends) that returns to a node. Nodes are the things
     // that own a chain (tracks and racks) and mixer channels; a tap belongs to its chain's owner, because
     // everything before the tap has already run when it fires.
     private static void FindCycles(Project project, ImmutableArray<RoutingIssue>.Builder issues)
@@ -221,6 +236,11 @@ public static class SignalRoutingValidator
             if (channel.Output is { } output)
             {
                 Add(edges, ('M', channel.Id.Value), (('M', output.Value), null));
+            }
+
+            foreach (var send in channel.Sends)
+            {
+                Add(edges, ('M', channel.Id.Value), (('M', send.Target.Value), null));
             }
         }
 
@@ -305,7 +325,7 @@ public static class SignalRoutingValidator
     {
         foreach (var track in project.Sequence.Tracks)
         {
-            foreach (var lane in track.Automation.Where(l => !l.Target.IsMidi))
+            foreach (var lane in track.Automation.Where(l => l.Target.IsDevice))
             {
                 if (project.FindDevice(lane.Target.Device) is not { } found)
                 {
@@ -314,6 +334,18 @@ public static class SignalRoutingValidator
                 else if (definitions(found.Device.Definition.Id) is { } definition && definition.FindParameter(lane.Target.DeviceParameter) is null)
                 {
                     issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationParameterUnknown, $"An automation lane on {track.Name} targets parameter {lane.Target.DeviceParameter} of {found.Device.DisplayName}, which it does not define. The lane is kept."));
+                }
+            }
+
+            foreach (var lane in track.Automation.Where(l => l.Target.IsInstrument))
+            {
+                if (project.FindInstrument(lane.Target.Instrument) is not { } instrument)
+                {
+                    issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationInstrumentMissing, $"An automation lane on {track.Name} targets an external instrument that is not in the project. The lane is kept."));
+                }
+                else if (instrument.FindPort(lane.Target.Port) is null)
+                {
+                    issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationInstrumentMissing, $"An automation lane on {track.Name} targets port {lane.Target.Port} of {instrument.Name}, which it does not have. The lane is kept."));
                 }
             }
         }

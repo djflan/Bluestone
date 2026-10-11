@@ -1,0 +1,48 @@
+<Project>
+  <!-- Packages the Rust test plugins (native/crates/bluestone_test_plugins) as a VST3 bundle and a CLAP module in
+       $(OutDir)test-plugins, in each platform's layout, so tests can scan and load them like installed plugins.
+       Use after Native.targets, with <RustCrate Include="bluestone_test_plugins" />. ADR 0033. -->
+  <PropertyGroup>
+    <BluestoneTestPluginName>BluestoneTestPlugins</BluestoneTestPluginName>
+    <BluestoneTestPluginLibrary>$(BluestoneCargoTargetDir)$(BluestoneCargoProfileDir)/$(BluestoneNativePrefix)bluestone_test_plugins$(BluestoneNativeExtension)</BluestoneTestPluginLibrary>
+    <BluestoneTestPluginArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64' And $([MSBuild]::IsOSPlatform('Windows'))">arm64</BluestoneTestPluginArch>
+    <BluestoneTestPluginArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64' And !$([MSBuild]::IsOSPlatform('Windows'))">aarch64</BluestoneTestPluginArch>
+    <BluestoneTestPluginArch Condition="'$(BluestoneTestPluginArch)' == ''">x86_64</BluestoneTestPluginArch>
+  </PropertyGroup>
+
+  <Target Name="BluestonePackageTestPlugins" AfterTargets="Build" Condition="Exists('$(BluestoneTestPluginLibrary)')">
+    <PropertyGroup>
+      <BluestoneTestPluginRoot>$(OutDir)test-plugins/</BluestoneTestPluginRoot>
+      <_Vst3>$(BluestoneTestPluginRoot)$(BluestoneTestPluginName).vst3/</_Vst3>
+      <_Clap>$(BluestoneTestPluginRoot)$(BluestoneTestPluginName).clap</_Clap>
+      <_Plist><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>English</string>
+  <key>CFBundleExecutable</key><string>$(BluestoneTestPluginName)</string>
+  <key>CFBundleIdentifier</key><string>com.bluestone.test-plugins</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>$(BluestoneTestPluginName)</string>
+  <key>CFBundlePackageType</key><string>BNDL</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleVersion</key><string>1.0.0</string>
+</dict>
+</plist>]]></_Plist>
+    </PropertyGroup>
+
+    <!-- macOS: both formats are bundles with the binary in Contents/MacOS and an Info.plist. -->
+    <Copy Condition="$([MSBuild]::IsOSPlatform('OSX'))" SourceFiles="$(BluestoneTestPluginLibrary)" DestinationFiles="$(_Vst3)Contents/MacOS/$(BluestoneTestPluginName)" SkipUnchangedFiles="true" />
+    <Copy Condition="$([MSBuild]::IsOSPlatform('OSX'))" SourceFiles="$(BluestoneTestPluginLibrary)" DestinationFiles="$(_Clap)/Contents/MacOS/$(BluestoneTestPluginName)" SkipUnchangedFiles="true" />
+    <WriteLinesToFile Condition="$([MSBuild]::IsOSPlatform('OSX'))" File="$(_Vst3)Contents/Info.plist" Lines="$(_Plist)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <WriteLinesToFile Condition="$([MSBuild]::IsOSPlatform('OSX'))" File="$(_Clap)/Contents/Info.plist" Lines="$(_Plist)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <!-- Windows: Contents/<arch>-win/<name>.vst3 inside the bundle; a CLAP module is the DLL renamed. -->
+    <Copy Condition="$([MSBuild]::IsOSPlatform('Windows'))" SourceFiles="$(BluestoneTestPluginLibrary)" DestinationFiles="$(_Vst3)Contents/$(BluestoneTestPluginArch)-win/$(BluestoneTestPluginName).vst3" SkipUnchangedFiles="true" />
+    <Copy Condition="$([MSBuild]::IsOSPlatform('Windows'))" SourceFiles="$(BluestoneTestPluginLibrary)" DestinationFiles="$(_Clap)" SkipUnchangedFiles="true" />
+
+    <!-- Linux: Contents/<arch>-linux/<name>.so inside the bundle; a CLAP module is the shared object renamed. -->
+    <Copy Condition="$([MSBuild]::IsOSPlatform('Linux'))" SourceFiles="$(BluestoneTestPluginLibrary)" DestinationFiles="$(_Vst3)Contents/$(BluestoneTestPluginArch)-linux/$(BluestoneTestPluginName).so" SkipUnchangedFiles="true" />
+    <Copy Condition="$([MSBuild]::IsOSPlatform('Linux'))" SourceFiles="$(BluestoneTestPluginLibrary)" DestinationFiles="$(_Clap)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

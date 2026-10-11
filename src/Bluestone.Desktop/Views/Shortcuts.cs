@@ -27,6 +27,8 @@ internal static class Shortcuts
         ("Tracks", "New track", "⌘ T"),
         ("Tracks", "Duplicate the selected tracks", "⌘ D"),
         ("Tracks", "Delete the selected tracks", "⌫"),
+        ("Tracks", "Group the selected tracks", "⌘ G"),
+        ("Tracks", "Add to a group / remove from it", "Right-click the track"),
         ("Arrangement", "Select clips / add / add or remove", "Click  /  ⇧-click  /  ⌘-click"),
         ("Arrangement", "Move clips, also to another track / copy them", "Drag  /  ⌥-drag"),
         ("Arrangement", "Trim or extend a clip", "Drag its edge"),

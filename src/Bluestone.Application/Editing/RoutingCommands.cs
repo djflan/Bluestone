@@ -96,7 +96,42 @@ public static class RoutingCommands
             MergeKey = "master-gain",
         };
 
-    /// <summary>Removes a mixer channel and the connections into it; channels that fed it go to the master.</summary>
+    /// <summary>Adds a send from <paramref name="channel"/> (or replaces the one to the same target), refused when it would close a loop.</summary>
+    public static IProjectCommand AddMixerSend(MixerChannelId channel, MixerSend send, DeviceDefinitionLookup definitions) =>
+        EditSend("Add Send", channel, send, definitions, null);
+
+    /// <summary>
+    /// Changes a send's level or tap point (pre or post fader). Edits with the same <paramref name="mergeKey"/> in quick
+    /// succession (a knob drag) are one undo step; the views use <c>send:{channel}:{target}</c>.
+    /// </summary>
+    public static IProjectCommand UpdateMixerSend(MixerChannelId channel, MixerSend send, DeviceDefinitionLookup definitions, string? mergeKey = null) =>
+        EditSend("Change Send", channel, send, definitions, mergeKey);
+
+    public static IProjectCommand RemoveMixerSend(MixerChannelId channel, MixerChannelId target) =>
+        new ProjectCommand("Remove Send", p =>
+            p.Mixer.Find(channel) is { } found && found.FindSend(target) is not null ? p with { Mixer = p.Mixer.With(found.WithoutSend(target)) } : p);
+
+    private static IProjectCommand EditSend(string label, MixerChannelId channel, MixerSend send, DeviceDefinitionLookup definitions, string? mergeKey)
+    {
+        ArgumentNullException.ThrowIfNull(send);
+        return RoutingGuard.Command(label, definitions, p =>
+        {
+            var found = p.Mixer.Find(channel) ?? throw new KeyNotFoundException($"Mixer channel {channel} is not in the project.");
+            if (send.Target == channel)
+            {
+                throw new CommandRefusedException($"\"{found.Name}\" cannot send to itself.");
+            }
+
+            if (p.Mixer.Find(send.Target) is null)
+            {
+                throw new KeyNotFoundException($"Mixer channel {send.Target} is not in the project.");
+            }
+
+            return Equals(found.FindSend(send.Target), send) ? p : p with { Mixer = p.Mixer.With(found.WithSend(send)) };
+        }, mergeKey);
+    }
+
+    /// <summary>Removes a mixer channel, the connections into it, and the sends to it; channels that fed it go to the master.</summary>
     public static IProjectCommand RemoveMixerChannel(MixerChannelId channel) =>
         new ProjectCommand("Remove Mixer Channel", p =>
         {
@@ -135,23 +170,6 @@ public static class TrackRoleCommands
             return converted with { Sequence = converted.Sequence.WithTrack(target.PlaceClip(clip)) };
         });
     }
-
-    /// <summary>Puts a track in a group track, or takes it out with null.</summary>
-    public static IProjectCommand SetGroup(TrackId track, TrackId? group) =>
-        new ProjectCommand(group is null ? "Remove From Group" : "Add To Group", p =>
-        {
-            if (p.Sequence.FindTrack(track) is not { } found || found.Group == group)
-            {
-                return p;
-            }
-
-            if (group is { } id && p.Sequence.FindTrack(id) is not { Role: TrackRole.Group })
-            {
-                throw new CommandRefusedException("Tracks can only be put in a group track.");
-            }
-
-            return p with { Sequence = p.Sequence.WithTrack(found.WithGroup(group)) };
-        });
 
     private static Project ApplyPlan(Project project, RoleChangePlan plan, bool confirmed) => plan.Outcome switch
     {

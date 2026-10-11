@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The audio engine: device output through the bluestone_audio Rust crate (cpal), an allocation-free render graph
+       (sources, plugin nodes, mixer strips, meters), audio file decoding, sample-rate conversion, and disk streaming.
+       See docs/adr/0032-audio-engine.md. -->
+  <PropertyGroup>
+    <RootNamespace>Bluestone.Audio</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bluestone.Tests.Unit" />
+    <InternalsVisibleTo Include="Bluestone.Tests.Integration" />
+    <InternalsVisibleTo Include="Bluestone.Benchmarks" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bluestone.Plugins/Bluestone.Plugins.csproj" />
+    <ProjectReference Include="../Bluestone.Plugins.Protocol/Bluestone.Plugins.Protocol.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <RustCrate Include="bluestone_audio" />
+  </ItemGroup>
+  <Import Project="../Native.targets" />
+</Project>

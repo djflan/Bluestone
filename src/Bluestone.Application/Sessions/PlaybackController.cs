@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Bluestone.Application.Editing;
+using Bluestone.Application.Live;
 using Bluestone.Application.Recording;
 using Bluestone.Application.Routing;
 using Bluestone.Domain.Midi;
@@ -79,11 +80,19 @@ public sealed class PlaybackController : IAsyncDisposable
         Profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         Engine = new PlaybackEngine(clock, session.Project.Sequence.TempoMap, options);
-        Recorder = new MidiRecorder(Engine);
+        Live = new LiveInput(Engine, clock);
+        Recorder = new MidiRecorder(Engine, Live);
         _thread = startThread ? new PlaybackThread(Engine, playbackThreadSetup) : null;
+        if (startThread)
+        {
+            Live.Start();
+        }
     }
 
     public PlaybackEngine Engine { get; }
+
+    /// <summary>Live input through the devices on each track's live route (ADR 0035). Without a live thread (tests), call <see cref="LiveInput.Pump"/>.</summary>
+    public LiveInput Live { get; }
 
     /// <summary>MIDI input, thru, and take capture.</summary>
     public MidiRecorder Recorder { get; }
@@ -167,6 +176,8 @@ public sealed class PlaybackController : IAsyncDisposable
             }
 
             Volatile.Write(ref _published, _open.ToImmutableDictionary());
+            var instruments = prepared.Instruments;
+            Live.Update(project, devices, (id, port) => instruments.FirstOrDefault(i => i.Instrument.Id == id)?.FindPort(port) is { Endpoint.IsUsable: true } usable ? usable.Endpoint.Endpoint : null, Volatile.Read(ref _published));
             ApplyMetronome();
             ApplyThru();
             InputProblems = await Recorder.SetInputsAsync(_endpoints, WantedInputs(), cancellationToken).ConfigureAwait(false);
@@ -241,6 +252,7 @@ public sealed class PlaybackController : IAsyncDisposable
         {
             Recorder.Start(track, Engine.Position);
             ApplyMetronome();
+            ApplyThru();
             return;
         }
 
@@ -250,6 +262,7 @@ public sealed class PlaybackController : IAsyncDisposable
         var countIn = _recordOptions.CountInBars > 0 ? CountIn.Bars(sequence.TempoMap, sequence.MeterMap, from, _recordOptions.CountInBars) : null;
         Recorder.Start(track, from);
         ApplyMetronome();
+        ApplyThru();
         Engine.Play(from, countIn);
     }
 
@@ -270,6 +283,7 @@ public sealed class PlaybackController : IAsyncDisposable
         var loop = project.Loop is { } l && Engine.LoopWraps != _takeWraps ? l : null;
         var take = Recorder.Stop(end, loop);
         ApplyMetronome();
+        ApplyThru();
         if (project.Sequence.FindTrack(take.Track) is not null && (take.Events.Length > 0 || _recordOptions.Replace))
         {
             try
@@ -294,7 +308,7 @@ public sealed class PlaybackController : IAsyncDisposable
     /// <summary>Where live and auditioned notes for <paramref name="track"/> go, as last resolved.</summary>
     public LiveRoute? LiveRouteOf(TrackId track) => Routing?.FindTrack(track)?.Live;
 
-    /// <summary>Sounds a note on <paramref name="track"/>'s output until <see cref="EndAudition"/>, e.g. while clicking or dragging a note.</summary>
+    /// <summary>Sounds a note on <paramref name="track"/>'s live route until <see cref="EndAudition"/>, e.g. while clicking or dragging a note.</summary>
     public void Audition(TrackId track, NoteNumber note, Velocity velocity)
     {
         EndAudition();
@@ -340,28 +354,27 @@ public sealed class PlaybackController : IAsyncDisposable
 
         if (held.Sounded is { } sounded)
         {
-            Engine.SendNow(sounded.Output, sounded.Off);
+            Live.Post(sounded.Track, sounded.Off, _clock.Now);
         }
     }
 
-    /// <summary>Sends a note-on along <paramref name="track"/>'s live route, with its channel and transposition; returns the matching note-off.</summary>
-    private (IMidiOutput Output, ChannelMessage Off)? SoundOn(TrackId track, NoteNumber note, Velocity velocity)
+    /// <summary>Plays a note-on on <paramref name="track"/>'s live route, through its devices; returns the matching note-off.</summary>
+    private (TrackId Track, ChannelMessage Off)? SoundOn(TrackId track, NoteNumber note, Velocity velocity)
     {
-        if (LiveRouteOf(track) is not { } route
-            || !Volatile.Read(ref _published).TryGetValue(route.Endpoint.Id, out var output)
-            || !note.TryTranspose(route.Transpose, out var sounding))
-        {
-            return null;
-        }
-
         var channel = ChannelFor(track);
-        Engine.SendNow(output, ChannelMessage.NoteOn(channel, sounding, velocity));
-        return (output, ChannelMessage.NoteOff(channel, sounding, Velocity.DefaultRelease));
+        return Live.Post(track, ChannelMessage.NoteOn(channel, note, velocity), _clock.Now)
+            ? (track, ChannelMessage.NoteOff(channel, note, Velocity.DefaultRelease))
+            : null;
     }
 
     public void Seek(Tick position) => Engine.Seek(position);
 
-    public void Panic() => Engine.Panic();
+    /// <summary>Ends every live note, then sends every output's all-notes-off.</summary>
+    public void Panic()
+    {
+        Live.ReleaseAll();
+        Engine.Panic();
+    }
 
     /// <summary>
     /// Sends the profile initialization messages (for example a System On) of the instrument <paramref name="track"/>'s live route reaches, after
@@ -417,6 +430,7 @@ public sealed class PlaybackController : IAsyncDisposable
     {
         EndAudition();
         Recorder.Dispose();
+        Live.Dispose();
         Engine.Stop();
         if (_thread is not null)
         {
@@ -488,15 +502,8 @@ public sealed class PlaybackController : IAsyncDisposable
 
     private void ApplyThru()
     {
-        ThruTarget? target = null;
-        if (_thruTrack is { } track
-            && LiveRouteOf(track) is { } route
-            && Volatile.Read(ref _published).TryGetValue(route.Endpoint.Id, out var output))
-        {
-            target = new ThruTarget(output, route.Channel, route.Transpose);
-        }
-
-        Recorder.SetThru(target);
+        Recorder.SetThru(_thruTrack);
+        Live.Monitored = Recorder.RecordingTrack ?? _thruTrack;
     }
 
     private async Task<IMidiOutput?> GetOrOpenAsync(EndpointId id, ImmutableArray<string>.Builder problems, CancellationToken cancellationToken)
@@ -530,6 +537,6 @@ public sealed class PlaybackController : IAsyncDisposable
         }
     }
 
-    /// <summary>A held audition or key: the release to send to an output, and the release to play into the take.</summary>
-    private sealed record HeldKey((IMidiOutput Output, ChannelMessage Off)? Sounded, ChannelMessage? Recorded);
+    /// <summary>A held audition or key: the release to play on a track's live route, and the release to play into the take.</summary>
+    private sealed record HeldKey((TrackId Track, ChannelMessage Off)? Sounded, ChannelMessage? Recorded);
 }

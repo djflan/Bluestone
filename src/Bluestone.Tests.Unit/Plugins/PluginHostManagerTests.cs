@@ -14,11 +14,11 @@ public sealed class PluginHostManagerTests : IDisposable
     public void Dispose() => _directory.Dispose();
 
     [Fact]
-    public async Task InProcessTrusted_IsRefusedUnlessAllowed_AndUnsupportedEvenThen()
+    public async Task WithinBluestone_IsRefusedUnlessAllowed_AndUnsupportedEvenThen()
     {
-        var request = new PluginInstanceRequest(Gain, 48_000, 64, 1, 1) { Isolation = IsolationPolicy.InProcessTrusted };
+        var request = new PluginInstanceRequest(Gain, 48_000, 64, 1, 1) { Hosting = HostingMode.WithinBluestone };
         await using var strict = new PluginHostManager(new PluginHostOptions { DataDirectory = _directory.File("a") });
-        await using var permissive = new PluginHostManager(new PluginHostOptions { DataDirectory = _directory.File("b"), AllowInProcessTrusted = true });
+        await using var permissive = new PluginHostManager(new PluginHostOptions { DataDirectory = _directory.File("b"), AllowWithinBluestone = true });
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => strict.CreateInstanceAsync(request, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<NotSupportedException>(() => permissive.CreateInstanceAsync(request, TestContext.Current.CancellationToken));
@@ -46,12 +46,12 @@ public sealed class PluginHostManagerTests : IDisposable
     }
 
     [Fact]
-    public void Defaults_IsolatePerInstance_FailToSilence_AndDoNotRestartAutomatically()
+    public void Defaults_HostIndividually_FailToSilence_AndDoNotRestartAutomatically()
     {
         var request = new PluginInstanceRequest(Gain, 48_000, 64, 1, 1);
         var options = new PluginHostOptions();
 
-        Assert.Equal(IsolationPolicy.PerInstance, request.Isolation);
+        Assert.Equal(HostingMode.Individually, request.Hosting);
         Assert.Equal(FailurePolicy.Silence, request.FailurePolicy);
         Assert.False(request.RestartPolicy.AutoRestart);
         Assert.Null(options.PeriodicSnapshotInterval);

@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
 using Bluestone.Application.Editing;
+using Bluestone.Application.Routing;
 using Bluestone.Domain.Projects;
 using Bluestone.Infrastructure.Projects;
 using Bluestone.Midi.Files;
+using Bluestone.Profiles;
 
 namespace Bluestone.Application.Sessions;
 
@@ -117,9 +119,17 @@ public sealed class ProjectSession
     }
 
     /// <summary>Exports the sequence as a format 1 MIDI file and returns what could not be carried over.</summary>
-    public async Task<IReadOnlyList<SmfDiagnostic>> ExportMidiAsync(string path, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<SmfDiagnostic>> ExportMidiAsync(string path, CancellationToken cancellationToken = default) =>
+        ExportMidiAsync(path, null, cancellationToken);
+
+    /// <summary>
+    /// Exports the sequence as a format 1 MIDI file and returns what could not be carried over. With
+    /// <paramref name="profiles"/>, external instrument parameter automation is written as the MIDI it sends (ADR 0031).
+    /// </summary>
+    public async Task<IReadOnlyList<SmfDiagnostic>> ExportMidiAsync(string path, ProfileCatalog? profiles, CancellationToken cancellationToken = default)
     {
-        var export = SmfExporter.Export(Project.Sequence, Project.Name);
+        var project = Project;
+        var export = SmfExporter.Export(project.Sequence, project.Name, profiles is null ? null : HardwareAutomation.ForExport(project, profiles));
         var bytes = SmfWriter.Write(export.File);
         await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
         return export.Diagnostics;

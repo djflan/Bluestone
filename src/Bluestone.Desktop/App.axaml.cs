@@ -1,5 +1,6 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Bluestone.Application.Audio;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Services;
@@ -7,7 +8,6 @@ using Bluestone.Desktop.Views;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
 using Bluestone.Plugins;
-using Bluestone.Plugins.Protocol;
 using Bluestone.Plugins.Scanning;
 using Bluestone.Presentation;
 using Bluestone.Profiles;
@@ -16,6 +16,8 @@ namespace Bluestone.Desktop;
 
 public partial class App : Avalonia.Application
 {
+    private static AudioViewModel? _audio;
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
@@ -25,10 +27,18 @@ public partial class App : Avalonia.Application
             var window = new MainWindow();
             var platformProviders = PlatformProviders.Create(SystemMonotonicClock.Instance).ToList();
             var plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
-            var viewModel = Compose(window, platformProviders, plugins);
+            var scanner = new PluginScanner(new PluginScannerOptions(PluginCacheDirectory));
+            var library = new PluginLibrary(scanner, PluginFolders);
+            var viewModel = Compose(window, platformProviders, plugins, library);
             window.Attach(viewModel);
+            _audio?.StartIfEnabled();
             desktop.MainWindow = window;
-            desktop.Exit += (_, _) => Shutdown(viewModel, platformProviders, plugins);
+            desktop.Exit += (_, _) =>
+            {
+                Shutdown(viewModel, platformProviders, plugins);
+                library.Dispose();
+                scanner.Dispose();
+            };
 
             // A project or MIDI file named on the command line (or by the OS file association) opens at start.
             if (desktop.Args is [var path, ..] && MainViewModel.CanOpenFile(path))
@@ -41,9 +51,10 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>The composition root: the only place that chooses concrete providers and services.</summary>
-    public static MainViewModel Compose(MainWindow window, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins)
+    public static MainViewModel Compose(MainWindow window, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins, PluginLibrary library)
     {
         ArgumentNullException.ThrowIfNull(plugins);
+        ArgumentNullException.ThrowIfNull(library);
         ArgumentNullException.ThrowIfNull(window);
         var clock = SystemMonotonicClock.Instance;
 
@@ -62,11 +73,43 @@ public partial class App : Avalonia.Application
         var session = new ProjectSession();
         var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread);
         var monitor = new MidiMonitor(builtIn.OpenInputAsync(monitorPort.InputId).AsTask().GetAwaiter().GetResult());
-        var devices = new PluginDeviceHost(plugins, session, ScanPlugins());
-        var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), new AvaloniaDispatcher(), monitor, new ComputerKeyboardViewModel(keyboard), devices);
+        ScanPlugins(library);
+        var hosting = new PluginHostingSettingsStore(PluginHostingSettingsPath);
+        var devices = new PluginDeviceHost(plugins, session, library, hosting: hosting.Load());
+        var dispatcher = new AvaloniaDispatcher();
+        var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices)
+        {
+            Plugins = new PluginsViewModel(library, dispatcher, devices, hosting),
+        };
         _ = viewModel.InitializeAsync();
+        ComposeAudio(window, session, playback, devices, viewModel);
         return viewModel;
     }
+
+    /// <summary>The audio engine (ADR 0032): off until the user starts it or the saved settings say it was on.</summary>
+    private static void ComposeAudio(MainWindow window, ProjectSession session, PlaybackController playback, PluginDeviceHost devices, MainViewModel viewModel)
+    {
+        // Plugins run at the device's rate: each time a device opens, they are restarted at its rate on the UI thread.
+        var audio = new AudioPlayback(
+            playback,
+            session,
+            devices.InstanceOf,
+            prepareSampleRate: rate => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetSampleRateAsync(rate)));
+        _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher());
+        viewModel.Mixer.MeterSource = channel => audio.IsRunning && audio.Graph is { } graph
+            ? (channel is { } id ? graph.StripOf(id)?.Meter.Read() : graph.Master.Meter.Read())
+            : null;
+        window.AttachAudio(_audio);
+        window.Closed += (_, _) => audio.Dispose();
+    }
+
+    /// <summary>Where the audio settings are kept, e.g. ~/Library/Application Support/Bluestone/audio-settings.json on macOS.</summary>
+    public static string AudioSettingsPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "audio-settings.json");
+
+    /// <summary>How plugins share worker processes (ADR 0034), e.g. ~/Library/Application Support/Bluestone/plugin-hosting.json on macOS.</summary>
+    public static string PluginHostingSettingsPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-hosting.json");
 
     /// <summary>
     /// Stops playback (releasing sounding notes), closes MIDI ports, and releases platform providers.
@@ -92,26 +135,25 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>
-    /// The plugins in <see cref="UserPluginDirectory"/>. Each module is scanned in its own scanner process, so a module
-    /// that crashes the scanner cannot take Bluestone with it; it is reported and skipped on later scans (ADR 0025).
+    /// Scans the plugin folders at start. Each module is scanned in its own scanner process, so a module that crashes the
+    /// scanner cannot take Bluestone with it; it is reported and skipped on later scans until retried from the plugins
+    /// view (ADR 0025).
     /// </summary>
-    private static IReadOnlyList<PluginIdentity> ScanPlugins()
+    private static void ScanPlugins(PluginLibrary library)
     {
-        if (!Directory.Exists(UserPluginDirectory))
+        Task.Run(() => library.ScanAsync()).GetAwaiter().GetResult();
+        foreach (var module in library.Modules.Where(m => m.State != PluginModuleState.Loaded))
         {
-            return [];
+            System.Diagnostics.Trace.TraceWarning($"Plugin module {module.ModulePath} was not loaded: {module.Problem}");
         }
-
-        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-cache");
-        using var scanner = new PluginScanner(new PluginScannerOptions(cache));
-        var results = Task.Run(() => scanner.ScanAsync(Directory.EnumerateFiles(UserPluginDirectory))).GetAwaiter().GetResult();
-        foreach (var failure in results.Where(r => r.Failure is not null))
-        {
-            System.Diagnostics.Trace.TraceWarning($"Plugin module {failure.ModulePath} was not loaded: {failure.Failure}");
-        }
-
-        return [.. results.SelectMany(r => r.Plugins)];
     }
+
+    /// <summary>The folders scanned for plugin modules, in order. Formats with OS-standard folders add theirs here.</summary>
+    public static IReadOnlyList<string> PluginFolders => [UserPluginDirectory, .. PluginLibrary.StandardFolders()];
+
+    /// <summary>The scanner's cache and quarantine list.</summary>
+    public static string PluginCacheDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-cache");
 
     /// <summary>Where users put plugin modules, e.g. ~/Library/Application Support/Bluestone/plugins on macOS.</summary>
     public static string UserPluginDirectory =>

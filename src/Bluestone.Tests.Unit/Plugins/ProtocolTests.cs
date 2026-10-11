@@ -42,7 +42,71 @@ public sealed class FrameCodecTests
         new RenderEvents(Gain, null, [], 44_100, 1, 0, [], [], []),
         new RenderedEvents([new TimelineEvent(5, PluginEvent.NoteOff(0, 15, 127, 64)), new TimelineEvent(ProtocolLimits.MaxRenderFrames, PluginEvent.PitchBend(0, 0, 16383))], 3, "bad state"),
         new RenderedEvents([], 0, null),
+        new CreateInstance(Instance, Vst3, 48_000, new ExchangeOptions(256, 0, 2), 1, "d", null, "/Library/Audio/Plug-Ins/VST3/Synth.vst3"),
+        new InstanceCreated(Instance, 0, [new ParameterDescriptor(42, "Cutoff", 0.3, 0, "Hz", ParameterTraits.Automatable | ParameterTraits.List), new ParameterDescriptor(7, "CC 1", 0, 0, "", ParameterTraits.MidiController)], "p", 1, null),
+        new ScanResult("/plugins/x86.vst3", [], ScanFailureKind.Unsupported, "built for x86_64 only"),
+        new RenderEvents(Vst3, null, [], 48_000, 64, 128, [], [], [], "/plugins/Synth.clap"),
+        new OpenEditor(Instance, "Synth"),
+        new CloseEditor(Instance),
+        new PluginNotification(Instance, NotificationKind.ParameterEdited, 42, 0.75),
+        new PluginNotification(Instance, NotificationKind.LatencyChanged, 0, 512),
+        new PluginNotification(Instance, NotificationKind.StateDirty, 0, 0),
+        new PluginNotification(Instance, NotificationKind.EditorClosed, 0, 0),
+        new PluginNotification(Instance, NotificationKind.ParametersChanged, 0, 0),
     ];
+
+    private static readonly PluginIdentity Vst3 = new("vst3", "Synth", "0123456789ABCDEF0123456789ABCDEF", "Synth", "Vendor", PluginKind.Instrument, "1.0");
+
+    [Fact]
+    public void Decode_ThirdPartyFields_AreKept()
+    {
+        var create = new CreateInstance(Instance, Vst3, 48_000, new ExchangeOptions(64, 0, 2), 1, "d", null, "/plugins/Synth.vst3");
+        var created = new InstanceCreated(Instance, 0, [new ParameterDescriptor(42, "Cutoff", 0.3, 4, "Hz", ParameterTraits.Automatable | ParameterTraits.Bypass)], "p", 1, null);
+
+        var decodedCreate = Assert.IsType<CreateInstance>(FrameCodec.Decode(FrameCodec.Encode(1, create)).Message);
+        var parameter = Assert.Single(Assert.IsType<InstanceCreated>(FrameCodec.Decode(FrameCodec.Encode(1, created)).Message).Parameters);
+
+        Assert.Equal("/plugins/Synth.vst3", decodedCreate.ModulePath);
+        Assert.Equal((42u, "Cutoff", 0.3, 4, "Hz", ParameterTraits.Automatable | ParameterTraits.Bypass), (parameter.Id, parameter.Name, parameter.DefaultValue, parameter.StepCount, parameter.Units, parameter.Traits));
+    }
+
+    [Theory]
+    [InlineData(NotificationKind.ParameterEdited, 1u, 1.5)]
+    [InlineData(NotificationKind.ParameterEdited, 1u, double.NaN)]
+    [InlineData(NotificationKind.LatencyChanged, 0u, 12.5)]
+    [InlineData(NotificationKind.LatencyChanged, 0u, -1)]
+    [InlineData(NotificationKind.LatencyChanged, 3u, 12)]
+    [InlineData(NotificationKind.StateDirty, 0u, 1)]
+    [InlineData(NotificationKind.EditorClosed, 9u, 0)]
+    public void Decode_ANotificationWithValuesItsKindDoesNotAllow_Throws(NotificationKind kind, uint parameterId, double value)
+    {
+        var encoded = FrameCodec.Encode(0, new PluginNotification(Instance, kind, parameterId, value));
+
+        Assert.Throws<ProtocolException>(() => FrameCodec.Decode(encoded));
+    }
+
+    [Fact]
+    public void Decode_UnknownNotificationKindOrParameterTraits_Throws()
+    {
+        var notification = FrameCodec.Encode(0, new PluginNotification(Instance, NotificationKind.StateDirty, 0, 0));
+        notification[ProtocolLimits.LengthPrefixBytes + ProtocolLimits.FrameHeaderBytes + 16] = 99;
+        var created = FrameCodec.Encode(1, new InstanceCreated(Instance, 0, [new ParameterDescriptor(1, "P", 0)], "p", 1, null));
+        var traitsOffset = ProtocolLimits.LengthPrefixBytes + ProtocolLimits.FrameHeaderBytes + 16 + 4 + 4 + 4 + (2 + 1) + 8 + 4 + 2;
+        created[traitsOffset] = 0x80;
+
+        Assert.Throws<ProtocolException>(() => FrameCodec.Decode(notification));
+        Assert.Throws<ProtocolException>(() => FrameCodec.Decode(created));
+    }
+
+    [Fact]
+    public void ParameterDescriptor_UserFacing_LeavesOutHiddenReadOnlyAndMidiControllerStandIns()
+    {
+        Assert.True(new ParameterDescriptor(0, "Cutoff", 0, traits: ParameterTraits.Automatable | ParameterTraits.Bypass).IsUserFacing);
+        Assert.False(new ParameterDescriptor(0, "Meter", 0, traits: ParameterTraits.ReadOnly).IsUserFacing);
+        Assert.False(new ParameterDescriptor(0, "Internal", 0, traits: ParameterTraits.Hidden).IsUserFacing);
+        Assert.False(new ParameterDescriptor(0, "MIDI CC 0|1", 0, traits: ParameterTraits.None | ParameterTraits.MidiController).IsUserFacing);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ParameterDescriptor(0, "x", 0, traits: (ParameterTraits)0x80));
+    }
 
     [Fact]
     public void Decode_RenderEvents_KeepsEveryField()

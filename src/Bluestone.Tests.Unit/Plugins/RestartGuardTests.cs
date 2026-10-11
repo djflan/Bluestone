@@ -77,7 +77,7 @@ public sealed class PluginInstanceStatusTests
     [InlineData(PluginInstanceState.Starting, PluginInstanceState.Running, true)]
     [InlineData(PluginInstanceState.Starting, PluginInstanceState.Unavailable, true)]
     [InlineData(PluginInstanceState.Running, PluginInstanceState.Unavailable, true)]
-    [InlineData(PluginInstanceState.Running, PluginInstanceState.Restarting, false)]
+    [InlineData(PluginInstanceState.Running, PluginInstanceState.Restarting, true)]
     [InlineData(PluginInstanceState.Unavailable, PluginInstanceState.Restarting, true)]
     [InlineData(PluginInstanceState.Unavailable, PluginInstanceState.Quarantined, true)]
     [InlineData(PluginInstanceState.Unavailable, PluginInstanceState.Running, false)]

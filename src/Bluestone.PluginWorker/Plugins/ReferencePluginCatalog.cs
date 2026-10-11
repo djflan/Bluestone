@@ -7,7 +7,7 @@ namespace Bluestone.PluginWorker.Plugins;
 internal static class ReferencePluginCatalog
 {
     public static ImmutableArray<PluginIdentity> Identities { get; } =
-        [new GainPlugin().Identity, new SinePlugin().Identity, new TransposePlugin().Identity];
+        [new GainPlugin().Identity, new SinePlugin().Identity, new TransposePlugin().Identity, new DelayPlugin().Identity];
 
     /// <summary>A new instance, or null when the identity is not a reference plugin (reported to the host as missing).</summary>
     public static IHostedPlugin? Create(PluginIdentity identity)
@@ -23,6 +23,7 @@ internal static class ReferencePluginCatalog
             GainPlugin.PluginId => new GainPlugin(),
             SinePlugin.PluginId => new SinePlugin(),
             TransposePlugin.PluginId => new TransposePlugin(),
+            DelayPlugin.PluginId => new DelayPlugin(),
             _ => null,
         };
     }

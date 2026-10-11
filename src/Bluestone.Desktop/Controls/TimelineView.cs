@@ -35,6 +35,7 @@ public sealed class TimelineView : Control
     public static readonly StyledProperty<double> LaneHeightProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(LaneHeight), 50);
     public static readonly StyledProperty<double> AutomationLaneHeightProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(AutomationLaneHeight), 36);
     public static readonly StyledProperty<IReadOnlySet<TrackId>> ExpandedTracksProperty = AvaloniaProperty.Register<TimelineView, IReadOnlySet<TrackId>>(nameof(ExpandedTracks), new HashSet<TrackId>());
+    public static readonly StyledProperty<IReadOnlySet<TrackId>> HiddenTracksProperty = AvaloniaProperty.Register<TimelineView, IReadOnlySet<TrackId>>(nameof(HiddenTracks), new HashSet<TrackId>());
     public static readonly StyledProperty<IReadOnlySet<int>> SelectedLanesProperty = AvaloniaProperty.Register<TimelineView, IReadOnlySet<int>>(nameof(SelectedLanes), new HashSet<int>());
     public static readonly StyledProperty<double> VisibleLeftProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(VisibleLeft));
     public static readonly StyledProperty<double> VisibleWidthProperty = AvaloniaProperty.Register<TimelineView, double>(nameof(VisibleWidth), double.PositiveInfinity);
@@ -105,8 +106,8 @@ public sealed class TimelineView : Control
 
     static TimelineView()
     {
-        AffectsRender<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty, SelectedLanesProperty, VisibleLeftProperty, VisibleWidthProperty, RecordingLaneProperty, RecordingPreviewProperty, SelectedClipsProperty);
-        AffectsMeasure<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty);
+        AffectsRender<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty, HiddenTracksProperty, SelectedLanesProperty, VisibleLeftProperty, VisibleWidthProperty, RecordingLaneProperty, RecordingPreviewProperty, SelectedClipsProperty);
+        AffectsMeasure<TimelineView>(ProjectProperty, PixelsPerQuarterProperty, LaneHeightProperty, AutomationLaneHeightProperty, ExpandedTracksProperty, HiddenTracksProperty);
         FocusableProperty.OverrideDefaultValue<TimelineView>(true);
     }
 
@@ -140,6 +141,13 @@ public sealed class TimelineView : Control
     {
         get => GetValue(ExpandedTracksProperty);
         set => SetValue(ExpandedTracksProperty, value);
+    }
+
+    /// <summary>The tracks folded away under a group: their rows take no space and are not drawn.</summary>
+    public IReadOnlySet<TrackId> HiddenTracks
+    {
+        get => GetValue(HiddenTracksProperty);
+        set => SetValue(HiddenTracksProperty, value);
     }
 
     /// <summary>Indices of the lanes to highlight as selected.</summary>
@@ -222,6 +230,11 @@ public sealed class TimelineView : Control
         {
             if (project.Sequence.Tracks[lane].FindClip(clip) is { } found)
             {
+                if (HiddenTracks.Contains(project.Sequence.Tracks[lane].Id))
+                {
+                    return null;
+                }
+
                 var header = HeaderOf(ClipBody(found, _tops[lane], 0));
                 var visible = new Rect(VisibleLeft, header.Y, double.IsFinite(VisibleWidth) ? VisibleWidth : Bounds.Width, header.Height);
                 var shown = header.Intersect(visible);
@@ -280,6 +293,11 @@ public sealed class TimelineView : Control
         context.FillRectangle(LaneBrush, new Rect(left, 0, right - left, Bounds.Height));
         for (var lane = 0; lane < lanes; lane++)
         {
+            if (HiddenTracks.Contains(sequence.Tracks[lane].Id))
+            {
+                continue;
+            }
+
             var brush = SelectedLanes.Contains(lane) ? LaneSelected : lane % 2 == 1 ? LaneAltBrush : null;
             if (brush is not null)
             {
@@ -300,6 +318,11 @@ public sealed class TimelineView : Control
         for (var lane = 0; lane < lanes; lane++)
         {
             var track = sequence.Tracks[lane];
+            if (HiddenTracks.Contains(track.Id))
+            {
+                continue;
+            }
+
             var top = tops[lane];
             HLine(context, Math.Round(top + LaneHeight) - 0.5, left, right);
             DrawClips(context, track, lane, top, left, right);
@@ -317,7 +340,7 @@ public sealed class TimelineView : Control
             DrawClip(context, track, clip, notes, slice, range, lane, tops[Math.Clamp(lane + _dragLanes, 0, lanes - 1)], left, right, _dragDelta);
         }
 
-        if (RecordingLane >= 0 && RecordingLane < lanes && RecordingPreview.Count > 0)
+        if (RecordingLane >= 0 && RecordingLane < lanes && RecordingPreview.Count > 0 && !HiddenTracks.Contains(sequence.Tracks[RecordingLane].Id))
         {
             DrawTake(context, tops[RecordingLane]);
         }
@@ -528,7 +551,7 @@ public sealed class TimelineView : Control
 
     private int ShownLanes(Track track) => ExpandedTracks.Contains(track.Id) ? track.Automation.Length : 0;
 
-    private double RowHeight(Track track) => LaneHeight + (ShownLanes(track) * AutomationLaneHeight);
+    private double RowHeight(Track track) => HiddenTracks.Contains(track.Id) ? 0 : LaneHeight + (ShownLanes(track) * AutomationLaneHeight);
 
     private void LayoutRows(Sequence sequence)
     {
@@ -888,6 +911,29 @@ public sealed class TimelineView : Control
         }
     }
 
+    // A fade-in rises from the clip's bottom-left corner to its top, a fade-out falls to its bottom-right corner.
+    private void DrawFades(DrawingContext context, AudioClip clip, Rect body, double shift, Color color)
+    {
+        var (fadeIn, fadeOut) = clip.EffectiveFades;
+        if (fadeIn.Value == 0 && fadeOut.Value == 0)
+        {
+            return;
+        }
+
+        var pen = new Pen(new SolidColorBrush(color, 0.85), 1);
+        var top = body.Y + 15;
+        var bottom = body.Bottom - 1;
+        if (fadeIn.Value > 0)
+        {
+            context.DrawLine(pen, new Point(body.X, bottom), new Point(TickToX(clip.Start.Value + fadeIn.Value) + shift, top));
+        }
+
+        if (fadeOut.Value > 0)
+        {
+            context.DrawLine(pen, new Point(TickToX(clip.End.Value - fadeOut.Value) + shift, top), new Point(body.Right, bottom));
+        }
+    }
+
     // notes[slice] are this clip's notes, in timeline order. The clip has its track's colour
     // (colorLane) wherever it is drawn (rowTop).
     private void DrawClip(DrawingContext context, Track track, Clip clip, List<NoteEvent> notes, (int Start, int End) slice, (int Low, int High) range, int colorLane, double rowTop, double left, double right, long offset)
@@ -901,7 +947,7 @@ public sealed class TimelineView : Control
 
         var color = Palette.Track(colorLane);
         var selected = SelectedClips.Contains(clip.Id);
-        var muted = track.IsMuted;
+        var muted = track.IsMuted || (track.Group is not null && Project is { } project && GroupTracks.IsMutedByGroup(project.Sequence, track));
         var fill = Palette.Mix(Palette.Lane, color, muted ? 0.16 : selected ? 0.5 : 0.32);
         var header = Palette.Mix(Palette.Lane, color, muted ? 0.32 : selected ? 0.95 : 0.68);
         var edge = selected ? new Pen(Brushes.White, 1.5) : new Pen(new SolidColorBrush(Palette.Darken(color, 0.25)), 1);
@@ -925,8 +971,9 @@ public sealed class TimelineView : Control
 
         if (clip is AudioClip audio)
         {
-            // There is no audio engine yet, so no waveform: say what the clip holds, plainly.
-            var source = new FormattedText($"Audio · {Path.GetFileName(audio.Source.Location)}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 9, RegionText)
+            // No waveform is drawn: say what the clip holds, plainly, with its gain, and draw its fades as ramps.
+            var gain = audio.GainDecibels == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $" · {audio.GainDecibels:+0.0;-0.0} dB");
+            var source = new FormattedText($"Audio · {Path.GetFileName(audio.Source.Location)}{gain}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 9, RegionText)
             {
                 MaxTextWidth = Math.Max(1, body.Right - labelX - 4),
                 MaxLineCount = 1,
@@ -939,6 +986,7 @@ public sealed class TimelineView : Control
                 context.DrawText(source, new Point(labelX, body.Y + 15));
             }
 
+            DrawFades(context, audio, body, shift, Palette.Lighten(color, 0.5));
             return;
         }
 

@@ -33,7 +33,10 @@ indices, only stable identifiers and identity hints.
               "points": [ { "tick": 0, "value": 0, "curve": "linear" },
                           { "tick": 7680, "value": 3355443200, "curve": "hold" } ] },
             { "id": "…", "target": { "type": "device", "device": "…", "parameter": 1 },
-              "points": [ { "tick": 0, "value": 2147483648, "curve": "hold" } ] }
+              "points": [ { "tick": 0, "value": 2147483648, "curve": "hold" } ] },
+            { "id": "…", "target": { "type": "instrument", "instrument": "…", "port": "A", "channel": 2,
+                                     "parameter": "filter-cutoff" },
+              "points": [ { "tick": 0, "value": 2147483648, "curve": "linear" } ] }
           ] }
       ]
     },
@@ -63,7 +66,9 @@ indices, only stable identifiers and identity hints.
         "source": { "type": "rack", "id": "…" }, "destination": { "type": "mixer", "id": "…" } }
     ],
     "mixer": { "masterGain": 0,
-      "channels": [ { "id": "…", "name": "Synth bus", "gain": -3.5, "pan": 0, "muted": false, "soloed": false } ] }
+      "channels": [ { "id": "…", "name": "Synth bus", "gain": -3.5, "pan": 0, "muted": false, "soloed": false,
+                      "sends": [ { "target": "…", "level": -12, "preFader": false } ] },
+                    { "id": "…", "name": "Reverb", "gain": 0, "pan": 0, "muted": false, "soloed": false } ] }
   },
   "extensions": { "org.example.feature": { } }
 }
@@ -80,16 +85,24 @@ indices, only stable identifiers and identity hints.
 - A track's `role` is `instrument`, `audio`, `hybrid`, `effect`, or `group` (ADR 0021); `group`
   (optional) is the ID of the group track it belongs to. Roles are stored, and on reading a role that
   cannot show the track's content is widened (an instrument track with audio clips becomes hybrid).
+  `folded` (optional, written only when true) says a group track's members are hidden under it in the
+  arrangement (ADR 0030).
 - A clip's `type` is `note`, holding the events below, or `audio`, holding a `source` (`location`,
-  `sampleRate`, `frames`, `channels`). Audio clips are arrangement data only; nothing plays them yet.
+  `sampleRate`, `frames`, `channels`). The audio engine plays audio clips while audio output is on (ADR 0032); the stored rate, length, and channels are informational, and the file's own header is used for playback.
+  An audio clip may also have a `gain` in dB (-120 to 24; omitted at 0), a `fadeIn` and a `fadeOut` in ticks from
+  its start and before its end (omitted at 0), and a `fadeShape` (`linear`, the default and omitted, or
+  `equalPower`). Fades that add up to more than the clip are kept and played shortened (the fade-in first).
 - Event IDs are unique across all clips of a track.
 - `automation` (optional; omitted when empty) holds a track's automation lanes, in display order. A
   lane's `target` is a `controller` (with a `controller` number, not bank select, 32–63, data entry or
   increment/decrement, RPN/NRPN selectors, or channel mode), `pitchBend`, or `channelPressure`, on a
   `channel`; or a `device` parameter, by device ID and parameter ID, which is delivered to that device
-  and never sent as MIDI (ADR 0024). No two lanes on a track share a target. Its `points` have timeline
+  and never sent as MIDI (ADR 0024); or an `instrument` parameter, by external instrument ID, `port`,
+  `channel`, and the `parameter`'s key in the instrument's profile, which is translated into the MIDI the
+  profile maps it to (ADR 0031). No two lanes on a track share a target. Its `points` have timeline
   `tick`s, at most one per tick, 32-bit `value`s (normalized for device parameters), and a `curve`
-  (`hold` or `linear`) for the way to the next point. A lane whose device is missing is kept.
+  (`hold` or `linear`) for the way to the next point. A lane whose device, instrument, port, profile, or
+  parameter is missing is kept.
 - Channel events describe what is played, not MIDI 1.0 bytes:
   - `note`: a note with its length, attack velocity, and release velocity.
   - `noteOff`: a release with no matching note, kept from an import.
@@ -112,7 +125,14 @@ indices, only stable identifiers and identity hints.
   `device` tap) to a `destination` (`track`, `rack`, `instrument` with a `port`, `mixer` channel, or
   `master`), with an optional channel `mapping` (`only`, then `force` or `remap`) and `voice`.
   Connections that do not validate are kept and reported, never dropped on load.
-- `mixer` holds the master gain and mixer channels, which are independent of tracks.
+- `parkedConnections` (optional; omitted when empty) are a grouped track's own outputs, set aside when it
+  joined its group and put back when it leaves (ADR 0030). They have the shape of `connections` but are not
+  routing: nothing plays or validates them. An ID may not appear in both lists.
+- `mixer` holds the master gain and mixer channels, which are independent of tracks. A channel's `output` (optional)
+  is the channel it feeds instead of the master; its `sends` (optional; omitted when empty) copy its audio to other
+  channels: a `target` channel, a `level` in dB (-120 to 24), and `preFader` (taken before the fader and pan). A
+  channel sends to a target at most once and never to itself (a format error); a send to a missing channel or one
+  that closes a loop is kept and reported.
 - `extensions` and any other unrecognised top-level properties are preserved on save.
 - Reading is strict: any invalid value fails with the JSON path of the problem.
 
@@ -123,13 +143,24 @@ chain of migrations before they are read; saving always writes the current versi
 newer Bluestone is refused with an explanation and never overwritten.
 
 Format 4 replaced the per-track `routing` with `instruments`, `chains`, `connections`, and `mixer`,
-and added track `role`, `group`, audio clips, and device automation targets (ADR 0027). Each format 3
+and added track `role`, `group`, audio clips, and device automation targets (ADR 0027). Track `folded`
+and `parkedConnections` were added to format 4 later without a version change (ADR 0030): both are
+optional, written only when used, and ignored by Bluestone builds that predate them. Each format 3
 route becomes one external instrument per distinct endpoint and profile (named after the endpoint, or
 "Unassigned" for a route with settings but no endpoint), a connection from the track forcing the
 route's channel and selecting its voice, and, for a non-zero transposition, a Transpose device in the
 track's chain. A route for a track that no longer exists is kept as a connection, which validation
 reports. Every track gets the `instrument` role and the mixer starts empty. Migrated projects send
 byte-identical MIDI (`Format3EquivalenceTests`).
+
+Mixer `sends` and audio clip `gain`, `fadeIn`, `fadeOut`, and `fadeShape` (ADR 0032) were also added to format 4
+without a new version: all are optional and written only when used, so files without them are unchanged. A Bluestone
+build that predates them ignores them: it plays such a file without sends, clip gain, or fades, and drops them if it
+saves the file.
+
+Instrument automation targets (ADR 0031) were added to format 4 without a new version: files without them
+are unchanged. A format 4 reader that predates them refuses a file that has one, with the path of the lane's
+`type`, and never overwrites it.
 
 Format 3 put each track's events in clips. A format 2 track's events move into one note clip, with
 the track's ID, from the bar of its first event to the bar line after its latest end, so it plays

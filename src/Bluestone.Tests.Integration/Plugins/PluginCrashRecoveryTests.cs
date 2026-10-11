@@ -135,6 +135,34 @@ public sealed class PluginCrashRecoveryTests
     }
 
     [Fact]
+    public async Task ARestartStartedByTheUnavailableEvent_KeepsItsNewWorker_AndTheNewWorkerIsSupervised()
+    {
+        await using var host = new PluginTestHost();
+        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1));
+        Task<PluginInstanceStatus>? restart = null;
+        gain.StatusChanged += (_, e) =>
+        {
+            if (e.Current.State == PluginInstanceState.Unavailable && restart is null)
+            {
+                restart = gain.RestartAsync(Ct);
+            }
+        };
+
+        KillProcess(gain.WorkerProcessId!.Value);
+        await WaitUntilAsync(() => restart is not null, TimeSpan.FromSeconds(10), "the restart to begin");
+
+        Assert.Equal(PluginInstanceState.Running, (await restart!).State);
+        host.Track(gain);
+        var driver = new BlockDriver(gain, Frames);
+        Array.Fill(driver.Input, 1.0f);
+        await WaitUntilAsync(() => driver.Process().Outcome == ProcessOutcome.Processed, TimeSpan.FromSeconds(10), "the restarted worker to process");
+
+        KillProcess(gain.WorkerProcessId!.Value);
+        await WaitForStateAsync(gain, PluginInstanceState.Unavailable);
+        Assert.Equal(UnavailableReason.Crashed, gain.Status.Reason);
+    }
+
+    [Fact]
     public async Task AMissingWorker_FailsToStart_AndNothingRunsInTheHostProcess()
     {
         await using var host = new PluginTestHost(o => o with { WorkerPath = Path.Combine(AppContext.BaseDirectory, "no-such-worker", "Bluestone.PluginWorker") });
@@ -250,8 +278,8 @@ public sealed class PluginCrashRecoveryTests
     public async Task InstancesOfOneModule_ShareAWorker_AndAllBecomeUnavailableWhenItDies()
     {
         await using var host = new PluginTestHost();
-        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1) { Isolation = IsolationPolicy.PerModule });
-        var sine = await host.CreateRunningAsync(new PluginInstanceRequest(Sine, 48_000, Frames, 0, 1) { Isolation = IsolationPolicy.PerModule });
+        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1) { Hosting = HostingMode.ByPlugin });
+        var sine = await host.CreateRunningAsync(new PluginInstanceRequest(Sine, 48_000, Frames, 0, 1) { Hosting = HostingMode.ByPlugin });
         var separate = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1));
 
         Assert.Equal(gain.WorkerProcessId, sine.WorkerProcessId);
@@ -270,11 +298,11 @@ public sealed class PluginCrashRecoveryTests
     }
 
     [Fact]
-    public async Task SharedTrustedInstances_ShareOneWorker()
+    public async Task InstancesHostedTogether_ShareOneWorker()
     {
         await using var host = new PluginTestHost();
-        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1) { Isolation = IsolationPolicy.SharedTrusted });
-        var transpose = await host.CreateRunningAsync(new PluginInstanceRequest(Transpose, 48_000, Frames, 0, 0) { Isolation = IsolationPolicy.SharedTrusted });
+        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1) { Hosting = HostingMode.Together });
+        var transpose = await host.CreateRunningAsync(new PluginInstanceRequest(Transpose, 48_000, Frames, 0, 0) { Hosting = HostingMode.Together });
 
         Assert.Equal(gain.WorkerProcessId, transpose.WorkerProcessId);
         Assert.Equal(1, host.Manager.WorkerLaunchCount);
@@ -360,8 +388,8 @@ public sealed class PluginCrashRecoveryTests
         await using (var host = new PluginTestHost())
         {
             var a = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1));
-            var b = await host.CreateRunningAsync(new PluginInstanceRequest(Sine, 48_000, Frames, 0, 2) { Isolation = IsolationPolicy.PerModule });
-            var c = await host.CreateRunningAsync(new PluginInstanceRequest(Transpose, 48_000, Frames, 0, 0) { Isolation = IsolationPolicy.SharedTrusted });
+            var b = await host.CreateRunningAsync(new PluginInstanceRequest(Sine, 48_000, Frames, 0, 2) { Hosting = HostingMode.ByPlugin });
+            var c = await host.CreateRunningAsync(new PluginInstanceRequest(Transpose, 48_000, Frames, 0, 0) { Hosting = HostingMode.Together });
             pids = [a.WorkerProcessId!.Value, b.WorkerProcessId!.Value, c.WorkerProcessId!.Value];
             Assert.All(pids, pid => Assert.True(IsRunning(pid)));
         }

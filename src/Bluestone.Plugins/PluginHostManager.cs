@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using Bluestone.Plugins.Protocol;
 using Bluestone.Plugins.Protocol.Exchange;
 using Bluestone.Plugins.Workers;
@@ -7,7 +8,7 @@ namespace Bluestone.Plugins;
 
 /// <summary>
 /// Creates, supervises, recovers, and destroys plugin instances, each hosted in a worker process chosen by its
-/// <see cref="IsolationPolicy"/>. Plugins never run in this process: when a worker cannot be launched or fails its
+/// <see cref="HostingMode"/> (instances with the same <see cref="WorkerKeys">worker key</see> share one). Plugins never run in this process: when a worker cannot be launched or fails its
 /// handshake, the instance becomes Unavailable(FailedToStart) and nothing falls back to in-process hosting.
 /// </summary>
 public sealed class PluginHostManager : IAsyncDisposable
@@ -55,24 +56,22 @@ public sealed class PluginHostManager : IAsyncDisposable
     internal TimeProvider TimeProvider => _options.TimeProvider;
 
     /// <summary>
+    /// A worker process ended under running instances (crashed, hung, or misbehaved), after every one of them has been
+    /// marked Unavailable. Raised once per worker, on a thread-pool thread.
+    /// </summary>
+    public event EventHandler<WorkerLoss>? WorkerLost;
+
+    /// <summary>
     /// Creates an instance and starts it in a worker. Always returns the instance: if it could not start, its status
     /// says why (Unavailable with FailedToStart, Missing, ProtocolError, ...), and the restart policy applies.
-    /// <see cref="IsolationPolicy.InProcessTrusted"/> throws: <see cref="InvalidOperationException"/> unless explicitly
+    /// <see cref="HostingMode.WithinBluestone"/> throws: <see cref="InvalidOperationException"/> unless explicitly
     /// allowed, and <see cref="NotSupportedException"/> even then, because in-process hosting is deferred.
     /// </summary>
     public async Task<PluginInstance> CreateInstanceAsync(PluginInstanceRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (request.Isolation == IsolationPolicy.InProcessTrusted)
-        {
-            if (!_options.AllowInProcessTrusted)
-            {
-                throw new InvalidOperationException("In-process plugin hosting is not allowed. Plugins run in worker processes.");
-            }
-
-            throw new NotSupportedException("In-process hosting of trusted plugins is deferred and not implemented; plugins run only in worker processes.");
-        }
+        RefuseWithinBluestone(request.Hosting);
 
         if (request.FailurePolicy == FailurePolicy.BypassInput
             && (request.Plugin.Kind != PluginKind.AudioEffect || request.InputChannels != request.OutputChannels || request.InputChannels == 0))
@@ -205,6 +204,80 @@ public sealed class PluginHostManager : IAsyncDisposable
         // _shutdown stays undisposed on purpose: late supervision callbacks may still read its (cancelled) token.
     }
 
+    /// <summary>
+    /// Hosts <paramref name="instance"/> as <paramref name="mode"/> says from now on. When that means another worker, a
+    /// running instance has its state captured first, is moved (Running, Restarting, Running), and keeps its identity,
+    /// parameters, and state; a crashed, hung, or quarantined one is restarted there from its last snapshot, as a manual
+    /// restart would. When the worker key stays the same nothing is restarted. Returns the resulting status; a move that
+    /// fails leaves the instance Unavailable with the reason, like any start.
+    /// </summary>
+    public async Task<PluginInstanceStatus> ChangeHostingAsync(PluginInstance instance, HostingMode mode, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        RefuseWithinBluestone(mode);
+        await instance.Lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var state = instance.Status.State;
+            var moves = KeyFor(instance, mode) != (instance.WorkerKey ?? KeyFor(instance, instance.Hosting));
+            instance.Hosting = mode;
+            if (!moves || state == PluginInstanceState.Unloaded)
+            {
+                return instance.Status;
+            }
+
+            if (state == PluginInstanceState.Running)
+            {
+                try
+                {
+                    await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException)
+                {
+                    // The plugin would not give its state (or its worker just died): the last snapshot is restored instead.
+                }
+
+                if (instance.Suspend() is { } link)
+                {
+                    link.Exchange.MarkClosed();
+                    link.Exchange.Dispose();
+                    try
+                    {
+                        await RequestAsync(link.Worker, new DestroyInstance(instance.Id), cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (PluginHostException)
+                    {
+                        // The old worker is gone or refused; the instance no longer runs there either way.
+                    }
+
+                    TryDelete(link.Exchange.Path);
+                    await ReleaseWorkerAsync(instance).ConfigureAwait(false);
+                    await StartAsync(instance, cancellationToken).ConfigureAwait(false);
+                    return instance.Status;
+                }
+            }
+
+            // Not running (or its worker died while it was being moved): restart it in its new worker.
+            instance.CancelPendingRestart();
+            lock (instance.GuardGate)
+            {
+                instance.Guard.Reset();
+            }
+
+            if (instance.TryTransition(PluginInstanceStatus.Restarting, PluginInstanceState.Unavailable, PluginInstanceState.Quarantined))
+            {
+                await StartAsync(instance, cancellationToken).ConfigureAwait(false);
+            }
+
+            return instance.Status;
+        }
+        finally
+        {
+            instance.Lifecycle.Release();
+        }
+    }
+
     internal async Task<PluginInstanceStatus> RestartAsync(PluginInstance instance, bool manual, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -219,7 +292,7 @@ public sealed class PluginHostManager : IAsyncDisposable
                 }
 
                 instance.CancelPendingRestart();
-                lock (instance.Guard)
+                lock (instance.GuardGate)
                 {
                     instance.Guard.Reset();
                 }
@@ -252,6 +325,27 @@ public sealed class PluginHostManager : IAsyncDisposable
         {
             worker.Kill(WorkerExitReason.Hung);
             throw new PluginUnavailableException("The plugin worker did not answer in time and was stopped.", ex);
+        }
+    }
+
+    private static string KeyFor(PluginInstance instance, HostingMode mode) =>
+        WorkerKeys.For(mode, instance.Plugin, instance.Id, RuntimeInformation.ProcessArchitecture);
+
+    private void RefuseWithinBluestone(HostingMode mode)
+    {
+        if (mode == HostingMode.WithinBluestone)
+        {
+            if (!_options.AllowWithinBluestone)
+            {
+                throw new InvalidOperationException("In-process plugin hosting is not allowed. Plugins run in worker processes.");
+            }
+
+            throw new NotSupportedException("Hosting plugins within Bluestone is deferred and not implemented; plugins run only in worker processes.");
+        }
+
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown hosting mode.");
         }
     }
 
@@ -289,7 +383,7 @@ public sealed class PluginHostManager : IAsyncDisposable
             var options = new ExchangeOptions(request.MaxBlockFrames, request.InputChannels, request.OutputChannels, _options.SlotCount, request.EventCapacity, request.ParameterChangeCapacity);
             var reply = await RequestAsync(
                 worker,
-                new CreateInstance(instance.Id, request.Plugin, request.SampleRate, options, generation, DataDirectory, instance.LastSnapshot?.State),
+                new CreateInstance(instance.Id, request.Plugin, request.SampleRate, options, generation, DataDirectory, instance.LastSnapshot?.State, request.ModulePath),
                 token).ConfigureAwait(false);
             var created = reply switch
             {
@@ -318,10 +412,17 @@ public sealed class PluginHostManager : IAsyncDisposable
             var table = instance.EnsureParameterTable(created.Parameters);
             if (hadValues)
             {
-                // Recovery: the snapshot's state went in with CreateInstance; the remembered values are newer.
+                // Recovery: the snapshot's state went in with CreateInstance; the remembered values are newer. Only the
+                // values that differ from what the restored plugin holds are sent (a plugin may have thousands).
+                var live = await RequestAsync(worker, new GetParameters(instance.Id), token).ConfigureAwait(false) is ParameterValues current
+                    ? current.Values.ToDictionary(v => v.Id, v => v.Value)
+                    : [];
                 foreach (var value in table.Snapshot())
                 {
-                    await RequestAsync(worker, new SetParameter(instance.Id, value.Id, value.Value), token).ConfigureAwait(false);
+                    if (!live.TryGetValue(value.Id, out var now) || Math.Abs(now - value.Value) > 1e-9)
+                    {
+                        await RequestAsync(worker, new SetParameter(instance.Id, value.Id, value.Value), token).ConfigureAwait(false);
+                    }
                 }
             }
             else if (await RequestAsync(worker, new GetParameters(instance.Id), token).ConfigureAwait(false) is ParameterValues values)
@@ -342,7 +443,12 @@ public sealed class PluginHostManager : IAsyncDisposable
             if (!worker.IsAlive)
             {
                 // It died between the reply and the attach, so supervision may have missed this instance.
-                await HandleWorkerLostAsync(instance, worker, await worker.Exited.ConfigureAwait(false)).ConfigureAwait(false);
+                var reason = await worker.Exited.ConfigureAwait(false);
+                var loss = new WorkerLoss(worker.ProcessId, ReasonFor(reason), [instance]);
+                if (await HandleWorkerLostAsync(instance, worker, reason, loss).ConfigureAwait(false))
+                {
+                    RaiseWorkerLost(loss);
+                }
             }
             else if (_options.PeriodicSnapshotInterval is { } interval)
             {
@@ -390,12 +496,7 @@ public sealed class PluginHostManager : IAsyncDisposable
 
     private async Task<WorkerProcess> AcquireWorkerAsync(PluginInstance instance, CancellationToken cancellationToken)
     {
-        var key = instance.Request.Isolation switch
-        {
-            IsolationPolicy.PerModule => "module:" + instance.Plugin.Format + ":" + instance.Plugin.ModuleId,
-            IsolationPolicy.SharedTrusted => "shared-trusted",
-            _ => "instance:" + instance.Id,
-        };
+        var key = KeyFor(instance, instance.Hosting);
         WorkerSlot slot;
         lock (_gate)
         {
@@ -442,6 +543,7 @@ public sealed class PluginHostManager : IAsyncDisposable
                 HeartbeatInterval = _options.HeartbeatInterval,
                 HeartbeatTimeout = _options.HeartbeatTimeout,
                 ShutdownTimeout = _options.ShutdownTimeout,
+                OnNotification = OnNotification,
             },
             OnWorkerTerminated,
             _shutdown.Token).ConfigureAwait(false);
@@ -454,12 +556,19 @@ public sealed class PluginHostManager : IAsyncDisposable
         return worker;
     }
 
-    private async Task ReleaseWorkerAsync(PluginInstance instance)
+    // With lost set, releases the instance's slot only if it is still that worker's: once the loss is reported, a
+    // restart may already have given the instance a new slot, which must not be released here.
+    private async Task ReleaseWorkerAsync(PluginInstance instance, WorkerProcess? lost = null)
     {
         WorkerProcess? toDispose = null;
         lock (_gate)
         {
             if (instance.Slot is not { } slot)
+            {
+                return;
+            }
+
+            if (lost is not null && !(slot.Launch.IsCompletedSuccessfully && slot.Launch.Result == lost))
             {
                 return;
             }
@@ -488,6 +597,21 @@ public sealed class PluginHostManager : IAsyncDisposable
         }
     }
 
+    // Runs on a worker's read loop: something a plugin did on its own.
+    private void OnNotification(WorkerProcess worker, PluginNotification notification)
+    {
+        PluginInstance? target;
+        lock (_gate)
+        {
+            target = _instances.FirstOrDefault(i => i.Id == notification.InstanceId);
+        }
+
+        if (target is not null && target.Link?.Worker == worker)
+        {
+            target.OnNotification(notification);
+        }
+    }
+
     // Runs on a thread-pool thread, raised once per worker by WorkerProcess.
     private void OnWorkerTerminated(WorkerProcess worker, WorkerExitReason reason)
     {
@@ -503,40 +627,62 @@ public sealed class PluginHostManager : IAsyncDisposable
             }
         }
 
+        var loss = new WorkerLoss(worker.ProcessId, ReasonFor(reason), [.. affected.Where(i => i.Link?.Worker == worker)]);
         _ = Task.Run(async () =>
         {
+            var lost = false;
             foreach (var instance in affected)
             {
-                await HandleWorkerLostAsync(instance, worker, reason).ConfigureAwait(false);
+                lost |= await HandleWorkerLostAsync(instance, worker, reason, loss).ConfigureAwait(false);
             }
 
             await worker.DisposeAsync().ConfigureAwait(false);
+            if (lost)
+            {
+                RaiseWorkerLost(loss);
+            }
         });
     }
 
-    private async Task HandleWorkerLostAsync(PluginInstance instance, WorkerProcess worker, WorkerExitReason reason)
+    // Returns whether the instance was still on this worker, so the loss was its.
+    private async Task<bool> HandleWorkerLostAsync(PluginInstance instance, WorkerProcess worker, WorkerExitReason reason, WorkerLoss loss)
     {
         var message = $"The plugin worker (process {worker.ProcessId}) ended: {reason}.";
-        if (instance.Detach(worker, PluginInstanceStatus.Unavailable(ReasonFor(reason), message)) is not { } link)
+        if (instance.Detach(worker, PluginInstanceStatus.Unavailable(ReasonFor(reason), message), loss) is not { } link)
         {
-            return;
+            return false;
         }
 
         link.Exchange.Dispose();
         TryDelete(link.Exchange.Path);
-        await ReleaseWorkerAsync(instance).ConfigureAwait(false);
+        await ReleaseWorkerAsync(instance, worker).ConfigureAwait(false);
         ApplyRestartPolicy(instance);
+        return true;
+    }
+
+    private void RaiseWorkerLost(WorkerLoss loss)
+    {
+        try
+        {
+            WorkerLost?.Invoke(this, loss);
+        }
+#pragma warning disable CA1031 // A failing subscriber must not break supervision.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
     }
 
     private void ApplyRestartPolicy(PluginInstance instance)
     {
-        if (!instance.Request.RestartPolicy.AutoRestart || Volatile.Read(ref _disposed) != 0)
+        var policy = instance.RestartPolicy;
+        if (!policy.AutoRestart || Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
 
         RestartDecision decision;
-        lock (instance.Guard)
+        lock (instance.GuardGate)
         {
             decision = instance.Guard.RecordFailure(_options.TimeProvider.GetUtcNow());
         }
@@ -544,7 +690,7 @@ public sealed class PluginHostManager : IAsyncDisposable
         if (decision.Quarantine)
         {
             instance.TryTransition(
-                PluginInstanceStatus.Quarantined($"Failed again after {instance.Request.RestartPolicy.MaxRestarts} automatic restarts; restart it manually."),
+                PluginInstanceStatus.Quarantined($"Failed again after {policy.MaxRestarts} automatic restarts; restart it manually."),
                 PluginInstanceState.Unavailable);
             return;
         }
@@ -572,7 +718,7 @@ public sealed class PluginHostManager : IAsyncDisposable
             && Path.GetDirectoryName(full) == Path.TrimEndingDirectorySeparator(DataDirectory);
     }
 
-    /// <summary>A worker process shared by the instances with the same isolation key.</summary>
+    /// <summary>A worker process shared by the instances with the same worker key.</summary>
     internal sealed class WorkerSlot(string key, Task<WorkerProcess> launch)
     {
         public string Key { get; } = key;

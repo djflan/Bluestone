@@ -3,8 +3,12 @@ using Bluestone.Midi.Wire;
 
 namespace Bluestone.Playback;
 
-/// <summary>A message to send to <see cref="Slot"/> to bring a device up to date: before playback starts mid-sequence, or at a loop wrap.</summary>
-internal readonly record struct ChaseMessage(int Slot, ChannelMessage Message);
+/// <summary>
+/// A message to send to <see cref="Slot"/> to bring a device up to date: before playback starts mid-sequence, or at
+/// a loop wrap. A SysEx message (from hardware parameter automation) carries its bytes in <see cref="Payload"/>, so it
+/// stays right when a newer plan is loaded before the chase is sent.
+/// </summary>
+internal readonly record struct ChaseMessage(int Slot, ChannelMessage Message, ByteBlock? Payload = null);
 
 /// <summary>
 /// Computes the controller state in effect at a position so starting playback mid-song sounds as it
@@ -15,7 +19,9 @@ internal readonly record struct ChaseMessage(int Slot, ChannelMessage Message);
 /// <remarks>
 /// Deliberately not chased: notes already sounding at the position, SysEx (resending device setup
 /// on every seek would be surprising), RPN/NRPN selection and data entry (their meaning depends on
-/// sequence), and channel mode messages.
+/// sequence), and channel mode messages. The exception is hardware parameter automation (ADR 0031): the
+/// plan knows each change's whole message sequence, so the latest one per parameter is resent, after the
+/// controller state.
 /// </remarks>
 internal static class ChaseState
 {
@@ -41,6 +47,12 @@ internal static class ChaseState
 
             AddIfSet(result, slot, state.PitchBend);
             AddIfSet(result, slot, state.Pressure);
+        }
+
+        // Then each chased hardware parameter's latest change, whole.
+        foreach (var change in LatestParameters(plan, tick).Values)
+        {
+            result.AddRange(change.Messages);
         }
 
         return [.. result];
@@ -120,7 +132,37 @@ internal static class ChaseState
             }
         }
 
+        // A chased hardware parameter goes back to its value at the loop start. One first set inside the loop
+        // is left as it is: unlike a controller, it has no reset value.
+        var parametersAtEnd = LatestParameters(plan, loop.End.Value);
+        foreach (var (key, first) in LatestParameters(plan, loop.Start.Value))
+        {
+            var last = parametersAtEnd[key];
+            var setAtStart = plan.ParameterChases.Any(c => c.Key == key && c.Tick == loop.Start.Value);
+            if (!setAtStart && !first.Messages.SequenceEqual(last.Messages))
+            {
+                result.AddRange(first.Messages);
+            }
+        }
+
         return [.. result];
+    }
+
+    /// <summary>The latest change of each chased hardware parameter before <paramref name="tick"/>, by key.</summary>
+    private static SortedDictionary<int, ParameterChase> LatestParameters(PlaybackPlan plan, long tick)
+    {
+        var latest = new SortedDictionary<int, ParameterChase>();
+        foreach (var change in plan.ParameterChases)
+        {
+            if (change.Tick >= tick)
+            {
+                break;
+            }
+
+            latest[change.Key] = change;
+        }
+
+        return latest;
     }
 
     private static void Scan(PlaybackPlan plan, int from, int to, SortedDictionary<(int Slot, byte Channel), ChannelState> channels)

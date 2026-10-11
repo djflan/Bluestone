@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Application/Bluestone.Application.csproj" />
+    <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
     <ProjectReference Include="../Bluestone.Domain/Bluestone.Domain.csproj" />
     <ProjectReference Include="../Bluestone.Infrastructure/Bluestone.Infrastructure.csproj" />
     <ProjectReference Include="../Bluestone.Midi/Bluestone.Midi.csproj" />
@@ -28,4 +29,10 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <!-- The Rust test plugins, packaged as a VST3 bundle and a CLAP module in test-plugins/ (ADR 0033). -->
+  <ItemGroup>
+    <RustCrate Include="bluestone_test_plugins" />
+  </ItemGroup>
+  <Import Project="../Native.targets" />
+  <Import Project="../NativeTestPlugins.targets" />
 </Project>

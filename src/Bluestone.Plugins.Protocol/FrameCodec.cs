@@ -152,6 +152,7 @@ public static class FrameCodec
                 w.WriteUInt32(m.Generation);
                 w.WriteString(m.DataPlaneDirectory);
                 WriteOptionalState(w, m.State);
+                w.WriteOptionalString(m.ModulePath);
                 break;
             case InstanceCreated m:
                 w.WriteGuid(m.InstanceId.Value);
@@ -163,6 +164,8 @@ public static class FrameCodec
                     w.WriteString(p.Name);
                     w.WriteDouble(p.DefaultValue);
                     w.WriteInt32(p.StepCount);
+                    w.WriteString(p.Units);
+                    w.WriteByte((byte)p.Traits);
                 }
 
                 w.WriteString(m.DataPlanePath);
@@ -259,11 +262,25 @@ public static class FrameCodec
                     w.WriteDouble(c.Value);
                 }
 
+                w.WriteOptionalString(m.ModulePath);
                 break;
             case RenderedEvents m:
                 WriteTimelineEvents(w, m.Events);
                 w.WriteInt32(m.Dropped);
                 w.WriteOptionalString(m.StateRestoreError);
+                break;
+            case OpenEditor m:
+                w.WriteGuid(m.InstanceId.Value);
+                w.WriteString(m.Title);
+                break;
+            case CloseEditor m:
+                w.WriteGuid(m.InstanceId.Value);
+                break;
+            case PluginNotification m:
+                w.WriteGuid(m.InstanceId.Value);
+                w.WriteByte((byte)m.Kind);
+                w.WriteUInt32(m.ParameterId);
+                w.WriteDouble(m.Value);
                 break;
             default:
                 throw new ProtocolException($"Cannot encode message {message.GetType().Name}.");
@@ -308,14 +325,15 @@ public static class FrameCodec
                     var generation = ReadGeneration(ref r);
                     var directory = r.ReadString();
                     var state = ReadOptionalState(ref r);
-                    return new CreateInstance(id, plugin, sampleRate, exchange, generation, directory, state);
+                    var modulePath = r.ReadOptionalString();
+                    return new CreateInstance(id, plugin, sampleRate, exchange, generation, directory, state, modulePath);
                 }
 
             case MessageType.InstanceCreated:
                 {
                     var id = ReadInstanceId(ref r);
                     var latency = r.ReadInt32InRange(0, 1 << 24, "Latency");
-                    var count = r.ReadCount(ProtocolLimits.MaxParameters, minElementBytes: 4 + 2 + 8 + 4);
+                    var count = r.ReadCount(ProtocolLimits.MaxParameters, minElementBytes: 4 + 2 + 8 + 4 + 2 + 1);
                     var parameters = ImmutableArray.CreateBuilder<ParameterDescriptor>(count);
                     for (var i = 0; i < count; i++)
                     {
@@ -323,7 +341,14 @@ public static class FrameCodec
                         var name = r.ReadString();
                         var defaultValue = r.ReadNormalized("Default value");
                         var steps = r.ReadInt32InRange(0, int.MaxValue, "Step count");
-                        parameters.Add(new ParameterDescriptor(parameterId, name, defaultValue, steps));
+                        var units = r.ReadString();
+                        var traits = (ParameterTraits)r.ReadByte();
+                        if ((traits & ~ParameterDescriptor.AllTraits) != 0)
+                        {
+                            throw new ProtocolException($"Unknown parameter traits {(byte)traits}.");
+                        }
+
+                        parameters.Add(new ParameterDescriptor(parameterId, name, defaultValue, steps, units, traits));
                     }
 
                     var path = r.ReadString();
@@ -417,6 +442,12 @@ public static class FrameCodec
                 return ReadRenderEvents(ref r);
             case MessageType.RenderedEvents:
                 return new RenderedEvents(ReadTimelineEvents(ref r), r.ReadInt32InRange(0, int.MaxValue, "Dropped count"), r.ReadOptionalString());
+            case MessageType.OpenEditor:
+                return new OpenEditor(ReadInstanceId(ref r), r.ReadString());
+            case MessageType.CloseEditor:
+                return new CloseEditor(ReadInstanceId(ref r));
+            case MessageType.PluginNotification:
+                return ReadNotification(ref r);
             default:
                 throw new ProtocolException($"Unknown message type {(ushort)type}.");
         }
@@ -463,7 +494,28 @@ public static class FrameCodec
             changes.Add(new TimelineParameterChange(ReadFrame(ref r, "Change frame"), r.ReadUInt32(), r.ReadNormalized("Parameter value")));
         }
 
-        return new RenderEvents(plugin, state, parameters.MoveToImmutable(), sampleRate, blockFrames, endFrame, tempo.MoveToImmutable(), events, changes.MoveToImmutable());
+        var modulePath = r.ReadOptionalString();
+        return new RenderEvents(plugin, state, parameters.MoveToImmutable(), sampleRate, blockFrames, endFrame, tempo.MoveToImmutable(), events, changes.MoveToImmutable(), modulePath);
+    }
+
+    private static PluginNotification ReadNotification(ref WireReader r)
+    {
+        var id = ReadInstanceId(ref r);
+        var kind = (NotificationKind)r.ReadByte();
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ProtocolException($"Unknown notification kind {(byte)kind}.");
+        }
+
+        var parameterId = r.ReadUInt32();
+        var value = r.ReadDouble();
+        var valid = kind switch
+        {
+            NotificationKind.ParameterEdited => NormalizedValue.IsValid(value),
+            NotificationKind.LatencyChanged => parameterId == 0 && value is >= 0 and <= 1 << 24 && value == Math.Floor(value),
+            _ => parameterId == 0 && value == 0,
+        };
+        return valid ? new PluginNotification(id, kind, parameterId, value) : throw new ProtocolException($"Invalid {kind} notification.");
     }
 
     private static long ReadFrame(ref WireReader r, string what)

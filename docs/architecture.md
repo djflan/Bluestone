@@ -18,6 +18,7 @@ Sequencer / Domain       Bluestone.Domain, Bluestone.Profiles
 Signal processing        Bluestone.Signal: device chains, the routing graph
        ↓
 Playback                 Bluestone.Playback: prepared plans, the real-time engine
+Audio                    Bluestone.Audio: the render graph, mixer, clips, plugin nodes; device output in Rust (cpal)
        ↓
 MIDI semantics           channel events (NoteEvent, ControllerEvent, ProgramEvent, …) and ControlValue
        ↓
@@ -41,11 +42,15 @@ Bluestone.Profiles          Domain             device profiles: what an instrume
 Bluestone.Signal            Domain             chain runner, built-in processors, device catalog, signal graph
 Bluestone.Infrastructure    Domain             project files, chain preset files, migrations
 Bluestone.Playback          Domain, Midi, Signal   real-time engine, prepared plans
+Bluestone.Audio             Plugins, Plugins.Protocol   audio device output (the bluestone_audio Rust crate), render graph,
+                                             mixer strips and meters, audio file decoding, sample-rate conversion,
+                                             disk streaming, plugin nodes
 Bluestone.Plugins.Protocol  (nothing)          plugin control-plane frames and the shared-memory block exchange
 Bluestone.Plugins           Plugins.Protocol   worker supervision, crash recovery, scanning (main process)
 Bluestone.PluginWorker      Plugins.Protocol   the worker executable that hosts plugins (separate process)
-Bluestone.Application       all of the above   sessions, editing commands, recording, routing resolution, plugin bridge
-Bluestone.Presentation      Application        view models, no UI framework
+Bluestone.Application       all of the above   sessions, editing commands, recording, routing resolution, plugin bridge,
+                                             the project's audio graph and the audio playback controller
+Bluestone.Presentation      Application, Audio view models, no UI framework
 Bluestone.Desktop           Presentation, Platform.*   Avalonia views, platform selection
 Bluestone.Platform.*        Midi               CoreMIDI, WinMM, ALSA adapters
 ```
@@ -57,6 +62,17 @@ Tests: `Bluestone.Tests.Unit` (fast, deterministic), `Bluestone.Tests.Integratio
 operating-system MIDI, and plugin worker processes), and `Bluestone.Tests.Ui` (Bluestone's own app and
 main window on Avalonia's headless platform: real views, bindings, and UI thread, with no display).
 
+The UI tests send mouse and keyboard input through the headless platform and check the project and view
+models afterwards. They cover the inspector's Track, Routing, Voice, Devices, Connections, Racks, and Mixer
+sections (including a refused connection and its message), dragging, resizing, and renaming clips, drawing,
+selecting, and moving notes in the piano roll, the keyboard shortcuts (undo and redo, delete, play and stop,
+mute and solo, copy and paste), the Plugins view, and the mixer console (a fader dragged and undone, a send added,
+meters fed from a meter source). Frames are saved to `bin/.../frames/` for looking at.
+`Avalonia.Headless.XUnit` targets an older xUnit than the repository's, so the tests drive
+`HeadlessUnitTestSession` directly. The headless platform has no macOS menu bar, so the window under test
+uses its own menu and key bindings, as on Windows and Linux; one test checks the macOS menu's items and
+gestures directly.
+
 ### Where does this belong?
 
 | You are adding… | Put it in |
@@ -66,13 +82,19 @@ main window on Avalonia's headless platform: real views, bindings, and UI thread
 | How MIDI 1.0 messages from files or input become channel events | `Bluestone.Midi/Wire/Midi1Decoder.cs` |
 | Reading or writing `.mid` files | `Bluestone.Midi/Files` |
 | Recognizing a SysEx family (Universal, XG, GS, another manufacturer) | `Bluestone.Midi/SysEx` |
-| Facts about one instrument (banks, voices, drum names, setup SysEx) | a JSON profile in `/profiles`; the loader is `Bluestone.Profiles` |
+| Facts about one instrument (banks, voices, drum names, setup SysEx, parameter maps) | a JSON profile in `/profiles`; the loader is `Bluestone.Profiles` |
+| How automation of an instrument's parameter becomes CC, RPN, NRPN, or SysEx | the profile's `parameterMap`; translation in `Bluestone.Application/Routing/HardwareAutomation.cs` |
 | An operating-system MIDI API | `Bluestone.Platform.<OS>`, implementing `IMidiEndpointProvider` |
 | The project file format or a migration | `Bluestone.Infrastructure/Projects` |
 | A built-in device | its definition in `Bluestone.Domain/Devices/BuiltInDevices.cs`, its processor in `Bluestone.Signal/BuiltIn`, registered in `DeviceCatalog.BuiltIn` |
 | A routing rule (what may connect to what) | `Bluestone.Domain/Routing/SignalRoutingValidator.cs` |
 | How processed events reach the plan | `Bluestone.Signal/SignalGraph.cs`, then `Bluestone.Application/Routing/PlaybackRouting.cs` |
 | An edit to chains, connections, instruments, the mixer, or roles | `Bluestone.Application/Editing` (`DeviceCommands`, `RoutingCommands`, `TrackRoleCommands`) |
+| Audio processing on the real-time path (a node, the mixer, metering, decoding, resampling, delay compensation) | `Bluestone.Audio` |
+| How a built-in device runs on live input | its live processor in `Bluestone.Signal/Live`, registered beside its plan-time one in `DeviceCatalog.BuiltIn` |
+| How live input finds and plays its route | `Bluestone.Application/Live` (`LiveRoutePlan`, `LiveInput`) |
+| How a project becomes audio (clips, chains, connections, mixer) | `Bluestone.Application/Audio/ProjectAudioGraph.cs` |
+| Audio device access (a backend, a stream setting) | `native/crates/bluestone_audio` (Rust), its C ABI in `Bluestone.Audio/Devices/NativeMethods.cs` |
 | How something is shown or edited | `Bluestone.Presentation` (logic), `Bluestone.Desktop` (views) |
 
 ### Abstractions
@@ -82,9 +104,15 @@ Interfaces exist only where something is actually substituted:
 - `IMidiEndpointProvider`, `IMidiOutput`, `IMidiInput`: each platform adapter, plus the loopback test double.
 - `IMonotonicClock`: the real clock, and a virtual clock for deterministic tests.
 - `IProjectCommand`, `IProjectMigration`: undoable edits and format upgrades.
-- `ISignalProcessor`: each built-in device's processor (and test processors).
+- `ISignalProcessor`: each built-in device's processor (and test processors); `ILiveProcessor`: each built-in
+  device's live form, plugin MIDI effects on a live route, and a connection's forced channel.
+- `ILiveEventSource`: live input into a plugin instrument's node; the audio layer cannot reference the application
+  that implements it.
 - `IChainObserver`: what the signal graph needs from inside a chain (taps, instrument inputs).
 - `IUserInteraction`, `IUiDispatcher`: keep the UI framework out of the view models.
+- `IAudioRenderer`: what a device stream calls (the audio engine, a test renderer); `IAudioTimeline`: the transport the
+  audio engine follows (the MIDI playback engine, a test timeline); `IAudioBackend` and `IAudioOutput`: where output
+  streams come from (the operating system's devices through cpal, or a test backend whose devices come and go).
 
 Everything else is concrete. SysEx dialects, for example, are static classes chosen by a `switch`
 on the manufacturer ID, because nothing needs to swap them at run time.
@@ -226,7 +254,7 @@ from (ADR 0005, 0007, 0008).
 Arrangement
   Track (role: instrument, audio, hybrid, effect, group)
     ├── clips (NoteClip, AudioClip)        musical content; never owns an endpoint or a device
-    ├── automation lanes                    MIDI targets, or device parameters by DeviceId
+    ├── automation lanes                    MIDI targets, device parameters by DeviceId, or instrument part parameters
     └── device chain (optional, one)        Arpeggiator → Transpose → Synth → Filter
 
 Project
@@ -241,10 +269,16 @@ Project
 A track has one type and a role (ADR 0021). The role says what the track is for; it is stored and is
 widened, never narrowed, to fit content, and changing it never discards anything. Clips decide what a
 track holds (ADR 0020): `NoteClip` holds events relative to its content origin and shows a window of
-them, so trimming loses nothing; `AudioClip` holds a reference to audio and is arrangement data only,
-because there is no audio engine yet. Clips on a track never overlap. `Track.ArrangedEvents` is what
+them, so trimming loses nothing; `AudioClip` holds a reference to an audio file, a gain, and fades (lengths in
+ticks from its edges, linear or equal-power); the audio engine plays it from disk (ADR 0032). Clips on a track never overlap. `Track.ArrangedEvents` is what
 the note clips play. `TrackRendering` adds MIDI automation lanes, sampled into channel events, and
 returns device automation separately as parameter changes.
+
+A track can be in a group track, and groups nest (ADR 0030). Putting a track in a group is one command
+that also routes it: its own outgoing connections are parked in the project and replaced by a connection
+into the group, and taking it out puts back those that still work. A group's mute and solo reach its
+members (`GroupTracks.Playing`: the nearest explicit state wins, and without groups the old rule holds).
+A group can be folded, which hides its members in the track list and the arrangement and is saved.
 
 ### Devices and chains
 
@@ -253,8 +287,8 @@ stable ID, parameters, bypass, and plugin state; a `DeviceChain` is an ordered l
 track or a rack (ADR 0022). Processing is sequential, and passthrough is managed by the host: a device
 is given only the event classes it handles, and everything else (SysEx, controllers it does not
 declare) goes around it and is merged back in canonical order. Only an explicit filter removes events.
-Built-in devices run in `Bluestone.Signal` when the plan is compiled; plugin devices run in worker
-processes, never in Bluestone's process. Presets are templates without identities: loading one creates
+Built-in devices run in `Bluestone.Signal` when the plan is compiled, and in a real-time form on live input;
+plugin devices run in worker processes, never in Bluestone's process. Presets are templates without identities: loading one creates
 new devices.
 
 ### Routing
@@ -280,22 +314,31 @@ Lead ──► [Arpeggiator → Transpose] ──► MU2000 port B, ch 4
 
 `PlaybackRouting.Prepare` resolves each external instrument's profile and ports against what is
 available, then `SignalGraph.Evaluate` renders every track (mute and solo apply to a track's own
-content), runs every chain in dependency order, follows every event connection, and collects:
-external-instrument part feeds, software-instrument feeds (merged from every source, for a future audio
-engine), parameter feeds for devices that do not run in Bluestone's process, and diagnostics. Each part
+content, and a group's to its members' content), runs every chain in dependency order, follows every event connection, and collects:
+external-instrument part feeds, software-instrument feeds (merged from every source, which drive plugin
+instruments in the audio engine), parameter feeds for devices that do not run in Bluestone's process, and diagnostics. Each part
 with an available endpoint becomes a `PlanPart`; parts sharing an endpoint share an output slot. The
 compiler encodes MIDI 1.0 at the edge and orders the plan by tick, phase, origin track, and index,
 exactly as before the routing model existed, so old projects send the same bytes. The real-time engine
 is unchanged (ADR 0006).
 
-Live notes (audition, MIDI thru, the on-screen keyboard, the metronome) follow the track's live route:
-the nearest playable instrument through its connections, with the forced channel and the Transpose
-devices on the way.
+Live notes (audition, MIDI thru, the on-screen keyboard) follow the track's live route: the nearest
+playable instrument through its connections, through every device on the way (ADR 0035). Built-in devices
+run in a real-time form that puts out the same notes as at plan time (`Bluestone.Signal/Live`); plugin MIDI
+effects run in their own instance; a plugin instrument is played through the audio engine, an external one by
+MIDI out. `LiveInput` (`Bluestone.Application/Live`) runs one route per track: on the audio thread for a plugin
+instrument, otherwise where the input arrives and on a live thread for what comes later (arpeggio steps). A
+route that changes releases the notes it sounds first, so nothing hangs. Recording captures the input before any
+device. The metronome and instrument setup still go to the route's external endpoint.
 
 In the app, the inspector's Devices strip edits the selected track's chain, or a rack's chain after
 "Edit" in the Racks section; Connections follows whichever chain the strip shows. The Mixer section
-edits channels, their outputs, and the master gain (kept and saved; nothing sounds without an audio
-engine). Every edit is a command, and one that would add a routing error is refused with a message.
+edits channels, their outputs, and the master gain; they are heard while audio runs (ADR 0032). The mixer console
+(File ▸ Mixer…, or Window ▸ Mixer on macOS) shows the same `MixerViewModel` as one strip per channel and the
+master: name, what feeds it (and whether it is a group's, a bus, or a return), output, sends (level, pre or post
+fader), pan, fader, mute, solo, and a peak and RMS meter with a two-second peak hold and a clip light. The meters
+are read from the engine's lock-free meters on a 30 Hz UI timer without allocating. The inspector's Audio Clip
+section edits the selected audio clip's gain and fades; the arrangement draws the fades. Every edit is a command, and one that would add a routing error is refused with a message.
 Consecutive edits with the same merge key within a second (a slider drag) are one undo step.
 
 ### Automation
@@ -306,12 +349,41 @@ not pass through the devices before it, it is never encoded as MIDI, and reorder
 does not retarget it. Built-in processors apply it at its tick; other devices receive it as a parameter
 feed for their worker.
 
+A hardware lane targets a parameter of an external instrument's part (ADR 0031): the instrument, its port, the
+channel, and the parameter's key in the instrument's profile. The profile's parameter map says how the parameter
+is set: a 7- or 14-bit controller, an RPN or NRPN (followed by the RPN null unless the profile says otherwise), or
+a SysEx template with the value (whole or in bit slices such as nibbles), the channel, a device number byte, and a
+Roland or Yamaha checksum. When playback is prepared, `HardwareAutomation` samples the lane, scales its normalized
+values to the parameter's range, and sends a value only when it changes and at most once per 20 ms per parameter
+(a change that comes sooner waits, so a ramp still ends on its last value). The MIDI goes to the part's endpoint as
+a `ParameterPart`, ordered like everything else by tick, phase, the lane's track, and index, after that track's own
+events at the same tick and phase. On play, seek, and loop wrap the latest RPN, NRPN, or SysEx change of each
+parameter is resent whole; controller mappings are chased as controllers. MIDI file export writes the same MIDI on
+the lane's track. A lane whose instrument, port, profile, parameter, or endpoint is missing is kept and reported.
+There is no "external instrument device": the target names the part, as connections do.
+
+### Delay compensation
+
+Every path through the render graph is delay-compensated (ADR 0035): a node's output lags by its own latency
+(a plugin's pipelining plus the plugin's own, 0 for clips) plus its slowest input's; at every summing point (a
+node's input, a mixer channel, the master, through outputs and sends) faster arrivals are delayed to match, by
+delay lines kept across graph rebuilds. The audio engine renders the master's latency ahead of the transport, so
+audio, plugin instruments, and external MIDI stay in sync. A plugin that reports a new latency gets the graph
+rebuilt. With low-latency monitoring, the instrument played live skips its compensation delay.
+
 ### Plugin workers
 
 Third-party plugins are hosted in separate worker processes (ADR 0025), never loaded into Bluestone's own
-process. Process isolation is crash isolation, not a security sandbox. When the plan is compiled, a
+process. Process isolation is crash isolation, not a security sandbox. The user chooses how plugins share workers
+(ADR 0034): together, by manufacturer, by plugin (the default: one worker per plugin module), or individually, with a
+mode per plugin that overrides the global one. These are user settings (`PluginHostingSettings`), not project data;
+`PluginDeviceHost` applies them and moves running plugins with their state, and a worker crash marks every device in
+it Crashed and says which went down together. When the plan is compiled, a
 plugin MIDI effect runs in its worker over the arrangement and its output joins the chain like a
-built-in device's (ADR 0028). See [docs/plugin-hosting.md](plugin-hosting.md).
+built-in device's (ADR 0028). Modules are scanned in their own scanner processes from a list of plugin
+folders; the Plugins view (Window ▸ Plugins… on macOS, File ▸ Plugins… elsewhere) rescans them and retries
+quarantined modules, and plugins it finds join the device catalog without a restart. See
+[docs/plugin-hosting.md](plugin-hosting.md).
 
 ## Known compromises
 
@@ -325,13 +397,18 @@ These are deliberate for now and are where MIDI 2.0 work will start:
   sequences as it sends them, as the MIDI 2.0 translation rules describe.
 - **Sixteen channels.** `MidiChannel` is 1 to 16. UMP adds 16 groups. The group belongs to an external
   instrument's port and its endpoint, not to the music or to connections.
-- **No audio engine.** Audio clips, audio connections, and mixer channels are modelled, saved, and
-  validated, and software instruments receive their event feeds, but nothing produces sound yet.
-- **Plugin MIDI effects are rendered, not played live.** When the plan is compiled, each plugin MIDI effect
-  runs in its own worker over the arrangement (ADR 0028), so its output is routed downstream. A worker that
-  is gone or hung leaves the events unchanged, with a diagnostic. Live input does not pass through plugins.
-- **Live notes apply only Transpose devices** from the chains on a track's live route; other devices
-  (an arpeggiator, say) shape played-back notes but not live input.
+- **Audio engine limits (ADR 0032, 0035).** Audio clips (with gain and fades), plugin instruments and effects, audio
+  connections, and the mixer with sends sound while an audio device is open, delay-compensated, but: only WAVE and
+  AIFF files play; built-in devices make no sound; a change of device rate restarts every plugin instance (its live
+  state is carried over; an open editor closes); the default render-ahead queue adds 21 ms of output latency
+  (measured need: .NET garbage collection pauses), 10.7 ms while live input plays a plugin instrument. Device
+  output has been heard on macOS only; losing and regaining a device is tested with a test backend, not by
+  unplugging hardware.
+- **Plugin MIDI effects are rendered into the plan, and played live separately.** When the plan is compiled, each
+  plugin MIDI effect runs a fresh copy in its worker over the arrangement (ADR 0028); live input goes through the
+  device's running instance (ADR 0035). Each render is independent, so the plan cannot reflect what the live
+  instance does.
+- **Live input ignores device automation** of built-in devices: they run live at their stored values.
 - **The playback plan is MIDI 1.0.** `PlaybackPlan` and `ChaseState` hold encoded `ChannelMessage`s,
   so chasing controller state on seek is worked out in MIDI 1.0 terms. A MIDI 2.0 output will need
   its plan entries in UMP form.
@@ -386,16 +463,17 @@ data yet, so it waits.
 
 Built as boundaries and tested where cheap, but not finished:
 
-- **Audio engine**: playing audio clips and software instruments, the mixer's gain and pan, plugin audio driven
-  by playback, and plugin delay compensation across the graph. Feeds, parameter feeds, and audio connections are
-  produced and validated so the engine has a defined input.
-- **Third-party plugin formats** (VST3 loading, parameter enumeration) and **plugin editors** (windows, focus,
-  DPI, a worker dying with its editor open). The worker hosts Bluestone's reference plugins today.
+- **Audio engine, remaining**: audio input and recording, compressed audio formats, send and fader automation, and fade curves other than
+  linear and equal power.
+- **Third-party plugins beyond the first slice**: VST3 and CLAP load, process, keep state, recover, and show editors
+  (ADR 0033, docs/plugin-hosting.md), but editors on Windows and Linux are not verified on hardware, editors are
+  separate windows (not embedded), and there are no second-architecture workers, SysEx to native plugins, note
+  expressions, or MPE.
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
-- **Operating-system sandboxing** of plugin workers.
-- **Group track processing** and folding in the arrangement.
-- **Translating device automation to CC, RPN, NRPN, or SysEx** for external instruments.
+- **Operating-system sandboxing** of plugin workers (not planned: crash isolation with hosting modes instead, ADR 0034).
+- **Groups**: drag and drop into a group, and a folded group's lane summarizing its members' clips. Grouping,
+  routing members into their group, group mute and solo, and folding work (ADR 0030).
 
 ## Decisions at a glance
 
@@ -415,17 +493,34 @@ Built as boundaries and tested where cheap, but not finished:
 | One routing model of connections; external instruments and mixer channels are entities | ADR 0023 (supersedes 0008) |
 | Device automation targets parameters, separate from signal flow | ADR 0024 |
 | Plugins run out of process; isolation is not a sandbox | ADR 0025 |
+| Users choose how plugins share worker processes; by plugin by default | ADR 0034 |
 | C# first; Rust only for measured or native-interface needs | ADR 0026 |
 | Project format 4 and its migration | ADR 0027 |
 | Plugin MIDI effects run in their worker when the plan is compiled | ADR 0028 |
+| A group's mute and solo reach its members; joining a group routes into it | ADR 0030 |
+| Hardware parameters are automated through profile parameter maps, translated at plan compile | ADR 0031 |
+| Audio: cpal output in Rust, the graph in C# rendered ahead into a ring, one transport | ADR 0032 |
+| VST3 and CLAP through a Rust plugin host loaded only in the worker | ADR 0033 |
+| Live input through every device on the live route; a live render-ahead queue; plugin delay compensation | ADR 0035 |
 
 ## Native technology
 
 C# is the default for all code (ADR 0026). Rust is used for a component only when a measurement shows
 managed code cannot meet a real-time or throughput requirement after tuning, or when a native interface
 (such as plugin binaries) requires it; it replaces C or C++ for new Bluestone-owned native code. C and C++
-appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Today there is no Rust
-and no Bluestone-owned native code.
+appear only as third-party libraries, vendor SDK requirements, or thin ABI shims.
+
+Rust code lives in a Cargo workspace, `native/`, one crate per component (`native/crates/*`), each a cdylib with a
+small, versioned C ABI; `dotnet build` builds the crates a project names (`src/Native.targets`) and copies the
+library beside the assemblies. The components:
+
+- `bluestone_audio` (ADR 0032): audio device output through cpal, and the device callback, which only copies from a
+  ring because the measurement showed a .NET collection holding a managed callback past its deadline. The render
+  graph stays in C#.
+- `bluestone_plugin_host` (ADR 0033): loads VST3 and CLAP plugin binaries, which is ADR 0026's native-interface
+  reason. Only `Bluestone.PluginWorker` loads it, so no plugin code ever runs in Bluestone's process. The data plane,
+  supervision, and everything else in plugin hosting stay C#.
+- `bluestone_test_plugins`: small VST3 and CLAP plugins for the tests.
 
 ## Acceptance scenarios and their tests
 
