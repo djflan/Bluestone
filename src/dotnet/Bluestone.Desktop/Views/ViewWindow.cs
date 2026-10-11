@@ -1,0 +1,86 @@
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Bluestone.Presentation;
+
+namespace Bluestone.Desktop.Views;
+
+/// <summary>
+/// A detached workspace view (ADR 0036): the same view, hosted in its own window. Closing the window docks the view again;
+/// the window's bounds are remembered per display setup, so returning to a known monitor layout puts it back where it was.
+/// </summary>
+public sealed class ViewWindow : Window
+{
+    private bool _closingFromLayout;
+
+    public ViewWindow(WorkspaceView view, Control content)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        View = view;
+        DataContext = view;
+        Title = $"{view.Title} — Bluestone";
+        MinWidth = 320;
+        MinHeight = 200;
+        Width = view.Kind == WorkspaceViewKind.Browser ? 300 : 900;
+        Height = view.Kind == WorkspaceViewKind.Browser ? 600 : 300;
+        Background = Brush("Surface.Base");
+        ShowInTaskbar = false;
+        Content = content;
+        view.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WorkspaceView.Title))
+            {
+                Title = $"{view.Title} — Bluestone";
+            }
+        };
+    }
+
+    public WorkspaceView View { get; }
+
+    /// <summary>Closes the window because the layout no longer has the view detached (it was docked or collapsed elsewhere).</summary>
+    public void CloseFromLayout()
+    {
+        _closingFromLayout = true;
+        Close();
+    }
+
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        base.OnClosing(e);
+        if (!_closingFromLayout && !e.Cancel && View.IsDetached)
+        {
+            // Closing a detached window puts the view back where it lives in the main window.
+            View.DockCommand.Execute(null);
+        }
+    }
+
+    private static IBrush? Brush(string key) => Bluestone.Desktop.Theme.ThemeResources.Find(key) as IBrush;
+
+    /// <summary>A detached view's content with a slim header that can dock it again.</summary>
+    public static Control Frame(WorkspaceView view, Control body)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        var dock = new Button
+        {
+            Classes = { "tool", "small" },
+            Content = new PathIcon { Classes = { "stroke" }, Data = Bluestone.Desktop.Theme.ThemeResources.Find("Icon.Collapse") as Geometry },
+            Command = view.DockCommand,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(dock, "Dock in the main window");
+        Avalonia.Automation.AutomationProperties.SetName(dock, "Dock");
+        if (view.Kind == WorkspaceViewKind.DeviceView)
+        {
+            // The Device View has its own header with these options.
+            return body;
+        }
+
+        var header = new Border { Classes = { "dockHeader" }, Child = new Grid { Children = { new TextBlock { Classes = { "dockTitle" }, Text = view.Title.ToUpperInvariant() }, dock } } };
+        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        grid.Children.Add(header);
+        Grid.SetRow(body, 1);
+        grid.Children.Add(body);
+        return grid;
+    }
+}

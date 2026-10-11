@@ -28,7 +28,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:MixerChannelRow">
-              <Border Width="148" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="1" CornerRadius="3" Padding="6">
+              <Border Width="148" BorderBrush="{StaticResource Line.Divider}" BorderThickness="1" CornerRadius="3" Padding="6">
                 <DockPanel>
                   <StackPanel DockPanel.Dock="Top" Spacing="4">
                     <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Channel name" />
@@ -77,7 +77,7 @@
         </ItemsControl>
       </ScrollViewer>
 
-      <Border Grid.Column="1" Width="96" Margin="8,0,0,0" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="1" CornerRadius="3" Padding="6">
+      <Border Grid.Column="1" Width="96" Margin="8,0,0,0" BorderBrush="{StaticResource Line.Divider}" BorderThickness="1" CornerRadius="3" Padding="6">
         <DockPanel>
           <TextBlock DockPanel.Dock="Top" Text="Master" FontWeight="SemiBold" HorizontalAlignment="Center" />
           <TextBlock DockPanel.Dock="Bottom" Text="{Binding MasterGainText}" FontSize="11" HorizontalAlignment="Center" />

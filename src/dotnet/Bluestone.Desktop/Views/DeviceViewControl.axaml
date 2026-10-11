@@ -1,0 +1,221 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             xmlns:controls="using:Bluestone.Desktop.Controls"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             x:Class="Bluestone.Desktop.Views.DeviceViewControl"
+             x:DataType="vm:DeviceViewViewModel"
+             AutomationProperties.Name="Device View">
+  <!--
+    One Device View (ADR 0036): the device chain of a track or rack, left to right, between fixed input and output nodes.
+    Panels have one height and a few fixed widths; the chain scrolls horizontally. Drop from the Browser to insert; drag a
+    panel's header to reorder. What is collapsed or selected here is this view's alone.
+  -->
+  <Grid RowDefinitions="Auto,*">
+    <Border Classes="viewHeader">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <Border Classes="trackAccent" IsVisible="{Binding HasChain}"
+                Background="{Binding AccentIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
+        <ToggleButton Grid.Column="1" Classes="tool small" IsChecked="{Binding IsLocked}" IsEnabled="{Binding HasChain}"
+                      ToolTip.Tip="Lock this Device View to its chain. Unlocked, it follows the selected track."
+                      AutomationProperties.Name="Lock Device View">
+          <Panel>
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Lock}" IsVisible="{Binding IsLocked}" />
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Unlock}" IsVisible="{Binding !IsLocked}" />
+          </Panel>
+        </ToggleButton>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="4,0,0,0">
+          <TextBlock x:Name="HeadingText" Text="{Binding Heading}" Classes="viewTitle" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+          <TextBlock Text="{Binding LockText}" Classes="caption" VerticalAlignment="Center" />
+          <Button Classes="link" Content="Back to the selected track" IsVisible="{Binding IsEditingRack}" Command="{Binding BackToTrackCommand}" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+          <Button Classes="tool small" Command="{Binding SavePresetCommand}" ToolTip.Tip="Save this chain as a preset…" AutomationProperties.Name="Save chain preset">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Save}" />
+          </Button>
+          <Button Classes="tool small" Command="{Binding LoadPresetCommand}" ToolTip.Tip="Load a chain preset…" AutomationProperties.Name="Load chain preset">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Open}" />
+          </Button>
+          <Button x:Name="ViewMenuButton" Classes="tool small" ToolTip.Tip="Device View options" AutomationProperties.Name="Device View options">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.More}" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight">
+                <MenuItem Header="New Device View" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Workspace.AddDeviceViewCommand, FallbackValue={x:Null}}" />
+                <Separator />
+                <MenuItem Header="Detach to Window" Command="{Binding Host.DetachCommand, FallbackValue={x:Null}}" IsVisible="{Binding !Host.IsDetached, FallbackValue=False}" />
+                <MenuItem Header="Dock" Command="{Binding Host.DockCommand, FallbackValue={x:Null}}" IsVisible="{Binding Host.IsDetached, FallbackValue=False}" />
+                <MenuItem Header="Collapse to Rail" Command="{Binding Host.CollapseCommand, FallbackValue={x:Null}}" />
+                <MenuItem Header="Close" Command="{Binding Host.CloseCommand, FallbackValue={x:Null}}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Panel Grid.Row="1" x:Name="ChainArea" Classes="chainCanvas" DragDrop.AllowDrop="True">
+      <ScrollViewer x:Name="ChainScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                    IsVisible="{Binding HasChain}">
+        <StackPanel x:Name="ChainRow" Orientation="Horizontal" Margin="12,12,24,12" VerticalAlignment="Top">
+          <!-- Input boundary: the track's signal bundle comes in here. -->
+          <Border Classes="chainNode" ToolTip.Tip="Chain input: notes, controls, and audio arriving at this chain" AutomationProperties.Name="Chain input">
+            <StackPanel Spacing="6" VerticalAlignment="Center">
+              <Ellipse Classes="nodeDot" />
+              <TextBlock Text="IN" Classes="nodeLabel" />
+            </StackPanel>
+          </Border>
+
+          <ItemsControl x:Name="Chain" ItemsSource="{Binding Devices}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:DevicePanelViewModel">
+                <StackPanel Orientation="Horizontal">
+                  <!-- Signal flows left to right; the link is quiet unless the device is bypassed. -->
+                  <Border Classes="chainLink" Classes.bypassed="{Binding IsBypassed}" />
+                  <Border Classes="devicePanel" Classes.selected="{Binding IsSelected}" Classes.bypassed="{Binding IsBypassed}"
+                          Classes.unavailable="{Binding NeedsAttention}" Classes.collapsed="{Binding IsCollapsed}"
+                          Width="{Binding Size, Converter={x:Static theme:DevicePanelWidthConverter.Instance}}"
+                          AutomationProperties.Name="{Binding Name}">
+                    <Panel>
+                      <!-- Expanded: header, controls, footer. -->
+                      <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCollapsed}">
+                        <Border Classes="deviceHeader" Background="{StaticResource Gradient.DeviceHeader}">
+                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                            <Border Grid.ColumnSpan="5" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
+                            <Button Classes="power" Classes.off="{Binding IsBypassed}" Command="{Binding ToggleBypassedCommand}"
+                                    ToolTip.Tip="On or bypassed. A bypassed device passes every signal through unchanged."
+                                    AutomationProperties.Name="Bypass device">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
+                            </Button>
+                            <TextBlock Grid.Column="1" Classes="deviceName grip" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Kind}" />
+                            <Border Grid.Column="2" Classes="badge" IsVisible="{Binding IsPlugin}">
+                              <TextBlock Text="{Binding Format}" />
+                            </Border>
+                            <Button Grid.Column="3" Classes="tool tiny" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="Collapse in this view" AutomationProperties.Name="Collapse device">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronLeft}" />
+                            </Button>
+                            <Button Grid.Column="4" Classes="tool tiny" ToolTip.Tip="Device options" AutomationProperties.Name="Device options">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.More}" />
+                              <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                  <MenuItem Header="Open Editor" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}" />
+                                  <MenuItem Header="Restart Plugin" Command="{Binding RestartCommand}" IsVisible="{Binding CanRestart}" />
+                                  <MenuItem Header="Move Left" Command="{Binding MoveLeftCommand}" />
+                                  <MenuItem Header="Move Right" Command="{Binding MoveRightCommand}" />
+                                  <MenuItem Header="Route Output…" Command="{Binding ShowRoutingCommand}" />
+                                  <Separator />
+                                  <MenuItem Header="Remove" Command="{Binding RemoveCommand}" />
+                                </MenuFlyout>
+                              </Button.Flyout>
+                            </Button>
+                          </Grid>
+                        </Border>
+
+                        <!-- Controls, or why there are none. -->
+                        <Panel Grid.Row="1" Classes="deviceBody">
+                          <ItemsControl ItemsSource="{Binding VisibleParameters}" IsVisible="{Binding !NeedsAttention}">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:ParameterViewModel">
+                                <StackPanel Classes="knobCell" ToolTip.Tip="{Binding Name}">
+                                  <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}"
+                                                 Accent="{Binding $parent[ItemsControl;1].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue=#4C8DDB}"
+                                                 AutomationProperties.Name="{Binding Name}" />
+                                  <TextBlock Classes="knobLabel" Text="{Binding Name}" />
+                                  <TextBlock Classes="knobValue" Text="{Binding ValueText}" />
+                                </StackPanel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+
+                          <StackPanel Classes="deviceNotice" IsVisible="{Binding !Parameters.Count}">
+                            <TextBlock Classes="caption" Text="{Binding Kind}" TextWrapping="Wrap" />
+                            <TextBlock Classes="caption" Text="No controls to show here." IsVisible="{Binding !CanOpenEditor}" TextWrapping="Wrap" />
+                            <Button Classes="raised compact" Content="Open Editor" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
+                                    ToolTip.Tip="Show the plugin's own editor in a window of its worker process" AutomationProperties.Name="Open plugin editor" />
+                          </StackPanel>
+
+                          <!-- Unavailable: not installed, crashed, or not responding. Says what happened and what can be done. -->
+                          <StackPanel Classes="deviceNotice unavailable" IsVisible="{Binding NeedsAttention}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource State.Warning}" />
+                              <TextBlock Classes="statusTitle" Text="{Binding Status}" />
+                            </StackPanel>
+                            <TextBlock Classes="caption" Text="{Binding Kind}" TextWrapping="Wrap" />
+                            <TextBlock Classes="caption" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" TextWrapping="Wrap" AutomationProperties.Name="Went down with" />
+                            <TextBlock Classes="caption" Text="Its settings are kept in the project; signals pass through it unchanged." TextWrapping="Wrap" />
+                            <Button Classes="raised compact" Content="Restart" Command="{Binding RestartCommand}" IsVisible="{Binding CanRestart}" HorizontalAlignment="Left"
+                                    ToolTip.Tip="Start the plugin again from its last saved state, with any devices that went down with it" AutomationProperties.Name="Restart plugin" />
+                          </StackPanel>
+                        </Panel>
+
+                        <Grid Grid.Row="2" Classes="deviceFooter" ColumnDefinitions="*,Auto">
+                          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Classes="micro" Text="{Binding MoreParametersText}" IsVisible="{Binding HasMoreParameters}" />
+                            <Button Classes="link micro" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}"
+                                    ToolTip.Tip="This device's output is also sent here. Open the connections." />
+                          </StackPanel>
+                          <Button Grid.Column="1" Classes="tool tiny" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
+                                  ToolTip.Tip="Open the plugin's editor" AutomationProperties.Name="Open plugin editor">
+                            <PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" />
+                          </Button>
+                        </Grid>
+                      </Grid>
+
+                      <!-- Collapsed: a narrow strip with the name running up it. Click to expand. -->
+                      <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsCollapsed}">
+                        <Border Grid.Row="0" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" VerticalAlignment="Top" />
+                        <Button Grid.Row="1" Classes="power" Classes.off="{Binding IsBypassed}" Command="{Binding ToggleBypassedCommand}" HorizontalAlignment="Center" Margin="0,6,0,2"
+                                AutomationProperties.Name="Bypass device">
+                          <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
+                        </Button>
+                        <Button Grid.Row="2" Classes="collapsedName" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="{Binding Name, StringFormat='{}{0}: expand in this view'}"
+                                AutomationProperties.Name="Expand device">
+                          <LayoutTransformControl>
+                            <LayoutTransformControl.LayoutTransform>
+                              <RotateTransform Angle="-90" />
+                            </LayoutTransformControl.LayoutTransform>
+                            <TextBlock Classes="grip" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="160" />
+                          </LayoutTransformControl>
+                        </Button>
+                      </Grid>
+                    </Panel>
+                  </Border>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Border x:Name="TrailLink" Classes="chainLink" />
+          <!-- Output boundary: what leaves the chain for the track's destination. -->
+          <Border Classes="chainNode" ToolTip.Tip="Chain output: everything the chain passes on, to the track's output" AutomationProperties.Name="Chain output">
+            <StackPanel Spacing="6" VerticalAlignment="Center">
+              <Ellipse Classes="nodeDot" />
+              <TextBlock Text="OUT" Classes="nodeLabel" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- Where a dragged device will land. -->
+      <Canvas IsHitTestVisible="False">
+        <Border x:Name="InsertionMarker" Classes="insertionMarker" IsVisible="False" />
+      </Canvas>
+
+      <!-- Empty chain: invites a drop. -->
+      <StackPanel Classes="emptyState" IsVisible="{Binding IsEmpty}" IsHitTestVisible="False">
+        <PathIcon Classes="stroke" Data="{StaticResource Icon.Devices}" Width="26" Height="26" Foreground="{StaticResource Line.BorderStrong}" />
+        <TextBlock Classes="emptyTitle" Text="{Binding EmptyText}" />
+        <TextBlock Classes="caption" Text="Or pick one in the Browser and press Return." HorizontalAlignment="Center" IsVisible="{Binding HasChain}" />
+      </StackPanel>
+    </Panel>
+  </Grid>
+</UserControl>

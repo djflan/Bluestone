@@ -1,0 +1,264 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="using:System">
+  <!--
+    Bluestone design tokens (ADR 0036): the one place colours, type, spacing, radii, standard heights, device panel
+    geometry, icon sizes, and motion are defined. Styles and views use these keys, never raw values. Custom-drawn
+    controls read the same values through Theme/Palette.cs, which a UI test keeps in step with this file.
+
+    One dark theme: neutral charcoal surfaces divided by hairlines, compact fixed geometry, and colour reserved for
+    meaning (selection, state, track identity, and the kind of signal a device works on).
+  -->
+
+  <!-- Surfaces, darkest to lightest. -->
+  <Color x:Key="Surface.SunkenColor">#161618</Color>
+  <Color x:Key="Surface.BaseColor">#1C1C1E</Color>
+  <Color x:Key="Surface.ChromeColor">#19191B</Color>
+  <Color x:Key="Surface.PanelColor">#252527</Color>
+  <Color x:Key="Surface.RaisedColor">#2E2E31</Color>
+  <Color x:Key="Surface.OverlayColor">#3A3A3E</Color>
+  <Color x:Key="Surface.FieldColor">#1A1A1D</Color>
+
+  <!-- Interaction states. -->
+  <Color x:Key="State.HoverColor">#38383C</Color>
+  <Color x:Key="State.PressedColor">#434348</Color>
+  <Color x:Key="State.SelectedColor">#2D4766</Color>
+  <Color x:Key="State.SelectedSubtleColor">#24384F</Color>
+  <Color x:Key="State.FocusColor">#6AA2E4</Color>
+  <Color x:Key="State.WarningColor">#E0A43A</Color>
+  <Color x:Key="State.ErrorColor">#E5484D</Color>
+  <Color x:Key="State.SuccessColor">#4CB873</Color>
+  <Color x:Key="State.OfflineColor">#7A7A82</Color>
+  <Color x:Key="State.WarningSurfaceColor">#3A2F1C</Color>
+  <Color x:Key="State.ErrorSurfaceColor">#3A1F21</Color>
+
+  <!-- Borders and separators. -->
+  <Color x:Key="Line.DividerColor">#111113</Color>
+  <Color x:Key="Line.BorderColor">#3A3A3E</Color>
+  <Color x:Key="Line.BorderStrongColor">#4A4A50</Color>
+  <Color x:Key="Line.EdgeColor">#19191B</Color>
+
+  <!-- Text. -->
+  <Color x:Key="Text.PrimaryColor">#D9D9DC</Color>
+  <Color x:Key="Text.SecondaryColor">#A1A1A7</Color>
+  <Color x:Key="Text.MutedColor">#6E6E75</Color>
+  <Color x:Key="Text.DisabledColor">#4E4E54</Color>
+  <Color x:Key="Text.OnAccentColor">#FFFFFF</Color>
+
+  <!-- Accents. The interface accent marks selection and focus; signal accents mark what a device works on. -->
+  <Color x:Key="Accent.Color">#4C8DDB</Color>
+  <Color x:Key="Accent.HoverColor">#6AA2E4</Color>
+  <Color x:Key="Signal.NoteColor">#D7A24A</Color>
+  <Color x:Key="Signal.InstrumentColor">#9C82D9</Color>
+  <Color x:Key="Signal.AudioColor">#4FB3B0</Color>
+  <Color x:Key="Signal.OtherColor">#8A8A92</Color>
+
+  <!-- Brushes for the tokens above. -->
+  <SolidColorBrush x:Key="Surface.Sunken" Color="{StaticResource Surface.SunkenColor}" />
+  <SolidColorBrush x:Key="Surface.Base" Color="{StaticResource Surface.BaseColor}" />
+  <SolidColorBrush x:Key="Surface.Chrome" Color="{StaticResource Surface.ChromeColor}" />
+  <SolidColorBrush x:Key="Surface.Panel" Color="{StaticResource Surface.PanelColor}" />
+  <SolidColorBrush x:Key="Surface.Raised" Color="{StaticResource Surface.RaisedColor}" />
+  <SolidColorBrush x:Key="Surface.Overlay" Color="{StaticResource Surface.OverlayColor}" />
+  <SolidColorBrush x:Key="Surface.Field" Color="{StaticResource Surface.FieldColor}" />
+  <SolidColorBrush x:Key="State.Hover" Color="{StaticResource State.HoverColor}" />
+  <SolidColorBrush x:Key="State.Pressed" Color="{StaticResource State.PressedColor}" />
+  <SolidColorBrush x:Key="State.Selected" Color="{StaticResource State.SelectedColor}" />
+  <SolidColorBrush x:Key="State.SelectedSubtle" Color="{StaticResource State.SelectedSubtleColor}" />
+  <SolidColorBrush x:Key="State.Focus" Color="{StaticResource State.FocusColor}" />
+  <SolidColorBrush x:Key="State.Warning" Color="{StaticResource State.WarningColor}" />
+  <SolidColorBrush x:Key="State.Error" Color="{StaticResource State.ErrorColor}" />
+  <SolidColorBrush x:Key="State.Success" Color="{StaticResource State.SuccessColor}" />
+  <SolidColorBrush x:Key="State.Offline" Color="{StaticResource State.OfflineColor}" />
+  <SolidColorBrush x:Key="State.WarningSurface" Color="{StaticResource State.WarningSurfaceColor}" />
+  <SolidColorBrush x:Key="State.ErrorSurface" Color="{StaticResource State.ErrorSurfaceColor}" />
+  <SolidColorBrush x:Key="Line.Divider" Color="{StaticResource Line.DividerColor}" />
+  <SolidColorBrush x:Key="Line.Border" Color="{StaticResource Line.BorderColor}" />
+  <SolidColorBrush x:Key="Line.BorderStrong" Color="{StaticResource Line.BorderStrongColor}" />
+  <SolidColorBrush x:Key="Line.Edge" Color="{StaticResource Line.EdgeColor}" />
+  <SolidColorBrush x:Key="Text.Primary" Color="{StaticResource Text.PrimaryColor}" />
+  <SolidColorBrush x:Key="Text.Secondary" Color="{StaticResource Text.SecondaryColor}" />
+  <SolidColorBrush x:Key="Text.Muted" Color="{StaticResource Text.MutedColor}" />
+  <SolidColorBrush x:Key="Text.Disabled" Color="{StaticResource Text.DisabledColor}" />
+  <SolidColorBrush x:Key="Text.OnAccent" Color="{StaticResource Text.OnAccentColor}" />
+  <SolidColorBrush x:Key="Accent" Color="{StaticResource Accent.Color}" />
+  <SolidColorBrush x:Key="Accent.Hover" Color="{StaticResource Accent.HoverColor}" />
+  <SolidColorBrush x:Key="Signal.Note" Color="{StaticResource Signal.NoteColor}" />
+  <SolidColorBrush x:Key="Signal.Instrument" Color="{StaticResource Signal.InstrumentColor}" />
+  <SolidColorBrush x:Key="Signal.Audio" Color="{StaticResource Signal.AudioColor}" />
+  <SolidColorBrush x:Key="Signal.Other" Color="{StaticResource Signal.OtherColor}" />
+
+  <!-- Domain surfaces and controls: the transport, LCD, arrangement lanes, and track rows. -->
+  <Color x:Key="Transport.CycleColor">#C9A227</Color>
+  <Color x:Key="Track.MuteColor">#4C8DDB</Color>
+  <Color x:Key="Track.SoloColor">#E3C345</Color>
+  <Color x:Key="Lcd.Color">#141416</Color>
+  <Color x:Key="Lcd.TextColor">#ECEDEF</Color>
+  <Color x:Key="Lcd.LabelColor">#74767D</Color>
+  <Color x:Key="Lcd.EdgeColor">#0B0B0C</Color>
+  <Color x:Key="Lcd.RuleColor">#2A2A2E</Color>
+  <Color x:Key="Lane.AutomationColor">#1D1D1F</Color>
+  <Color x:Key="Lane.RulerColor">#2B2B2E</Color>
+  <Color x:Key="Lane.HeaderColor">#1F1F21</Color>
+  <Color x:Key="Lane.BackgroundColor">#222224</Color>
+  <Color x:Key="Control.ForegroundColor">#C9C9CD</Color>
+  <Color x:Key="Control.HoverColor">#47474C</Color>
+  <Color x:Key="Control.PressedColor">#2C2C2F</Color>
+  <Color x:Key="Control.IdleColor">#9A9AA0</Color>
+  <Color x:Key="Control.CheckedForegroundColor">#7DB2EE</Color>
+  <Color x:Key="Control.LinkHoverColor">#8CB8EC</Color>
+  <Color x:Key="Control.DangerBorderColor">#6B2C2F</Color>
+  <Color x:Key="Control.DangerForegroundColor">#E8797C</Color>
+  <Color x:Key="Control.PanicColor">#E07A7D</Color>
+  <Color x:Key="Transport.PlayColor">#2F5E3E</Color>
+  <Color x:Key="Transport.PlayForegroundColor">#7EE09D</Color>
+  <Color x:Key="Transport.RecordColor">#6A2427</Color>
+  <Color x:Key="Transport.RecordIdleColor">#C0585B</Color>
+  <Color x:Key="Transport.RecordForegroundColor">#FF6B6F</Color>
+  <Color x:Key="Transport.CycleOnColor">#5A4A16</Color>
+  <Color x:Key="Transport.CycleForegroundColor">#F2CF5B</Color>
+  <Color x:Key="Transport.ModeForegroundColor">#8CBDF2</Color>
+  <Color x:Key="Transport.KeysColor">#1F4A5A</Color>
+  <Color x:Key="Transport.KeysForegroundColor">#6FD8F2</Color>
+  <Color x:Key="Transport.KeysEdgeColor">#2A5563</Color>
+  <Color x:Key="Transport.KeysIdleColor">#22343A</Color>
+  <Color x:Key="Transport.InputIdleColor">#2A3A2E</Color>
+  <Color x:Key="Transport.InputActiveColor">#5BE08A</Color>
+  <Color x:Key="Track.OfflineColor">#9A6B6D</Color>
+  <Color x:Key="Track.SoloForegroundColor">#2A2300</Color>
+  <Color x:Key="Track.ArmIdleColor">#A0585A</Color>
+  <Color x:Key="Tab.CheckedColor">#2A2B2F</Color>
+  <Color x:Key="Tab.FocusColor">#33343A</Color>
+  <Color x:Key="List.AlternateColor">#28282B</Color>
+  <Color x:Key="List.CellHoverColor">#303035</Color>
+  <Color x:Key="TrackRow.Color">#262628</Color>
+  <Color x:Key="TrackRow.HoverColor">#2C2C2F</Color>
+  <Color x:Key="TrackRow.SelectedColor">#35373D</Color>
+  <Color x:Key="Overlay.ScrimColor">#CC1C1E22</Color>
+  <SolidColorBrush x:Key="Transport.Cycle" Color="{StaticResource Transport.CycleColor}" />
+  <SolidColorBrush x:Key="Track.Mute" Color="{StaticResource Track.MuteColor}" />
+  <SolidColorBrush x:Key="Track.Solo" Color="{StaticResource Track.SoloColor}" />
+  <SolidColorBrush x:Key="Lcd." Color="{StaticResource Lcd.Color}" />
+  <SolidColorBrush x:Key="Lcd.Text" Color="{StaticResource Lcd.TextColor}" />
+  <SolidColorBrush x:Key="Lcd.Label" Color="{StaticResource Lcd.LabelColor}" />
+  <SolidColorBrush x:Key="Lcd.Edge" Color="{StaticResource Lcd.EdgeColor}" />
+  <SolidColorBrush x:Key="Lcd.Rule" Color="{StaticResource Lcd.RuleColor}" />
+  <SolidColorBrush x:Key="Lane.Automation" Color="{StaticResource Lane.AutomationColor}" />
+  <SolidColorBrush x:Key="Lane.Ruler" Color="{StaticResource Lane.RulerColor}" />
+  <SolidColorBrush x:Key="Lane.Header" Color="{StaticResource Lane.HeaderColor}" />
+  <SolidColorBrush x:Key="Lane.Background" Color="{StaticResource Lane.BackgroundColor}" />
+  <SolidColorBrush x:Key="Control.Foreground" Color="{StaticResource Control.ForegroundColor}" />
+  <SolidColorBrush x:Key="Control.Hover" Color="{StaticResource Control.HoverColor}" />
+  <SolidColorBrush x:Key="Control.Pressed" Color="{StaticResource Control.PressedColor}" />
+  <SolidColorBrush x:Key="Control.Idle" Color="{StaticResource Control.IdleColor}" />
+  <SolidColorBrush x:Key="Control.CheckedForeground" Color="{StaticResource Control.CheckedForegroundColor}" />
+  <SolidColorBrush x:Key="Control.LinkHover" Color="{StaticResource Control.LinkHoverColor}" />
+  <SolidColorBrush x:Key="Control.DangerBorder" Color="{StaticResource Control.DangerBorderColor}" />
+  <SolidColorBrush x:Key="Control.DangerForeground" Color="{StaticResource Control.DangerForegroundColor}" />
+  <SolidColorBrush x:Key="Control.Panic" Color="{StaticResource Control.PanicColor}" />
+  <SolidColorBrush x:Key="Transport.Play" Color="{StaticResource Transport.PlayColor}" />
+  <SolidColorBrush x:Key="Transport.PlayForeground" Color="{StaticResource Transport.PlayForegroundColor}" />
+  <SolidColorBrush x:Key="Transport.Record" Color="{StaticResource Transport.RecordColor}" />
+  <SolidColorBrush x:Key="Transport.RecordIdle" Color="{StaticResource Transport.RecordIdleColor}" />
+  <SolidColorBrush x:Key="Transport.RecordForeground" Color="{StaticResource Transport.RecordForegroundColor}" />
+  <SolidColorBrush x:Key="Transport.CycleOn" Color="{StaticResource Transport.CycleOnColor}" />
+  <SolidColorBrush x:Key="Transport.CycleForeground" Color="{StaticResource Transport.CycleForegroundColor}" />
+  <SolidColorBrush x:Key="Transport.ModeForeground" Color="{StaticResource Transport.ModeForegroundColor}" />
+  <SolidColorBrush x:Key="Transport.Keys" Color="{StaticResource Transport.KeysColor}" />
+  <SolidColorBrush x:Key="Transport.KeysForeground" Color="{StaticResource Transport.KeysForegroundColor}" />
+  <SolidColorBrush x:Key="Transport.KeysEdge" Color="{StaticResource Transport.KeysEdgeColor}" />
+  <SolidColorBrush x:Key="Transport.KeysIdle" Color="{StaticResource Transport.KeysIdleColor}" />
+  <SolidColorBrush x:Key="Transport.InputIdle" Color="{StaticResource Transport.InputIdleColor}" />
+  <SolidColorBrush x:Key="Transport.InputActive" Color="{StaticResource Transport.InputActiveColor}" />
+  <SolidColorBrush x:Key="Track.Offline" Color="{StaticResource Track.OfflineColor}" />
+  <SolidColorBrush x:Key="Track.SoloForeground" Color="{StaticResource Track.SoloForegroundColor}" />
+  <SolidColorBrush x:Key="Track.ArmIdle" Color="{StaticResource Track.ArmIdleColor}" />
+  <SolidColorBrush x:Key="Tab.Checked" Color="{StaticResource Tab.CheckedColor}" />
+  <SolidColorBrush x:Key="Tab.Focus" Color="{StaticResource Tab.FocusColor}" />
+  <SolidColorBrush x:Key="List.Alternate" Color="{StaticResource List.AlternateColor}" />
+  <SolidColorBrush x:Key="List.CellHover" Color="{StaticResource List.CellHoverColor}" />
+  <SolidColorBrush x:Key="TrackRow." Color="{StaticResource TrackRow.Color}" />
+  <SolidColorBrush x:Key="TrackRow.Hover" Color="{StaticResource TrackRow.HoverColor}" />
+  <SolidColorBrush x:Key="TrackRow.Selected" Color="{StaticResource TrackRow.SelectedColor}" />
+  <SolidColorBrush x:Key="Overlay.Scrim" Color="{StaticResource Overlay.ScrimColor}" />
+
+  <!-- The control bar and pane headers have a faint top-lit gradient, like hardware panels. -->
+  <LinearGradientBrush x:Key="Gradient.Bar" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#323235" />
+    <GradientStop Offset="1" Color="#2A2A2D" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="Gradient.Header" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#2E2E31" />
+    <GradientStop Offset="1" Color="#28282B" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="Gradient.Button" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#3E3E42" />
+    <GradientStop Offset="1" Color="#363639" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="Gradient.DeviceHeader" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#323236" />
+    <GradientStop Offset="1" Color="#2B2B2F" />
+  </LinearGradientBrush>
+
+  <!-- Typography. -->
+  <FontFamily x:Key="Font.Mono">SF Mono, Menlo, Cascadia Mono, JetBrains Mono, Consolas, DejaVu Sans Mono, monospace</FontFamily>
+  <x:Double x:Key="FontSize.Micro">9</x:Double>
+  <x:Double x:Key="FontSize.Caption">10</x:Double>
+  <x:Double x:Key="FontSize.Small">11</x:Double>
+  <x:Double x:Key="FontSize.Body">12</x:Double>
+  <x:Double x:Key="FontSize.Title">13</x:Double>
+  <x:Double x:Key="FontSize.Heading">15</x:Double>
+
+  <!-- Spacing, on a 2-pixel step. -->
+  <x:Double x:Key="Space.XXS">2</x:Double>
+  <x:Double x:Key="Space.XS">4</x:Double>
+  <x:Double x:Key="Space.S">6</x:Double>
+  <x:Double x:Key="Space.M">8</x:Double>
+  <x:Double x:Key="Space.L">12</x:Double>
+  <x:Double x:Key="Space.XL">16</x:Double>
+  <x:Double x:Key="Space.XXL">24</x:Double>
+  <Thickness x:Key="Inset.Header">8,0</Thickness>
+  <Thickness x:Key="Inset.Panel">8</Thickness>
+  <Thickness x:Key="Inset.Section">10,8</Thickness>
+  <Thickness x:Key="Inset.Row">8,3</Thickness>
+
+  <!-- Corner radii. -->
+  <CornerRadius x:Key="Radius.None">0</CornerRadius>
+  <CornerRadius x:Key="Radius.Small">2</CornerRadius>
+  <CornerRadius x:Key="Radius.Control">3</CornerRadius>
+  <CornerRadius x:Key="Radius.Panel">4</CornerRadius>
+  <CornerRadius x:Key="Radius.Round">999</CornerRadius>
+
+  <!-- Standard heights and widths. -->
+  <x:Double x:Key="Height.Control">24</x:Double>
+  <x:Double x:Key="Height.Compact">20</x:Double>
+  <x:Double x:Key="Height.Header">30</x:Double>
+  <x:Double x:Key="Height.Tab">28</x:Double>
+  <x:Double x:Key="Height.ControlBar">50</x:Double>
+  <x:Double x:Key="Height.StatusBar">22</x:Double>
+  <x:Double x:Key="Height.Row">26</x:Double>
+  <x:Double x:Key="Width.Rail">30</x:Double>
+  <x:Double x:Key="Width.Handle">5</x:Double>
+
+  <!-- Device panels: one fixed height, a few fixed widths (DevicePanelSize). -->
+  <x:Double x:Key="DevicePanel.Height">212</x:Double>
+  <x:Double x:Key="DevicePanel.HeaderHeight">30</x:Double>
+  <x:Double x:Key="DevicePanel.CollapsedWidth">30</x:Double>
+  <x:Double x:Key="DevicePanel.SmallWidth">152</x:Double>
+  <x:Double x:Key="DevicePanel.MediumWidth">216</x:Double>
+  <x:Double x:Key="DevicePanel.LargeWidth">280</x:Double>
+  <x:Double x:Key="DevicePanel.Gap">14</x:Double>
+  <x:Double x:Key="DevicePanel.KnobCellWidth">64</x:Double>
+  <x:Double x:Key="DevicePanel.KnobCellHeight">66</x:Double>
+  <x:Double x:Key="DevicePanel.KnobSize">34</x:Double>
+  <x:Double x:Key="DevicePanel.NodeSize">10</x:Double>
+
+  <!-- Icons. -->
+  <x:Double x:Key="Icon.SizeSmall">11</x:Double>
+  <x:Double x:Key="Icon.SizeMedium">13</x:Double>
+  <x:Double x:Key="Icon.SizeLarge">15</x:Double>
+
+  <!-- Motion: short and only where it explains a change. -->
+  <sys:TimeSpan x:Key="Motion.Fast">0:0:0.10</sys:TimeSpan>
+  <sys:TimeSpan x:Key="Motion.Normal">0:0:0.16</sys:TimeSpan>
+</ResourceDictionary>

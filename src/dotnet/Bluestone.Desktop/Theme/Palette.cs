@@ -2,7 +2,7 @@ using Avalonia.Media;
 
 namespace Bluestone.Desktop.Theme;
 
-/// <summary>Colours used by custom-drawn controls. Kept in step with Theme/Bluestone.axaml.</summary>
+/// <summary>Values used by custom-drawn controls. Kept in step with Theme/Tokens.axaml by a UI test.</summary>
 internal static class Palette
 {
     public static readonly Color Base = Color.Parse("#1C1C1E");
@@ -39,6 +39,15 @@ internal static class Palette
     public static readonly Color Playhead = Color.Parse("#E6E6E8");
     public static readonly Color Cycle = Color.Parse("#C9A227");
     public static readonly Color Record = Color.Parse("#E5484D");
+    public static readonly Color Focus = Color.Parse("#6AA2E4");
+    public static readonly Color Field = Color.Parse("#1A1A1D");
+    public static readonly Color Border = Color.Parse("#3A3A3E");
+
+    // What a device works on (Signal.* tokens)
+    public static readonly Color SignalNote = Color.Parse("#D7A24A");
+    public static readonly Color SignalInstrument = Color.Parse("#9C82D9");
+    public static readonly Color SignalAudio = Color.Parse("#4FB3B0");
+    public static readonly Color SignalOther = Color.Parse("#8A8A92");
 
     /// <summary>Track colours, muted so dense arrangements stay readable; status is never conveyed by these alone.</summary>
     public static readonly Color[] Tracks =
