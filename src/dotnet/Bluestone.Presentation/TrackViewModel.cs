@@ -235,7 +235,7 @@ public sealed partial class TrackViewModel : ObservableObject
 
     public IReadOnlyList<string> Problems { get; private set; } = [];
 
-    public bool CanInitialize => ResolvedProfile is { Initialization.Length: > 0 } && Health != RouteHealth.Offline;
+    public bool CanInitialize => ResolvedProfile is { Initialization.Length: > 0 } && UsesHardware && Health != RouteHealth.Offline;
 
     internal static string MissingDeviceProblem(string device) =>
         $"{device} is not installed, so this track may not sound as it was saved. Install it, or replace it in the Device View.";

@@ -148,7 +148,7 @@ internal static class AppMenu
 
     /// <summary>Items that act within Settings or the window itself, so they leave Settings open.</summary>
     private static readonly HashSet<string> SettingsSafe =
-        ["Close Window", "Minimize", "Zoom", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
+        ["Close Window", "Minimize", "Zoom", "Mixer", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
 
     /// <summary>Items that edit a focused Settings field where it is, and otherwise act on the workspace.</summary>
     private static readonly HashSet<string> TextEditing = ["Cut", "Copy", "Paste", "Select All"];
