@@ -28,7 +28,7 @@
         <Border Grid.Row="1" Classes="searchField" Margin="8,8,8,6">
           <Grid ColumnDefinitions="Auto,*,Auto">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="12" Height="12" Foreground="{StaticResource Text.Muted}" Margin="8,0,2,0" />
-            <TextBox x:Name="SearchBox" Grid.Column="1" Classes="bare" Text="{Binding SearchText}" Watermark="Search settings"
+            <TextBox x:Name="SearchBox" Grid.Column="1" Classes="bare" Text="{Binding SearchText}" PlaceholderText="Search settings"
                      AutomationProperties.Name="Search settings" />
             <Button Grid.Column="2" Classes="tool tiny" Command="{Binding ClearSearchCommand}" IsVisible="{Binding SearchText.Length}"
                     ToolTip.Tip="Clear the search" AutomationProperties.Name="Clear search">
