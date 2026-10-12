@@ -366,4 +366,18 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
   flattening the remaining faint control-bar/header/button gradients, a detachable Settings window, MIDI and
   recording preferences in Settings.
 
+### Checkpoint 5: review of phases 3–5
+
+- **Reviewer verdict**: no *Required now* findings; "approaching done".
+- **Findings and responses** (`33bc953`, `8870827`, `0ce87e9`):
+
+  | # | Finding | Class | Response |
+  | - | ------- | ----- | -------- |
+  | 1 | Settings always focused the track list on close; Escape closed Settings before an open drop-down | Important follow-up | Focus returns to the control that had it; open drop-downs and popups take Escape first; tested |
+  | 2 | Browser action enabled where the footer says it cannot go | Important follow-up | Available only with a target (racks always); tested for devices and profiles |
+  | 3 | Parameter priority/grouping still "first N" | Important follow-up | Deferred to the next milestone (declarative descriptors) |
+  | 4 | No real-window test that detached views come forward | Important follow-up | `DetachedViews_AreBroughtForwardWhereTheyAre_NotDockedAgainOrDuplicated` |
+  | 5 | Reopening Settings after a zero-result search could be blank | Optional | Cleared on reopen; tested |
+  | 6 | Multiple-selection frame predated the guidance change | Optional | Regenerated (`after-normal-multiple.png`) |
+
 ## Final assessment
