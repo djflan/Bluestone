@@ -121,7 +121,8 @@ public sealed record WorkspaceState
 
     /// <summary>
     /// This state in the current version. A version 1 state's window sizes become desktop units at the scaling of the display each
-    /// window's corner is on; a window whose display is missing keeps its size, which <see cref="LayoutRecovery"/> fits anyway.
+    /// window's corner is on now. Version 1 did not record scaling, so a size saved for a display that is not attached now keeps
+    /// its number: on a scaled display it may come back smaller, never larger and never off-screen.
     /// </summary>
     public WorkspaceState Upgrade(IReadOnlyList<ScreenArea> screens)
     {
