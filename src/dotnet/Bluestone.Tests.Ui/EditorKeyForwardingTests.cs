@@ -1,7 +1,7 @@
 using Avalonia.Input;
+using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Views;
-using Bluestone.Application.Plugins;
 
 namespace Bluestone.Tests.Ui;
 

@@ -14,12 +14,11 @@ using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Files;
 using Bluestone.Playback;
 using Bluestone.Plugins;
+using Bluestone.Presentation.Timeline;
 using Bluestone.Profiles;
 using Bluestone.Signal;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-
-using Bluestone.Presentation.Timeline;
 
 namespace Bluestone.Presentation;
 
