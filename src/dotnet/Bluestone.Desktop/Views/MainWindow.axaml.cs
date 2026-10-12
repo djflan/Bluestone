@@ -41,12 +41,7 @@ public partial class MainWindow : Window
         _autosaveTimer.Tick += async (_, _) => await viewModel.AutosaveAsync();
         _autosaveTimer.Start();
 
-        viewModel.Connections.ShowRequested += (_, _) =>
-        {
-            viewModel.IsInspectorVisible = true;
-            ConnectionsSection.IsExpanded = true;
-            ConnectionsSection.BringIntoView();
-        };
+        InspectorContent.Attach(viewModel);
         Ruler.SeekRequested += (_, tick) => viewModel.SeekTo(tick);
         Ruler.LoopRequested += (_, loop) => viewModel.SetLoop(loop);
         Timeline.LaneClicked += (_, click) =>
@@ -114,7 +109,6 @@ public partial class MainWindow : Window
 
         AttachPianoRoll(viewModel);
         AttachEventList(viewModel);
-        AttachRecordingOptions(viewModel);
         AttachWorkspace(viewModel);
         ApplyEditorVisibility();
 
@@ -349,14 +343,6 @@ public partial class MainWindow : Window
 
     private void AttachEventList(MainViewModel vm) =>
         EventListBox.SelectionChanged += (_, _) => vm.EventList.OnRowsSelected();
-
-    private void AttachRecordingOptions(MainViewModel vm)
-    {
-        TakeModeBox.SelectedIndex = vm.IsReplaceRecording ? 1 : 0;
-        TakeModeBox.SelectionChanged += (_, _) => vm.IsReplaceRecording = TakeModeBox.SelectedIndex == 1;
-        CountInBox.SelectedIndex = vm.CountInBars - 1;
-        CountInBox.SelectionChanged += (_, _) => vm.CountInBars = Math.Max(1, CountInBox.SelectedIndex + 1);
-    }
 
     private void SyncPianoRollScrollBars()
     {

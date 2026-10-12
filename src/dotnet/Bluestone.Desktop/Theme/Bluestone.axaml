@@ -543,6 +543,68 @@
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="0" />
   </Style>
+  <Style Selector="Expander.section /template/ ToggleButton#ExpanderHeader">
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <!-- A closed section's one-line state, right of its title: "Off", "Synth · Ch 3". -->
+  <Style Selector="TextBlock.sectionSummary">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="Margin" Value="{StaticResource Inset.Header}" />
+  </Style>
+  <Style Selector="TextBlock.sectionSummary.active">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+
+  <!-- The inspector's title block and label/value rows. -->
+  <Style Selector="Grid.inspectorTitle">
+    <Setter Property="Margin" Value="10,10,10,8" />
+  </Style>
+  <Style Selector="Border.trackSwatch">
+    <Setter Property="Width" Value="4" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    <Setter Property="Margin" Value="0,1,8,1" />
+  </Style>
+  <Style Selector="StackPanel.fields">
+    <Setter Property="Spacing" Value="{StaticResource Space.S}" />
+  </Style>
+  <Style Selector="Grid.field">
+    <Setter Property="MinHeight" Value="{StaticResource Height.Control}" />
+  </Style>
+  <!-- A value that opens where it is edited (the instrument in the Device View): a field, not a push button. -->
+  <Style Selector="Button.value">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="MinHeight" Value="{StaticResource Height.Control}" />
+    <Setter Property="Padding" Value="8,0,6,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Field}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="Button.value:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.value.empty">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.value TextBlock">
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.value PathIcon">
+    <Setter Property="Width" Value="{StaticResource Icon.SizeSmall}" />
+    <Setter Property="Height" Value="{StaticResource Icon.SizeSmall}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="Margin" Value="6,0,0,0" />
+  </Style>
 
   <!-- Dense lists (messages, monitor, event list) -->
   <Style Selector="ListBox.dense">

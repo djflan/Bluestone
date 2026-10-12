@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Bluestone.Application.Editing;
 using Bluestone.Application.Routing;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
@@ -7,6 +8,7 @@ using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Profiles;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Bluestone.Presentation;
 
@@ -90,13 +92,69 @@ public sealed partial class SelectionViewModel : ObservableObject
 
     /// <summary>The selected tracks' role, or null when they differ.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsRole))]
     public partial TrackRole? Role { get; set; }
+
+    /// <summary>
+    /// The role is shown only when it says something: a hybrid track (the default) can hold anything, so its role is left
+    /// to the track's context menu; an instrument, audio, effect, or group track, or a mixed selection, shows it.
+    /// </summary>
+    public bool ShowsRole => HasSelection && Role != TrackRole.Hybrid;
+
+    /// <summary>What the single selected track sounds through; empty for several tracks.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasInstrument), nameof(InstrumentText), nameof(HasNoteDestination))]
+    public partial TrackSound Sound { get; private set; } = TrackSound.Empty;
+
+    public bool HasInstrument => Sound.Instrument is not null;
+
+    /// <summary>The chain's instrument, with its state when it is not playing normally.</summary>
+    public string InstrumentText => Sound.Instrument is not { } name ? "None"
+        : Sound.IsInstrumentUnavailable ? $"{name} (unavailable)"
+        : Sound.IsInstrumentBypassed ? $"{name} (bypassed)"
+        : name;
+
+    public bool HasNoteDestination => Sound.NoteDestination is not null;
+
+    /// <summary>Where the selected tracks' audio goes: the master, a mixer channel, another track, or nowhere.</summary>
+    public ObservableCollection<AudioDestinationOption> AudioDestinationChoices { get; } = [];
+
+    [ObservableProperty]
+    public partial AudioDestinationOption? AudioDestination { get; set; }
+
+    /// <summary>Any selected track sends notes to external MIDI hardware.</summary>
+    [ObservableProperty]
+    public partial bool UsesHardware { get; private set; }
+
+    /// <summary>The External MIDI section's one-line summary: "Off", "Synth · Ch 3 · Test GM", or "Mixed".</summary>
+    [ObservableProperty]
+    public partial string HardwareSummary { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Whether the External MIDI section is open. It opens by itself for a track that uses hardware and stays closed for one
+    /// that does not; the musician's own choice holds until the selection changes.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsHardwareExpanded { get; set; }
+
+    /// <summary>Shows the chain's instrument, selected, in a Device View.</summary>
+    [RelayCommand]
+    private void ShowInstrument() => _owner.Workspace.RevealSelectedChain(Sound.InstrumentDevice);
+
+    /// <summary>Shows the selected track's chain in a Device View.</summary>
+    [RelayCommand]
+    private void ShowDevices() => _owner.Workspace.RevealSelectedChain();
+
+    /// <summary>Opens the Browser on its instruments, ready to insert into the selected track's chain.</summary>
+    [RelayCommand]
+    private void AddInstrument() => _owner.Workspace.BrowseInstruments();
 
     internal void Sync(IReadOnlyList<TrackViewModel> tracks, IReadOnlyList<OutputOption> outputs, ProfileCatalog catalog)
     {
         _syncing = true;
         try
         {
+            var reselected = !_tracks.Select(t => t.Id).SequenceEqual(tracks.Select(t => t.Id));
             _tracks = [.. tracks];
             Title = tracks.Count switch
             {
@@ -114,6 +172,9 @@ public sealed partial class SelectionViewModel : ObservableObject
             SyncVoice();
             var roles = tracks.Select(t => t.Role).Distinct().ToList();
             Role = roles.Count == 1 ? roles[0] : null;
+            Sound = tracks.Count == 1 ? tracks[0].Sound : TrackSound.Empty;
+            SyncAudioDestinations();
+            SyncHardware(reselected);
 
             Problems = tracks.Count == 1
                 ? tracks[0].Problems
@@ -122,6 +183,7 @@ public sealed partial class SelectionViewModel : ObservableObject
             CanInitialize = tracks.Count == 1 && tracks[0].CanInitialize;
 
             OnPropertyChanged(nameof(Count));
+            OnPropertyChanged(nameof(ShowsRole));
             OnPropertyChanged(nameof(HasSelection));
             OnPropertyChanged(nameof(IsSingle));
             OnPropertyChanged(nameof(IsMultiple));
@@ -137,6 +199,14 @@ public sealed partial class SelectionViewModel : ObservableObject
         if (!_syncing && value is { } role)
         {
             _ = _owner.ChangeRoleAsync(role);
+        }
+    }
+
+    partial void OnAudioDestinationChanged(AudioDestinationOption? value)
+    {
+        if (!_syncing && value is { IsMixed: false })
+        {
+            _owner.Execute(TrackSetup.SetAudioDestination([.. _tracks.Select(t => t.Id)], value.Destination, _owner.Devices.Lookup));
         }
     }
 
@@ -200,6 +270,79 @@ public sealed partial class SelectionViewModel : ObservableObject
         if (!_syncing && value is { IsMixed: false } && VoiceBank is { IsMixed: false, Id: { } bank } && CanEditVoice)
         {
             _owner.ApplyToSelection("Change Voice", r => r with { Voice = new VoiceAssignment(bank, value.Program) });
+        }
+    }
+
+    private void SyncAudioDestinations()
+    {
+        var project = _owner.Project;
+        AudioDestinationChoices.Clear();
+        AudioDestinationChoices.Add(new AudioDestinationOption(SignalNode.Master, "Master"));
+        foreach (var channel in project.Mixer.Channels)
+        {
+            AudioDestinationChoices.Add(new AudioDestinationOption(SignalNode.Mixer(channel.Id), channel.Name));
+        }
+
+        AudioDestinationChoices.Add(AudioDestinationOption.None);
+        var current = _tracks.Select(t => t.Sound.AudioNode).Distinct().ToList();
+        if (current.Count > 1)
+        {
+            AudioDestinationChoices.Insert(0, AudioDestinationOption.Mixed);
+            AudioDestination = AudioDestinationOption.Mixed;
+        }
+        else if (current.Count == 1)
+        {
+            var node = current[0];
+            var match = AudioDestinationChoices.FirstOrDefault(o => o.Destination == node);
+            if (match is null && node is { } other)
+            {
+                // Another track or a rack: listed so the inspector shows it, and can be chosen again.
+                match = new AudioDestinationOption(other, TrackSound.NameOf(project, other));
+                AudioDestinationChoices.Insert(AudioDestinationChoices.Count - 1, match);
+            }
+
+            AudioDestination = match;
+        }
+        else
+        {
+            AudioDestination = null;
+        }
+    }
+
+    private void SyncHardware(bool reselected)
+    {
+        UsesHardware = _tracks.Any(t => t.UsesHardware);
+        var summaries = _tracks.Select(Summarize).Distinct().ToList();
+        HardwareSummary = summaries.Count switch
+        {
+            0 => string.Empty,
+            1 => summaries[0],
+            _ => "Mixed",
+        };
+        if (reselected)
+        {
+            IsHardwareExpanded = UsesHardware;
+        }
+
+        static string Summarize(TrackViewModel track)
+        {
+            if (!track.UsesHardware)
+            {
+                return "Off";
+            }
+
+            var parts = new List<string> { track.Output.Name };
+            if (track.Route.Channel is { } channel)
+            {
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"Ch {channel.Number}"));
+            }
+
+            if (track.Route.Profile is not null)
+            {
+                parts.Add(track.Profile.Name);
+            }
+
+            return string.Join(" · ", parts);
         }
     }
 

@@ -153,6 +153,13 @@ public sealed partial class BrowserViewModel : ObservableObject
         SelectedCategory = Categories.FirstOrDefault(c => c.Category == state.Category) ?? Categories[0];
     }
 
+    /// <summary>Shows <paramref name="category"/> with the search cleared, as the inspector's "Add an instrument" does.</summary>
+    public void ShowCategory(BrowserCategory category)
+    {
+        SearchText = string.Empty;
+        SelectedCategory = Categories.First(c => c.Category == category);
+    }
+
     /// <summary>Rebuilds the item list from the device catalog, the project's racks, and the installed hardware profiles.</summary>
     internal void Sync(DeviceCatalog catalog, Project project, ProfileCatalog profiles)
     {

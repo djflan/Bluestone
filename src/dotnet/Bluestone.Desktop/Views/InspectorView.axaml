@@ -1,0 +1,340 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             x:Class="Bluestone.Desktop.Views.InspectorView"
+             x:DataType="vm:MainViewModel"
+             AutomationProperties.Name="Inspector">
+  <!--
+    The inspector: the selected tracks first, as a musician thinks of them (what plays them, their devices, where their audio
+    goes), then external MIDI hardware as its own section that opens itself for a track that uses hardware and otherwise sums
+    itself up in one line, then the project-wide sections (connections, racks, mixer, recording). Nothing is hidden behind one
+    "advanced" switch; each concern keeps its own section.
+  -->
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel>
+      <Border Padding="10" IsVisible="{Binding !Selection.HasSelection}">
+        <TextBlock Text="Select a track to see what plays it, its devices, and where its sound goes. Shift-click or ⌘/Ctrl-click to select several."
+                   Classes="muted" TextWrapping="Wrap" />
+      </Border>
+
+      <StackPanel x:Name="SelectionPanel" DataContext="{Binding Selection}" x:DataType="vm:SelectionViewModel" IsVisible="{Binding HasSelection}">
+        <Grid Classes="inspectorTitle" ColumnDefinitions="Auto,*">
+          <Border Classes="trackSwatch"
+                  Background="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).SelectedTrack.ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}, FallbackValue={x:Null}}" />
+          <StackPanel Grid.Column="1" Spacing="1">
+            <TextBlock x:Name="SelectionTitle" Text="{Binding Title}" Classes="title" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="SelectionSubtitle" Text="{Binding Subtitle}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Subtitle}" />
+          </StackPanel>
+        </Grid>
+
+        <!-- Problems come first: they say what to do. -->
+        <ItemsControl x:Name="ProblemList" ItemsSource="{Binding Problems}" Margin="10,0,10,4" IsVisible="{Binding Problems.Count}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,6">
+                <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource State.Warning}" VerticalAlignment="Top" Margin="0,2,6,0" />
+                <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" Classes="secondary" FontSize="{StaticResource FontSize.Small}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Expander x:Name="TrackSection" Classes="section" Header="Track" IsExpanded="True">
+          <StackPanel Classes="fields">
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding IsSingle}">
+              <TextBlock Text="Instrument" Classes="label" />
+              <Panel Grid.Column="1">
+                <Button x:Name="InstrumentButton" Classes="value" IsVisible="{Binding HasInstrument}" Command="{Binding ShowInstrumentCommand}"
+                        ToolTip.Tip="Show it in the Device View" AutomationProperties.Name="Show the instrument">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Ellipse Classes="roleDot" Fill="{StaticResource Signal.Instrument}" />
+                    <TextBlock Grid.Column="1" Text="{Binding InstrumentText}" TextTrimming="CharacterEllipsis" />
+                    <PathIcon Grid.Column="2" Classes="stroke" Data="{StaticResource Icon.Devices}" />
+                  </Grid>
+                </Button>
+                <Button x:Name="AddInstrumentButton" Classes="value empty" IsVisible="{Binding !HasInstrument}" Command="{Binding AddInstrumentCommand}"
+                        ToolTip.Tip="Choose an instrument in the Browser; Return or a drag puts it on this track" AutomationProperties.Name="Add an instrument">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="Add an instrument…" TextTrimming="CharacterEllipsis" />
+                    <PathIcon Grid.Column="1" Classes="stroke" Data="{StaticResource Icon.Plus}" />
+                  </Grid>
+                </Button>
+              </Panel>
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding IsSingle}">
+              <TextBlock Text="Devices" Classes="label" />
+              <Button x:Name="DevicesButton" Grid.Column="1" Classes="value" Command="{Binding ShowDevicesCommand}"
+                      ToolTip.Tip="Show the track's devices in the Device View" AutomationProperties.Name="Show the devices">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="{Binding Sound.DevicesText}" />
+                  <PathIcon Grid.Column="1" Classes="stroke" Data="{StaticResource Icon.ChevronRight}" />
+                </Grid>
+              </Button>
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Audio to" Classes="label" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding AudioDestinationChoices}" SelectedItem="{Binding AudioDestination}" HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="Audio output" PlaceholderText="Mixed"
+                        ToolTip.Tip="Where the track's sound goes: the master, a mixer channel, or nowhere. Its devices' own sends stay in Connections." />
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding HasNoteDestination}">
+              <TextBlock Text="Notes to" Classes="label" />
+              <TextBlock Grid.Column="1" Text="{Binding Sound.NoteDestination}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                         ToolTip.Tip="The track's notes are also sent here. Change it in Connections." />
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding ShowsRole}">
+              <TextBlock Text="Type" Classes="label" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding RoleChoices}" SelectedItem="{Binding Role}" PlaceholderText="Mixed" HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="Track role"
+                        ToolTip.Tip="What the track is for. Changing it never removes clips, devices, automation, or routing; Bluestone asks or refuses when it would." />
+            </Grid>
+          </StackPanel>
+        </Expander>
+
+        <!-- External MIDI: hardware and MIDI ports, by output, profile, and channel. Summed up in its header when closed. -->
+        <Expander x:Name="HardwareSection" Classes="section" IsExpanded="{Binding IsHardwareExpanded}">
+          <Expander.Header>
+            <Grid ColumnDefinitions="Auto,*">
+              <TextBlock Text="External MIDI" VerticalAlignment="Center" />
+              <TextBlock x:Name="HardwareSummary" Grid.Column="1" Classes="sectionSummary" Classes.active="{Binding UsesHardware}" Text="{Binding HardwareSummary}"
+                         ToolTip.Tip="{Binding HardwareSummary}" />
+            </Grid>
+          </Expander.Header>
+          <StackPanel Classes="fields">
+            <TextBlock Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !UsesHardware}"
+                       Text="Play hardware or another app over MIDI: choose its output. The profile names its voices and setup messages." />
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Output" Classes="label" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding OutputChoices}" SelectedItem="{Binding Output}" HorizontalAlignment="Stretch" AutomationProperties.Name="MIDI output"
+                        ToolTip.Tip="Where the notes go: a hardware port, a virtual bus, or the built-in monitor.">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OutputOption">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Profile" Classes="label" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding ProfileChoices}" SelectedItem="{Binding Profile}" HorizontalAlignment="Stretch" AutomationProperties.Name="Instrument profile"
+                        ToolTip.Tip="What the instrument understands: voices, controllers, setup messages." />
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Channel" Classes="label" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding ChannelChoices}" SelectedItem="{Binding Channel}" HorizontalAlignment="Stretch" AutomationProperties.Name="Channel" />
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Transpose" Classes="label" />
+              <NumericUpDown Grid.Column="1" Value="{Binding Transpose}" Minimum="-48" Maximum="48" Increment="1" FormatString="+0;-0;0"
+                             PlaceholderText="Mixed" AutomationProperties.Name="Transpose in semitones"
+                             ToolTip.Tip="Semitones, applied by a Transpose device at the start of the track's chain" />
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding CanEditVoice}">
+              <TextBlock Text="Voice" Classes="label" />
+              <StackPanel Grid.Column="1" Spacing="4">
+                <ComboBox ItemsSource="{Binding Banks}" SelectedItem="{Binding VoiceBank}" HorizontalAlignment="Stretch" AutomationProperties.Name="Voice bank" />
+                <ComboBox ItemsSource="{Binding Programs}" SelectedItem="{Binding VoiceProgram}" HorizontalAlignment="Stretch" IsEnabled="{Binding Programs.Count}"
+                          AutomationProperties.Name="Voice program" MaxDropDownHeight="360" />
+              </StackPanel>
+            </Grid>
+            <TextBlock Text="{Binding VoiceHint}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding UsesHardware}" />
+            <ItemsControl ItemsSource="{Binding ProfileNotices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Text="{Binding}" Classes="muted" TextWrapping="Wrap" FontSize="{StaticResource FontSize.Caption}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <Button Classes="link" Content="Use for all tracks" HorizontalAlignment="Left" IsVisible="{Binding UsesHardware}"
+                      Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).UseOutputForAllTracksCommand}"
+                      ToolTip.Tip="Send every track to this output" />
+              <Button Grid.Column="1" Classes="raised compact" Content="Initialize…" IsEnabled="{Binding CanInitialize}" IsVisible="{Binding IsSingle}"
+                      Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).InitializeInstrumentCommand}"
+                      AutomationProperties.Name="Initialize instrument"
+                      ToolTip.Tip="Send the profile's setup messages, asking before anything that resets the instrument" />
+            </Grid>
+          </StackPanel>
+        </Expander>
+      </StackPanel>
+
+      <Expander x:Name="AudioClipSection" Classes="section" Header="Audio Clip" IsExpanded="True" DataContext="{Binding AudioClip}" x:DataType="vm:AudioClipViewModel" IsVisible="{Binding HasClip}">
+        <Grid ColumnDefinitions="64,*,64" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="4">
+          <TextBlock Grid.ColumnSpan="3" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Row="1" Text="Gain" Classes="label" VerticalAlignment="Center" />
+          <Slider Grid.Row="1" Grid.Column="1" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" Value="{Binding Gain}" SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Clip gain" />
+          <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding GainText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="2" Text="Fade in" Classes="label" VerticalAlignment="Center" />
+          <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="{Binding MaximumFade}" Value="{Binding FadeIn}" SmallChange="0.25" LargeChange="1" AutomationProperties.Name="Fade-in length" />
+          <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding FadeInText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+          <TextBlock Grid.Row="3" Text="Fade out" Classes="label" VerticalAlignment="Center" />
+          <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="{Binding MaximumFade}" Value="{Binding FadeOut}" SmallChange="0.25" LargeChange="1" AutomationProperties.Name="Fade-out length" />
+          <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding FadeOutText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+          <CheckBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Content="Equal-power fades" IsChecked="{Binding IsEqualPower}" AutomationProperties.Name="Equal-power fades"
+                    ToolTip.Tip="Quarter-sine curves (−3 dB half way) instead of straight lines (−6 dB half way)" />
+        </Grid>
+      </Expander>
+
+      <Expander x:Name="ConnectionsSection" Classes="section" IsExpanded="False" DataContext="{Binding Connections}" x:DataType="vm:ConnectionsViewModel" IsVisible="{Binding HasTrack}">
+        <Expander.Header>
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Text="Connections" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Classes="sectionSummary" Text="{Binding Summary}" />
+          </Grid>
+        </Expander.Header>
+        <StackPanel Spacing="6">
+          <TextBlock Text="Sends" Classes="label" />
+          <ItemsControl ItemsSource="{Binding Outgoing}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ConnectionRow">
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="tool" Content="✕" VerticalAlignment="Top" AutomationProperties.Name="Disconnect"
+                          Command="{Binding $parent[ItemsControl].((vm:ConnectionsViewModel)DataContext).DisconnectCommand, FallbackValue={x:Null}}" CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="Receives" Classes="label" />
+          <ItemsControl ItemsSource="{Binding Incoming}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ConnectionRow">
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="tool" Content="✕" VerticalAlignment="Top" AutomationProperties.Name="Disconnect"
+                          Command="{Binding $parent[ItemsControl].((vm:ConnectionsViewModel)DataContext).DisconnectCommand, FallbackValue={x:Null}}" CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="New connection" Classes="label" />
+          <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}" HorizontalAlignment="Stretch" AutomationProperties.Name="Connection source" />
+          <ComboBox ItemsSource="{Binding Destinations}" SelectedItem="{Binding Destination}" PlaceholderText="Send to…" HorizontalAlignment="Stretch" AutomationProperties.Name="Connection destination" />
+          <ComboBox ItemsSource="{Binding ChannelChoices}" SelectedItem="{Binding Channel}" HorizontalAlignment="Stretch" AutomationProperties.Name="Connection channel"
+                    ToolTip.Tip="Send every event on one channel, or keep each event's own channel" />
+          <Button Classes="raised" Content="Connect" Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch" />
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="RacksSection" Classes="section" IsExpanded="False" DataContext="{Binding Racks}" x:DataType="vm:RacksViewModel">
+        <Expander.Header>
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Text="Racks" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Classes="sectionSummary" Text="{Binding Summary}" />
+          </Grid>
+        </Expander.Header>
+        <StackPanel Spacing="6">
+          <TextBlock Text="A rack is a device chain several tracks can feed, such as one shared instrument. Connect tracks to it in Connections." Classes="muted" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}" />
+          <ItemsControl ItemsSource="{Binding Racks}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RackRow">
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,4">
+                  <StackPanel>
+                    <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Rack name" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="10" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="tool" Content="Edit" Command="{Binding EditCommand}" VerticalAlignment="Top" ToolTip.Tip="Show the rack's devices and connections" />
+                  <Button Grid.Column="2" Classes="tool" Content="✕" Command="{Binding RemoveCommand}" VerticalAlignment="Top" AutomationProperties.Name="Remove rack"
+                          ToolTip.Tip="Remove the rack and its connections" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button Classes="raised" Content="New rack" Command="{Binding NewRackCommand}" HorizontalAlignment="Stretch" />
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="MixerSection" Classes="section" IsExpanded="False" DataContext="{Binding Mixer}" x:DataType="vm:MixerViewModel">
+        <Expander.Header>
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Text="Mixer" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Classes="sectionSummary" Text="{Binding Summary}" />
+          </Grid>
+        </Expander.Header>
+        <StackPanel Spacing="6">
+          <TextBlock Text="Mixer channels are audio paths, independent of tracks. They are heard while audio is on (Audio Settings… in the File menu, or the Window menu on macOS). The mixer console (Mixer in the same menu) also shows sends and meters." Classes="muted" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding Channels}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:MixerChannelRow">
+                <Border BorderBrush="{StaticResource Line.Divider}" BorderThickness="1" CornerRadius="3" Padding="6,4" Margin="0,0,0,4">
+                  <StackPanel Spacing="3">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
+                      <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Channel name" />
+                      <ToggleButton Grid.Column="1" Content="M" IsChecked="{Binding IsMuted}" Padding="6,1" AutomationProperties.Name="Mute channel" />
+                      <ToggleButton Grid.Column="2" Content="S" IsChecked="{Binding IsSoloed}" Padding="6,1" AutomationProperties.Name="Solo channel" />
+                      <Button Grid.Column="3" Classes="tool" Content="✕" Command="{Binding RemoveCommand}" AutomationProperties.Name="Remove channel" />
+                    </Grid>
+                    <Grid ColumnDefinitions="30,*,50" RowDefinitions="Auto,Auto" ColumnSpacing="4">
+                      <TextBlock Text="Gain" Classes="muted" FontSize="10" VerticalAlignment="Center" />
+                      <Slider Grid.Column="1" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" Value="{Binding Gain}" SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Channel gain" />
+                      <TextBlock Grid.Column="2" Text="{Binding GainText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                      <TextBlock Grid.Row="1" Text="Pan" Classes="muted" FontSize="10" VerticalAlignment="Center" />
+                      <Slider Grid.Row="1" Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding Pan}" SmallChange="0.05" LargeChange="0.25" AutomationProperties.Name="Channel pan" />
+                    </Grid>
+                    <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding Output}" HorizontalAlignment="Stretch" AutomationProperties.Name="Channel output"
+                              ToolTip.Tip="Where this channel's audio goes: the master, or another channel used as a bus" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button Classes="raised" Content="New mixer channel" Command="{Binding NewChannelCommand}" HorizontalAlignment="Stretch" />
+          <Grid ColumnDefinitions="Auto,*,50" ColumnSpacing="6">
+            <TextBlock Text="Master" Classes="label" VerticalAlignment="Center" />
+            <Slider Grid.Column="1" Minimum="-120" Maximum="24" Value="{Binding MasterGain}" SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Master gain" />
+            <TextBlock Grid.Column="2" Text="{Binding MasterGainText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+          </Grid>
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="RecordingSection" Classes="section" IsExpanded="False">
+        <Expander.Header>
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Text="Recording" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Classes="sectionSummary">
+              <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0} · {1} bar">
+                  <Binding Path="SelectedInput.Name" FallbackValue="No input" />
+                  <Binding Path="CountInBars" />
+                </MultiBinding>
+              </TextBlock.Text>
+            </TextBlock>
+          </Grid>
+        </Expander.Header>
+        <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+          <TextBlock Text="Input" Classes="label" />
+          <ComboBox Grid.Column="1" ItemsSource="{Binding Inputs}" SelectedItem="{Binding SelectedInput}" HorizontalAlignment="Stretch" AutomationProperties.Name="MIDI input" />
+          <TextBlock Grid.Row="1" Text="Takes" Classes="label" />
+          <ComboBox Grid.Row="1" Grid.Column="1" x:Name="TakeModeBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Take mode">
+            <ComboBoxItem Content="Merge (overdub)" />
+            <ComboBoxItem Content="Replace" />
+          </ComboBox>
+          <TextBlock Grid.Row="2" Text="Count-in" Classes="label" />
+          <ComboBox Grid.Row="2" Grid.Column="1" x:Name="CountInBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Count-in length">
+            <ComboBoxItem Content="1 bar" />
+            <ComboBoxItem Content="2 bars" />
+          </ComboBox>
+          <TextBlock Grid.Row="3" Text="Click on" Classes="label" />
+          <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding MetronomeOutputs}" SelectedItem="{Binding MetronomeOutput}" HorizontalAlignment="Stretch" AutomationProperties.Name="Metronome output"
+                    ToolTip.Tip="Where the metronome clicks (General MIDI wood blocks on channel 10).">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:OutputOption">
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <CheckBox Grid.Row="4" Grid.Column="1" Content="Click while playing" IsChecked="{Binding ClickWhilePlaying}" />
+          <CheckBox Grid.Row="5" Grid.Column="1" Content="MIDI thru" IsChecked="{Binding IsThruEnabled}"
+                    ToolTip.Tip="Play what you hear through the armed or selected track's output." />
+        </Grid>
+      </Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

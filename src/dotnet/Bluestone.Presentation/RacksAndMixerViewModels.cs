@@ -26,6 +26,14 @@ public sealed partial class RacksViewModel : ObservableObject
 
     public bool IsEmpty => Racks.Count == 0;
 
+    /// <summary>The section's one-line state when closed: "2 racks", or "None".</summary>
+    public string Summary => Racks.Count switch
+    {
+        0 => "None",
+        1 => "1 rack",
+        var n => $"{n} racks",
+    };
+
     internal void Sync(Project project, DeviceChainId? editing)
     {
         var racks = project.Chains.Where(c => c.Owner.Kind == ChainOwnerKind.Rack).ToList();
@@ -46,6 +54,7 @@ public sealed partial class RacksViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(Summary));
     }
 
     /// <summary>Adds an empty rack and opens it in the active Device View.</summary>
@@ -165,12 +174,20 @@ public sealed partial class MixerViewModel : ObservableObject
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(MasterGainText))]
+    [NotifyPropertyChangedFor(nameof(MasterGainText), nameof(Summary))]
     public partial double MasterGain { get; set; }
 
     public string MasterGainText => MixerChannelRow.FormatGain(MasterGain);
 
     public bool IsEmpty => Channels.Count == 0;
+
+    /// <summary>The section's one-line state when closed: "2 channels · Master 0.0 dB".</summary>
+    public string Summary => Channels.Count switch
+    {
+        0 => $"Master {MasterGainText}",
+        1 => $"1 channel · Master {MasterGainText}",
+        var n => $"{n} channels · Master {MasterGainText}",
+    };
 
     internal DeviceDefinitionLookup Definitions => _owner.Devices.Lookup;
 
@@ -197,6 +214,7 @@ public sealed partial class MixerViewModel : ObservableObject
             }
 
             OnPropertyChanged(nameof(IsEmpty));
+            OnPropertyChanged(nameof(Summary));
         }
         finally
         {
