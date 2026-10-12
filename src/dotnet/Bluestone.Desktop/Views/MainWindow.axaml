@@ -77,8 +77,10 @@
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
                 <Separator />
                 <MenuItem Header="Mixer…" Click="OnShowMixer" ToolTip.Tip="The mixer console: strips, sends, and meters" />
-                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Scanned plugins, how they share worker processes, modules that could not be read, and quarantined modules" />
-                <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" />
+                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Settings ▸ Plugins: scanned plugins, how they share worker processes, and quarantined modules" />
+                <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" ToolTip.Tip="Settings ▸ Audio: the output device, sample rate, and buffer" />
+                <Separator />
+                <MenuItem Header="Settings…" Click="OnSettingsClick" InputGesture="Ctrl+OemComma" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>
@@ -195,6 +197,9 @@
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="2" VerticalAlignment="Center">
+          <ToggleButton x:Name="SettingsButton" Classes="tool" Click="OnSettingsButtonClick" ToolTip.Tip="Settings: audio and plugins (Ctrl/Cmd+,)" AutomationProperties.Name="Settings">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Settings}" />
+          </ToggleButton>
           <Button Classes="tool" Command="{Binding PanicCommand}" ToolTip.Tip="Panic: silence every output (Ctrl/Cmd+.)" AutomationProperties.Name="Panic, silence all outputs">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Panic}" Foreground="{StaticResource Control.Panic}" />
           </Button>
@@ -206,7 +211,7 @@
       Workspace (ADR 0036): border rails for collapsed views, the inspector's region on the left, the Browser's on the right,
       and the arranger over the detail region (Device Views and editors) in the middle. Docked tools push the rest aside.
     -->
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+    <Grid x:Name="WorkspaceGrid" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
 
       <Border x:Name="LeftRail" Grid.Column="0" Classes="rail left" IsVisible="{Binding Workspace.LeftRail.Count}">
         <ItemsControl ItemsSource="{Binding Workspace.LeftRail}" ItemTemplate="{StaticResource RailItem}" />
@@ -693,6 +698,9 @@
         <ItemsControl ItemsSource="{Binding Workspace.RightRail}" ItemTemplate="{StaticResource RailItem}" />
       </Border>
     </Grid>
+
+    <!-- Settings takes the workspace's place while it is open; the workspace is hidden, not changed, and comes back as it was. -->
+    <views:SettingsView x:Name="SettingsHost" Grid.Row="1" IsVisible="False" />
 
     <!-- Status bar -->
     <Border Grid.Row="2" Background="{StaticResource Surface.Chrome}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,1,0,0" Height="22">

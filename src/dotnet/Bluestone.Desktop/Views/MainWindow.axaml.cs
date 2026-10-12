@@ -42,6 +42,7 @@ public partial class MainWindow : Window
         _autosaveTimer.Start();
 
         InspectorContent.Attach(viewModel);
+        AttachSettings(viewModel);
         Ruler.SeekRequested += (_, tick) => viewModel.SeekTo(tick);
         Ruler.LoopRequested += (_, loop) => viewModel.SetLoop(loop);
         Timeline.LaneClicked += (_, click) =>
@@ -637,6 +638,7 @@ public partial class MainWindow : Window
         Bind(Key.G, command, vm.Groups.GroupSelectedCommand);
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
+        Bind(Key.OemComma, command, new CommunityToolkit.Mvvm.Input.RelayCommand(() => ShowSettings()));
     }
 
     private void SyncSelectedLanes()
@@ -870,17 +872,6 @@ public partial class MainWindow : Window
     }
 
     internal void ShowShortcuts() => _ = Shortcuts.CreateWindow().ShowDialog(this);
-
-    /// <summary>Opens the plugins view (Window ▸ Plugins… in the macOS menu bar, File ▸ Plugins… elsewhere), when the host offers it.</summary>
-    internal void ShowPlugins()
-    {
-        if (_viewModel?.Plugins is { } plugins)
-        {
-            _ = new PluginsWindow { DataContext = plugins }.ShowDialog(this);
-        }
-    }
-
-    private void OnShowPlugins(object? sender, RoutedEventArgs e) => ShowPlugins();
 
     /// <summary>
     /// Single-key and navigation shortcuts. Runs before focused controls (tunnel) so that, for

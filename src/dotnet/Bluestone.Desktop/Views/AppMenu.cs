@@ -24,7 +24,7 @@ internal static class AppMenu
         (Key.Z, KeyModifiers.Shift), (Key.T, KeyModifiers.None), (Key.OemPeriod, KeyModifiers.None), (Key.OemPlus, KeyModifiers.None),
         (Key.OemMinus, KeyModifiers.None), (Key.M, KeyModifiers.None), (Key.A, KeyModifiers.None), (Key.D, KeyModifiers.None),
         (Key.X, KeyModifiers.None), (Key.C, KeyModifiers.None), (Key.V, KeyModifiers.None), (Key.OemQuestion, KeyModifiers.None),
-        (Key.G, KeyModifiers.None),
+        (Key.G, KeyModifiers.None), (Key.OemComma, KeyModifiers.None),
     ];
 
     public static void Install(MainWindow window, MainViewModel vm, KeyModifiers command)
@@ -33,9 +33,10 @@ internal static class AppMenu
 
         // Items added to the application menu; macOS supplies Services, Hide, Hide Others, Show All, and Quit.
         var about = Item("About Bluestone", () => _ = new AboutWindow().ShowDialog(window));
+        var settings = Item("Settings…", () => window.ShowSettings(), Cmd(Key.OemComma));
         if (Avalonia.Application.Current is { } app)
         {
-            NativeMenu.SetMenu(app, [about]);
+            NativeMenu.SetMenu(app, [about, new NativeMenuItemSeparator(), settings]);
         }
 
         var editor = vm.Editor;

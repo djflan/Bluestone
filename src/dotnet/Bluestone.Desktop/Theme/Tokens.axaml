@@ -235,6 +235,8 @@
   <x:Double x:Key="Height.Row">26</x:Double>
   <x:Double x:Key="Width.Rail">30</x:Double>
   <x:Double x:Key="Width.Handle">5</x:Double>
+  <x:Double x:Key="Width.SettingsNav">220</x:Double>
+  <x:Double x:Key="Width.SettingsPage">680</x:Double>
 
   <!-- Device panels: one fixed height, a few fixed widths (DevicePanelSize). -->
   <x:Double x:Key="DevicePanel.Height">212</x:Double>

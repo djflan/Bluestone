@@ -153,6 +153,16 @@ public sealed partial class BrowserViewModel : ObservableObject
     [ObservableProperty]
     public partial string EmptyText { get; private set; } = string.Empty;
 
+    /// <summary>The empty list is one that scanning plugins would fill, so it offers the plugin settings.</summary>
+    [ObservableProperty]
+    public partial bool CanOpenPluginSettings { get; private set; }
+
+    /// <summary>Raised to show Settings ▸ Plugins; the host decides how.</summary>
+    public event EventHandler? PluginSettingsRequested;
+
+    [RelayCommand]
+    private void OpenPluginSettings() => PluginSettingsRequested?.Invoke(this, EventArgs.Empty);
+
     partial void OnSearchTextChanged(string value) => Filter();
 
     partial void OnSelectedCategoryChanged(BrowserCategoryOption value) => Filter();
@@ -350,6 +360,7 @@ public sealed partial class BrowserViewModel : ObservableObject
                 BrowserCategory.Hardware => "No hardware profiles are installed.",
                 _ => "Nothing here yet.",
             };
+        CanOpenPluginSettings = Items.Count == 0 && terms.Length == 0 && category is BrowserCategory.Plugins or BrowserCategory.Instruments or BrowserCategory.AudioEffects;
         OnPropertyChanged(nameof(IsEmpty));
     }
 
