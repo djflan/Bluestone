@@ -1,0 +1,9 @@
+# Cargo build output (Native.targets sets the target dir to src/native/target/)
+/target/
+
+# rustfmt backups
+*.rs.bk
+
+# LLVM coverage data (cargo llvm-cov)
+*.profraw
+*.profdata
