@@ -646,7 +646,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (Project.Loop.Range is { } range)
         {
-            RequestZoom(TimelineZoomRequest.Show(Quarters(range.Start.Value), Quarters(range.End.Value)));
+            RequestZoom(TimelineZoomRequest.ShowLoop(Quarters(range.Start.Value), Quarters(range.End.Value)));
         }
     }
 

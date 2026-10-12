@@ -225,6 +225,15 @@ public sealed class PianoRollView : Control
         Show(Viewport.Fitted(from / quarter, to / quarter, GridWidth, ZoomLimits));
     }
 
+    /// <summary>Shows quarter notes [<paramref name="from"/>, <paramref name="to"/>) of the timeline.</summary>
+    public void ShowQuarters(double from, double to)
+    {
+        if (_editor is not null && to > from)
+        {
+            Show(Viewport.Fitted(from, to, GridWidth, ZoomLimits));
+        }
+    }
+
     public double ExtentHeight => 128 * KeyHeight;
 
     /// <summary>Raised when the scroll position, extent, or viewport changes, so scroll bars can follow.</summary>

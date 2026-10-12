@@ -142,12 +142,18 @@ public static class ClipLoopCommands
     /// loop (see <see cref="NoteClip.Consolidated"/>). Audio clips are consolidated by writing a file
     /// (<c>AudioConsolidation</c>), not here.
     /// </summary>
-    public static IProjectCommand ConsolidateNotes(TrackId track, IReadOnlyCollection<ClipId> clips) =>
-        ProjectCommands.EditTrack(clips.Count == 1 ? "Consolidate Clip" : "Consolidate Clips", track, t =>
-        {
-            var changed = t.Clips.Select(c => clips.Contains(c.Id) && c is NoteClip { IsLooping: true } notes ? notes.Consolidated() : c).ToList();
-            return changed.SequenceEqual(t.Clips) ? t : t.WithClips(changed);
-        });
+    public static IProjectCommand ConsolidateNotes(TrackId track, IReadOnlyCollection<ClipId> clips)
+    {
+        ArgumentNullException.ThrowIfNull(clips);
+        return ConsolidateNotes([.. clips.Select(c => (track, c))]);
+    }
+
+    /// <summary>Consolidates the looping note clips in <paramref name="clips"/>, across tracks, in one step.</summary>
+    public static IProjectCommand ConsolidateNotes(IReadOnlyCollection<(TrackId Track, ClipId Clip)> clips)
+    {
+        ArgumentNullException.ThrowIfNull(clips);
+        return Edit(clips.Count == 1 ? "Consolidate Clip" : "Consolidate Clips", clips, (c, _) => c is NoteClip { IsLooping: true } notes ? notes.Consolidated() : c);
+    }
 
     private static Clip Enabled(Clip clip, bool enabled, Sequence sequence) => clip.Loop switch
     {

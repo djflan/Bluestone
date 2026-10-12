@@ -46,7 +46,7 @@ public static class AudioConsolidation
         var folder = Path.Combine(projectDirectory ?? Path.GetDirectoryName(sourcePath) ?? ".", FolderName);
         Directory.CreateDirectory(folder);
         var name = Path.GetFileNameWithoutExtension(sourcePath);
-        var path = Path.Combine(folder, $"{name} {clip.Id.Value.ToString("N")[..8]} {DateTime.Now:yyyyMMdd-HHmmss}.wav");
+        var path = Path.Combine(folder, $"{name} {clip.Id.Value.ToString("N")[..8]} {DateTime.Now:yyyyMMdd-HHmmss} {Guid.NewGuid().ToString("N")[..6]}.wav");
 
         var tempo = project.Sequence.TempoMap;
         (long Frames, int Channels, int Rate) written;

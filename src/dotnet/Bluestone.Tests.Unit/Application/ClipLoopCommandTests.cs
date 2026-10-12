@@ -108,6 +108,26 @@ public sealed class ClipLoopCommandTests : IDisposable
     }
 
     [Fact]
+    public void ConsolidatingNoteClipsOnSeveralTracks_IsOneUndoStep()
+    {
+        static NoteClip Looping() => new(ClipId.New(), Tick.Zero, new TickSpan(1920), TickSpan.Zero, new EventList([Note(0, 100)]))
+        {
+            Loop = new ClipLoop(Tick.Zero, new TickSpan(480)),
+        };
+
+        var (a, b) = (Looping(), Looping());
+        var (first, second) = (new Track(TrackId.New(), "a", [a]), new Track(TrackId.New(), "b", [b]));
+        var project = Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(first).WithTrack(second) };
+        var history = new EditHistory(project);
+
+        history.Execute(ClipLoopCommands.ConsolidateNotes([(first.Id, a.Id), (second.Id, b.Id)]));
+
+        Assert.Null(Find(history, first.Id, a.Id).Loop);
+        Assert.Null(Find(history, second.Id, b.Id).Loop);
+        Assert.Equal(1, history.UndoCount);
+    }
+
+    [Fact]
     public async Task ConsolidatingAnAudioClip_WritesThePlayedAudio_AndThePlainClipPlaysIt()
     {
         // At 120 BPM and 960 PPQN a tick is 1/1920 s: 25 frames at 48 kHz.

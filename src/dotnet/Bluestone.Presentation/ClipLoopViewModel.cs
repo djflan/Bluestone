@@ -151,9 +151,10 @@ public sealed partial class ClipLoopViewModel : ObservableObject
     private async Task ConsolidateAsync()
     {
         var looping = _clips.Where(c => c.Clip.IsLooping).ToList();
-        foreach (var group in looping.Where(c => c.Clip is NoteClip).GroupBy(c => c.Track))
+        var notes = looping.Where(c => c.Clip is NoteClip).Select(c => (c.Track, c.Clip.Id)).ToList();
+        if (notes.Count > 0)
         {
-            _owner.Execute(ClipLoopCommands.ConsolidateNotes(group.Key, [.. group.Select(c => c.Clip.Id)]));
+            _owner.Execute(ClipLoopCommands.ConsolidateNotes(notes));
         }
 
         foreach (var (track, clip) in looping.Where(c => c.Clip is AudioClip))

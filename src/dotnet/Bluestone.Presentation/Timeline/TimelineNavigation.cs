@@ -124,10 +124,15 @@ public sealed class RulerNavigationGesture
 }
 
 /// <summary>A request to a timeline's view: zoom by <see cref="Factor"/> around its anchor, or show quarter notes [<see cref="From"/>, <see cref="To"/>).</summary>
-/// <remarks><see cref="IsSelection"/> says the range is the selection's, so a view with its own selection can show that instead.</remarks>
-public sealed record TimelineZoomRequest(double? Factor, double From = 0, double To = 0, bool IsSelection = false)
+/// <remarks>
+/// <see cref="IsSelection"/> says the range is the selection's, so a view with its own selection can show that instead;
+/// <see cref="IsLoop"/> says it is the arranger loop's, which every view shows as given.
+/// </remarks>
+public sealed record TimelineZoomRequest(double? Factor, double From = 0, double To = 0, bool IsSelection = false, bool IsLoop = false)
 {
     public static TimelineZoomRequest By(double factor) => new(factor);
 
     public static TimelineZoomRequest Show(double fromQuarters, double toQuarters, bool selection = false) => new(null, fromQuarters, toQuarters, selection);
+
+    public static TimelineZoomRequest ShowLoop(double fromQuarters, double toQuarters) => new(null, fromQuarters, toQuarters, IsLoop: true);
 }

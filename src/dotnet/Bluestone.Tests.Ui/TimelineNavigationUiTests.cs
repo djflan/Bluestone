@@ -112,6 +112,28 @@ public sealed class TimelineNavigationUiTests
     });
 
     [Fact]
+    public Task ZoomToLoop_WithThePianoRollFocused_ShowsTheLoopThere() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenAsync();
+        var timeline = app.Find<TimelineView>("Timeline");
+        app.DoubleClickAt(timeline, new Point(timeline.TickToX(Beat / 2), timeline.LaneHeight * 0.6));
+        var roll = app.Find<PianoRollView>("PianoRoll");
+        app.Session.Execute(LoopCommands.LoopRegion(new TickRange(new Tick(8 * Beat), new Tick(12 * Beat))));
+        roll.Focus();
+        app.Settle();
+        var arrangerZoom = app.ViewModel.Zoom;
+
+        app.ViewModel.ZoomToLoopCommand.Execute(null);
+        app.Settle();
+
+        var view = roll.Viewport;
+        var (from, to) = ((8 * view.PixelsPerQuarter) - view.ScrollX, (12 * view.PixelsPerQuarter) - view.ScrollX);
+        Assert.True(from >= 0 && to <= roll.GridWidth, $"The loop should be in view: {from}..{to} of {roll.GridWidth}");
+        Assert.True(to - from > roll.GridWidth * 0.7, "The loop should fill the piano roll.");
+        Assert.Equal(arrangerZoom, app.ViewModel.Zoom);
+    });
+
+    [Fact]
     public Task TheZoomCommands_FitTheProject_TheSelection_AndTheLoop_AndTheSliderIsGone() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenAsync();

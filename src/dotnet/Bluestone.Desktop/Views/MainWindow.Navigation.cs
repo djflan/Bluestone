@@ -43,12 +43,16 @@ public partial class MainWindow
 
     private void OnArrangerZoomRequested(TimelineZoomRequest request)
     {
-        // The zoom commands act on the piano roll while it has the keyboard (fit: its clip; selection: its notes).
+        // The zoom commands act on the piano roll while it has the keyboard (fit: its clip; selection: its notes; loop: the loop).
         if (PianoRoll.IsKeyboardFocusWithin && PianoRoll.IsEffectivelyVisible)
         {
             if (request.Factor is { } by)
             {
                 PianoRoll.ZoomAround(PianoRoll.GridWidth / 2, by);
+            }
+            else if (request.IsLoop)
+            {
+                PianoRoll.ShowQuarters(request.From, request.To);
             }
             else
             {
