@@ -116,19 +116,23 @@ public partial class App : Avalonia.Application
     public static string PluginHostingSettingsPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "plugin-hosting.json");
 
+    /// <summary>How long quitting waits for plugins to unload and playback to stop before giving up on an orderly end.</summary>
+    private static readonly TimeSpan ShutdownLimit = TimeSpan.FromSeconds(10);
+
     /// <summary>
-    /// Stops playback (releasing sounding notes), closes MIDI ports, and releases platform providers.
-    /// Errors are logged rather than thrown: nothing useful can be done with them while quitting.
+    /// Stops playback (releasing sounding notes), closes MIDI ports, and releases platform providers. Runs on the UI
+    /// thread, which cannot run anything posted to it until this returns, so it waits a bounded time and then kills any
+    /// plugin worker still running rather than hang. Errors are logged rather than thrown: nothing useful can be done
+    /// with them while quitting.
     /// </summary>
     private static void Shutdown(MainViewModel viewModel, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins)
     {
         try
         {
-            viewModel.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            plugins.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            foreach (var provider in platformProviders)
+            if (!StopAsync(viewModel, platformProviders, plugins).Wait(ShutdownLimit))
             {
-                provider.Dispose();
+                System.Diagnostics.Trace.TraceError($"Shutting down took longer than {ShutdownLimit.TotalSeconds:0} s; stopping plugin workers.");
+                plugins.KillWorkers();
             }
         }
 #pragma warning disable CA1031 // Quitting must not crash; the failure is recorded instead.
@@ -136,6 +140,17 @@ public partial class App : Avalonia.Application
 #pragma warning restore CA1031
         {
             System.Diagnostics.Trace.TraceError($"Error while shutting down: {ex}");
+            plugins.KillWorkers();
+        }
+    }
+
+    private static async Task StopAsync(MainViewModel viewModel, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins)
+    {
+        await viewModel.DisposeAsync().ConfigureAwait(false);
+        await plugins.DisposeAsync().ConfigureAwait(false);
+        foreach (var provider in platformProviders)
+        {
+            provider.Dispose();
         }
     }
 

@@ -94,6 +94,18 @@ public sealed class PluginCrashRecoveryTests
     }
 
     [Fact]
+    public async Task KillWorkers_StopsEveryWorkerAtOnce_ForAQuitThatCannotWait()
+    {
+        await using var host = new PluginTestHost();
+        var gain = await host.CreateRunningAsync(new PluginInstanceRequest(Gain, 48_000, Frames, 1, 1));
+        var pid = gain.WorkerProcessId!.Value;
+
+        host.Manager.KillWorkers();
+
+        await WaitUntilAsync(() => !IsRunning(pid), StatusTimeout, "the worker to be killed");
+    }
+
+    [Fact]
     public async Task AWorkerThatStopsAnswering_IsKilledByTheHeartbeat_AndTheInstanceIsHung()
     {
         await using var host = new PluginTestHost(o => o with { HeartbeatInterval = TimeSpan.FromMilliseconds(100), HeartbeatTimeout = TimeSpan.FromSeconds(1) });

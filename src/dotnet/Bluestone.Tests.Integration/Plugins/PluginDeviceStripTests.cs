@@ -128,6 +128,45 @@ public sealed class PluginDeviceStripTests
         }
     }
 
+    [Fact]
+    public async Task Quitting_WithAPluginRunning_DoesNotWaitForTheBlockedUiThread()
+    {
+        await using var host = new PluginTestHost();
+        var clock = new VirtualClock(TimeSpan.FromSeconds(1));
+        using var provider = new LoopbackMidiProvider(clock);
+        using var endpoints = new EndpointDirectory([provider]);
+        var session = new ProjectSession();
+        session.Execute(ProjectCommands.AddTrack(Track.Create("Vocals", TrackRole.Audio)));
+        var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: 64);
+        var playback = new PlaybackController(session, endpoints, ProfileCatalog.Empty, clock, startThread: false);
+        var vm = new MainViewModel(session, playback, endpoints, new NoUi(), new Immediate(), plugins: bridge);
+        await vm.InitializeAsync();
+        Assert.True(vm.Browser.InsertIntoActive(vm.Browser.Items.Single(d => d.Name == "Reference Gain")));
+        await WaitUntilAsync(() => vm.DeviceView!.Devices.Count == 1 && vm.DeviceView.Devices[0].Status == "Running", StatusTimeout, "the plugin to run");
+        host.Track(bridge.InstanceOf(vm.DeviceView!.Devices[0].Id)!);
+
+        // The desktop app disposes from its Exit event, on the UI thread, which cannot run anything posted to it until
+        // disposing returns. A continuation that comes back to that thread would wait forever.
+        var completed = false;
+        var ui = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new NeverPumped());
+            completed = vm.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(30));
+        });
+        ui.Start();
+        Assert.True(ui.Join(TimeSpan.FromSeconds(40)), "the UI thread to return");
+        Assert.True(completed, "disposing to finish without the UI thread");
+    }
+
+    private sealed class NeverPumped : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+        }
+
+        public override void Send(SendOrPostCallback d, object? state) => throw new InvalidOperationException("The UI thread is blocked.");
+    }
+
     private const string GainManifest = """
         {
           "format": "bluestone-reference-plugin",
