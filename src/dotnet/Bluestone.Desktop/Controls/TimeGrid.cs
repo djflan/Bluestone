@@ -45,8 +45,8 @@ internal static class TimeGrid
     private static readonly IBrush CycleFill = new SolidColorBrush(Palette.Cycle, 0.85);
     private static readonly IPen CycleEdge = new Pen(new SolidColorBrush(Palette.Darken(Palette.Cycle, 0.35)), 1);
     private static readonly IBrush CycleShade = new SolidColorBrush(Palette.Cycle, 0.05);
-    private static readonly IBrush CycleOffFill = new SolidColorBrush(Palette.Cycle, 0.16);
-    private static readonly IPen CycleOffEdge = new Pen(new SolidColorBrush(Palette.Cycle, 0.45), 1);
+    private static readonly IBrush CycleOffFill = new SolidColorBrush(Palette.Cycle, 0.22);
+    private static readonly IPen CycleOffEdge = new Pen(new SolidColorBrush(Palette.Cycle, 0.6), 1);
     private static readonly IPen CycleSelectedEdge = new Pen(new SolidColorBrush(Color.Parse("#F2F2F4")), 1);
     private static readonly IBrush CycleHandle = new SolidColorBrush(Palette.Darken(Palette.Cycle, 0.55));
     private static readonly IBrush CycleOffHandle = new SolidColorBrush(Palette.Cycle, 0.75);

@@ -267,7 +267,8 @@ public sealed record CloseEditor(PluginInstanceId InstanceId) : ProtocolMessage
 
 /// <summary>
 /// Hides the instance's editor window (the editor, its state, and the instance stay) or shows it again without taking
-/// focus. Replies <see cref="Ack"/>; does nothing when no editor is open.
+/// focus. Replies <see cref="Ack"/>, or <see cref="ErrorReply"/> with <see cref="ErrorCode.NotSupported"/> when no editor
+/// is open or a plugin-owned editor window (a floating CLAP editor) refused.
 /// </summary>
 public sealed record SetEditorVisible(PluginInstanceId InstanceId, bool Visible) : ProtocolMessage
 {

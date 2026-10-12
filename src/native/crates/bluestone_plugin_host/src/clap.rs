@@ -1136,22 +1136,23 @@ impl Instance for ClapInstance {
         self.editor.borrow().is_some()
     }
 
-    fn set_editor_visible(&self, visible: bool) {
+    fn set_editor_visible(&self, visible: bool) -> bool {
         let editor = self.editor.borrow();
         let Some(editor) = editor.as_ref() else {
-            return;
+            return false;
         };
         match &editor.window {
-            Some(window) => window.set_visible(visible),
-            // A floating editor's window belongs to the plugin: ask it.
+            Some(window) => {
+                window.set_visible(visible);
+                true
+            }
+            // A floating editor's window belongs to the plugin: ask it, and believe its answer.
             // SAFETY: the plugin's gui extension, on the main thread, while the editor exists.
             None => unsafe {
-                if let Some(gui) = self.ext.gui.as_ref() {
+                self.ext.gui.as_ref().is_some_and(|gui| {
                     let call = if visible { gui.show } else { gui.hide };
-                    if let Some(call) = call {
-                        call(self.plugin);
-                    }
-                }
+                    call.is_some_and(|call| call(self.plugin))
+                })
             },
         }
     }

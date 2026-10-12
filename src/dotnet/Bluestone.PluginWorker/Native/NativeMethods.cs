@@ -82,7 +82,7 @@ internal static unsafe partial class NativeMethods
     public static partial int PluginOpenEditor(nint plugin, string title, out nint error);
 
     [LibraryImport(Library, EntryPoint = "bph_plugin_set_editor_visible")]
-    public static partial void PluginSetEditorVisible(nint plugin, int visible);
+    public static partial int PluginSetEditorVisible(nint plugin, int visible);
 
     [LibraryImport(Library, EntryPoint = "bph_plugin_route_editor_keys")]
     public static partial int PluginRouteEditorKeys(nint plugin, int toHost);

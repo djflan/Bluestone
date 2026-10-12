@@ -85,6 +85,23 @@ public sealed class ArrangerLoopUiTests
     });
 
     [Fact]
+    public Task ReachingTheRulerFromTheKeyboard_SelectsTheLoop_SoTheArrowsNudgeIt() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync(Song());
+        var bar = Bar(app);
+        app.Session.Execute(LoopCommands.LoopRegion(new TickRange(new Tick(bar), new Tick(3 * bar))));
+        app.Settle();
+        var ruler = app.Find<RulerView>("Ruler");
+
+        ruler.Focus(NavigationMethod.Tab);
+        app.Settle();
+        Assert.True(ruler.IsLoopSelected);
+        app.Press(Key.Right, RawInputModifiers.Shift);
+
+        Assert.Equal(new TickRange(new Tick(2 * bar), new Tick(4 * bar)), app.Session.Project.Loop.Range);
+    });
+
+    [Fact]
     public Task DraggingTheBodyMovesIt_AndAnEdgeResizesIt_WithoutTurningLoopingOn() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync(Song());

@@ -105,6 +105,8 @@
                                   <MenuItem Header="Move Left" Command="{Binding MoveLeftCommand}" />
                                   <MenuItem Header="Move Right" Command="{Binding MoveRightCommand}" />
                                   <MenuItem Header="Route Output…" Command="{Binding ShowRoutingCommand}" />
+                                  <MenuItem Header="Replace with Browser Selection" Command="{Binding ReplaceWithBrowserSelectionCommand}"
+                                            ToolTip.Tip="Put the device selected in the Browser here instead (one undo step); or drop it on this panel" />
                                   <Separator />
                                   <MenuItem Header="Remove" Command="{Binding RemoveCommand}" />
                                 </MenuFlyout>

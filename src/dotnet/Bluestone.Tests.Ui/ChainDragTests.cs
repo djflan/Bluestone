@@ -377,6 +377,15 @@ public sealed class ChainDragTests
         app.Settle();
         Assert.Equal(["Transpose", "Arpeggiator"], ChainNames(app));
 
+        // The menu path: the device selected in the Browser replaces the chosen device.
+        app.ViewModel.Browser.SelectedItem = Assert.Single(app.ViewModel.Browser.Items, i => i.Name == "Transpose");
+        await view.Devices[1].ReplaceWithBrowserSelectionCommand.ExecuteAsync(null);
+        app.Settle();
+        Assert.Equal(["Transpose", "Transpose"], ChainNames(app));
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(["Transpose", "Arpeggiator"], ChainNames(app));
+
         // A plugin that cannot start leaves the chain exactly as it was, and says so.
         var before = app.Session.Project;
         Assert.False(await view.ReplaceAsync(ChainIds(app)[1], PluginDeviceHost.DefinitionOf(broken)));

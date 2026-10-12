@@ -524,16 +524,19 @@ pub unsafe extern "C" fn bph_plugin_close_editor(plugin: *mut PluginHandle) {
     }
 }
 
-/// Hides (0) or shows (1) the editor's window, keeping the editor. Main thread.
+/// Hides (0) or shows (1) the editor's window, keeping the editor. Returns 1 when done, 0 when the editor could not
+/// (none is open, or a plugin-owned window refused). Main thread.
 ///
 /// # Safety
 /// `plugin` must be a live handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn bph_plugin_set_editor_visible(plugin: *mut PluginHandle, visible: i32) {
+pub unsafe extern "C" fn bph_plugin_set_editor_visible(
+    plugin: *mut PluginHandle,
+    visible: i32,
+) -> i32 {
     // SAFETY: per the contract above.
-    if let Some(p) = unsafe { self::plugin(plugin) } {
-        p.instance.set_editor_visible(visible != 0);
-    }
+    unsafe { self::plugin(plugin) }.is_some_and(|p| p.instance.set_editor_visible(visible != 0))
+        as i32
 }
 
 /// Sends the editor window's keys to the host (1) or to the plugin (0). Returns 1 when done, 0 when this editor or

@@ -264,6 +264,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 Editor = EditorWindows is { } windows && windows.IsOpen(device.Id)
                     ? new EditorWindowStatus(windows.IsPinned(device.Id), windows.SendsKeysToBluestone(device.Id), windows.IsHiddenByFollow(device.Id), windows.FollowsSelection)
+                    {
+                        CanRouteKeys = windows.CanRouteKeys(device.Id),
+                        CanHide = windows.CanHide(device.Id),
+                    }
                     : null,
             }
             : Presentation.DeviceStatus.Of(device, Devices);

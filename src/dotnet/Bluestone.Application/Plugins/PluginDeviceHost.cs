@@ -231,18 +231,21 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// <summary>A key typed in a plugin editor whose keys go to Bluestone: the device, and the key. Raised on a worker's read loop.</summary>
     public event EventHandler<(DeviceId Device, PluginEditorKey Key)>? EditorKeyPressed;
 
-    /// <summary>Hides or shows the device's editor window, keeping the editor. Failures (a gone worker) are ignored: its window went with it.</summary>
-    public async Task SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default)
+    /// <summary>Hides or shows the device's editor window, keeping the editor; false when it could not (a gone worker's window went with it).</summary>
+    public async Task<bool> SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default)
     {
-        if (_instances.TryGetValue(device, out var instance))
+        if (!_instances.TryGetValue(device, out var instance))
         {
-            try
-            {
-                await instance.SetEditorVisibleAsync(visible, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
-            {
-            }
+            return false;
+        }
+
+        try
+        {
+            return await instance.SetEditorVisibleAsync(visible, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
+        {
+            return false;
         }
     }
 

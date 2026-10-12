@@ -1163,7 +1163,7 @@ public sealed class TimelineView : Control
         {
             // A small corner tab: always visible on looping clips, faint on others, so the gesture can be found.
             var strong = hovered == Grip.LoopEnd;
-            var opacity = strong ? 0.95 : clip.IsLooping ? 0.7 : hovered == Grip.EndEdge ? 0.45 : 0.18;
+            var opacity = strong ? 0.95 : clip.IsLooping ? 0.7 : hovered == Grip.EndEdge ? 0.5 : 0.26;
             var tab = new StreamGeometry();
             using (var g = tab.Open())
             {

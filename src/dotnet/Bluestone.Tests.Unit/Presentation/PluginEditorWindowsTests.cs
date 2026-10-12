@@ -85,6 +85,25 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AnEditorThatCannotHide_StaysOpen_IsNotReportedHidden_AndLosesItsPin()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        await _windows.OpenAsync(a);
+        _host.CanHide = false;
+
+        Select(1);
+
+        Assert.True(_host.Visible[a]);
+        Assert.False(_windows.IsHiddenByFollow(a));
+        Assert.False(_windows.CanHide(a));
+        var requests = _host.VisibilityRequests;
+        Select(0);
+        Select(1);
+        Assert.Equal(requests, _host.VisibilityRequests);
+    }
+
+    [Fact]
     public async Task WithFollowingOff_EditorsStayOpen_AndHiddenOnesComeBack()
     {
         var a = DeviceOn(0);
@@ -168,6 +187,7 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
         _host.Close(a);
         await _windows.OpenAsync(a);
         Assert.False(_windows.SendsKeysToBluestone(a));
+        Assert.False(_windows.CanRouteKeys(a));
         Assert.False(await _windows.SetKeysToBluestoneAsync(a, true));
     }
 
@@ -227,15 +247,23 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
             return Task.FromResult<string?>(null);
         }
 
-        public async Task SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default)
+        public bool CanHide { get; set; } = true;
+
+        public async Task<bool> SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default)
         {
             VisibilityRequests++;
+            if (!visible && !CanHide)
+            {
+                return false;
+            }
+
             var hold = Hold;
             Hold = null;
             var work = hold is null ? Task.CompletedTask : hold.Task;
             _pending = work;
             await work;
             Visible[device] = visible;
+            return true;
         }
 
         public Task<bool> SetEditorKeyboardAsync(DeviceId device, bool toHost, CancellationToken cancellationToken = default)

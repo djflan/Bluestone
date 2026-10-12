@@ -272,6 +272,16 @@ public sealed class RulerView : Control
         e.Handled = true;
     }
 
+    // Reaching the ruler from the keyboard selects its loop, so the arrow keys can nudge it without a pointer.
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        if (e.NavigationMethod is NavigationMethod.Tab or NavigationMethod.Directional && Project?.Loop.Range is not null)
+        {
+            IsLoopSelected = true;
+        }
+    }
+
     protected override void OnLostFocus(FocusChangedEventArgs e)
     {
         base.OnLostFocus(e);

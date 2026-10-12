@@ -285,7 +285,7 @@
           <!-- Ruler row -->
           <Border Grid.Row="1" Background="{StaticResource Lane.Ruler}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,1,1" />
           <controls:RulerView x:Name="Ruler" Grid.Row="1" Grid.Column="1" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}"
-                              IsRecording="{Binding IsRecording}" AutomationProperties.Name="Bar ruler. Click to move the playhead; drag the top strip to set the cycle." />
+                              IsRecording="{Binding IsRecording}" AutomationProperties.Name="Bar ruler. Click to move the playhead; drag up or down to zoom and sideways to scroll. In the loop strip on top, drag to draw, move, or resize the loop; double-click it to turn looping on or off. When the ruler has focus, the arrow keys nudge the loop." />
 
           <!-- Track headers, scrolled with the lanes -->
           <ScrollViewer x:Name="TrackHeaderScroller" Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"
@@ -443,7 +443,7 @@
               <controls:TimelineView x:Name="Timeline" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}" ExpandedTracks="{Binding ExpandedTracks}" HiddenTracks="{Binding Groups.HiddenTracks}"
                                      LaneHeight="{x:Static vm:TrackViewModel.TrackRowHeight}" AutomationLaneHeight="{x:Static vm:TrackViewModel.AutomationLaneHeight}"
                                      RecordingLane="{Binding RecordingLane}" RecordingPreview="{Binding RecordingPreview}"
-                                     AutomationProperties.Name="Arrangement. Click a clip to select it and drag to move it; double-click to edit its notes. Click in an automation lane to add a point." />
+                                     AutomationProperties.Name="Arrangement. Click a clip to select it and drag to move it; double-click to edit its notes. Drag a clip's lower-right corner to repeat its loop, and its dashed repeat marker to change the loop's length. Click in an automation lane to add a point." />
               <controls:PlayheadOverlay x:Name="Playhead" IsRecording="{Binding IsRecording}" IsVisible="{Binding Tracks.Count}" />
               <!-- Renames a clip in place, over its name strip (double-click the strip, or Return). -->
               <Canvas>

@@ -206,8 +206,8 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
 
     public void CloseEditor() => NativeMethods.PluginCloseEditor(_handle);
 
-    /// <summary>Hides or shows the editor's window, keeping the editor. Main thread.</summary>
-    public void SetEditorVisible(bool visible) => NativeMethods.PluginSetEditorVisible(_handle, visible ? 1 : 0);
+    /// <summary>Hides or shows the editor's window, keeping the editor; false when it could not. Main thread.</summary>
+    public bool SetEditorVisible(bool visible) => NativeMethods.PluginSetEditorVisible(_handle, visible ? 1 : 0) == 1;
 
     /// <summary>Sends the editor's keys to the host or the plugin; false when this editor or platform cannot. Main thread.</summary>
     public bool RouteEditorKeys(bool toHost) => NativeMethods.PluginRouteEditorKeys(_handle, toHost ? 1 : 0) == 1;

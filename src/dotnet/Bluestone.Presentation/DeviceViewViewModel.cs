@@ -575,6 +575,21 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
     internal Task OpenEditorAsync(DevicePanelViewModel device) => _owner.OpenDeviceEditorAsync(device.Id);
 
+    /// <summary>
+    /// Replaces <paramref name="device"/> with the device selected in the Browser (the keyboard and menu path to the same
+    /// replacement a drop makes). Says what to do when the Browser has no device selected.
+    /// </summary>
+    internal async Task ReplaceWithBrowserSelectionAsync(DevicePanelViewModel device)
+    {
+        if (_owner.Browser.SelectedItem is { Kind: BrowserItemKind.Device, Definition: { } definition })
+        {
+            await ReplaceAsync(device.Id, definition);
+            return;
+        }
+
+        _owner.AddMessage(MessageSeverity.Info, "Replace Device", "Select a device in the Browser first, then choose Replace with Browser Selection.");
+    }
+
     internal void SetEditorPinned(DevicePanelViewModel device, bool pinned) => _owner.EditorWindows?.SetPinned(device.Id, pinned);
 
     internal Task SetEditorKeysAsync(DevicePanelViewModel device, bool toBluestone) =>
@@ -672,7 +687,9 @@ public sealed partial class DevicePanelViewModel : ObservableObject
         : "Pin the editor so it stays open when another track is selected";
 
     public string KeysTip => !CanRouteEditorKeys
-        ? "On this system the plugin's editor always keeps its keys (X11 gives a plugin its own input)."
+        ? PluginEditorWindows.KeyRoutingSupported
+            ? "This plugin's editor manages its own window, so its keys always go to the plugin."
+            : "On this system the plugin's editor always keeps its keys (X11 gives a plugin its own input)."
         : EditorKeysToBluestone
             ? "Keys typed in the editor go to Bluestone (shortcuts, computer-keyboard MIDI). Click to give them to the plugin."
             : "Keys typed in the editor go to the plugin. Click to send them to Bluestone instead; the mouse still works in the editor.";
@@ -765,7 +782,8 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             IsEditorPinned = status.Editor?.Pinned == true;
             EditorKeysToBluestone = status.Editor?.KeysToBluestone == true;
             IsEditorHidden = status.Editor?.Hidden == true;
-            CanPinEditor = status.Editor?.FollowsSelection == true;
+            CanPinEditor = status.Editor is { FollowsSelection: true, CanHide: true };
+            CanRouteEditorKeys = status.Editor?.CanRouteKeys ?? PluginEditorWindows.KeyRoutingSupported;
             OnPropertyChanged(nameof(PinTip));
             OnPropertyChanged(nameof(KeysTip));
             Hosting = status.Hosting;
@@ -872,6 +890,9 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     private Task OpenEditorAsync() => _view.OpenEditorAsync(this);
 
     [RelayCommand]
+    private Task ReplaceWithBrowserSelectionAsync() => _view.ReplaceWithBrowserSelectionAsync(this);
+
+    [RelayCommand]
     private void ToggleEditorPinned() => _view.SetEditorPinned(this, !IsEditorPinned);
 
     [RelayCommand]
@@ -968,7 +989,14 @@ public sealed partial class ParameterViewModel : ObservableObject
 /// worker process it is in and <c>Detail</c> what else went down with it when it failed.
 /// </summary>
 /// <summary>An open plugin editor window's state: pinned, keys to Bluestone, hidden because its track is not selected, and whether editors follow the selection.</summary>
-public sealed record EditorWindowStatus(bool Pinned, bool KeysToBluestone, bool Hidden, bool FollowsSelection);
+public sealed record EditorWindowStatus(bool Pinned, bool KeysToBluestone, bool Hidden, bool FollowsSelection)
+{
+    /// <summary>Whether this editor can send its keys to Bluestone (the system can, and the editor has not refused).</summary>
+    public bool CanRouteKeys { get; init; } = PluginEditorWindows.KeyRoutingSupported;
+
+    /// <summary>Whether this editor can be hidden by following the selection.</summary>
+    public bool CanHide { get; init; } = true;
+}
 
 public sealed record DeviceStatus(string Text, bool NeedsAttention = false, bool CanRestart = false, bool CanOpenEditor = false, string Hosting = "", string Detail = "")
 {

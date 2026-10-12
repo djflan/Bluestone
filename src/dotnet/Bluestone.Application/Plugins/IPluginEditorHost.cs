@@ -16,7 +16,8 @@ public interface IPluginEditorHost
     /// <summary>Opens (or brings back) the device's editor; null on success, else why not.</summary>
     Task<string?> OpenEditorAsync(DeviceId device, CancellationToken cancellationToken = default);
 
-    Task SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default);
+    /// <summary>Hides or shows the device's editor window; false when it could not (it then stays as it was).</summary>
+    Task<bool> SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default);
 
     /// <summary>Sends the device editor's keys to Bluestone or the plugin; false when that is not possible.</summary>
     Task<bool> SetEditorKeyboardAsync(DeviceId device, bool toHost, CancellationToken cancellationToken = default);

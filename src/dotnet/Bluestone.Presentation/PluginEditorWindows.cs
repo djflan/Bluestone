@@ -52,6 +52,12 @@ public sealed class PluginEditorWindows
 
     public bool SendsKeysToBluestone(DeviceId device) => _states.TryGetValue(device, out var state) && state.KeysToHost;
 
+    /// <summary>Whether this device's editor can be hidden (a plugin-owned window may refuse; it then stays open).</summary>
+    public bool CanHide(DeviceId device) => !_states.TryGetValue(device, out var state) || !state.CannotHide;
+
+    /// <summary>Whether this device's editor can send its keys to Bluestone (the system can, and the editor did not refuse).</summary>
+    public bool CanRouteKeys(DeviceId device) => KeyRoutingSupported && (!_states.TryGetValue(device, out var state) || !state.KeysUnsupported);
+
     /// <summary>Whether the editor is hidden because its track is not selected.</summary>
     public bool IsHiddenByFollow(DeviceId device) => _states.TryGetValue(device, out var state) && state.Applied == false && IsOpen(device);
 
@@ -80,6 +86,7 @@ public sealed class PluginEditorWindows
         if (!done)
         {
             state.KeysToHost = false;
+            state.KeysUnsupported = true;
             _owner.AddMessage(MessageSeverity.Info, "Plugins", "This plugin's editor cannot send its keys to Bluestone on this system; the keys stay with the plugin.");
         }
 
@@ -100,6 +107,7 @@ public sealed class PluginEditorWindows
         if (state.KeysToHost && !await _host.SetEditorKeyboardAsync(device, true))
         {
             state.KeysToHost = false;
+            state.KeysUnsupported = true;
         }
 
         Want(device, state, true);
@@ -121,7 +129,7 @@ public sealed class PluginEditorWindows
                 }
 
                 var state = State(device.Id);
-                var visible = !FollowsSelection || state.Pinned || relevant.Contains(device.Id);
+                var visible = !FollowsSelection || state.Pinned || state.CannotHide || relevant.Contains(device.Id);
                 if (!visible)
                 {
                     ReleaseHeld(state);
@@ -164,8 +172,21 @@ public sealed class PluginEditorWindows
             while (state.Applied != state.Wanted && IsOpen(device))
             {
                 var visible = state.Wanted;
-                await _host.SetEditorVisibleAsync(device, visible);
-                state.Applied = visible;
+                if (await _host.SetEditorVisibleAsync(device, visible))
+                {
+                    state.Applied = visible;
+                }
+                else if (!visible)
+                {
+                    // A plugin-owned window that will not hide stays open, and is not reported hidden.
+                    state.CannotHide = true;
+                    state.Wanted = state.Applied;
+                    _owner.AddMessage(MessageSeverity.Info, "Plugins", "This plugin manages its editor's window itself and cannot hide it, so it stays open when another track is selected.");
+                }
+                else
+                {
+                    state.Wanted = state.Applied;
+                }
             }
         }
         finally
@@ -234,6 +255,10 @@ public sealed class PluginEditorWindows
         public bool Pinned { get; set; }
 
         public bool KeysToHost { get; set; }
+
+        public bool KeysUnsupported { get; set; }
+
+        public bool CannotHide { get; set; }
 
         /// <summary>The visibility the worker was last told (a new window is visible).</summary>
         public bool Applied { get; set; } = true;

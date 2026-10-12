@@ -310,6 +310,25 @@ After commits `404f59f` and `97ae6cd`. Fixed in the clip-loop UI commit unless n
 | 8 | More `ClipSource` edge tests | Important follow-up | Added: loop beyond the file's end; an arranger wrap with a one-frame clip loop. Slow-disk across clip wraps and graph rebuilds while playing remain covered only by the existing generic tests (deferred) |
 | 9 | Broader serialization tests | Important follow-up | Partly: disabled loops round-trip; zero length refused; over-limit loops refused through the shared domain check. Path-specific assertions per case deferred |
 
+### Review 3: UI interactions (Agent B)
+
+After commits `6f3d974` to `0167d95`. Agent B found no real-time work or in-process plugin loading in the UI paths and
+no new card, pill, or gradient language. Responses (fixed in the commit that records this review unless noted):
+
+| # | Finding | Class | Response |
+| - | ------- | ----- | -------- |
+| 1 | A floating CLAP editor that cannot hide was still reported hidden | Required now | Fixed: hide/show returns a result through the native API, worker, and protocol (`NotSupported`); such an editor stays open, is not reported hidden, loses its pin, and a message says why; unit-tested |
+| 2 | Loop nudging needed a pointer to select the loop | Required now | Fixed: reaching the ruler by keyboard (Tab or arrows) selects its loop; UI-tested |
+| 3 | Keyboard capability is per OS, not per editor | Important follow-up | Fixed: per-editor capability; an editor that refused keeps the toggle disabled with its own reason |
+| 4 | Windows maps virtual keys, not physical positions, for computer-keyboard MIDI on non-US layouts | Important follow-up | Deferred (recorded below): carry the scan-code position separately from the logical key. macOS key codes are positional, so its physical keys are right; logical shortcuts on non-US Mac layouts follow position too |
+| 5 | Replacement was pointer-only | Important follow-up | Fixed: Device options ▸ *Replace with Browser Selection* takes the same staged, one-step path; UI-tested |
+| 6 | Mixed clip-loop state's accessibility unverified | Important follow-up | Not changed: the box shows the indeterminate state for a null value (two-state cycling only, so a click applies one value to all). A screen-reader check is listed for hands-on evaluation |
+| 7 | Automation names lagged behind the interactions | Important follow-up | Fixed for the ruler and the arrangement |
+| 8 | Native confidence is macOS-heavy | Important follow-up | Agreed; manual Windows/Linux checks are listed in deferred work and the final report |
+| 9 | `MainViewModel` still grows (zoom commands) | Important follow-up | Partly: navigation, keys, loops, and editors live in their own types; the five zoom commands stay on `MainViewModel` (deferred: a navigation view model) |
+| 10 | Inactive loop and loop tab contrast | Optional refinement | Done: slightly stronger inactive fill/edge and corner tab |
+| 11 | Embedded editors, global hooks, Wayland | Rejected scope | Agreed |
+
 ## Deviations and discoveries
 
 - **Audio transport, pre-existing**: the audio transport wraps an arranger loop at most once per block, so an arranger
@@ -330,4 +349,19 @@ After commits `404f59f` and `97ae6cd`. Fixed in the clip-loop UI commit unless n
 
 ## Deferred work
 
-(Recorded as it is identified.)
+- **Windows keyboard routing on non-US layouts**: carry the physical position (scan code) separately from the logical
+  key (Review 3 #4). Manual checks on Windows (VST3 and CLAP child focus, show without activation, modifiers) and Linux
+  (X11 hide/show) are still to be done; neither was run.
+- **Arranger loops shorter than one audio block**: the audio transport wraps once per block (pre-existing).
+- **A navigation view model** for the zoom commands now on `MainViewModel` (Review 3 #9).
+- **Slow-disk tests across repeated clip-loop wraps** and graph rebuilds while a looping audio clip plays (Review 2 #8);
+  path-specific format tests for each clip-loop refusal (Review 2 #9).
+- **Ghost repeats in the piano roll** for looping clips (the arranger shows them; the piano roll shows the content once
+  with its loop region shaded only by the arranger loop).
+- **Audio repeat markers under tempo changes** follow the tick model, not the fixed-length audio loop (ADR 0039).
+- **Recording with Replace over a looping note clip** removes the source events that play in the range, affecting every
+  repetition (ADR 0039).
+- **Explicit per-clip loop crossfades** (none is added at wraps today).
+- **Remembered editor geometry** across sessions; editors are not embedded (rejected scope).
+- **Audio clip import** (audio clips still come only from project files), so audio clip loops are reachable only in
+  projects that already hold audio clips.

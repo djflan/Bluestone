@@ -182,8 +182,9 @@ pub trait Instance {
     fn open_editor(&self, title: &str) -> Result<(), String>;
     fn close_editor(&self);
     fn is_editor_open(&self) -> bool;
-    /// Hides the editor's window (the editor and its state stay) or shows it again without taking focus.
-    fn set_editor_visible(&self, visible: bool);
+    /// Hides the editor's window (the editor and its state stay) or shows it again without taking focus. False when it
+    /// could not (a plugin-owned window that refused), so the host keeps treating it as shown.
+    fn set_editor_visible(&self, visible: bool) -> bool;
     /// Sends the editor window's keys to the host instead of the plugin; false when it cannot (no editor, a window the
     /// plugin owns, or a platform without interception).
     fn route_editor_keys_to_host(&self, to_host: bool) -> bool;

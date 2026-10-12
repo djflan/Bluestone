@@ -104,14 +104,11 @@ internal sealed class HostedInstance : IDisposable
     public string? OpenEditor(string title) =>
         _plugin is NativePlugin native ? native.OpenEditor(title) : $"{_plugin.Identity.DisplayName} has no editor.";
 
-    /// <summary>Hides or shows the editor window. Main thread.</summary>
-    public void SetEditorVisible(bool visible)
-    {
-        if (_plugin is NativePlugin native)
-        {
-            native.SetEditorVisible(visible);
-        }
-    }
+    /// <summary>Hides or shows the editor window; null on success, else why not. Main thread.</summary>
+    public string? SetEditorVisible(bool visible) =>
+        _plugin is not NativePlugin native ? $"{_plugin.Identity.DisplayName} has no editor."
+        : native.SetEditorVisible(visible) ? null
+        : "The plugin manages its editor's window itself and did not hide or show it.";
 
     /// <summary>Sends the editor's keys to the host or the plugin; null on success, else why not. Main thread.</summary>
     public string? RouteEditorKeys(bool toHost) =>

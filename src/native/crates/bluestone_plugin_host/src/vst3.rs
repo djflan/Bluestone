@@ -1316,9 +1316,13 @@ impl Instance for Vst3Instance {
         self.editor.borrow().is_some()
     }
 
-    fn set_editor_visible(&self, visible: bool) {
-        if let Some(editor) = self.editor.borrow().as_ref() {
-            editor.window.set_visible(visible);
+    fn set_editor_visible(&self, visible: bool) -> bool {
+        match self.editor.borrow().as_ref() {
+            Some(editor) => {
+                editor.window.set_visible(visible);
+                true
+            }
+            None => false,
         }
     }
 

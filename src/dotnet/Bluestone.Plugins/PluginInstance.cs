@@ -382,13 +382,23 @@ public sealed class PluginInstance
         _editorOpen = true;
     }
 
-    /// <summary>Hides the editor's window, keeping the editor, or shows it again without taking focus. Does nothing when not running.</summary>
-    public async Task SetEditorVisibleAsync(bool visible, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Hides the editor's window, keeping the editor, or shows it again without taking focus. False when that could not
+    /// be done (not running, no editor open, or a plugin-owned window that refused).
+    /// </summary>
+    public async Task<bool> SetEditorVisibleAsync(bool visible, CancellationToken cancellationToken = default)
     {
-        if (_link is { } link && _editorOpen)
+        if (_link is not { } link || !_editorOpen)
         {
-            Expect<Ack>(await _manager.RequestAsync(link.Worker, new SetEditorVisible(Id, visible), cancellationToken).ConfigureAwait(false));
+            return false;
         }
+
+        return await _manager.RequestAsync(link.Worker, new SetEditorVisible(Id, visible), cancellationToken).ConfigureAwait(false) switch
+        {
+            Ack => true,
+            ErrorReply { Code: ErrorCode.NotSupported } => false,
+            var other => Expect<Ack>(other) is not null,
+        };
     }
 
     /// <summary>
