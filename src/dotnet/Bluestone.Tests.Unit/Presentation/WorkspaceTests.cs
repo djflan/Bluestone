@@ -330,6 +330,22 @@ public sealed class WorkspaceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ARackOpenedInADetachedActiveView_StaysDetached()
+    {
+        var view = _vm.Workspace.NewDeviceView();
+        view.DetachCommand.Execute(null);
+        await Settle();
+
+        _vm.Racks.NewRackCommand.Execute(null);
+        await Settle();
+
+        Assert.True(view.IsDetached);
+        Assert.Same(view.DeviceView, _vm.Workspace.ActiveDeviceView);
+        Assert.True(view.DeviceView!.IsEditingRack);
+        Assert.DoesNotContain(view, _vm.Workspace.DetailTabs);
+    }
+
+    [Fact]
     public async Task ADetachedViewWhoseMonitorIsMissing_ComesBackAsARailIcon_AndKeepsItsWindowForLater()
     {
         var dual = DisplayConfiguration.Signature([Laptop, SideMonitor]);

@@ -40,7 +40,7 @@
             <PathIcon Classes="stroke" Data="{StaticResource Icon.More}" />
             <Button.Flyout>
               <MenuFlyout Placement="BottomEdgeAlignedRight">
-                <MenuItem Header="New Device View" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Workspace.AddDeviceViewCommand, FallbackValue={x:Null}}" />
+                <MenuItem Header="New Device View" Command="{Binding NewDeviceViewCommand}" />
                 <Separator />
                 <MenuItem Header="Detach to Window" Command="{Binding Host.DetachCommand, FallbackValue={x:Null}}" IsVisible="{Binding !Host.IsDetached, FallbackValue=False}" />
                 <MenuItem Header="Dock" Command="{Binding Host.DockCommand, FallbackValue={x:Null}}" IsVisible="{Binding Host.IsDetached, FallbackValue=False}" />
@@ -144,7 +144,13 @@
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
 
-                          <StackPanel Classes="deviceNotice" IsVisible="{Binding !Parameters.Count}">
+                          <StackPanel x:Name="NoControlsNotice" Classes="deviceNotice">
+                            <StackPanel.IsVisible>
+                              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="!Parameters.Count" />
+                                <Binding Path="!NeedsAttention" />
+                              </MultiBinding>
+                            </StackPanel.IsVisible>
                             <TextBlock Classes="caption" Text="{Binding Kind}" TextWrapping="Wrap" />
                             <TextBlock Classes="caption" Text="No controls to show here." IsVisible="{Binding !CanOpenEditor}" TextWrapping="Wrap" />
                             <Button Classes="raised compact" Content="Open Editor" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"

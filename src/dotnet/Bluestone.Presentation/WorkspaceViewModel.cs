@@ -545,12 +545,12 @@ public sealed partial class WorkspaceViewModel : ObservableObject
         }
     }
 
-    /// <summary>Shows a rack in the active Device View, locked to it.</summary>
+    /// <summary>Shows a rack in the active Device View, locked to it. A detached view stays in its own window.</summary>
     internal void ShowRack(DeviceChainId rack)
     {
         var view = ActiveDeviceView ?? NewDeviceView().DeviceView!;
         view.LockToRack(rack);
-        if (view.Host is { } host)
+        if (view.Host is { IsDetached: false } host)
         {
             Show(host);
         }

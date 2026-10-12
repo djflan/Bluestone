@@ -209,6 +209,52 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task TheNewDeviceViewMenuItem_WorksInADetachedWindow() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.Workspace.NewDeviceView();
+        view.DetachCommand.Execute(null);
+        app.Settle();
+        var window = Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+        var count = app.ViewModel.Workspace.DeviceViews.Count();
+
+        var menuButton = AppUnderTest.Within<Button>(window.GetVisualDescendants().OfType<DeviceViewControl>().Single(), b => b.Name == "ViewMenuButton");
+        menuButton.Flyout!.ShowAt(menuButton);
+        app.Settle();
+        var item = ((MenuFlyout)menuButton.Flyout).Items.OfType<MenuItem>().Single(i => (string?)i.Header == "New Device View");
+
+        Assert.NotNull(item.Command);
+        item.Command.Execute(null);
+        app.Settle();
+        Assert.Equal(count + 1, app.ViewModel.Workspace.DeviceViews.Count());
+        menuButton.Flyout.Hide();
+    });
+
+    [Fact]
+    public Task AMissingDevice_ShowsOnlyItsUnavailableNotice_NotTheNoControlsOne() => HeadlessApp.RunAsync(async () =>
+    {
+        var session = TwoTracks();
+        var track = session.Project.Sequence.Tracks[0].Id;
+        session.Execute(DeviceCommands.InsertDevice(track, DeviceInstance.Create(Definition("Transpose").ToReference()), Signal.DeviceCatalog.BuiltIn.Lookup, 0));
+        var chain = session.Project.ChainOf(track)!;
+        var missing = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("vst3:00000000000000000000000000000000"), "Vintage Synth"));
+        session.Execute(new ProjectCommand("Add a missing plugin", p => p.WithChain(chain with { Devices = chain.Devices.Add(missing) })));
+        await using var app = await AppUnderTest.OpenAsync(session);
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var chainControl = AppUnderTest.Within<ItemsControl>(deviceView, c => c.Name == "Chain");
+        var panel = (Control)chainControl.ContainerFromIndex(1)!;
+        var notices = panel.GetVisualDescendants().OfType<StackPanel>().Where(p => p.Classes.Contains("deviceNotice")).ToList();
+
+        Assert.True(app.ViewModel.DeviceView!.Devices[1].NeedsAttention);
+        Assert.Empty(app.ViewModel.DeviceView.Devices[1].Parameters);
+        Assert.False(notices.Single(n => n.Name == "NoControlsNotice").IsVisible);
+        Assert.True(notices.Single(n => n.Classes.Contains("unavailable")).IsVisible);
+    });
+
+    [Fact]
     public Task DetachingAndDockingAViewRepeatedly_LeavesNoClosedWindowSubscribedToIt() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);

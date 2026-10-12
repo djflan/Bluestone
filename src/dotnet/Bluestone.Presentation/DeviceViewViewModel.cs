@@ -227,6 +227,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     [RelayCommand]
     public void Activate() => _owner.Workspace.Activate(this);
 
+    /// <summary>Opens another Device View. Lives here so the view's menu reaches it in a detached window too.</summary>
+    [RelayCommand]
+    private void NewDeviceView() => _owner.Workspace.NewDeviceView();
+
     internal void Sync(Project project, TrackId? selected, DeviceCatalog catalog)
     {
         DeviceChain? chain = null;
