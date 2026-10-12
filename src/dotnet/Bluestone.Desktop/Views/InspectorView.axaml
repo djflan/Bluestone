@@ -75,8 +75,9 @@
             <Grid Classes="field" ColumnDefinitions="68,*">
               <TextBlock Text="Audio to" Classes="label" />
               <ComboBox Grid.Column="1" ItemsSource="{Binding Track.AudioDestinationChoices}" SelectedItem="{Binding Track.AudioDestination}" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding Track.CanChooseAudioDestination}" ToolTip.ShowOnDisabled="True"
                         AutomationProperties.Name="Audio output" PlaceholderText="Mixed"
-                        ToolTip.Tip="Where the track's sound goes: the master, a mixer channel, or nowhere. Its devices' own sends stay in Connections." />
+                        ToolTip.Tip="Where the track's sound goes: the master, a mixer channel, or nowhere. A track in a group sends its sound through the group. Its devices' own sends stay in Connections." />
             </Grid>
             <TextBlock Classes="muted" Text="{Binding Track.SendsText}" IsVisible="{Binding Track.HasSends}" Margin="68,0,0,0" />
             <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding Track.HasNoteDestination}">

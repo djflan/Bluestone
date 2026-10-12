@@ -113,6 +113,24 @@ public sealed class TrackStatusTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ADeviceThatIsNotInstalled_FlagsTheTrack_InsteadOfReportingNoInstrument()
+    {
+        var track = Track.FromEvents(TrackId.New(), "Lead", [new NoteEvent(Tick.Zero, new TickSpan(240), MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max)]);
+        var missing = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("plugin:vst3:gone/synth"), "Vital"));
+        var project = (Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track) })
+            .WithChain(DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [missing] });
+        var sound = TrackSound.Of(project, track.Id, Definitions);
+        var row = new TrackViewModel(_vm, track.Id);
+
+        row.Sync(1, track, Unrouted(track.Id), [], sound);
+
+        Assert.Equal("Vital", sound.MissingDevice);
+        Assert.True(row.NeedsAttention);
+        Assert.Equal("Vital · Not installed", row.StatusLine);
+        Assert.Equal([TrackViewModel.MissingDeviceProblem("Vital")], row.Problems);
+    }
+
+    [Fact]
     public void NotesThatNothingPlays_AreAProblem_ButOnlyThen()
     {
         var track = Track.FromEvents(TrackId.New(), "Lead", [new NoteEvent(Tick.Zero, new TickSpan(240), MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max)]);

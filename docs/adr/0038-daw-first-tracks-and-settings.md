@@ -28,12 +28,15 @@ separate dialogs. The milestone record is [docs/worklogs/daw-first-polish.md](..
 - A track's **primary audio output** is the first audio connection from its output, in project order; edits keep its
   position. The inspector's **Audio to** shows and edits it (`TrackSetup.SetAudioDestination`); choosing the
   destination of an existing send makes that send primary instead of duplicating it. Other audio connections from
-  the output are sends.
+  the output are sends; choosing no audio output removes them too. A track in a group sends its sound through the
+  group (ADR 0030), so its destination is not chosen there. Presets and chains moved onto a track get the default
+  path like a single inserted device.
 - The role remains persisted and every role is still available (the inspector shows it for non-hybrid tracks; the
   track's context menu has **Track Type**). Imported MIDI files keep making instrument tracks for hardware.
 - Track status describes the sound (`TrackSound`): the chain's instrument ("+N" for layers, "· Bypassed",
   "· Unavailable"), the hardware output, a note destination, or a neutral "No instrument" (`RouteHealth.Idle`).
-  Warnings are kept for notes nothing plays, a failed instrument, and missing or ambiguous outputs.
+  Warnings are kept for notes nothing plays, a failed instrument, a device that is not installed (its kind is not
+  stored, so it may be the instrument), and missing or ambiguous outputs. Rows follow plugin status changes.
 
 ### Inspector
 

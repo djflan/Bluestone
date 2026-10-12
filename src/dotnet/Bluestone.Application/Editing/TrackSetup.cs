@@ -78,7 +78,8 @@ public static class TrackSetup
     /// a mixer channel, or another track), adding one when it has none. A send that already goes to <paramref name="destination"/>
     /// becomes the primary output in its place, so a track never sends the same audio to one destination twice. Null means "no
     /// audio output": every audio connection from the track's output goes, sends included, since a remaining send would
-    /// otherwise become the primary output and the track would still be heard. Taps on its devices are left alone. One undo
+    /// otherwise become the primary output and the track would still be heard. Taps on its devices are left alone. Refused for
+    /// a track in a group: its output goes to the group, and its own outputs are parked until it leaves (ADR 0030). One undo
     /// step; refused if it would make a routing error.
     /// </summary>
     public static IProjectCommand SetAudioDestination(IReadOnlyCollection<TrackId> tracks, SignalNode? destination, DeviceDefinitionLookup definitions)
@@ -89,6 +90,12 @@ public static class TrackSetup
             var result = p;
             foreach (var track in tracks)
             {
+                if (result.Sequence.FindTrack(track) is { Group: { } group } member)
+                {
+                    var name = result.Sequence.FindTrack(group)?.Name ?? "its group";
+                    throw new CommandRefusedException($"\"{member.Name}\" is in the group \"{name}\", so its sound goes through the group. Remove it from the group to send it elsewhere.");
+                }
+
                 var output = SignalNode.Track(track);
                 var primary = PrimaryAudioOutput(result, track);
                 if (destination is not { } target)

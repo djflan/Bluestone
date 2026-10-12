@@ -234,4 +234,32 @@ public sealed class DawFirstTrackTests
             window.Close();
         }
     });
+
+    [Fact]
+    public Task AnInstrumentWhoseWorkerCrashes_MarksItsTrackRow_AndRestartingClearsIt() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? bridge = null;
+        await using var app = await AppUnderTest.OpenAsync(plugins: s => bridge = new PluginDeviceHost(plugins, s, [Sine]));
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        Assert.True(app.ViewModel.DeviceView!.InsertAt(0, PluginDeviceHost.DefinitionOf(Sine)));
+        app.Settle();
+        var panel = app.ViewModel.DeviceView.Devices.Single();
+        await AppUnderTest.WaitUntilAsync(() => panel.Status == "Running", "the plugin to run");
+        var row = app.ViewModel.Tracks[0];
+        Assert.Equal(Sine.DisplayName, row.StatusLine);
+
+        using (var worker = System.Diagnostics.Process.GetProcessById(bridge!.InstanceOf(panel.Id)!.WorkerProcessId!.Value))
+        {
+            worker.Kill();
+        }
+
+        await AppUnderTest.WaitUntilAsync(() => row.StatusLine == $"{Sine.DisplayName} · Unavailable", "the track row to show the crash");
+        Assert.True(row.NeedsAttention);
+
+        await panel.RestartCommand.ExecuteAsync(null);
+        await AppUnderTest.WaitUntilAsync(() => row.StatusLine == Sine.DisplayName, "the track row to recover");
+        Assert.True(row.IsReady);
+    });
 }

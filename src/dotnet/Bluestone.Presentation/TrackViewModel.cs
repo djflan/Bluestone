@@ -223,6 +223,7 @@ public sealed partial class TrackViewModel : ObservableObject
             : Sound.IsInstrumentBypassed ? $"{instrument} · Bypassed"
             : Health == RouteHealth.Attention ? $"{instrument} · Check"
             : instrument,
+        _ when Sound.MissingDevice is { } missing => $"{missing} · Not installed",
         _ when Sound.NoteDestination is { } destination => $"→ {destination}",
         _ when Sound.HoldsAudio => Sound.AudioDestination is { } audio ? $"Audio → {audio}" : "Audio",
         _ => "No instrument",
@@ -235,6 +236,9 @@ public sealed partial class TrackViewModel : ObservableObject
     public IReadOnlyList<string> Problems { get; private set; } = [];
 
     public bool CanInitialize => ResolvedProfile is { Initialization.Length: > 0 } && Health != RouteHealth.Offline;
+
+    internal static string MissingDeviceProblem(string device) =>
+        $"{device} is not installed, so this track may not sound as it was saved. Install it, or replace it in the Device View.";
 
     internal const string NoInstrumentProblem = "No instrument plays this track's notes. Add one from the Browser, or choose an external MIDI output.";
 
@@ -263,9 +267,12 @@ public sealed partial class TrackViewModel : ObservableObject
 
             var problems = resolved?.Problems ?? [];
             // Notes with no instrument at all are a problem; an instrument the musician bypassed is a choice, shown as such.
-            var unplayedNotes = !UsesHardware && sound.HoldsNotes && sound.Instrument is null && sound.NoteDestination is null
+            var unplayedNotes = !UsesHardware && sound.HoldsNotes && sound.Instrument is null && sound.NoteDestination is null && sound.MissingDevice is null
                 && resolved?.Live is null && !problems.Contains(RouteResolver.NoOutputProblem);
-            Problems = unplayedNotes ? [.. problems, NoInstrumentProblem] : problems;
+            IReadOnlyList<string> extra = sound.MissingDevice is { } missing && !UsesHardware
+                ? [MissingDeviceProblem(missing)]
+                : unplayedNotes ? [NoInstrumentProblem] : [];
+            Problems = [.. problems, .. extra];
             Health = resolved switch
             {
                 null => RouteHealth.Offline,

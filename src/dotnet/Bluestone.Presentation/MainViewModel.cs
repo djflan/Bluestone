@@ -131,7 +131,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             // A plugin MIDI effect that stops or comes back changes what goes into the plan, so recompile it too.
             _plugins.StatusChanged += (_, device) => _dispatcher.Post(() =>
             {
-                SyncSelection();
+                // Track rows say when their instrument is unavailable, so they are synced too, not only the selection.
+                SyncTracks();
                 if (_plugins.ShapesThePlan(device))
                 {
                     _ = RefreshAsync();

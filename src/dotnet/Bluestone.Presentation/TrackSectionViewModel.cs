@@ -39,6 +39,10 @@ public sealed partial class TrackSectionViewModel : ObservableObject
 
     public string SendsText => Sound.AudioSendCount == 1 ? "+1 send in Connections" : $"+{Sound.AudioSendCount} sends in Connections";
 
+    /// <summary>A track in a group sends its sound through the group (ADR 0030), so its destination is not chosen here.</summary>
+    [ObservableProperty]
+    public partial bool CanChooseAudioDestination { get; private set; } = true;
+
     /// <summary>Where the selected tracks' audio goes: the master, a mixer channel, another track, or nowhere.</summary>
     public ObservableCollection<AudioDestinationOption> AudioDestinationChoices { get; } = [];
 
@@ -52,6 +56,7 @@ public sealed partial class TrackSectionViewModel : ObservableObject
         {
             _tracks = tracks;
             Sound = tracks.Count == 1 ? tracks[0].Sound : TrackSound.Empty;
+            CanChooseAudioDestination = !tracks.Any(t => t.IsInGroup);
             SyncAudioDestinations();
         }
         finally

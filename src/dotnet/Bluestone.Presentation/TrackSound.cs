@@ -35,6 +35,12 @@ public sealed record TrackSound
         : InstrumentDevices.Length > 1 ? $"{name} +{InstrumentDevices.Length - 1}"
         : name;
 
+    /// <summary>
+    /// The first device in the chain whose definition is not installed. Its kind is not stored in the project, so it may be
+    /// what played the track: the track is flagged rather than reported as having no instrument.
+    /// </summary>
+    public string? MissingDevice { get; init; }
+
     /// <summary>How many devices the track's chain holds.</summary>
     public int DeviceCount { get; init; }
 
@@ -78,8 +84,10 @@ public sealed record TrackSound
         var audioOutputs = project.Connections.Where(c => c.Kind == SignalKind.Audio && c.Source == output).ToList();
         var audio = audioOutputs.FirstOrDefault();
         var notes = project.Connections.FirstOrDefault(c => c.Kind == SignalKind.Events && c.Source == output && c.Destination.Kind != SignalNodeKind.ExternalInstrument);
+        var missing = chain?.Devices.FirstOrDefault(d => definitions(d.Definition.Id) is null);
         return new TrackSound
         {
+            MissingDevice = missing?.DisplayName,
             Instrument = instrument?.DisplayName,
             InstrumentDevice = instrument?.Id,
             InstrumentDevices = [.. instruments.Select(d => d.Id)],

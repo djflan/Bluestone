@@ -247,4 +247,19 @@ public sealed class TrackSetupTests
         Assert.Empty(AudioFrom(history.Current, track.Id));
         Assert.Null(TrackSetup.PrimaryAudioOutput(history.Current, track.Id));
     }
+
+    [Fact]
+    public void AGroupedTracksAudioDestination_IsRefused_BecauseItsSoundGoesThroughTheGroup()
+    {
+        var group = new Track(TrackId.New(), "Group 1", [], role: TrackRole.Group);
+        var member = new Track(TrackId.New(), "Bass", [], role: TrackRole.Hybrid, group: group.Id);
+        var project = Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(group).WithTrack(member) };
+        var history = new EditHistory(TrackSetup.WithAudioPath(project, member.Id));
+        var before = history.Current;
+
+        var refused = Assert.Throws<CommandRefusedException>(() => history.Execute(TrackSetup.SetAudioDestination([member.Id], SignalNode.Master, Definitions)));
+
+        Assert.Contains("Group 1", refused.Message, StringComparison.Ordinal);
+        Assert.Same(before, history.Current);
+    }
 }
