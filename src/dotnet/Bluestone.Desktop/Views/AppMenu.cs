@@ -166,13 +166,10 @@ internal static class AppMenu
             return;
         }
 
+        // Every leaf item carries a command (Item and Check make one), so Settings closes before it runs.
         if (item.Command is { } command)
         {
             item.Command = window.InWorkspace(command);
-        }
-        else
-        {
-            item.Click += (_, _) => window.Settings.Close();
         }
     }
 
@@ -190,18 +187,13 @@ internal static class AppMenu
     private static NativeMenuItem Item(string header, ICommand command, KeyGesture? gesture = null) =>
         new(header) { Command = command, Gesture = gesture };
 
-    private static NativeMenuItem Item(string header, Action action, KeyGesture? gesture = null)
-    {
-        var item = new NativeMenuItem(header) { Gesture = gesture };
-        item.Click += (_, _) => action();
-        return item;
-    }
+    private static NativeMenuItem Item(string header, Action action, KeyGesture? gesture = null) =>
+        new(header) { Command = new RelayCommand(action), Gesture = gesture };
 
     /// <summary>A checkable item kept in step with a view model property.</summary>
     private static NativeMenuItem Check(string header, INotifyPropertyChanged source, string property, Func<bool> isChecked, Action toggle)
     {
-        var item = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = isChecked() };
-        item.Click += (_, _) => toggle();
+        var item = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = isChecked(), Command = new RelayCommand(toggle) };
         source.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == property)

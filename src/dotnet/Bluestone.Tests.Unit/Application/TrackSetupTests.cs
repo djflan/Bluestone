@@ -262,4 +262,25 @@ public sealed class TrackSetupTests
         Assert.Contains("Group 1", refused.Message, StringComparison.Ordinal);
         Assert.Same(before, history.Current);
     }
+
+    [Fact]
+    public void AnInstrumentInsertedIntoAGroupMember_IsHeardThroughTheGroup_AndStillHeardAfterItLeaves()
+    {
+        var history = Empty();
+        var bass = Track.Create("Bass");
+        history.Execute(ProjectCommands.AddTrack(bass));
+        var group = TrackId.New();
+        history.Execute(GroupCommands.CreateGroup(group, "Group 1", [bass.Id], Definitions));
+        Assert.Empty(AudioFrom(history.Current, bass.Id));
+
+        history.Execute(DeviceCommands.InsertDevice(bass.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
+
+        Assert.Equal(SignalNode.Track(group), Assert.Single(AudioFrom(history.Current, bass.Id)).Destination);
+        Assert.Contains(history.Current.ParkedConnections, c => c.Kind == SignalKind.Audio && c.Source == SignalNode.Track(bass.Id) && c.Destination == SignalNode.Master);
+
+        history.Execute(GroupCommands.SetGroup(bass.Id, null, Definitions));
+
+        Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, bass.Id)).Destination);
+        Assert.Empty(history.Current.ParkedConnections);
+    }
 }

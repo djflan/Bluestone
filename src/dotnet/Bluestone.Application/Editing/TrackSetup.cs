@@ -43,7 +43,8 @@ public static class TrackSetup
     }
 
     /// <summary>
-    /// Gives <paramref name="track"/> an audio connection from its output to <see cref="DefaultAudioDestination"/> when none
+    /// Gives <paramref name="track"/> an audio connection from its output to <see cref="DefaultAudioDestination"/> (for a group
+    /// member, its group, with a parked path to the master for when it leaves) when none
     /// of its audio is sent anywhere; otherwise returns the project unchanged. Deliberate routing is never replaced. An
     /// instrument track, whose output carries no audio of its own, becomes a hybrid track (ADR 0021 only ever widens), so
     /// the connection stays valid whatever its chain holds later.
@@ -56,9 +57,19 @@ public static class TrackSetup
             return project;
         }
 
-        var connection = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track), DefaultAudioDestination(project, track));
+        var output = SignalNode.Track(track);
+        var destination = DefaultAudioDestination(project, track);
+        var connection = SignalConnection.Create(SignalKind.Audio, output, destination);
         var sequence = found.Role == TrackRole.Instrument ? project.Sequence.WithTrack(found.WithRole(TrackRole.Hybrid)) : project.Sequence;
-        return project with { Sequence = sequence, Connections = project.Connections.Add(connection) };
+        var parked = project.ParkedConnections;
+        if (destination != SignalNode.Master && !parked.Any(c => c.Kind == SignalKind.Audio && c.Source == output))
+        {
+            // A group member's own outputs are parked while it is grouped (ADR 0030) and restored when it leaves: park the
+            // master path too, so leaving the group keeps the track heard.
+            parked = parked.Add(SignalConnection.Create(SignalKind.Audio, output, SignalNode.Master));
+        }
+
+        return project with { Sequence = sequence, Connections = project.Connections.Add(connection), ParkedConnections = parked };
     }
 
     /// <summary>
