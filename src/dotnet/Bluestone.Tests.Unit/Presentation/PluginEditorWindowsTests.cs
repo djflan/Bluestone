@@ -172,6 +172,26 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task KeysArrivingWhileAHideIsInFlight_AreNotHeld()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        await _windows.OpenAsync(a);
+        await _windows.SetKeysToBluestoneAsync(a, true);
+        var hold = new TaskCompletionSource();
+        _host.Hold = hold;
+
+        Select(1);
+        _host.Key(a, new PluginEditorKey(4, 0, Down: true, Repeat: false));
+        _host.Key(a, new PluginEditorKey(4, 0, Down: true, Repeat: true));
+        hold.SetResult();
+        await _host.Settled();
+
+        Assert.False(_host.Visible[a]);
+        Assert.Empty(_forwarded);
+    }
+
+    [Fact]
     public async Task TheKeyboardChoice_LastsThroughClosingAndReopening_AndIsDroppedWhereItCannotBeHonoured()
     {
         var a = DeviceOn(0);

@@ -24,6 +24,17 @@ public sealed class ArrangerLoopTests
     }
 
     [Fact]
+    public void MovingALoop_StopsAtTickZero_AndAtTheLastTick()
+    {
+        var atEnd = new ArrangerLoop(new TickRange(new Tick(long.MaxValue - Bar), new Tick(long.MaxValue)), false);
+        Assert.Same(atEnd, atEnd.Moved(Bar));
+
+        var nearEnd = new ArrangerLoop(new TickRange(new Tick(long.MaxValue - (2 * Bar)), new Tick(long.MaxValue - 10)), false);
+        Assert.Equal(new Tick(long.MaxValue), nearEnd.Moved(long.MaxValue).Range!.End);
+        Assert.Equal(Tick.Zero, new ArrangerLoop(TwoBars, false).Moved(-10 * Bar).Range!.Start);
+    }
+
+    [Fact]
     public void TurningLoopingOff_KeepsTheRange_AndTurningItOnAgainReusesIt()
     {
         var history = new EditHistory(Project.CreateNew());

@@ -205,7 +205,8 @@ public sealed class PluginEditorWindows
 
         if (key.Down)
         {
-            if (!state.Held.Add(key.Usage) && !key.Repeat)
+            // Once a hide is wanted, held keys were released and no release may follow, so nothing new is held.
+            if (!state.Wanted || (!state.Held.Add(key.Usage) && !key.Repeat))
             {
                 return;
             }

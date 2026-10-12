@@ -50,7 +50,8 @@ public sealed record ArrangerLoop
     public ArrangerLoop WithRange(TickRange range) => new(range ?? throw new ArgumentNullException(nameof(range)), IsEnabled);
 
     /// <summary>
-    /// The range moved by <paramref name="ticks"/> with its length kept, stopping at tick 0; unchanged when there is no range.
+    /// The range moved by <paramref name="ticks"/> with its length kept, stopping at tick 0 and at the last tick;
+    /// unchanged when there is no range.
     /// </summary>
     public ArrangerLoop Moved(long ticks)
     {
@@ -59,7 +60,7 @@ public sealed record ArrangerLoop
             return this;
         }
 
-        var delta = Math.Max(ticks, -range.Start.Value);
+        var delta = Math.Clamp(ticks, -range.Start.Value, long.MaxValue - range.End.Value);
         return delta == 0 ? this : WithRange(new TickRange(new Tick(range.Start.Value + delta), new Tick(range.End.Value + delta)));
     }
 }

@@ -120,7 +120,8 @@ public sealed class Track
                 {
                     if (clip is NoteClip { IsLooping: true } notes)
                     {
-                        total += notes.ArrangedEventCount();
+                        var count = notes.ArrangedEventCount();
+                        total = count > long.MaxValue - total ? long.MaxValue : total + count;
                     }
                 }
 

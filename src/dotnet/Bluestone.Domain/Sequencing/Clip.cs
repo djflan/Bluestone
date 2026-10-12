@@ -235,27 +235,42 @@ public sealed record NoteClip : Clip
         return events.Order(Comparer<TrackEvent>.Create(EventOrder.Compare));
     }
 
-    /// <summary>How many events <see cref="Arrange"/> yields, counted without producing them.</summary>
+    /// <summary>How many events <see cref="Arrange"/> yields, counted without producing them; <see cref="long.MaxValue"/> when that overflows.</summary>
     public long ArrangedEventCount()
     {
-        if (!IsLooping)
+        try
         {
-            return CountStarting(ContentOffset.Value, ContentOffset.Value + Length.Value);
+            return CountArranged();
         }
-
-        var loop = Loop!;
-        var passes = Passes.Count;
-        var first = FirstPassLength;
-        var start = ContentAt(0);
-        var count = CountStarting(start, start + first);
-        if (passes > 1 && CountStarting(loop.Start.Value, loop.End.Value) > 0)
+        catch (OverflowException)
         {
-            var perLoop = CountStarting(loop.Start.Value, loop.End.Value) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
-            var lastLength = Length.Value - first - ((passes - 2) * loop.Length.Value);
-            count += ((passes - 2) * perLoop) + CountStarting(loop.Start.Value, loop.Start.Value + lastLength) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
+            return long.MaxValue;
         }
+    }
 
-        return count;
+    private long CountArranged()
+    {
+        checked
+        {
+            if (!IsLooping)
+            {
+                return CountStarting(ContentOffset.Value, ContentOffset.Value + Length.Value);
+            }
+
+            var loop = Loop!;
+            var passes = Passes.Count;
+            var first = FirstPassLength;
+            var start = ContentAt(0);
+            var count = CountStarting(start, start + first);
+            if (passes > 1 && CountStarting(loop.Start.Value, loop.End.Value) > 0)
+            {
+                var perLoop = CountStarting(loop.Start.Value, loop.End.Value) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
+                var lastLength = Length.Value - first - ((passes - 2) * loop.Length.Value);
+                count += ((passes - 2) * perLoop) + CountStarting(loop.Start.Value, loop.Start.Value + lastLength) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
+            }
+
+            return count;
+        }
     }
 
     /// <summary>

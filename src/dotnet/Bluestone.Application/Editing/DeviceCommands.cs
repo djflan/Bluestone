@@ -62,7 +62,6 @@ public static class DeviceCommands
             return p.WithChain(found.Chain.Remove(device)) with { Connections = p.Connections.RemoveAll(c => c.Source == tap) };
         });
 
-    /// <summary>Moves a device within its chain. Its identity, parameters, automation, and taps are unchanged.</summary>
     /// <summary>
     /// Replaces <paramref name="device"/> with <paramref name="replacement"/> at the same place in its chain, in one step.
     /// The replacement has its own ID: automation of the old device is never bound to the new one's parameters unless it
@@ -111,6 +110,7 @@ public static class DeviceCommands
         return sequence;
     }
 
+    /// <summary>Moves a device within its chain. Its identity, parameters, automation, and taps are unchanged.</summary>
     public static IProjectCommand MoveDevice(DeviceId device, int newIndex, DeviceDefinitionLookup definitions) =>
         RoutingGuard.Command("Move Device", definitions, p =>
             p.FindDevice(device) is { } found ? p.WithChain(found.Chain.Move(device, newIndex)) : p);

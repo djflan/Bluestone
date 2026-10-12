@@ -50,7 +50,7 @@ public sealed class Sequence
         long total = 0;
         foreach (var track in tracks)
         {
-            total += track.LoopedEventCount;
+            total = track.LoopedEventCount > long.MaxValue - total ? long.MaxValue : total + track.LoopedEventCount;
         }
 
         if (total > MaxLoopedEvents)

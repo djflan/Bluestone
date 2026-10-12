@@ -178,6 +178,11 @@ public sealed class ClipLoopTests
         var ex = Assert.Throws<ClipLoopLimitException>(() => new Track(TrackId.New(), "t", [clip]));
         Assert.Contains("loop", ex.Message, StringComparison.OrdinalIgnoreCase);
 
+        // A count too large for a long saturates rather than wrapping past the budget check.
+        var endless = clip with { Length = new TickSpan(long.MaxValue), Content = new EventList([Note(0, 1), Note(0, 1, 64)]) };
+        Assert.Equal(long.MaxValue, endless.ArrangedEventCount());
+        Assert.Throws<ClipLoopLimitException>(() => new Track(TrackId.New(), "t", [endless]));
+
         // An empty loop repeats nothing, however short.
         var empty = clip with { Content = EventList.Empty };
         Assert.Equal(0, empty.ArrangedEventCount());
