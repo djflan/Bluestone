@@ -216,6 +216,18 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     /// <summary>Raised when any view's placement changes, so the window can open, close, and lay out regions and windows.</summary>
     public event EventHandler? LayoutChanged;
 
+    /// <summary>
+    /// Raised after a saved layout was restored (at startup or when another project is opened), so the window can put itself
+    /// and the detached windows where that layout has them.
+    /// </summary>
+    public event EventHandler? LayoutRestored;
+
+    /// <summary>
+    /// True while a saved layout is being applied. Windows closed meanwhile belong to the layout being replaced (already saved),
+    /// so their bounds must not be noted on views that now hold the restored layout's bounds.
+    /// </summary>
+    public bool IsRestoring { get; private set; }
+
     partial void OnDetailDeviceViewChanged(WorkspaceView? value) => SyncTabs();
 
     /// <summary>Marks which Device View tab is showing, after the detail region's tab or content changed.</summary>
@@ -379,7 +391,21 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(screens);
-        state = state.Upgrade(screens);
+        IsRestoring = true;
+        try
+        {
+            Apply(state.Upgrade(screens), screens);
+        }
+        finally
+        {
+            IsRestoring = false;
+        }
+
+        LayoutRestored?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Apply(WorkspaceState state, IReadOnlyList<ScreenArea> screens)
+    {
         foreach (var view in Views.Where(v => v.CanClose).ToList())
         {
             Views.Remove(view);

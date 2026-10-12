@@ -552,6 +552,33 @@ public sealed class WorkspaceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OpeningAnotherProject_TellsTheWindowItsLayoutWasRestored_WithThatProjectsWindowBounds()
+    {
+        var laptop = DisplayConfiguration.Signature([Laptop]);
+        var other = Path.Combine(_directory, "Other.bluestone");
+        await new ProjectSession().SaveAsync(other, TestContext.Current.CancellationToken);
+        var otherWindow = new WindowBounds(200, 100, 1000, 700);
+        _vm.LayoutStore!.Save(other, new WorkspaceState { MainWindow = ImmutableDictionary<string, WindowBounds>.Empty.Add(laptop, otherWindow) });
+        _vm.Screens = () => [Laptop];
+        _vm.Workspace.MainWindowBounds = ImmutableDictionary<string, WindowBounds>.Empty.Add(laptop, new WindowBounds(0, 0, 1440, 900));
+        var restoring = new List<bool>();
+        _vm.Workspace.LayoutChanged += (_, _) => restoring.Add(_vm.Workspace.IsRestoring);
+        var restored = new List<WindowBounds?>();
+        _vm.Workspace.LayoutRestored += (_, _) =>
+        {
+            Assert.False(_vm.Workspace.IsRestoring);
+            restored.Add(LayoutRecovery.Restore(_vm.Workspace.MainWindowBounds, [Laptop]));
+        };
+
+        await _vm.OpenFileAsync(other);
+        await Settle();
+
+        Assert.Equal([otherWindow], restored);
+        Assert.Contains(true, restoring);
+        Assert.False(_vm.Workspace.IsRestoring);
+    }
+
+    [Fact]
     public void DisplayConfiguration_DoesNotDependOnTheOrderTheDisplaysAreListedIn() =>
         Assert.Equal(DisplayConfiguration.Signature([Laptop, SideMonitor]), DisplayConfiguration.Signature([SideMonitor, Laptop]));
 

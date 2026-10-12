@@ -163,11 +163,29 @@ public partial class MainWindow : Window
         vm.RestoreLayout();
         RestoreBounds(vm.Workspace);
         SyncDetachedWindows();
+
+        // Opening another project restores its layout: the windows go where that layout has them, not where they were.
+        vm.Workspace.LayoutRestored += (_, _) => OnLayoutRestored(vm.Workspace);
         if (Screens is { } screens)
         {
             // A monitor plugged back in brings back the detached windows that were waiting for it.
             screens.Changed += OnScreensChanged;
             Closed += (_, _) => screens.Changed -= OnScreensChanged;
+        }
+    }
+
+    /// <summary>
+    /// Puts the main window and the detached windows where a layout restored after startup has them. A window whose layout has
+    /// no bounds reachable on the attached displays stays where it is.
+    /// </summary>
+    private void OnLayoutRestored(WorkspaceViewModel workspace)
+    {
+        RestoreBounds(workspace);
+        SyncDetachedWindows();
+        var screens = CurrentScreens();
+        foreach (var (view, window) in _detached)
+        {
+            Place(window, view, screens);
         }
     }
 
@@ -256,22 +274,15 @@ public partial class MainWindow : Window
                 _ => new DeviceViewControl { DataContext = view.DeviceView },
             };
             var window = new ViewWindow(view, ViewWindow.Frame(view, body));
-            if (screens.Count > 0 && LayoutRecovery.Restore(view.DetachedBounds, screens) is { } bounds)
-            {
-                var (width, height) = LayoutRecovery.WindowSize(bounds, screens);
-                window.WindowStartupLocation = WindowStartupLocation.Manual;
-                window.Position = new PixelPoint((int)bounds.X, (int)bounds.Y);
-                window.Width = width;
-                window.Height = height;
-            }
-            else
+            if (!Place(window, view, screens))
             {
                 window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
             }
 
             window.Closing += (_, _) =>
             {
-                if (CurrentScreens() is { Count: > 0 } now)
+                // A window closed while another layout is restored shows the replaced layout, which was saved already.
+                if (!vm.Workspace.IsRestoring && CurrentScreens() is { Count: > 0 } now)
                 {
                     view.RememberBounds(DisplayConfiguration.Signature(now), BoundsOf(window));
                 }
@@ -279,6 +290,22 @@ public partial class MainWindow : Window
             _detached[view] = window;
             window.Show(this);
         }
+    }
+
+    /// <summary>Puts <paramref name="window"/> where <paramref name="view"/>'s saved bounds are on <paramref name="screens"/>, if any are.</summary>
+    private static bool Place(ViewWindow window, WorkspaceView view, List<ScreenArea> screens)
+    {
+        if (screens.Count == 0 || LayoutRecovery.Restore(view.DetachedBounds, screens) is not { } bounds)
+        {
+            return false;
+        }
+
+        var (width, height) = LayoutRecovery.WindowSize(bounds, screens);
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Position = new PixelPoint((int)bounds.X, (int)bounds.Y);
+        window.Width = width;
+        window.Height = height;
+        return true;
     }
 
     private void OnOpenedSyncWindows(object? sender, EventArgs e)
