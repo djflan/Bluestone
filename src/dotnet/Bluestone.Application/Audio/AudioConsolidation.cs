@@ -93,7 +93,7 @@ public static class AudioConsolidation
 
         long Map(long played) => loopStart < 0 || played < loopStart + loopLength ? played : loopStart + ((played - loopStart - loopLength) % loopLength);
 
-        if (total * channels * 4L > uint.MaxValue - 36)
+        if (total > (uint.MaxValue - 36L) / (channels * 4L))
         {
             throw new IOException("The clip is too long to write as one WAVE file (over 4 GiB).");
         }

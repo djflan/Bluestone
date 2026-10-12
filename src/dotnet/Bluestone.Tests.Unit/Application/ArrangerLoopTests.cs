@@ -151,6 +151,9 @@ public sealed class ArrangerLoopTests
     public void ANarrowLoop_KeepsABodyToGrab()
     {
         Assert.Equal(LoopStripPart.Body, LoopStripDrag.HitTest(106, 100, 112, 5));
+        Assert.Equal(LoopStripPart.Body, LoopStripDrag.HitTest(103, 100, 106, 5));
+        Assert.Equal(LoopStripPart.StartEdge, LoopStripDrag.HitTest(101, 100, 106, 5));
+        Assert.Equal(LoopStripPart.EndEdge, LoopStripDrag.HitTest(105, 100, 106, 5));
         Assert.Equal(LoopStripPart.Empty, LoopStripDrag.HitTest(150, null, null, 5));
     }
 

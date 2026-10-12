@@ -39,7 +39,7 @@ public sealed record LoopStripDrag(LoopStripPart Part, long PressTick, TickRange
             return LoopStripPart.Empty;
         }
 
-        var grip = Math.Min(edgeGrip, Math.Max(2, (x1 - x0) / 3));
+        var grip = Math.Min(edgeGrip, (x1 - x0) / 3);
         if (x >= x0 - grip && x <= x0 + grip)
         {
             return LoopStripPart.StartEdge;
