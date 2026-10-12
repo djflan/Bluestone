@@ -259,7 +259,7 @@ public sealed partial class BrowserViewModel : ObservableObject
 
         var target = _owner.Workspace?.InsertionTarget;
         HasTarget = target is not null;
-        TargetText = target is null ? "Open a Device View on a track to insert"
+        TargetText = target is null ? (_owner.SelectedTracks.Count > 1 ? "Select one track to insert into it" : "Open a Device View on a track to insert")
             : target.SelectedDevice is { } after ? $"Into {target.Heading}, after {after.Name}"
             : target.Devices.Count == 0 ? $"Into {target.Heading}, as its first device"
             : $"Into {target.Heading}, at the end";

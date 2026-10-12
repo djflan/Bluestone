@@ -306,6 +306,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             : "Devices";
         AccentIndex = Track is { } trackId ? _owner.Tracks.FirstOrDefault(t => t.Id == trackId)?.ColorIndex ?? -1 : -1;
         EmptyText = IsUnavailable ? (_lockedRack is not null ? "The rack this view was locked to has been removed." : "The track this view was locked to has been removed.")
+            : !HasChain && _owner.SelectedTracks.Count > 1 ? "Several tracks are selected. Select one to see its devices."
             : !HasChain ? "Select a track to see its devices."
             : "Drop an instrument or effect here";
         var node = Rack is { } shownRack ? SignalNode.Rack(shownRack) : Track is { } shownTrack ? SignalNode.Track(shownTrack) : (SignalNode?)null;
