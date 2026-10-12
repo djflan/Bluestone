@@ -65,12 +65,27 @@ public sealed record ProgramOption(ProgramNumber Program, string Name)
 
 public enum RouteHealth
 {
-    /// <summary>Playing to a connected output.</summary>
+    /// <summary>Playing to a connected output, or through an instrument in the track's chain.</summary>
     Ready,
 
-    /// <summary>Playable, but something needs attention (name match, missing profile).</summary>
+    /// <summary>Playable, but something needs attention (name match, missing profile, notes no instrument plays).</summary>
     Attention,
 
     /// <summary>Not playable: no output, or the output is missing.</summary>
     Offline,
+
+    /// <summary>Nothing is wrong and nothing sounds yet: a new or empty track waiting for an instrument or content.</summary>
+    Idle,
+}
+
+/// <summary>An audio destination choice for the inspector; <see cref="Destination"/> is null for "no audio output".</summary>
+public sealed record AudioDestinationOption(Bluestone.Domain.Routing.SignalNode? Destination, string Name)
+{
+    public static readonly AudioDestinationOption None = new(null, "No audio output");
+
+    public static readonly AudioDestinationOption Mixed = new(null, "Mixed") { IsMixed = true };
+
+    public bool IsMixed { get; init; }
+
+    public override string ToString() => Name;
 }

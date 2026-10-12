@@ -15,14 +15,19 @@ public static class DeviceCommands
 {
     /// <summary>
     /// Inserts <paramref name="device"/> into <paramref name="track"/>'s chain at <paramref name="index"/>
-    /// (null for the end), creating the chain when the track has none.
+    /// (null for the end), creating the chain when the track has none. A device that makes audio (an instrument
+    /// or audio effect) on a track whose audio goes nowhere also gives the track an audio path to the master or
+    /// its group (<see cref="TrackSetup.WithAudioPath"/>), in the same step, so an inserted instrument is heard.
     /// </summary>
     public static IProjectCommand InsertDevice(TrackId track, DeviceInstance device, DeviceDefinitionLookup definitions, int? index = null) =>
         RoutingGuard.Command("Add Device", definitions, p =>
         {
             ArgumentNullException.ThrowIfNull(device);
             var chain = p.ChainOf(track) ?? DeviceChain.Create(ChainOwner.ForTrack(track));
-            return p.WithChain(chain.Insert(index ?? chain.Devices.Length, device));
+            var inserted = p.WithChain(chain.Insert(index ?? chain.Devices.Length, device));
+            return definitions(device.Definition.Id)?.Produces.HasFlag(SignalKinds.Audio) == true
+                ? TrackSetup.WithAudioPath(inserted, track)
+                : inserted;
         });
 
     /// <summary>Inserts <paramref name="device"/> into the chain <paramref name="chain"/> (a track's or a rack's).</summary>
