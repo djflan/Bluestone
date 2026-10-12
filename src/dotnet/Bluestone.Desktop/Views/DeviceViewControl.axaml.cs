@@ -28,7 +28,7 @@ public partial class DeviceViewControl : UserControl
         AddHandler(PointerReleasedEvent, (_, _) => ClearPress(), RoutingStrategies.Tunnel);
         ChainArea.AddHandler(DragDrop.DragEnterEvent, OnDragOver);
         ChainArea.AddHandler(DragDrop.DragOverEvent, OnDragOver);
-        ChainArea.AddHandler(DragDrop.DragLeaveEvent, (_, _) => InsertionMarker.IsVisible = false);
+        ChainArea.AddHandler(DragDrop.DragLeaveEvent, (_, _) => HideDropFeedback());
         ChainArea.AddHandler(DragDrop.DropEvent, OnDrop);
         ChainScroller.ScrollChanged += (_, _) =>
         {
@@ -133,7 +133,7 @@ public partial class DeviceViewControl : UserControl
 
         ClearPress();
         await DragDrop.DoDragDropAsync(press, ChainDrag.Move(panel.Id, vm).ToTransfer(), DragDropEffects.Move);
-        InsertionMarker.IsVisible = false;
+        HideDropFeedback();
     }
 
     private void ClearPress()
@@ -147,7 +147,7 @@ public partial class DeviceViewControl : UserControl
         if (ChainDrag.From(e) is not { } drag || ViewModel is not { HasChain: true } vm)
         {
             // Not something a chain takes (files go to the window), or there is no chain here: no marker, no guess.
-            InsertionMarker.IsVisible = false;
+            HideDropFeedback();
             if (ChainDrag.From(e) is not null)
             {
                 e.DragEffects = DragDropEffects.None;
@@ -161,8 +161,18 @@ public partial class DeviceViewControl : UserControl
         if (effect == DragDropEffects.None)
         {
             // A device from another chain: devices do not move between chains, so there is no gap to offer.
-            InsertionMarker.IsVisible = false;
+            HideDropFeedback();
             e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        if (vm.IsEmpty)
+        {
+            // The only place it can go: light the empty slot rather than mark a gap.
+            InsertionMarker.IsVisible = false;
+            EmptySlot.Classes.Set("dropTarget", true);
+            e.DragEffects = effect;
             e.Handled = true;
             return;
         }
@@ -176,9 +186,15 @@ public partial class DeviceViewControl : UserControl
         e.Handled = true;
     }
 
-    private void OnDrop(object? sender, DragEventArgs e)
+    private void HideDropFeedback()
     {
         InsertionMarker.IsVisible = false;
+        EmptySlot.Classes.Set("dropTarget", false);
+    }
+
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        HideDropFeedback();
         if (ChainDrag.From(e) is not { } drag || ViewModel is not { HasChain: true } vm)
         {
             return;

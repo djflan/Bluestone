@@ -310,12 +310,18 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     public void BrowseInstruments()
     {
         RevealSelectedChain();
+        ShowBrowser(BrowserCategory.Instruments);
+    }
+
+    /// <summary>Docks the Browser unless it is open already (docked or in its own window) and shows <paramref name="category"/>.</summary>
+    public void ShowBrowser(BrowserCategory category)
+    {
         if (!Browser.IsDocked && !Browser.IsDetached)
         {
             Show(Browser);
         }
 
-        _owner.Browser.ShowCategory(BrowserCategory.Instruments);
+        _owner.Browser.ShowCategory(category);
     }
 
     /// <summary>Makes <paramref name="view"/> the one Browser insertions go to; called when the musician uses it.</summary>

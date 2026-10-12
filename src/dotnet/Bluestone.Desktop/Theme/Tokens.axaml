@@ -195,10 +195,6 @@
     <GradientStop Offset="0" Color="#3E3E42" />
     <GradientStop Offset="1" Color="#363639" />
   </LinearGradientBrush>
-  <LinearGradientBrush x:Key="Gradient.DeviceHeader" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#323236" />
-    <GradientStop Offset="1" Color="#2B2B2F" />
-  </LinearGradientBrush>
 
   <!-- Typography. -->
   <FontFamily x:Key="Font.Mono">SF Mono, Menlo, Cascadia Mono, JetBrains Mono, Consolas, DejaVu Sans Mono, monospace</FontFamily>
@@ -255,6 +251,9 @@
   <x:Double x:Key="DevicePanel.LampSize">6</x:Double>
   <x:Double x:Key="DevicePanel.KnobSize">34</x:Double>
   <x:Double x:Key="DevicePanel.NodeSize">10</x:Double>
+  <x:Double x:Key="DevicePanel.NodeWidth">56</x:Double>
+  <x:Double x:Key="DevicePanel.FooterHeight">22</x:Double>
+  <BoxShadows x:Key="Shadow.Focus">0 0 6 0 #806AA2E4</BoxShadows>
 
   <!-- Icons. -->
   <x:Double x:Key="Icon.SizeSmall">11</x:Double>

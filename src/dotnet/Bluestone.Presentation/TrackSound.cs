@@ -21,11 +21,19 @@ public sealed record TrackSound
     /// <summary>The device that is <see cref="Instrument"/>.</summary>
     public DeviceId? InstrumentDevice { get; init; }
 
-    /// <summary>The instrument is bypassed, so it passes notes on but makes no sound of its own.</summary>
+    /// <summary>Every instrument in the chain, in order: a chain may layer several (ADR 0037).</summary>
+    public ImmutableArray<DeviceId> InstrumentDevices { get; init; } = [];
+
+    /// <summary>Every instrument is bypassed, so the chain passes notes on but makes no sound of its own.</summary>
     public bool IsInstrumentBypassed { get; init; }
 
-    /// <summary>The instrument is a plugin that is not installed, crashed, or stopped responding (set from its runtime status).</summary>
+    /// <summary>An instrument is a plugin that is not installed, crashed, or stopped responding (set from runtime status).</summary>
     public bool IsInstrumentUnavailable { get; init; }
+
+    /// <summary>"Surge XT", or "Surge XT +1" when the chain layers more instruments.</summary>
+    public string? InstrumentSummary => Instrument is not { } name ? null
+        : InstrumentDevices.Length > 1 ? $"{name} +{InstrumentDevices.Length - 1}"
+        : name;
 
     /// <summary>How many devices the track's chain holds.</summary>
     public int DeviceCount { get; init; }

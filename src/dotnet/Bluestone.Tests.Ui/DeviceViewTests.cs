@@ -74,6 +74,43 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task AnEmptyChain_IsOneCompositionBetweenItsBoundaries_ThatSayWhereTheSignalComesFromAndGoes() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Workspace.Browser.CollapseCommand.Execute(null);
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var slot = AppUnderTest.Within<Panel>(deviceView, p => p.Name == "EmptySlot");
+        var input = AppUnderTest.Within<TextBlock>(deviceView, t => t.Name == "InputText");
+        var output = AppUnderTest.Within<TextBlock>(deviceView, t => t.Name == "OutputText");
+
+        Assert.True(slot.IsEffectivelyVisible);
+        Assert.Equal("Track", input.Text);
+        Assert.Equal("Master", output.Text);
+        var inNode = input.TranslatePoint(default, deviceView)!.Value;
+        var slotAt = slot.TranslatePoint(default, deviceView)!.Value;
+        var outNode = output.TranslatePoint(default, deviceView)!.Value;
+        Assert.True(inNode.X < slotAt.X && slotAt.X + slot.Bounds.Width < outNode.X, "IN, the empty slot, and OUT read left to right.");
+
+        app.Click(AppUnderTest.Within<Button>(deviceView, b => b.Name == "BrowseInstrumentsButton"));
+        Assert.True(app.ViewModel.Workspace.Browser.IsDocked);
+        Assert.Equal(Presentation.BrowserCategory.Instruments, app.ViewModel.Browser.SelectedCategory.Category);
+
+        app.ViewModel.Selection.Track.AudioDestination = app.ViewModel.Selection.Track.AudioDestinationChoices.Single(o => o.Destination is null && !o.IsMixed);
+        app.Settle();
+        Assert.Equal("Not routed", output.Text);
+        Assert.Contains("unrouted", output.Classes);
+
+        app.ViewModel.DeviceView!.InsertAt(0, Definition("Arpeggiator"));
+        app.Settle();
+        Assert.False(slot.IsEffectivelyVisible);
+        app.SaveFrame("device-view-unrouted");
+    });
+
+    [Fact]
     public Task AKnob_NudgesASteppedParameterOneStep_AndAContinuousOneFinely() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);

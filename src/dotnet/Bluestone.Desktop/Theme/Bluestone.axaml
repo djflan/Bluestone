@@ -865,7 +865,7 @@
     <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
   </Style>
   <Style Selector="Border.chainNode">
-    <Setter Property="Width" Value="22" />
+    <Setter Property="Width" Value="{StaticResource DevicePanel.NodeWidth}" />
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
   </Style>
   <Style Selector="Ellipse.nodeDot">
@@ -873,6 +873,55 @@
     <Setter Property="Height" Value="{StaticResource DevicePanel.NodeSize}" />
     <Setter Property="Stroke" Value="{StaticResource Text.Muted}" />
     <Setter Property="StrokeThickness" Value="1.5" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Ellipse.nodeDot.routed">
+    <Setter Property="Stroke" Value="{StaticResource Signal.Audio}" />
+  </Style>
+  <!-- Where the chain's signal comes from and goes, under its boundary node. -->
+  <Style Selector="TextBlock.nodeDetail">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="MaxWidth" Value="{StaticResource DevicePanel.NodeWidth}" />
+  </Style>
+  <Style Selector="TextBlock.nodeDetail.unrouted">
+    <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
+  </Style>
+  <!-- The empty chain's slot: the size of a panel, outlined, the place a first device goes. -->
+  <Style Selector="Panel.emptySlot">
+    <Setter Property="Width" Value="{StaticResource DevicePanel.LargeWidth}" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
+  </Style>
+  <Style Selector="Rectangle.slotOutline">
+    <Setter Property="Stroke" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="StrokeThickness" Value="1" />
+    <Setter Property="StrokeDashArray" Value="4,3" />
+    <Setter Property="RadiusX" Value="4" />
+    <Setter Property="RadiusY" Value="4" />
+    <Setter Property="Fill" Value="Transparent" />
+  </Style>
+  <Style Selector="Panel.emptySlot.dropTarget Rectangle.slotOutline">
+    <Setter Property="Stroke" Value="{StaticResource State.Focus}" />
+    <Setter Property="Fill" Value="{StaticResource State.SelectedSubtle}" />
+  </Style>
+  <Style Selector="StackPanel.slotContent">
+    <Setter Property="Spacing" Value="{StaticResource Space.M}" />
+    <Setter Property="Margin" Value="{StaticResource Inset.Section}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="StackPanel.slotContent > PathIcon">
+    <Setter Property="Width" Value="{StaticResource Icon.SizeLarge}" />
+    <Setter Property="Height" Value="{StaticResource Icon.SizeLarge}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.slotTitle">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
     <Setter Property="HorizontalAlignment" Value="Center" />
   </Style>
   <Style Selector="TextBlock.nodeLabel">
@@ -898,7 +947,7 @@
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="CornerRadius" Value="1.5" />
     <Setter Property="Background" Value="{StaticResource State.Focus}" />
-    <Setter Property="BoxShadow" Value="0 0 6 0 #806AA2E4" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.Focus}" />
   </Style>
 
   <Style Selector="Border.devicePanel">
@@ -921,8 +970,15 @@
   <Style Selector="Border.deviceHeader">
     <Setter Property="Height" Value="{StaticResource DevicePanel.HeaderHeight}" />
     <Setter Property="Padding" Value="4,2,2,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Raised}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="Border.devicePanel.selected Border.deviceHeader">
+    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+  </Style>
+  <Style Selector="Border.devicePanel.bypassed Border.roleStripe">
+    <Setter Property="Opacity" Value="0.35" />
   </Style>
   <Style Selector="Border.roleStripe">
     <Setter Property="Height" Value="2" />
@@ -979,6 +1035,11 @@
   </Style>
   <Style Selector="Panel.deviceBody">
     <Setter Property="Margin" Value="6,6,6,0" />
+  </Style>
+  <!-- Controls sit as a balanced block in the panel's fixed height, not packed against its top. -->
+  <Style Selector="Panel.deviceBody > ItemsControl">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="StackPanel.knobCell">
     <Setter Property="Width" Value="{StaticResource DevicePanel.KnobCellWidth}" />
@@ -1060,7 +1121,7 @@
     <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
   </Style>
   <Style Selector="Grid.deviceFooter">
-    <Setter Property="Height" Value="22" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.FooterHeight}" />
     <Setter Property="Margin" Value="8,0,4,0" />
   </Style>
   <Style Selector="Button.collapsedName">

@@ -59,9 +59,10 @@
         <StackPanel x:Name="ChainRow" Orientation="Horizontal" Margin="12,12,24,12" VerticalAlignment="Top">
           <!-- Input boundary: the track's signal bundle comes in here. -->
           <Border Classes="chainNode" ToolTip.Tip="Chain input: notes, controls, and audio arriving at this chain" AutomationProperties.Name="Chain input">
-            <StackPanel Spacing="6" VerticalAlignment="Center">
+            <StackPanel Spacing="4" VerticalAlignment="Center">
               <Ellipse Classes="nodeDot" />
               <TextBlock Text="IN" Classes="nodeLabel" />
+              <TextBlock x:Name="InputText" Text="{Binding InputText}" Classes="nodeDetail" />
             </StackPanel>
           </Border>
 
@@ -83,22 +84,19 @@
                     <Panel>
                       <!-- Expanded: header, controls, footer. -->
                       <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCollapsed}">
-                        <Border Classes="deviceHeader" Background="{StaticResource Gradient.DeviceHeader}">
-                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                            <Border Grid.ColumnSpan="5" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
+                        <Border Classes="deviceHeader">
+                          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                            <Border Grid.ColumnSpan="4" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
                             <Button Classes="power" Classes.off="{Binding IsBypassed}" Command="{Binding ToggleBypassedCommand}"
                                     ToolTip.Tip="On or bypassed. A bypassed device passes every signal through unchanged."
                                     AutomationProperties.Name="Bypass device">
                               <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
                             </Button>
                             <TextBlock Grid.Column="1" Classes="deviceName grip" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Kind}" />
-                            <Border Grid.Column="2" Classes="badge" IsVisible="{Binding IsPlugin}">
-                              <TextBlock Text="{Binding Format}" />
-                            </Border>
-                            <Button Grid.Column="3" Classes="tool tiny" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="Collapse in this view" AutomationProperties.Name="Collapse device">
+                            <Button Grid.Column="2" Classes="tool tiny" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="Collapse in this view" AutomationProperties.Name="Collapse device">
                               <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronLeft}" />
                             </Button>
-                            <Button Grid.Column="4" Classes="tool tiny" ToolTip.Tip="Device options" AutomationProperties.Name="Device options">
+                            <Button Grid.Column="3" Classes="tool tiny" ToolTip.Tip="Device options" AutomationProperties.Name="Device options">
                               <PathIcon Classes="stroke" Data="{StaticResource Icon.More}" />
                               <Button.Flyout>
                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -128,7 +126,7 @@
                                 <Panel>
                                   <StackPanel Classes="knobCell" ToolTip.Tip="{Binding Name}" IsVisible="{Binding !IsSwitch}">
                                     <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}" Step="{Binding KnobStep}"
-                                                   Accent="{Binding $parent[ItemsControl].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue=#4C8DDB}"
+                                                   Accent="{Binding $parent[ItemsControl].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue={StaticResource Accent.Color}}"
                                                    AutomationProperties.Name="{Binding Name}" />
                                     <TextBlock Classes="knobLabel" Text="{Binding Name}" />
                                     <TextBlock Classes="knobValue" Text="{Binding ValueText}" />
@@ -172,7 +170,10 @@
                         </Panel>
 
                         <Grid Grid.Row="2" Classes="deviceFooter" ColumnDefinitions="*,Auto">
-                          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" ClipToBounds="True">
+                            <Border Classes="badge" IsVisible="{Binding IsPlugin}" ToolTip.Tip="{Binding Hosting}">
+                              <TextBlock Text="{Binding Format}" />
+                            </Border>
                             <TextBlock Classes="micro" Text="{Binding MoreParametersText}" IsVisible="{Binding HasMoreParameters}" />
                             <Button Classes="link micro" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}"
                                     ToolTip.Tip="This device's output is also sent here. Open the connections." />
@@ -208,12 +209,28 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
 
+          <!-- An empty chain: the place a first device goes, between the boundaries. -->
+          <StackPanel Orientation="Horizontal" IsVisible="{Binding IsEmpty}">
+            <Border Classes="chainLink" />
+            <Panel x:Name="EmptySlot" Classes="emptySlot" AutomationProperties.Name="Empty chain">
+              <Rectangle Classes="slotOutline" />
+              <StackPanel Classes="slotContent">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Plus}" />
+                <TextBlock Classes="slotTitle" Text="{Binding EmptyText}" />
+                <TextBlock Classes="caption" Text="Drag one from the Browser, or select it there and press Return." TextWrapping="Wrap" TextAlignment="Center" />
+                <Button x:Name="BrowseInstrumentsButton" Classes="raised compact" Content="Browse Instruments" Command="{Binding BrowseInstrumentsCommand}"
+                        HorizontalAlignment="Center" AutomationProperties.Name="Browse instruments" />
+              </StackPanel>
+            </Panel>
+          </StackPanel>
+
           <Border x:Name="TrailLink" Classes="chainLink" />
           <!-- Output boundary: what leaves the chain for the track's destination. -->
-          <Border Classes="chainNode" ToolTip.Tip="Chain output: everything the chain passes on, to the track's output" AutomationProperties.Name="Chain output">
-            <StackPanel Spacing="6" VerticalAlignment="Center">
-              <Ellipse Classes="nodeDot" />
+          <Border Classes="chainNode" ToolTip.Tip="{Binding OutputDetail, StringFormat='Chain output: everything the chain passes on, to {0}'}" AutomationProperties.Name="Chain output">
+            <StackPanel Spacing="4" VerticalAlignment="Center">
+              <Ellipse Classes="nodeDot" Classes.routed="{Binding IsRouted}" />
               <TextBlock Text="OUT" Classes="nodeLabel" />
+              <TextBlock x:Name="OutputText" Text="{Binding OutputText}" Classes="nodeDetail" Classes.unrouted="{Binding !IsRouted}" />
             </StackPanel>
           </Border>
         </StackPanel>
@@ -224,11 +241,10 @@
         <Border x:Name="InsertionMarker" Classes="insertionMarker" IsVisible="False" />
       </Canvas>
 
-      <!-- Empty chain: invites a drop. -->
-      <StackPanel Classes="emptyState" IsVisible="{Binding IsEmpty}" IsHitTestVisible="False">
+      <!-- No chain to show: nothing selected, or the locked track or rack is gone. -->
+      <StackPanel Classes="emptyState" IsVisible="{Binding !HasChain}" IsHitTestVisible="False">
         <PathIcon Classes="stroke" Data="{StaticResource Icon.Devices}" Width="26" Height="26" Foreground="{StaticResource Line.BorderStrong}" />
         <TextBlock Classes="emptyTitle" Text="{Binding EmptyText}" />
-        <TextBlock Classes="caption" Text="Or pick one in the Browser and press Return." HorizontalAlignment="Center" IsVisible="{Binding HasChain}" />
       </StackPanel>
     </Panel>
   </Grid>
