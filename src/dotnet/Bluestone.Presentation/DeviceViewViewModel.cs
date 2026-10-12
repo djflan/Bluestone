@@ -313,7 +313,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         InputText = node is not { } input ? string.Empty
             : Rack is not null ? Count(project.ConnectionsTo(input).Select(c => c.Source).Distinct().Count(), "source")
             : "Track";
-        var destinations = node is { } output ? project.ConnectionsFrom(output).Select(c => TrackSound.NameOf(project, c.Destination)).Distinct().ToList() : [];
+        var destinations = node is { } output ? project.ConnectionsFrom(output).Select(c => c.Destination).Distinct().Select(d => TrackSound.NameOf(project, d)).ToList() : [];
         OutputText = destinations.Count switch
         {
             0 => "Not routed",

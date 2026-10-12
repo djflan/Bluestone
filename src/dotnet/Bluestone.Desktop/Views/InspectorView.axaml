@@ -302,7 +302,7 @@
             <TextBlock Text="Recording" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Classes="sectionSummary">
               <TextBlock.Text>
-                <MultiBinding StringFormat="{}{0} · {1} bar">
+                <MultiBinding StringFormat="{}{0} · count-in {1}">
                   <Binding Path="SelectedInput.Name" FallbackValue="No input" />
                   <Binding Path="CountInBars" />
                 </MultiBinding>

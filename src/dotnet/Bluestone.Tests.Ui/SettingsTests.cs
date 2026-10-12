@@ -198,6 +198,28 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
+    public Task TheControlBarsUndo_BringsTheWorkspaceBack_AndItsFileMenuCanOpenAnotherSettingsPage() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Window.ShowSettings(SettingsPage.Plugins);
+        app.Settle();
+
+        app.Click(app.Find<DropDownButton>("FileMenuButton"));
+        var flyout = Assert.IsType<MenuFlyout>(app.Find<DropDownButton>("FileMenuButton").Flyout);
+        app.Click(flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Audio Settings…")));
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+
+        app.Click(AppUnderTest.Within<Button>(app.Window, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Undo"));
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Empty(app.ViewModel.Tracks);
+    });
+
+    [Fact]
     public Task AnEmptyInstrumentsCategory_LeadsToThePluginSettings() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();

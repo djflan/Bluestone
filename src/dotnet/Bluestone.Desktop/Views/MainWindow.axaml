@@ -46,7 +46,7 @@
     <!-- Control bar: view toggles and undo on the left, transport and LCD in the centre, panic on the right. -->
     <Border Grid.Row="0" Classes="bar" BorderThickness="0,0,0,1" Height="50">
       <Grid ColumnDefinitions="*,Auto,*" Margin="8,0">
-        <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+        <StackPanel x:Name="WorkspaceTools" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
           <ToggleButton Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I)" AutomationProperties.Name="Inspector">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
           </ToggleButton>
@@ -76,11 +76,11 @@
                 <MenuItem Header="Import MIDI File…" Command="{Binding ImportMidiCommand}" InputGesture="Ctrl+I" />
                 <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
                 <Separator />
-                <MenuItem Header="Mixer…" Click="OnShowMixer" ToolTip.Tip="The mixer console: strips, sends, and meters" />
-                <MenuItem Header="Plugins…" Click="OnShowPlugins" ToolTip.Tip="Settings ▸ Plugins: scanned plugins, how they share worker processes, and quarantined modules" />
-                <MenuItem Header="Audio Settings…" Click="OnAudioSettingsClick" ToolTip.Tip="Settings ▸ Audio: the output device, sample rate, and buffer" />
+                <MenuItem Header="Mixer…" Classes="keepsSettings" Click="OnShowMixer" ToolTip.Tip="The mixer console: strips, sends, and meters" />
+                <MenuItem Header="Plugins…" Classes="keepsSettings" Click="OnShowPlugins" ToolTip.Tip="Settings ▸ Plugins: scanned plugins, how they share worker processes, and quarantined modules" />
+                <MenuItem Header="Audio Settings…" Classes="keepsSettings" Click="OnAudioSettingsClick" ToolTip.Tip="Settings ▸ Audio: the output device, sample rate, and buffer" />
                 <Separator />
-                <MenuItem Header="Settings…" Click="OnSettingsClick" InputGesture="Ctrl+OemComma" />
+                <MenuItem Header="Settings…" Classes="keepsSettings" Click="OnSettingsClick" InputGesture="Ctrl+OemComma" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>

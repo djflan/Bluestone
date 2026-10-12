@@ -44,6 +44,16 @@ public partial class MainWindow
         };
         ApplySettingsVisibility();
 
+        // The control bar's workspace tools (view toggles, undo and redo, the File menu) act on the workspace or project, so
+        // using one brings the workspace back; the File menu's Settings, Plugins, Audio, and Mixer items keep Settings open.
+        WorkspaceTools.AddHandler(Button.ClickEvent, (_, e) =>
+        {
+            if (Settings.IsOpen && !(e.Source is Control source && source.Classes.Contains("keepsSettings")))
+            {
+                Settings.Close();
+            }
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+
         // Escape closes Settings before the workspace's own shortcuts see it, unless an open drop-down or popup takes it first.
         AddHandler(KeyDownEvent, (_, e) =>
         {
