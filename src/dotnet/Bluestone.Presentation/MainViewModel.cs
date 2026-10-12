@@ -120,6 +120,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             OnPropertyChanged(nameof(SelectedTrack));
             SyncSelection();
+            EditorWindows?.SelectionChanged();
             SyncEditor();
             Arrangement.KeepOnTracks([.. SelectedTracks.Select(t => t.Id)]);
             Groups.SyncSelection();
@@ -141,6 +142,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _endpoints.EndpointsChanged += (_, _) => _dispatcher.Post(() => _ = RefreshAsync());
         if (_plugins is not null)
         {
+            EditorWindows = new PluginEditorWindows(this, _plugins, _dispatcher);
             _playback.UseDevices(_plugins.Extend(DeviceCatalog.BuiltIn));
             _playback.Live.UsePlugins(_plugins.InstanceOf);
             // A plugin MIDI effect that stops or comes back changes what goes into the plan, so recompile it too.
@@ -211,6 +213,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The selected clips' loop, for the inspector and the arranger's loop gestures.</summary>
     public ClipLoopViewModel ClipLoop { get; }
 
+    /// <summary>Floating plugin editor windows: following the selection, pinning, and where their keys go. Null without plugin hosting.</summary>
+    public PluginEditorWindows? EditorWindows { get; }
+
     /// <summary>The plugin host, when plugins are hosted.</summary>
     internal PluginDeviceHost? PluginHost => _plugins;
 
@@ -256,6 +261,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     internal DeviceStatus DeviceStatus(DeviceInstance device) =>
         _plugins?.StatusOf(device) is { } runtime
             ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
+            {
+                Editor = EditorWindows is { } windows && windows.IsOpen(device.Id)
+                    ? new EditorWindowStatus(windows.IsPinned(device.Id), windows.SendsKeysToBluestone(device.Id), windows.IsHiddenByFollow(device.Id), windows.FollowsSelection)
+                    : null,
+            }
             : Presentation.DeviceStatus.Of(device, Devices);
 
     private string CrashMessage(PluginCrash crash)
@@ -303,7 +313,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        if (await _plugins.OpenEditorAsync(device) is { } problem)
+        if (await (EditorWindows?.OpenAsync(device) ?? _plugins.OpenEditorAsync(device)) is { } problem)
         {
             AddMessage(MessageSeverity.Warning, "Plugins", $"The plugin's editor could not be opened: {problem}");
         }
@@ -1460,6 +1470,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Runs <paramref name="action"/> later on the UI thread.</summary>
     internal void Post(Action action) => _dispatcher.Post(action);
+
+    /// <summary>Refreshes the device panels (for example, an editor window's pin or keyboard state).</summary>
+    internal void RefreshDevicePanels() => SyncSelection();
 
     /// <summary>Refreshes the Device Views, Browser, routing inspector, racks, and mixer from the project.</summary>
     internal void SyncDeviceViews() => SyncSelection();

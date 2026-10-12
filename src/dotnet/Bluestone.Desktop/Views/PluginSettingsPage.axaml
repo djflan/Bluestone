@@ -41,6 +41,9 @@
       </Grid>
       <CheckBox x:Name="AutoRestart" Content="Restart crashed plugins automatically (up to 3 times in 5 minutes)" IsChecked="{Binding AutoRestart}"
                 AutomationProperties.Name="Restart crashed plugins automatically" />
+      <CheckBox x:Name="EditorsFollowSelection" Content="Floating plugin windows follow the selected track" IsChecked="{Binding EditorsFollowSelection}"
+                AutomationProperties.Name="Floating plugin windows follow the selected track"
+                ToolTip.Tip="Plugin editors hide while their track is not selected and come back when it is; pin an editor (in its device panel) to keep it open" />
     </StackPanel>
 
     <StackPanel Classes="settingsGroup" IsVisible="{Binding HasQuarantined}">

@@ -119,6 +119,9 @@ pub mod notification_kind {
     pub const EDITOR_CLOSED: u32 = 4;
     /// The plugin's parameter list or titles changed.
     pub const PARAMETERS_CHANGED: u32 = 5;
+    /// A key pressed or released in the editor while its keys go to the host: `id` is the USB HID usage, `value` the
+    /// modifier bits, plus 256 when down and 512 for a repeat (see `keys`).
+    pub const EDITOR_KEY: u32 = 6;
 }
 
 pub mod param_flags {
@@ -179,6 +182,22 @@ pub trait Instance {
     fn open_editor(&self, title: &str) -> Result<(), String>;
     fn close_editor(&self);
     fn is_editor_open(&self) -> bool;
+    /// Hides the editor's window (the editor and its state stay) or shows it again without taking focus.
+    fn set_editor_visible(&self, visible: bool);
+    /// Sends the editor window's keys to the host instead of the plugin; false when it cannot (no editor, a window the
+    /// plugin owns, or a platform without interception).
+    fn route_editor_keys_to_host(&self, to_host: bool) -> bool;
+}
+
+/// Queues the keys an editor window took for the host as notifications.
+pub fn push_editor_keys(window: &crate::gui::Window, notifications: &mut Vec<BphNotification>) {
+    for key in window.take_keys() {
+        notifications.push(BphNotification {
+            kind: notification_kind::EDITOR_KEY,
+            id: key.usage,
+            value: key.packed(),
+        });
+    }
 }
 
 /// Plugin-side channel buffers adapted to the host's planar layout. The host always sees the channel counts it asked

@@ -247,7 +247,7 @@ struct Editor {
     view: ComPtr<IPlugView>,
     frame: ComWrapper<PlugFrame>,
     // Kept for its lifetime: dropping it closes the window.
-    _window: Rc<gui::Window>,
+    window: Rc<gui::Window>,
     close_requested: Rc<Cell<bool>>,
 }
 
@@ -1096,6 +1096,9 @@ impl Instance for Vst3Instance {
     }
 
     fn idle(&self, notifications: &mut Vec<BphNotification>) {
+        if let Some(editor) = self.editor.borrow().as_ref() {
+            crate::common::push_editor_keys(&editor.window, notifications);
+        }
         // Edits left queued for a stream that has since stopped.
         self.flush();
         let from_processor: Vec<(u32, f64)> = self
@@ -1298,7 +1301,7 @@ impl Instance for Vst3Instance {
             *self.editor.borrow_mut() = Some(Editor {
                 view,
                 frame,
-                _window: window,
+                window,
                 close_requested,
             });
         }
@@ -1311,6 +1314,19 @@ impl Instance for Vst3Instance {
 
     fn is_editor_open(&self) -> bool {
         self.editor.borrow().is_some()
+    }
+
+    fn set_editor_visible(&self, visible: bool) {
+        if let Some(editor) = self.editor.borrow().as_ref() {
+            editor.window.set_visible(visible);
+        }
+    }
+
+    fn route_editor_keys_to_host(&self, to_host: bool) -> bool {
+        self.editor
+            .borrow()
+            .as_ref()
+            .is_some_and(|editor| editor.window.route_keys_to_host(to_host))
     }
 }
 

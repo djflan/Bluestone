@@ -205,6 +205,20 @@ public sealed partial class PluginsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether floating plugin editors follow the selected track (unpinned ones hide while their track is not selected).</summary>
+    [ObservableProperty]
+    public partial bool EditorsFollowSelection { get; set; } = true;
+
+    partial void OnEditorsFollowSelectionChanged(bool value)
+    {
+        if (!_syncing && _devices is not null)
+        {
+            _ = ApplyAsync(_devices.Hosting with { EditorsFollowSelection = value }, value
+                ? "Plugin editors now follow the selected track; pin one to keep it open."
+                : "Plugin editors now stay open until closed.");
+        }
+    }
+
     partial void OnAutoRestartChanged(bool value)
     {
         if (!_syncing && _devices is not null)
@@ -339,6 +353,7 @@ public sealed partial class PluginsViewModel : ObservableObject
             GlobalHosting = HostingModes.First(c => c.Mode == settings.Mode);
             GlobalHostingText = GlobalHosting.Description;
             AutoRestart = settings.AutoRestart;
+            EditorsFollowSelection = settings.EditorsFollowSelection;
             var global = new HostingChoice(null, $"Global ({GlobalHosting.Name})", "Follow the global hosting mode.");
             if (PluginHostingChoices.Count == 0 || PluginHostingChoices[0] != global)
             {

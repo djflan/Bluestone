@@ -314,6 +314,25 @@ impl Window {
     pub fn content_scale(&self) -> f64 {
         1.0
     }
+
+    pub fn native_id(&self) -> usize {
+        self.id as usize
+    }
+
+    /// Unmaps or maps the window; the window manager decides where it reappears.
+    pub fn set_visible(&self, visible: bool) {
+        DISPLAY.with_borrow(|display| {
+            if let Some(display) = display {
+                let c = &display.connection;
+                let _ = if visible {
+                    c.map_window(self.id)
+                } else {
+                    c.unmap_window(self.id)
+                };
+                let _ = c.flush();
+            }
+        });
+    }
 }
 
 fn set_fixed_size(

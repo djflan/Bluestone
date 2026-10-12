@@ -178,10 +178,22 @@
                             <Button Classes="link micro" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}"
                                     ToolTip.Tip="This device's output is also sent here. Open the connections." />
                           </StackPanel>
-                          <Button Grid.Column="1" Classes="tool tiny" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
-                                  ToolTip.Tip="Open the plugin's editor" AutomationProperties.Name="Open plugin editor">
-                            <PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" />
-                          </Button>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="1">
+                            <!-- The open editor window: pinned (when editors follow the selection), and where its keys go. -->
+                            <ToggleButton Classes="tool tiny" IsChecked="{Binding IsEditorPinned, Mode=OneWay}" Command="{Binding ToggleEditorPinnedCommand}"
+                                          IsVisible="{Binding CanPinEditor}" ToolTip.Tip="{Binding PinTip}" AutomationProperties.Name="Pin plugin editor">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Pin}" />
+                            </ToggleButton>
+                            <ToggleButton Classes="tool tiny" IsChecked="{Binding EditorKeysToBluestone, Mode=OneWay}" Command="{Binding ToggleEditorKeysCommand}"
+                                          IsVisible="{Binding IsEditorOpen}" IsEnabled="{Binding CanRouteEditorKeys}" ToolTip.Tip="{Binding KeysTip}"
+                                          ToolTip.ShowOnDisabled="True" AutomationProperties.Name="Send editor keys to Bluestone">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" />
+                            </ToggleButton>
+                            <Button Classes="tool tiny" Classes.editorHidden="{Binding IsEditorHidden}" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
+                                    ToolTip.Tip="Open the plugin's editor (or bring it forward)" AutomationProperties.Name="Open plugin editor">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" />
+                            </Button>
+                          </StackPanel>
                         </Grid>
                       </Grid>
 

@@ -21,7 +21,7 @@ compensation, editor windows, hosting modes, and crash recovery work for both. W
 | ----- | ------- | ---- |
 | CI (Linux x64, macOS arm64, Windows x64) | Reference plugins; Bluestone's test plugins as VST3 and CLAP (`NativePluginTests`, `ThirdPartyPluginDeviceTests`) | Everything in [Tests](#tests) except editors: scan, kinds, parameters, sample-accurate parameter changes, events, rendering into the plan, state, corrupt state, kill and restart, project save and reopen, an editor refused for a plugin without one |
 | macOS arm64, by hand and in tests | The Legend HZ, REVERSIDE (VST3); Airwindows Consolidated, Surge XT (CLAP) (`InstalledPluginTests`) | Scan, load, audio out (a note for instruments, a sine through effects), a parameter set and state captured, worker killed while processing: Crashed, silence, restart restores the parameter and audio |
-| macOS arm64, in tests | REVERSIDE (VST3), Airwindows Consolidated (CLAP) (`PluginEditorTests`) | Editor opens, closes, opens again; worker killed with the editor open; editor opens again after restart |
+| macOS arm64, in tests | REVERSIDE (VST3), Airwindows Consolidated (CLAP) (`PluginEditorTests`, `PluginEditorWindowUiTests`) | Editor opens, closes, opens again; worker killed with the editor open; editor opens again after restart; hidden and shown again; keys routed to the host and back; an editor following the selected track unless pinned |
 | macOS arm64, development probe | The Legend HZ (VST3), Airwindows Consolidated (CLAP) | Editor windows appear at the plugin's size (checked through the window list, not by eye); Airwindows sent parameter edits from its editor |
 | macOS arm64, app and probe | SuperClassic, Scaler 3, Scaler 3 Audio, Melody Sauce 3 (VST3) | Scanned by the app at start; loaded, processed, and saved by the probe; not covered by tests |
 
@@ -180,7 +180,8 @@ path to `CreateInstance` and `RenderEvents`, units and traits to parameter descr
 | `OpenEditor`, `CloseEditor` | Editor windows |
 | `RenderEvents`, `RenderedEvents` | A MIDI effect rendered over the timeline at plan time |
 | `ScanModule`, `ScanResult` | Scan mode |
-| `PluginNotification` | The only frame a worker sends unasked (request id 0): `ParameterEdited`, `LatencyChanged`, `StateDirty`, `EditorClosed`, `ParametersChanged` |
+| `SetEditorVisible`, `SetEditorKeyboard` | Hide or show an editor window; send its keys to the host (protocol version 4) |
+| `PluginNotification` | The only frame a worker sends unasked (request id 0): `ParameterEdited`, `LatencyChanged`, `StateDirty`, `EditorClosed`, `ParametersChanged`, `EditorKey` |
 | `Ack`, `Error`, `Shutdown` | Generic replies; ask the worker to exit |
 | `InduceTestFault` | Tests only ([Test hooks](#test-hooks)) |
 
@@ -458,6 +459,33 @@ Linux (macOS sizes are points). Closing the window or `CloseEditorAsync` destroy
 is reported (`EditorClosed`). A worker that dies takes its window with it: the device shows Crashed, and after a
 restart the editor opens again. Keyboard focus is whatever the operating system gives the worker's window. Edits made
 in the editor reach the project as described in [The application bridge](#the-application-bridge).
+
+### Following the selection, pinning, and keyboard routing (ADR 0040)
+
+`PluginEditorWindows` (Presentation) keeps, per device and for the session only (never in the project or the
+plugin's state), whether its editor is pinned and where its keys go. With **Floating plugin windows follow the
+selected track** on (Settings ▸ Plugins; the default), an unpinned editor is hidden while its track (or the chain the
+Device View shows) is not selected and shown again, without taking focus, when it is: `SetEditorVisible` hides only the
+window, so the instance, its editor, and its state stay. A pinned editor stays visible. With the setting off, editors
+stay until closed and the pin is not shown. Visibility requests are serialized per device and coalesced, so rapid
+selection changes cannot pile up worker requests. Opening an editor that is hidden brings it back.
+
+`SetEditorKeyboard` sends an editor window's keys to Bluestone instead of the plugin; the mouse keeps working in the
+editor. The worker takes key events for that window out of its own event pump before the plugin sees them and sends
+them as `EditorKey` notifications (USB HID usage plus modifier and down/repeat bits), which the main window raises as
+ordinary key events, so shortcuts and computer-keyboard MIDI work as if Bluestone had focus. Forwarded keys that are
+held are released when keys go back to the plugin, when the editor is hidden or closed, and when its worker stops, so a
+computer-keyboard note never hangs. The device panel shows a pin (while editors follow the selection) and a keyboard
+toggle beside **Open editor**.
+
+| Platform | Hide and show | Keys to Bluestone |
+| -------- | ------------- | ----------------- |
+| macOS | `orderOut` / `orderFrontRegardless`; a window whose screen is gone is centred on the main screen | Yes: key events for the window are taken in the worker's pump (verified with REVERSIDE and an embedded CLAP editor) |
+| Windows | `SW_HIDE` / `SW_SHOWNOACTIVATE`; a window on a missing monitor moves near the primary monitor's corner | Yes: `WM_KEY*`/`WM_SYSKEY*` for the window and its children are taken in the worker's pump (compiled and linted; not run on Windows) |
+| Linux (X11) | Unmap / map (the window manager places it) | No: a plugin's view usually reads input on its own X connection, which the worker cannot intercept. The toggle is disabled and says so |
+
+A CLAP editor that floats in its own window is hidden and shown through the plugin (`show`/`hide`) and cannot route
+its keys. Wayland is not supported for editors at all (as before).
 
 ## Plugin MIDI effects
 

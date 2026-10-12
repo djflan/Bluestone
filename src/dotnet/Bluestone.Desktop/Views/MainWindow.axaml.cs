@@ -109,6 +109,7 @@ public partial class MainWindow : Window
             LastMessage.Text = viewModel.Messages.Count > 0 ? viewModel.Messages[^1].Text : string.Empty;
 
         AttachNavigation(viewModel);
+        AttachEditorKeys(viewModel);
 
         AttachPianoRoll(viewModel);
         AttachEventList(viewModel);

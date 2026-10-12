@@ -93,6 +93,12 @@ public sealed class PluginInstance
     /// </summary>
     public event EventHandler<NotificationKind>? Changed;
 
+    /// <summary>
+    /// A key typed in the editor window while its keys go to Bluestone (<see cref="SetEditorKeyboardAsync"/>). Raised on
+    /// a worker's read loop, in order.
+    /// </summary>
+    public event EventHandler<EditorKey>? EditorKeyPressed;
+
     private volatile bool _editorOpen;
 
     /// <summary>Whether the plugin's editor window is open in its worker, as far as the host knows.</summary>
@@ -376,6 +382,34 @@ public sealed class PluginInstance
         _editorOpen = true;
     }
 
+    /// <summary>Hides the editor's window, keeping the editor, or shows it again without taking focus. Does nothing when not running.</summary>
+    public async Task SetEditorVisibleAsync(bool visible, CancellationToken cancellationToken = default)
+    {
+        if (_link is { } link && _editorOpen)
+        {
+            Expect<Ack>(await _manager.RequestAsync(link.Worker, new SetEditorVisible(Id, visible), cancellationToken).ConfigureAwait(false));
+        }
+    }
+
+    /// <summary>
+    /// Sends the editor window's keys to Bluestone (<paramref name="toHost"/>) or to the plugin. Returns false when the
+    /// platform or editor cannot (the keys then stay with the plugin), or the instance is not running.
+    /// </summary>
+    public async Task<bool> SetEditorKeyboardAsync(bool toHost, CancellationToken cancellationToken = default)
+    {
+        if (_link is not { } link || !_editorOpen)
+        {
+            return false;
+        }
+
+        return await _manager.RequestAsync(link.Worker, new SetEditorKeyboard(Id, toHost), cancellationToken).ConfigureAwait(false) switch
+        {
+            Ack => true,
+            ErrorReply { Code: ErrorCode.NotSupported } => false,
+            var other => Expect<Ack>(other) is not null,
+        };
+    }
+
     /// <summary>Closes the plugin's editor if it is open. Does nothing when the instance is not running.</summary>
     public async Task CloseEditorAsync(CancellationToken cancellationToken = default)
     {
@@ -404,6 +438,9 @@ public sealed class PluginInstance
             case NotificationKind.EditorClosed:
                 _editorOpen = false;
                 break;
+            case NotificationKind.EditorKey:
+                EditorKeyPressed?.Invoke(this, EditorKey.From(notification));
+                return;
         }
 
         Changed?.Invoke(this, notification.Kind);

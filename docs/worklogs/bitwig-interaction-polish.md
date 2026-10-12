@@ -244,6 +244,30 @@ Decisions are numbered for reference from reviews and commits.
   (`PluginDeviceHost.StageAsync`, adopted by the next sync); if it does not run, the project is not touched and a message
   says why (Review 1 #10). Click-to-insert from the Browser is unchanged. Modifier-drag to build containers was not
   added (no container infrastructure exists).
+- **D14 Investigation of editor window ownership.** Editors are top-level windows created by the worker on its main
+  thread (`gui.rs`): an `NSWindow` in an accessory app on macOS, an unowned `HWND` on Windows, an X11 window on Linux,
+  each with the worker's own event pump. Because the worker pumps its own events on macOS (`nextEventMatchingMask` /
+  `sendEvent`) and Windows (`PeekMessage` / `DispatchMessage`), key events for a window can be taken before the plugin
+  sees them. On X11 a plugin's view normally opens its own display connection and reads input there, so the worker
+  cannot intercept it. Hide/show is available everywhere (`orderOut`/`orderFrontRegardless`, `ShowWindow`, unmap/map).
+  *Rejected*: making editors child windows of Bluestone's window (crosses the process boundary for focus and z-order
+  and is not reliable across plugins); global keyboard hooks (need accessibility permission on macOS and would see
+  every key on the system); embedding editors (rejected scope).
+- **D15 Floating editors: follow, pin, keyboard.** See ADR 0040. Native visibility per window; pin and keyboard choices
+  are per device, for the session, in `PluginEditorWindows` (Presentation, behind `IPluginEditorHost` so the rules are
+  unit-tested without windows); "Floating plugin windows follow the selected track" is a plugin setting, on by default
+  (the selection already drives the Device View, so editors following it is the expected default; turning it off brings
+  hidden editors back and hides the pin). Relevant devices: those on selected tracks and those in the chain the Device
+  View shows. Requests are serialized and coalesced per device (Review 1 #12). Keys: USB HID usages over the protocol
+  (version 4), translated to Avalonia `Key` and `PhysicalKey` and raised on the main window, so shortcuts and
+  computer-keyboard MIDI (which reads physical keys) work unchanged; held keys are released when routing switches back,
+  when the editor is hidden or closed, and when its worker stops. Linux reports routing unsupported and the toggle is
+  disabled with that reason. Monitor loss: a shown window whose screen or monitor is gone is moved back (macOS,
+  Windows; Linux leaves placement to the window manager). Affordances: a pin (only while following is on) and a keyboard
+  toggle beside the editor button in the device panel footer, using the existing tiny tool-button style with checked
+  states; the editor button dims while the editor is hidden and brings it back when pressed. Presentation does not
+  reference the plugin protocol: an application-level `PluginEditorKey` crosses that boundary (the architecture test
+  caught the first attempt).
 
 ## Reviews and responses
 
@@ -294,6 +318,10 @@ After commits `404f59f` and `97ae6cd`. Fixed in the clip-loop UI commit unless n
   deferred work.
 - **Audio clips have no import UI** (they come from project files), so audio clip loops are reachable today only on
   projects that already contain audio clips.
+- **Cross-platform native build**: only the macOS Rust target is installed on this machine. Windows and Linux were
+  checked with an isolated toolchain under `/tmp` (`cargo clippy --locked -p bluestone_plugin_host --all-targets
+  --target x86_64-pc-windows-msvc` and `x86_64-unknown-linux-gnu`, `-D warnings`), which caught one Linux-only
+  dead-code warning. Nothing was run on Windows or Linux.
 - **Tick resolution**: new projects use 960 PPQN; some older tests assume 480. New tests derive bar lengths from the
   project.
 

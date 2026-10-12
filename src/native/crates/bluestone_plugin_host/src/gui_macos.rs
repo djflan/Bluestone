@@ -49,12 +49,56 @@ pub fn pump(timeout: Duration) {
         mode,
         true,
     ) {
-        if event.r#type() != NSEventType::ApplicationDefined {
-            app.sendEvent(&event);
-        }
         until = NSDate::distantPast();
+        let kind = event.r#type();
+        if kind == NSEventType::ApplicationDefined || take_key(&event, kind) {
+            continue;
+        }
+        app.sendEvent(&event);
     }
     app.updateWindows();
+}
+
+/// Takes a key event for a window whose keys go to the host: queued (modifier changes alone are just dropped), never
+/// sent to the plugin. True when taken.
+fn take_key(event: &NSEvent, kind: NSEventType) -> bool {
+    if kind != NSEventType::KeyDown
+        && kind != NSEventType::KeyUp
+        && kind != NSEventType::FlagsChanged
+    {
+        return false;
+    }
+    let Some(queue) = super::routed_queue(event.windowNumber() as usize) else {
+        return false;
+    };
+    if kind == NSEventType::FlagsChanged {
+        return true;
+    }
+    let flags = event.modifierFlags();
+    let mut modifiers = 0;
+    for (flag, bit) in [
+        (NSEventModifierFlags::Shift, crate::keys::modifier::SHIFT),
+        (
+            NSEventModifierFlags::Control,
+            crate::keys::modifier::CONTROL,
+        ),
+        (NSEventModifierFlags::Option, crate::keys::modifier::ALT),
+        (NSEventModifierFlags::Command, crate::keys::modifier::META),
+    ] {
+        if flags.contains(flag) {
+            modifiers |= bit;
+        }
+    }
+    let usage = crate::keys::from_macos(event.keyCode());
+    if usage != 0 {
+        queue.borrow_mut().push(super::KeyEvent {
+            usage,
+            modifiers,
+            down: kind == NSEventType::KeyDown,
+            repeat: kind == NSEventType::KeyDown && event.isARepeat(),
+        });
+    }
+    true
 }
 
 pub fn wake() {
@@ -201,6 +245,23 @@ impl Window {
 
     pub fn content_scale(&self) -> f64 {
         1.0
+    }
+
+    /// The window number AppKit puts on the window's events.
+    pub fn native_id(&self) -> usize {
+        self.window.windowNumber() as usize
+    }
+
+    pub fn set_visible(&self, visible: bool) {
+        if !visible {
+            self.window.orderOut(None);
+            return;
+        }
+        // A window left on a screen that is no longer attached comes back in the middle of the main screen.
+        if self.window.screen().is_none() {
+            self.window.center();
+        }
+        self.window.orderFrontRegardless();
     }
 }
 

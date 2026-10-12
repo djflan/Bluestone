@@ -43,7 +43,7 @@ public sealed record PluginCrash(ImmutableArray<DeviceId> Devices, UnavailableRe
 /// device, and restarts crashed devices. A device whose plugin is missing keeps everything and is reported.
 /// </summary>
 /// <remarks>Call from one thread (the UI's). Status events may arrive on any thread.</remarks>
-public sealed class PluginDeviceHost : IAsyncDisposable
+public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
 {
     public const string DefinitionPrefix = "plugin:";
 
@@ -56,6 +56,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     private volatile ImmutableDictionary<PluginIdentity, string> _modulePaths = ImmutableDictionary<PluginIdentity, string>.Empty;
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginParameterEditedEventArgs>> _editHandlers = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<NotificationKind>> _changeHandlers = new();
+    private readonly ConcurrentDictionary<DeviceId, EventHandler<EditorKey>> _keyHandlers = new();
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
@@ -131,6 +132,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(settings);
         _hosting = settings = settings.Sanitized();
+        HostingChanged?.Invoke(this, EventArgs.Empty);
         var moved = ImmutableArray.CreateBuilder<DeviceId>();
         foreach (var (device, instance) in _instances.ToList())
         {
@@ -211,6 +213,54 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
         {
             return ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Whether this platform can send a plugin editor's keys to Bluestone: macOS and Windows, where the worker pumps its own
+    /// window events. Not Linux (X11), where a plugin's view reads its own input.
+    /// </summary>
+    public static bool EditorKeyRoutingSupported => OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
+
+    /// <inheritdoc/>
+    public bool EditorsFollowSelection => _hosting.EditorsFollowSelection;
+
+    /// <summary>Raised when <see cref="Hosting"/> changes (for example, whether editors follow the selection).</summary>
+    public event EventHandler? HostingChanged;
+
+    /// <summary>A key typed in a plugin editor whose keys go to Bluestone: the device, and the key. Raised on a worker's read loop.</summary>
+    public event EventHandler<(DeviceId Device, PluginEditorKey Key)>? EditorKeyPressed;
+
+    /// <summary>Hides or shows the device's editor window, keeping the editor. Failures (a gone worker) are ignored: its window went with it.</summary>
+    public async Task SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default)
+    {
+        if (_instances.TryGetValue(device, out var instance))
+        {
+            try
+            {
+                await instance.SetEditorVisibleAsync(visible, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
+            {
+            }
+        }
+    }
+
+    /// <summary>Sends the device's editor keys to Bluestone or to the plugin; false when that is not possible (or it is not running).</summary>
+    public async Task<bool> SetEditorKeyboardAsync(DeviceId device, bool toHost, CancellationToken cancellationToken = default)
+    {
+        if (!_instances.TryGetValue(device, out var instance))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await instance.SetEditorKeyboardAsync(toHost, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
+        {
+            return false;
         }
     }
 
@@ -330,6 +380,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 instance.StatusChanged -= Handler(id);
                 instance.ParameterEdited -= EditHandler(id);
                 instance.Changed -= ChangeHandler(id);
+                instance.EditorKeyPressed -= KeyHandler(id);
                 await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -430,6 +481,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
                 instance.StatusChanged -= Handler(id);
                 instance.ParameterEdited -= EditHandler(id);
                 instance.Changed -= ChangeHandler(id);
+                instance.EditorKeyPressed -= KeyHandler(id);
                 await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
                 StatusChanged?.Invoke(this, id);
             }
@@ -533,6 +585,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             instance.StatusChanged -= Handler(id);
             instance.ParameterEdited -= EditHandler(id);
             instance.Changed -= ChangeHandler(id);
+            instance.EditorKeyPressed -= KeyHandler(id);
             await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
             StatusChanged?.Invoke(this, id);
         }
@@ -562,6 +615,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         instance.StatusChanged += Handler(device.Id);
         instance.ParameterEdited += EditHandler(device.Id);
         instance.Changed += ChangeHandler(device.Id);
+        instance.EditorKeyPressed += KeyHandler(device.Id);
         if (device.State is null && captured is null && instance.Status.State == PluginInstanceState.Running)
         {
             // No saved state: the stored parameter values are the configuration to restore. Only values that differ
@@ -757,6 +811,9 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
     private EventHandler<PluginParameterEditedEventArgs> EditHandler(DeviceId device) =>
         _editHandlers.GetOrAdd(device, id => (_, e) => ParameterEdited?.Invoke(this, new PluginParameterEdit(id, e.ParameterId, e.Value)));
+
+    private EventHandler<EditorKey> KeyHandler(DeviceId device) =>
+        _keyHandlers.GetOrAdd(device, id => (_, key) => EditorKeyPressed?.Invoke(this, (id, new PluginEditorKey(key.Usage, key.Modifiers, key.Down, key.Repeat))));
 
     private EventHandler<NotificationKind> ChangeHandler(DeviceId device) =>
         _changeHandlers.GetOrAdd(device, id => (_, kind) =>

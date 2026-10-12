@@ -574,6 +574,11 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     internal Task RestartAsync(DevicePanelViewModel device) => _owner.RestartDeviceAsync(device.Id);
 
     internal Task OpenEditorAsync(DevicePanelViewModel device) => _owner.OpenDeviceEditorAsync(device.Id);
+
+    internal void SetEditorPinned(DevicePanelViewModel device, bool pinned) => _owner.EditorWindows?.SetPinned(device.Id, pinned);
+
+    internal Task SetEditorKeysAsync(DevicePanelViewModel device, bool toBluestone) =>
+        _owner.EditorWindows?.SetKeysToBluestoneAsync(device.Id, toBluestone) ?? Task.CompletedTask;
 }
 
 /// <summary>
@@ -637,6 +642,40 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     /// <summary>A running VST3 or CLAP plugin can show its own editor, in a window of its worker process.</summary>
     [ObservableProperty]
     public partial bool CanOpenEditor { get; private set; }
+
+    /// <summary>The plugin's editor window is open (shown, or hidden while its track is not selected).</summary>
+    [ObservableProperty]
+    public partial bool IsEditorOpen { get; private set; }
+
+    /// <summary>The open editor stays visible whatever is selected.</summary>
+    [ObservableProperty]
+    public partial bool IsEditorPinned { get; private set; }
+
+    /// <summary>Keys typed in the open editor go to Bluestone (shortcuts, computer-keyboard MIDI), not the plugin.</summary>
+    [ObservableProperty]
+    public partial bool EditorKeysToBluestone { get; private set; }
+
+    /// <summary>The open editor is hidden because its track is not selected.</summary>
+    [ObservableProperty]
+    public partial bool IsEditorHidden { get; private set; }
+
+    /// <summary>Pinning matters only while editors follow the selection; otherwise the pin is not shown.</summary>
+    [ObservableProperty]
+    public partial bool CanPinEditor { get; private set; }
+
+    /// <summary>Whether this system can send an editor's keys to Bluestone (macOS, Windows; not Linux).</summary>
+    [ObservableProperty]
+    public partial bool CanRouteEditorKeys { get; private set; } = PluginEditorWindows.KeyRoutingSupported;
+
+    public string PinTip => IsEditorPinned
+        ? "Pinned: the editor stays open whatever is selected. Click to let it follow the selected track again."
+        : "Pin the editor so it stays open when another track is selected";
+
+    public string KeysTip => !CanRouteEditorKeys
+        ? "On this system the plugin's editor always keeps its keys (X11 gives a plugin its own input)."
+        : EditorKeysToBluestone
+            ? "Keys typed in the editor go to Bluestone (shortcuts, computer-keyboard MIDI). Click to give them to the plugin."
+            : "Keys typed in the editor go to the plugin. Click to send them to Bluestone instead; the mouse still works in the editor.";
 
     /// <summary>For a plugin, which worker process it runs in.</summary>
     [ObservableProperty]
@@ -722,6 +761,13 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             NeedsAttention = status.NeedsAttention;
             CanRestart = status.CanRestart;
             CanOpenEditor = status.CanOpenEditor;
+            IsEditorOpen = status.Editor is not null;
+            IsEditorPinned = status.Editor?.Pinned == true;
+            EditorKeysToBluestone = status.Editor?.KeysToBluestone == true;
+            IsEditorHidden = status.Editor?.Hidden == true;
+            CanPinEditor = status.Editor?.FollowsSelection == true;
+            OnPropertyChanged(nameof(PinTip));
+            OnPropertyChanged(nameof(KeysTip));
             Hosting = status.Hosting;
             Detail = status.Detail;
             Title = status.NeedsAttention ? $"[{device.DisplayName}: {status.Text}]" : device.DisplayName;
@@ -825,6 +871,12 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     [RelayCommand]
     private Task OpenEditorAsync() => _view.OpenEditorAsync(this);
 
+    [RelayCommand]
+    private void ToggleEditorPinned() => _view.SetEditorPinned(this, !IsEditorPinned);
+
+    [RelayCommand]
+    private Task ToggleEditorKeysAsync() => _view.SetEditorKeysAsync(this, !EditorKeysToBluestone);
+
     internal void SetParameter(ParameterId parameter, ControlValue value)
     {
         if (!_syncing)
@@ -915,8 +967,14 @@ public sealed partial class ParameterViewModel : ObservableObject
 /// A device's status in words, and whether it needs the musician's attention. For a plugin, <c>Hosting</c> says which
 /// worker process it is in and <c>Detail</c> what else went down with it when it failed.
 /// </summary>
+/// <summary>An open plugin editor window's state: pinned, keys to Bluestone, hidden because its track is not selected, and whether editors follow the selection.</summary>
+public sealed record EditorWindowStatus(bool Pinned, bool KeysToBluestone, bool Hidden, bool FollowsSelection);
+
 public sealed record DeviceStatus(string Text, bool NeedsAttention = false, bool CanRestart = false, bool CanOpenEditor = false, string Hosting = "", string Detail = "")
 {
+    /// <summary>The plugin's editor window, while it is open.</summary>
+    public EditorWindowStatus? Editor { get; init; }
+
     public static DeviceStatus Of(DeviceInstance device, DeviceCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(device);

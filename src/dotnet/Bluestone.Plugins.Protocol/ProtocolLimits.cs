@@ -4,7 +4,7 @@ namespace Bluestone.Plugins.Protocol;
 public static class ProtocolLimits
 {
     /// <summary>The protocol version both sides must agree on in the Hello handshake.</summary>
-    public const int ProtocolVersion = 3;
+    public const int ProtocolVersion = 4;
 
     /// <summary>Bytes of the little-endian length prefix in front of every frame.</summary>
     public const int LengthPrefixBytes = 4;

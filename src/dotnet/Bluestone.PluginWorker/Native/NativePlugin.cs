@@ -177,7 +177,14 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
                     Parameters = ReadParameters(_handle);
                 }
 
-                if (Enum.IsDefined(kind) && (kind != NotificationKind.ParameterEdited || NormalizedValue.IsValid(n.Value)))
+                if (kind == NotificationKind.EditorKey)
+                {
+                    if (EditorKey.IsValid(n.Id, n.Value))
+                    {
+                        report(kind, n.Id, n.Value);
+                    }
+                }
+                else if (Enum.IsDefined(kind) && (kind != NotificationKind.ParameterEdited || NormalizedValue.IsValid(n.Value)))
                 {
                     report(kind, kind == NotificationKind.ParameterEdited ? n.Id : 0, kind is NotificationKind.ParameterEdited or NotificationKind.LatencyChanged ? n.Value : 0);
                 }
@@ -198,6 +205,12 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
     }
 
     public void CloseEditor() => NativeMethods.PluginCloseEditor(_handle);
+
+    /// <summary>Hides or shows the editor's window, keeping the editor. Main thread.</summary>
+    public void SetEditorVisible(bool visible) => NativeMethods.PluginSetEditorVisible(_handle, visible ? 1 : 0);
+
+    /// <summary>Sends the editor's keys to the host or the plugin; false when this editor or platform cannot. Main thread.</summary>
+    public bool RouteEditorKeys(bool toHost) => NativeMethods.PluginRouteEditorKeys(_handle, toHost ? 1 : 0) == 1;
 
     public bool IsEditorOpen => NativeMethods.PluginIsEditorOpen(_handle) == 1;
 

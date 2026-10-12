@@ -69,6 +69,7 @@
     <StreamGeometry x:Key="Icon.MidiPort">M8,2 A6,6 0 1 1 7.99,2 Z M4.8,8.3 H4.9 M5.8,5.6 H5.9 M8,4.6 H8.1 M10.2,5.6 H10.3 M11.2,8.3 H11.3 M7,12 H9</StreamGeometry>
     <StreamGeometry x:Key="Icon.Quantize">M2.5,2.5 V13.5 M6.5,2.5 V13.5 M10.5,2.5 V13.5 M3.5,7 H6 M7.5,10 H10</StreamGeometry>
     <StreamGeometry x:Key="Icon.Velocity">M3,13.5 V9 M6.5,13.5 V5 M10,13.5 V7 M13.5,13.5 V3 M2.2,9 H3.8 M5.7,5 H7.3 M9.2,7 H10.8 M12.7,3 H14.3</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Pin">M6,2.5 H10 M7,2.5 V7 L4.5,9.5 H11.5 L9,7 V2.5 M8,9.5 V14</StreamGeometry>
     <StreamGeometry x:Key="Icon.Keyboard">M1.5,4 H14.5 V12 H1.5 Z M3.8,6.3 H4 M6.2,6.3 H6.4 M8.6,6.3 H8.8 M11,6.3 H11.2 M5,8.3 H5.2 M7.4,8.3 H7.6 M9.8,8.3 H10 M12.2,8.3 H12.4 M5,10.2 H11</StreamGeometry>
     <StreamGeometry x:Key="Icon.ZoomIn">M7,2.5 A4.5,4.5 0 1 1 6.99,2.5 Z M10.3,10.3 L13.8,13.8 M4.8,7 H9.2 M7,4.8 V9.2</StreamGeometry>
     <StreamGeometry x:Key="Icon.ZoomFit">M2.5,6 V2.5 H6 M10,2.5 H13.5 V6 M13.5,10 V13.5 H10 M6,13.5 H2.5 V10 M5.5,8 H10.5 M5.5,8 L7,6.5 M5.5,8 L7,9.5 M10.5,8 L9,6.5 M10.5,8 L9,9.5</StreamGeometry>
@@ -900,13 +901,17 @@
     <Setter Property="Width" Value="24" />
     <Setter Property="Height" Value="22" />
   </Style>
-  <Style Selector="Button.tool.tiny">
+  <Style Selector="Button.tool.tiny, ToggleButton.tool.tiny">
     <Setter Property="Width" Value="18" />
     <Setter Property="Height" Value="18" />
   </Style>
-  <Style Selector="Button.tool.tiny PathIcon">
+  <Style Selector="Button.tool.tiny PathIcon, ToggleButton.tool.tiny PathIcon">
     <Setter Property="Width" Value="10" />
     <Setter Property="Height" Value="10" />
+  </Style>
+  <!-- An editor hidden because its track is not selected: the button stays, quieter, and brings it back. -->
+  <Style Selector="Button.tool.tiny.editorHidden PathIcon">
+    <Setter Property="Opacity" Value="0.5" />
   </Style>
   <Style Selector="Button.compact">
     <Setter Property="MinHeight" Value="{StaticResource Height.Compact}" />

@@ -104,6 +104,21 @@ internal sealed class HostedInstance : IDisposable
     public string? OpenEditor(string title) =>
         _plugin is NativePlugin native ? native.OpenEditor(title) : $"{_plugin.Identity.DisplayName} has no editor.";
 
+    /// <summary>Hides or shows the editor window. Main thread.</summary>
+    public void SetEditorVisible(bool visible)
+    {
+        if (_plugin is NativePlugin native)
+        {
+            native.SetEditorVisible(visible);
+        }
+    }
+
+    /// <summary>Sends the editor's keys to the host or the plugin; null on success, else why not. Main thread.</summary>
+    public string? RouteEditorKeys(bool toHost) =>
+        _plugin is not NativePlugin native ? $"{_plugin.Identity.DisplayName} has no editor."
+        : native.RouteEditorKeys(toHost) || !toHost ? null
+        : "This platform or editor cannot send its keys to Bluestone.";
+
     public void CloseEditor()
     {
         if (_plugin is NativePlugin native)

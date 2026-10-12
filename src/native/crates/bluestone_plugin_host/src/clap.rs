@@ -939,6 +939,14 @@ impl Instance for ClapInstance {
     }
 
     fn idle(&self, notifications: &mut Vec<BphNotification>) {
+        if let Some(window) = self
+            .editor
+            .borrow()
+            .as_ref()
+            .and_then(|e| e.window.as_ref())
+        {
+            crate::common::push_editor_keys(window, notifications);
+        }
         let shared = &self.host.shared;
         // SAFETY: main-thread plugin calls.
         unsafe {
@@ -1126,6 +1134,34 @@ impl Instance for ClapInstance {
 
     fn is_editor_open(&self) -> bool {
         self.editor.borrow().is_some()
+    }
+
+    fn set_editor_visible(&self, visible: bool) {
+        let editor = self.editor.borrow();
+        let Some(editor) = editor.as_ref() else {
+            return;
+        };
+        match &editor.window {
+            Some(window) => window.set_visible(visible),
+            // A floating editor's window belongs to the plugin: ask it.
+            // SAFETY: the plugin's gui extension, on the main thread, while the editor exists.
+            None => unsafe {
+                if let Some(gui) = self.ext.gui.as_ref() {
+                    let call = if visible { gui.show } else { gui.hide };
+                    if let Some(call) = call {
+                        call(self.plugin);
+                    }
+                }
+            },
+        }
+    }
+
+    fn route_editor_keys_to_host(&self, to_host: bool) -> bool {
+        self.editor
+            .borrow()
+            .as_ref()
+            .and_then(|e| e.window.as_ref())
+            .is_some_and(|window| window.route_keys_to_host(to_host))
     }
 }
 

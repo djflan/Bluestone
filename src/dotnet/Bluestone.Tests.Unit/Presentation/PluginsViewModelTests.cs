@@ -218,6 +218,26 @@ public sealed class PluginsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task FloatingEditorsFollowTheSelection_ByDefault_AndTurningItOff_IsSaved()
+    {
+        await _library.ScanAsync(cancellationToken: Ct);
+        await using var hosting = await HostingAsync();
+        var vm = hosting.ViewModel;
+        Assert.True(vm.EditorsFollowSelection);
+        var changed = 0;
+        hosting.Bridge.HostingChanged += (_, _) => changed++;
+
+        vm.EditorsFollowSelection = false;
+        await WaitIdleAsync(vm);
+
+        Assert.False(hosting.Bridge.Hosting.EditorsFollowSelection);
+        Assert.False(hosting.Bridge.EditorsFollowSelection);
+        Assert.False(hosting.Store.Load().EditorsFollowSelection);
+        Assert.Equal(1, changed);
+        Assert.Equal("Plugin editors now stay open until closed.", vm.StatusText);
+    }
+
+    [Fact]
     public async Task ChoosingAModeForOnePlugin_OverridesTheGlobalMode_AndGlobalClearsItAgain()
     {
         await _library.ScanAsync(cancellationToken: Ct);

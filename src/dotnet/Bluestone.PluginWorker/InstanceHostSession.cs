@@ -112,6 +112,14 @@ internal sealed class InstanceHostSession(Stream pipe, WorkerMainThread mainThre
             i.CloseEditor();
             return new Ack();
         }),
+        SetEditorVisible show => WithInstance(show.InstanceId, i =>
+        {
+            i.SetEditorVisible(show.Visible);
+            return new Ack();
+        }),
+        SetEditorKeyboard keys => WithInstance(keys.InstanceId, i => i.RouteEditorKeys(keys.ToHost) is { } error
+            ? new ErrorReply(ErrorCode.NotSupported, error)
+            : new Ack()),
         _ => new ErrorReply(ErrorCode.InvalidRequest, $"{message.Type} is not a request this worker serves."),
     };
 
