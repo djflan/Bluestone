@@ -441,8 +441,13 @@ public sealed class ProjectAudioGraph : IDisposable
                 var startFrame = (long)Math.Round(start * rate);
                 var endFrame = (long)Math.Round(SecondsAt(tempo, clip.End) * rate);
                 var (fadeIn, fadeOut) = clip.EffectiveFades;
-                return new AudioClipRegion(Resolve(clip.Source.Location), startFrame, endFrame, start - SecondsAt(tempo, new Tick(clip.Origin)))
+                var origin = SecondsAt(tempo, new Tick(clip.Origin));
+                // A loop is a fixed stretch of the file, measured where the clip's content starts (no time-stretching).
+                var loop = clip.Loop is { IsEnabled: true } l ? (Start: SecondsAt(tempo, new Tick(clip.Origin + l.Start.Value)) - origin, Length: SecondsAt(tempo, new Tick(clip.Origin + l.End.Value)) - SecondsAt(tempo, new Tick(clip.Origin + l.Start.Value))) : default((double Start, double Length)?);
+                return new AudioClipRegion(Resolve(clip.Source.Location), startFrame, endFrame, start - origin)
                 {
+                    LoopStartSeconds = loop?.Start,
+                    LoopLengthSeconds = loop?.Length,
                     Envelope = new AudioClipEnvelope(
                         PanLaw.DecibelsToGain(clip.GainDecibels),
                         fadeIn.Value == 0 ? 0 : (long)Math.Round(SecondsAt(tempo, clip.Start + fadeIn) * rate) - startFrame,

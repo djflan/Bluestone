@@ -24,6 +24,7 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
         { "id": "…", "name": "Bass", "muted": false, "soloed": false, "role": "instrument", "group": "…",
           "clips": [
             { "id": "…", "type": "note", "start": 3840, "length": 7680, "offset": 0, "name": "Verse",
+              "loop": { "start": 0, "length": 3840, "enabled": true },
               "events": [
                 { "id": "…", "tick": 0, "type": "program", "channel": 2, "program": 34, "bankMsb": 0, "bankLsb": 0 },
                 { "id": "…", "tick": 0, "type": "controller", "channel": 2, "controller": 7, "value": 3355443200 },
@@ -105,6 +106,11 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
   content, and the clip shows content ticks from `offset` to `offset + length`. Content outside that
   window is kept but not played, so trimming a clip loses nothing. `name` is optional; without it the clip
   shows the track's name.
+- A clip's `loop` (optional, on note and audio clips) repeats part of its content (ADR 0039): `start` (content
+  ticks), `length` (at least 1), and `enabled` (default false; the loop is kept while off). Content from `offset`
+  plays up to the loop's end, then the loop's region repeats until the clip ends; content before `start` therefore
+  plays once. `offset` is never wrapped into the loop. A note clip whose loop would play more than 262,144 events is
+  refused.
 - A track's `role` is `instrument`, `audio`, `hybrid`, `effect`, or `group` (ADR 0021). Roles are
   stored, and on reading a role that cannot show the track's content is widened (an instrument track
   with audio clips becomes hybrid). `group` (optional) is the ID of the group track it belongs to.

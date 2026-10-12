@@ -73,7 +73,16 @@ public sealed class EditHistory
     public bool Execute(IProjectCommand command)
     {
         ArgumentNullException.ThrowIfNull(command);
-        var next = command.Apply(Current);
+        Project next;
+        try
+        {
+            next = command.Apply(Current);
+        }
+        catch (Bluestone.Domain.Sequencing.ClipLoopLimitException ex)
+        {
+            throw new CommandRefusedException(ex.Message, ex);
+        }
+
         if (ReferenceEquals(next, Current))
         {
             return false;

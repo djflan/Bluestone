@@ -257,6 +257,15 @@ public sealed class ProjectSerializer
         writer.WriteNumber("start", clip.Start.Value);
         writer.WriteNumber("length", clip.Length.Value);
         writer.WriteNumber("offset", clip.ContentOffset.Value);
+        if (clip.Loop is { } loop)
+        {
+            writer.WriteStartObject("loop");
+            writer.WriteNumber("start", loop.Start.Value);
+            writer.WriteNumber("length", loop.Length.Value);
+            writer.WriteBoolean("enabled", loop.IsEnabled);
+            writer.WriteEndObject();
+        }
+
         if (clip.Name.Length > 0)
         {
             writer.WriteString("name", clip.Name);
@@ -839,6 +848,14 @@ public sealed class ProjectSerializer
         var length = new TickSpan(Long(json, "length", path, 1, long.MaxValue - start.Value));
         var offset = new TickSpan(Long(json, "offset", path, 0, long.MaxValue));
         var name = OptionalString(json, "name", path, Clip.MaxNameLength) ?? string.Empty;
+        ClipLoop? loop = null;
+        if (OptionalObject(json, "loop", path) is { } loopJson)
+        {
+            var loopStart = new Tick(Long(loopJson, "start", $"{path}.loop", 0, long.MaxValue / 2));
+            var loopLength = new TickSpan(Long(loopJson, "length", $"{path}.loop", 1, long.MaxValue / 2));
+            loop = new ClipLoop(loopStart, loopLength, Bool(loopJson, "enabled", $"{path}.loop", false));
+        }
+
         var type = String(json, "type", path, 16);
         switch (type)
         {
@@ -846,7 +863,7 @@ public sealed class ProjectSerializer
                 var array = Array(json, "events", path, MaxEventsPerTrack - eventCount);
                 eventCount += array.Count;
                 var events = array.Select((node, i) => ReadEvent(Object(node, $"{path}.events[{i}]"), $"{path}.events[{i}]")).ToList();
-                return Guard($"{path}.events", () => new NoteClip(id, start, length, offset, new EventList(events), name));
+                return Guard($"{path}.events", () => new NoteClip(id, start, length, offset, new EventList(events), name) { Loop = loop });
             case "audio":
                 var at = $"{path}.source";
                 var source = Object(json, "source", path);
@@ -864,7 +881,7 @@ public sealed class ProjectSerializer
                     "equalPower" => FadeShape.EqualPower,
                     var other => throw new ProjectFormatException($"{path}.fadeShape", $"\"{other}\" is not a known fade shape."),
                 };
-                return Guard(path, () => new AudioClip(id, start, length, offset, audio, name) { GainDecibels = gain, FadeIn = fadeIn, FadeOut = fadeOut, FadeShape = shape });
+                return Guard(path, () => new AudioClip(id, start, length, offset, audio, name) { GainDecibels = gain, FadeIn = fadeIn, FadeOut = fadeOut, FadeShape = shape, Loop = loop });
             default:
                 throw new ProjectFormatException($"{path}.type", $"\"{type}\" is not a known clip type.");
         }

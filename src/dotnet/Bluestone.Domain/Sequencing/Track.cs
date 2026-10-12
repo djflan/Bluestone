@@ -340,6 +340,16 @@ public sealed class Track
             }
         }
 
+        foreach (var notes in sorted.OfType<NoteClip>())
+        {
+            if (notes.IsLooping && notes.ArrangedEventCount() is var count && count > NoteClip.MaxArrangedEvents)
+            {
+                throw new ClipLoopLimitException(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"The clip would play {count:N0} events with its loop; a clip plays at most {NoteClip.MaxArrangedEvents:N0}. Make its loop longer or the clip shorter."));
+            }
+        }
+
         // Each clip's events are already unique; only clips together can repeat an ID.
         var noteClips = sorted.OfType<NoteClip>().ToList();
         if (noteClips.Count > 1)
