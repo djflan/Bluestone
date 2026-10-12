@@ -222,7 +222,7 @@ public partial class MainWindow : Window
         Height = Math.Max(MinHeight, height);
     }
 
-    /// <summary>Records the main window's and detached windows' bounds under the current display setup.</summary>
+    /// <summary>Records the main window's and detached windows' bounds under the current display setup, for windows in their normal state.</summary>
     private void RememberBounds(WorkspaceViewModel workspace)
     {
         var screens = CurrentScreens();
@@ -237,7 +237,7 @@ public partial class MainWindow : Window
             workspace.MainWindowBounds = workspace.MainWindowBounds.SetItem(signature, BoundsOf(this));
         }
 
-        foreach (var (view, window) in _detached)
+        foreach (var (view, window) in _detached.Where(p => p.Value.WindowState == WindowState.Normal))
         {
             view.RememberBounds(signature, BoundsOf(window));
         }
@@ -282,7 +282,8 @@ public partial class MainWindow : Window
             window.Closing += (_, _) =>
             {
                 // A window closed while another layout is restored shows the replaced layout, which was saved already.
-                if (!vm.Workspace.IsRestoring && CurrentScreens() is { Count: > 0 } now)
+                // A minimized or maximized window's bounds are not where it goes when restored, so they are not kept.
+                if (!vm.Workspace.IsRestoring && window.WindowState == WindowState.Normal && CurrentScreens() is { Count: > 0 } now)
                 {
                     view.RememberBounds(DisplayConfiguration.Signature(now), BoundsOf(window));
                 }
