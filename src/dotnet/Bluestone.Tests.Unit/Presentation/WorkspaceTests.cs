@@ -287,6 +287,29 @@ public sealed class WorkspaceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AddingAnInstrument_BringsADetachedBrowserForward_WhereItIs_AndDocksACollapsedOne()
+    {
+        var fronted = new List<WorkspaceView>();
+        _vm.Workspace.FrontRequested += (_, view) => fronted.Add(view);
+        _vm.Workspace.Browser.DetachCommand.Execute(null);
+        await Settle();
+
+        _vm.Selection.Track.AddInstrumentCommand.Execute(null);
+
+        Assert.Equal([_vm.Workspace.Browser], fronted);
+        Assert.True(_vm.Workspace.Browser.IsDetached);
+        Assert.Equal(BrowserCategory.Instruments, _vm.Browser.SelectedCategory.Category);
+
+        _vm.Workspace.Browser.CollapseCommand.Execute(null);
+        _vm.Browser.ShowCategory(BrowserCategory.All);
+        _vm.Selection.Track.AddInstrumentCommand.Execute(null);
+
+        Assert.True(_vm.Workspace.Browser.IsDocked);
+        Assert.Single(fronted);
+        Assert.Equal(BrowserCategory.Instruments, _vm.Browser.SelectedCategory.Category);
+    }
+
+    [Fact]
     public async Task TheWorkspace_RoundTripsThroughItsSerializedState()
     {
         First.InsertAt(0, Definition("Transpose"));

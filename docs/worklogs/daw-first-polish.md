@@ -270,6 +270,32 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
 - Imported tracks remain `Instrument` tracks without an audio path, so a file imported for a hardware rig still says "No
   output" until routed. Inserting an instrument into one makes it hybrid and audible (D3).
 
+### D11. Hardware profiles are not devices
+
+- **Context**: the Browser listed hardware profiles among devices in **All** and offered **Insert** for them, which only
+  printed a message.
+- **Chosen**: profiles live only in the **Hardware** category, described as "MIDI profile · manufacturer"; their action
+  is **Use on Track**: the selected tracks get the profile and External MIDI opens for the output and channel. The
+  footer button's label follows the selected item (Insert, Open, Use on Track).
+- **Alternatives**: hide profiles from the Browser entirely (rejected: it is a good place to discover them); make a
+  profile a chain device (rejected: profiles describe external instruments reached through connections, ADR 0023).
+
+### D12. Settings replaces the workspace grid while open and is host-agnostic
+
+- **Context**: audio and plugin settings were two dialogs; the brief asks for a Rider-like two-pane surface in the main
+  content region that restores the workspace and could later detach.
+- **Alternatives**: a new `WorkspaceViewKind` docked in a region (rejected: Settings is not a tool beside the work, and
+  it would add to the view-kind switches the reviewer flagged); a modal dialog (rejected by the brief).
+- **Chosen**: `SettingsViewModel` (Presentation) holds the categories, search, selection, and open state and knows
+  nothing of its host. `MainWindow.Settings.cs` hides `WorkspaceGrid` and shows `SettingsView` in its row while open;
+  Escape (handled at window level so workspace shortcuts never see it) or **Done** reverses that. Hiding instead of
+  replacing means no region size, tab, Device View, or detached window changes; a test checks the detail row height,
+  extents, docked tools, selection, active Device View, and the project reference are identical afterwards. Pages
+  reuse `AudioViewModel` and `PluginsViewModel`.
+- **Tradeoffs**: the main window owns `Settings` (the view model is attached by the host, like audio was); the Settings
+  view is not yet detachable, but nothing in it depends on the main window.
+- **Kept**: menu items **Audio Settings…** and **Plugins…** (they open their page), so existing habits still work.
+
 ## Progress checkpoints
 
 ### Checkpoint 1: DAW-first track model and inspector (phases 1–2)
@@ -297,7 +323,47 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
 ### Checkpoint 2: Device View (phase 3)
 
 - **Commit**: `1c138ba`.
-- **Tests**: `DeviceViewTests` 14/14 (new: an empty chain is one composition with labelled boundaries).
+- **Tests**: `DeviceViewTests` 14/14 (new: an empty chain is one composition with labelled boundaries; a drag over it
+  lights the slot and lands as the first device).
+- **Visual**: the empty chain is IN → dashed panel-sized slot → OUT, each boundary captioned; populated panels keep the
+  dark modules, coloured top accents, compact knobs, and power buttons, now with a flat raised header, the device name
+  in full ("Reference Sine" instead of "R…"), and controls balanced in the fixed height.
+
+### Checkpoint 3: Browser (phase 4)
+
+- **Commit**: `468a891`, then `0ce87e9`.
+- **Changes**: hardware profiles have their own category and a **Use on Track** action (D11); the action button and the
+  footer say exactly what happens and where; empty categories explain how to fill them and link to plugin settings;
+  "Add an instrument…" brings a detached Browser or Device View forward (reviewer finding 5).
+- **Tests**: `DawFirstTrackTests.AHardwareProfile_IsNotOfferedAsADevice_AndIsUsedOnTheSelectedTrack`, updated
+  `DeviceViewTests` (the action button by name).
+
+### Checkpoint 4: Settings (phase 5)
+
+- **Commits**: `7707bd9`, docs `18c106c` (ADR 0038), `72e2130`.
+- **Changes**: see D12. The old `AudioWindow` and `PluginsWindow` are removed; their menu items open the pages.
+- **Tests**: `SettingsTests` ×3 (the workspace comes back exactly, keyboard and gear open it, search, page controls, the
+  Browser link), `SettingsViewModelTests` ×3, `PluginsViewTests` and `AudioSettingsMenuTests` moved to the pages.
+
 ## Deviations and discoveries
+
+- **Assumption corrected**: inserting a plugin instrument was assumed to route its audio somewhere by default; it did
+  not (audio reaches the master only through explicit connections), which made D2/D3 central rather than cosmetic.
+- **Domain default kept**: `Track.Create` still defaults to `Instrument`; the app's **New Track** asks for `Hybrid`
+  explicitly. Changing the domain default would have altered many tests' premises for no user-visible gain.
+- **Existing test premise**: `DeviceAndRoutingCommandsTests.Scenario14_AMoveThatWouldBreakATap…` relied on inserting a
+  synth into an instrument track leaving it an instrument track; it now builds that chain directly (D3).
+- **Headless frames**: frames saved during the full UI suite can show stale routing state while the showcase's own
+  waits pass; regenerating with the showcase class alone gives settled frames. Not investigated further (the product
+  state was verified by assertions); recorded so nobody trusts a full-suite frame over an isolated one.
+- **Composite expander headers** (title plus summary) broke two test helpers that compared `Header` to a string; the
+  helpers now read the header's first text.
+- **CoreMIDI client creation**: rapid back-to-back test processes occasionally get OSStatus -304 from
+  `MIDIClientCreate`. Unrelated to this milestone; noted for a separate look.
+- **Scope added**: a gear button and ⌘/Ctrl + , for Settings, and the Browser's link from empty plugin categories, to
+  make Settings discoverable; a "Restart with these settings" button while audio runs, because settings apply on start.
+- **Deferred**: track-owned mixer channels (per-track faders), declarative parameter grouping for device panels,
+  flattening the remaining faint control-bar/header/button gradients, a detachable Settings window, MIDI and
+  recording preferences in Settings.
 
 ## Final assessment
