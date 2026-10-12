@@ -26,7 +26,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0019](0019-sysex-preservation-and-interpretation.md) | SysEx: preserved losslessly, interpreted optionally by dialect | Accepted |
 | [0020](0020-hybrid-tracks-clips-and-automation.md) | Hybrid tracks: typed clips and track automation lanes | Accepted; supersedes part of 0006; amended by 0021 and 0024 |
 | [0021](0021-track-roles.md) | Track roles: persisted, reconciled with content, never destructive | Accepted; amends 0020; amended by 0030 |
-| [0022](0022-device-chains.md) | Device chains: definitions, instances, ownership, and processing semantics | Accepted; amended by 0028 |
+| [0022](0022-device-chains.md) | Device chains: definitions, instances, ownership, and processing semantics | Accepted; amended by 0028 and 0037 |
 | [0023](0023-signal-routing-model.md) | One signal routing model: connections, external instruments, and mixer channels | Accepted; supersedes 0008 |
 | [0024](0024-device-automation.md) | Device parameter automation is separate from signal flow | Accepted; amends 0020; amended by 0031 |
 | [0025](0025-out-of-process-plugin-hosting.md) | Plugins run out of process; isolation is crash isolation, not a sandbox | Accepted; amended by 0028, 0033, and 0034 |
@@ -40,6 +40,8 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
 | [0034](0034-plugin-hosting-modes.md) | Plugin hosting modes: how plugins share worker processes | Accepted; amends 0025 |
 | [0035](0035-live-input-and-delay-compensation.md) | Live input through every device, a live render-ahead queue, and plugin delay compensation | Accepted; amends 0028 and 0032 |
+| [0036](0036-semantic-workspace-and-device-view.md) | A semantic workspace, Device Views as view instances, and local layout state | Accepted |
+| [0037](0037-parallel-signal-bundle.md) | A device chain carries a parallel signal bundle | Accepted; amends 0022 |
 
 ## Template
 

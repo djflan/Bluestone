@@ -9,7 +9,7 @@ Bluestone started as a MIDI workstation for Yamaha XG instruments and the QY100,
 > [!NOTE]
 > Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. Yamaha, XG, QY100, and other product names and trademarks belong to their respective owners and are used solely to describe compatibility.
 
-![Bluestone main window: the inspector with track, routing, voice, and device sections beside the arrangement and the piano roll](docs/images/bluestone-main-window.png)
+![Bluestone main window: the inspector with track, routing, voice, and connection sections beside the arrangement, a Device View with an Arpeggiator and a VST3 instrument whose editor is open, and the Browser](docs/images/bluestone-main-window.png)
 
 ## Status
 
@@ -212,7 +212,7 @@ onto the window to open it. Hardware checks are listed in
 | New, Open, Save, Save As | Ctrl/Cmd + N, O, S, Shift + S |
 | Import / Export MIDI | Ctrl/Cmd + I / E |
 | Zoom timeline | Ctrl/Cmd + scroll, trackpad pinch, scroll over the bar ruler, or Ctrl/Cmd + = / − |
-| Show inspector / piano roll / event list | I / P / D |
+| Show inspector / Browser / Device View / piano roll / event list | I / Shift + B / E / P / D |
 | Computer keyboard as MIDI input on / off | ` (backquote), or the keyboard button in the transport bar |
 | Keyboard shortcut reference | Ctrl/Cmd + / |
 
@@ -281,12 +281,33 @@ at once (one undo step), and values that differ show *Mixed*.
 
 - **Track**: the role. Changing it never removes clips, devices, automation, or routing; Bluestone asks or refuses when it would.
 - **Routing** and **Voice**: the MIDI output, the instrument profile, the channel, transposition, and the bank and program. **Initialize Instrument…** sends the profile's setup messages and asks before anything that resets the instrument.
-- **Devices**: the track's device chain. Pick a built-in device or a scanned plugin in *Add a device…*; each device can be bypassed, moved, removed, and its parameters set. *Route from here…* sends a device's output elsewhere. *Save chain preset…* and *Load preset…* keep a chain for reuse.
 - **Connections**: what the track sends to and receives from, and new connections from the track or one of its devices to a track, a rack, an external instrument, a mixer channel, or the master.
-- **Racks**: device chains several tracks can feed, such as one shared instrument. **Edit** shows a rack's devices in the Devices section.
+- **Racks**: device chains several tracks can feed, such as one shared instrument. **Edit** shows a rack's devices in the Device View, locked to the rack.
 - **Mixer**: mixer channels, their gain, pan, mute, solo, and output, and the master gain.
 
 Group tracks show their members under them; the arrow on a group folds it.
+
+### Device View and Browser
+
+A track's devices are edited in the **Device View** (E), a tab below the arrangement. Devices run left to right
+between the chain's input and output, each as a panel with its controls: knobs (drag up and down, Shift for fine,
+double-click to reset), on/off switches, bypass, and for plugins the editor and restart. Collapse a panel to a
+narrow strip with its chevron; drag a device by its name to move it; the chain scrolls sideways when it is long.
+
+An unlocked Device View follows the selected track. The lock in its header keeps it on its track (or rack) while
+you select others. **+** beside the tabs opens another Device View, so two chains can be open at once, and each
+view can be docked as a tab, collapsed to an icon on the border rail, or detached to its own window. Views showing
+the same chain share its devices; what is collapsed, selected, or scrolled is each view's own.
+
+The **Browser** (Shift + B) lists devices, plugins, project racks, and hardware profiles, with search and
+categories. Drag a device onto a Device View to insert it exactly where the marker shows; double-click or Return
+inserts it into the last Device View you used, after its selected device. With no Device View showing a chain,
+nothing is inserted. Suggested items fit the chain so far, but nothing is forbidden.
+
+The inspector and Browser dock at the sides and resize by their edge; their icons on the border rails open and
+collapse them. The layout, open views, detached windows, locks, collapsed devices, and Browser search are kept on
+this computer, per project and as your defaults for new ones; they never mark the project as edited. A detached
+window whose monitor is missing comes back as a rail icon and returns to that monitor when it is attached again.
 
 ### Audio and plugins
 

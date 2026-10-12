@@ -80,6 +80,7 @@ public partial class App : Avalonia.Application
         var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices)
         {
             Plugins = new PluginsViewModel(library, dispatcher, devices, hosting),
+            LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
         _ = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices, viewModel);
@@ -102,6 +103,10 @@ public partial class App : Avalonia.Application
         window.AttachAudio(_audio);
         window.Closed += (_, _) => audio.Dispose();
     }
+
+    /// <summary>Bluestone's local settings folder, e.g. ~/Library/Application Support/Bluestone on macOS. Workspace layouts live here, not in projects.</summary>
+    public static string SettingsDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone");
 
     /// <summary>Where the audio settings are kept, e.g. ~/Library/Application Support/Bluestone/audio-settings.json on macOS.</summary>
     public static string AudioSettingsPath =>

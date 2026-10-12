@@ -27,7 +27,7 @@ public sealed record ConnectionRow(ConnectionId Id, string Text, string Detail, 
 /// <summary>
 /// The routing inspector for the selected track, or for the rack being edited (ADR 0023): what it sends and
 /// where, what it receives, and a way to add a connection from its output or from one of its devices. It edits the project's one
-/// connection list, the same list the device strip's indicators show, and refuses connections that would
+/// connection list, the same list the Device View's indicators show, and refuses connections that would
 /// not work or would feed back.
 /// </summary>
 public sealed partial class ConnectionsViewModel : ObservableObject
@@ -75,7 +75,7 @@ public sealed partial class ConnectionsViewModel : ObservableObject
         {
             node = SignalNode.Rack(rackId);
             chain = rackChain;
-            name = DeviceStripViewModel.RackName(rackChain);
+            name = DeviceViewViewModel.RackName(rackChain);
         }
         else if (track is { } id && project.Sequence.FindTrack(id) is { } found)
         {
@@ -125,7 +125,7 @@ public sealed partial class ConnectionsViewModel : ObservableObject
 
         foreach (var other in project.Chains.Where(c => c.Owner.Kind == ChainOwnerKind.Rack && SignalNode.Rack(c.Id) != node))
         {
-            Destinations.Add(new DestinationOption(SignalNode.Rack(other.Id), SignalKind.Events, $"Rack: {DeviceStripViewModel.RackName(other)}"));
+            Destinations.Add(new DestinationOption(SignalNode.Rack(other.Id), SignalKind.Events, $"Rack: {DeviceViewViewModel.RackName(other)}"));
         }
 
         foreach (var instrument in project.Instruments)

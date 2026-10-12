@@ -20,7 +20,8 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | Third-party plugins: VST3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins as VST3 and CLAP; installed plugins tested on macOS |
 | Plugin hosting modes: together, by manufacturer, by plugin (default), individually; per-plugin override; crash blast radius and counts (ADR 0034) | Done, tested with real workers |
 | UI: Plugins view (rescan, quarantine retry, hosting), Mixer console, Audio Settings, editor button, group menu, instrument parameter lanes | Done; view-model and headless UI tests; the app launched as a smoke test only |
-| Headless UI tests: Devices, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
+| Device-centric workspace: design tokens, semantic regions and rails, dockable/detachable Browser, multiple follow/lock Device Views with per-view presentation, drag-and-drop insertion and reordering, local layout persistence with monitor recovery (ADR 0036); parallel signal bundle in chains (ADR 0037) | Done; view-model and headless UI tests with frames at 1280×800 and 1920×1080; the real app launched under Xvfb; not checked on real multiple monitors |
+| Headless UI tests: Device View, Browser, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
 | Acceptance scenarios 1–15 | All have tests: tables in [architecture.md](architecture.md#acceptance-scenarios-and-their-tests) and [plugin-hosting.md](plugin-hosting.md#acceptance-scenarios) |
 | Rust | Two cdylib crates (`bluestone_audio`, `bluestone_plugin_host`) plus test plugins, each with a measured or native-ABI reason (ADRs 0032, 0033) |
 
@@ -169,3 +170,10 @@ Suggested order:
    [plugin-hosting.md](plugin-hosting.md#not-done).
 3. **Groups:** drag and drop into a group; a folded group's lane summarizing its members' clips.
 4. **Out of scope by decision 27:** MIDI 2.0/UMP, MPE, visual node-graph editing, feedback routing.
+5. **Device-centric workspace (ADR 0036, 0037), next steps:** live input fanning out to every instrument of a
+   layered chain; plugin preset browsing and remote-parameter pages in the compact plugin panel (the host protocol
+   exposes neither yet); a stable per-note ID in the domain for expressive notes; container devices with child-chain
+   slots shown inline in the Device View; declarative third-party panel layouts and optional custom Avalonia editors;
+   base versus modulated parameter values and control-rate modulators; optional auto-collapse of panels; samples
+   and presets in the Browser once there is an index; drag from the Browser onto a track or the arranger;
+   keyboard reordering of devices; and verifying detached windows and monitor recovery on real multi-monitor setups.

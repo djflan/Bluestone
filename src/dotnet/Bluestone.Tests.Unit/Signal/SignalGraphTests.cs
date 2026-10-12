@@ -183,7 +183,7 @@ public sealed class SignalGraphTests
     }
 
     [Fact]
-    public void Scenario6_SysExGoesPastASoftwareInstrument_ToWhateverFollowsTheTrack()
+    public void Scenario6_TheBundleGoesPastASoftwareInstrument_ToWhateverFollowsTheTrack()
     {
         var sysEx = XgOn(0);
         var synth = Instance(TestDevices.Synth);
@@ -195,8 +195,26 @@ public sealed class SignalGraphTests
 
         var result = project.Evaluate();
 
-        Assert.Equal([sysEx], result.PartFor(route).Events.Select(e => e.Event));
+        // The plugin plays the note and passes it on with the SysEx, so the hardware part layers with it (ADR 0037).
+        Assert.Equal(2, result.PartFor(route).Events.Length);
+        Assert.Contains(sysEx, result.PartFor(route).Events.Select(e => e.Event));
+        Assert.Equal(60, Assert.Single(result.PartFor(route).Events.Notes()).Note.Value);
         Assert.Equal(60, Assert.Single(result.InstrumentFor(synth).Events.Notes()).Note.Value);
+    }
+
+    [Fact]
+    public void TwoSoftwareInstrumentsOnOneTrack_BothPlayItsNotes()
+    {
+        var first = Instance(TestDevices.Synth);
+        var second = Instance(TestDevices.Synth);
+        var keys = TrackOf("Keys", Note(0, 60));
+        var project = NewProject().With(keys, first, second);
+
+        var result = project.Evaluate();
+
+        Assert.Equal(60, Assert.Single(result.InstrumentFor(first).Events.Notes()).Note.Value);
+        Assert.Equal(60, Assert.Single(result.InstrumentFor(second).Events.Notes()).Note.Value);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code == SignalDiagnosticCode.Unrouted);
     }
 
     [Fact]

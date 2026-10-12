@@ -71,13 +71,17 @@ internal sealed class AppUnderTest : IAsyncDisposable
     /// <summary>
     /// Opens the window. It uses the in-window menu and key bindings (as on Windows and Linux) unless
     /// <paramref name="nativeMenuBar"/>: the headless platform has no system menu bar to deliver the macOS menu's shortcuts.
+    /// Dialogs answer "discard" unless <paramref name="dialogs"/>; the workspace layout is neither restored nor saved unless
+    /// <paramref name="layoutStore"/>.
     /// </summary>
     public static async Task<AppUnderTest> OpenAsync(
         ProjectSession? session = null,
         Func<ProjectSession, PluginDeviceHost>? plugins = null,
         ProfileCatalog? profiles = null,
         PluginsViewModel? pluginLibrary = null,
-        bool nativeMenuBar = false)
+        bool nativeMenuBar = false,
+        IUserInteraction? dialogs = null,
+        WorkspaceStore? layoutStore = null)
     {
         session ??= new ProjectSession();
         var clock = SystemMonotonicClock.Instance;
@@ -86,7 +90,11 @@ internal sealed class AppUnderTest : IAsyncDisposable
         var endpoints = new EndpointDirectory([provider]);
         var playback = new PlaybackController(session, endpoints, profiles ?? ProfileCatalog.Empty, clock, startThread: false);
         var window = new MainWindow { Width = 1440, Height = 1600, UseNativeMenuBar = nativeMenuBar };
-        var viewModel = new MainViewModel(session, playback, endpoints, new NoDialogs(), new AvaloniaDispatcher(), plugins: plugins?.Invoke(session)) { Plugins = pluginLibrary };
+        var viewModel = new MainViewModel(session, playback, endpoints, dialogs ?? new NoDialogs(), new AvaloniaDispatcher(), plugins: plugins?.Invoke(session))
+        {
+            Plugins = pluginLibrary,
+            LayoutStore = layoutStore,
+        };
         window.Attach(viewModel);
         window.Show();
         await viewModel.InitializeAsync();

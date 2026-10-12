@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             x:Class="Bluestone.Desktop.Views.BrowserView"
+             x:DataType="vm:BrowserViewModel"
+             AutomationProperties.Name="Browser">
+  <!--
+    The Browser (ADR 0036): one palette for everything that can go into a project, filtered by kind and ranked for the active
+    Device View's chain. Drag an item onto a Device View to insert it exactly; Return or a double-click inserts into the Device
+    View used last, and says so rather than guessing when there is none.
+  -->
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Border Classes="searchField" Margin="8,8,8,6">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="12" Height="12" Foreground="{StaticResource Text.Muted}" Margin="8,0,2,0" />
+        <TextBox x:Name="SearchBox" Grid.Column="1" Classes="bare" Text="{Binding SearchText}" Watermark="Search devices, plugins, racks…"
+                 AutomationProperties.Name="Search the Browser" />
+        <Button Grid.Column="2" Classes="tool tiny" Command="{Binding ClearSearchCommand}" IsVisible="{Binding SearchText.Length}"
+                ToolTip.Tip="Clear the search" AutomationProperties.Name="Clear search">
+          <PathIcon Classes="stroke" Data="{StaticResource Icon.Close}" />
+        </Button>
+      </Grid>
+    </Border>
+
+    <ListBox Grid.Row="1" x:Name="CategoryList" Classes="chips" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}"
+             Margin="6,0,6,6" AutomationProperties.Name="Browser category">
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:BrowserCategoryOption">
+          <TextBlock Text="{Binding Name}" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <Panel Grid.Row="2">
+      <ListBox x:Name="ItemList" Classes="browser" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" AutomationProperties.Name="Browser items">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:BrowserItem">
+            <Grid ColumnDefinitions="Auto,*,Auto" Classes="browserRow" ToolTip.Tip="{Binding Detail}" AutomationProperties.Name="{Binding Name}">
+              <Ellipse Classes="roleDot" Fill="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
+                <TextBlock Classes="itemName" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="itemDetail" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+              <Border Grid.Column="2" Classes="suggested" IsVisible="{Binding IsRecommended}" ToolTip.Tip="Suggested for this chain">
+                <TextBlock Text="Suggested" />
+              </Border>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <StackPanel Classes="emptyState" IsVisible="{Binding IsEmpty}">
+        <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="22" Height="22" Foreground="{StaticResource Line.BorderStrong}" />
+        <TextBlock Classes="caption" Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="200" />
+      </StackPanel>
+    </Panel>
+
+    <Border Grid.Row="3" Classes="browserFooter">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Ellipse Classes="targetDot" Classes.on="{Binding HasTarget}" />
+        <TextBlock Grid.Column="1" Classes="caption" Text="{Binding TargetText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                   ToolTip.Tip="Where Return or a double-click inserts. Drag onto any Device View to choose the exact place." />
+        <Button Grid.Column="2" Classes="raised compact" Content="Insert" Command="{Binding InsertCommand}"
+                ToolTip.Tip="Insert into the active Device View, after its selected device (Return)" AutomationProperties.Name="Insert into Device View" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

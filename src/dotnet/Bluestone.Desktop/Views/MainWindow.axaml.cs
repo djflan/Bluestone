@@ -21,7 +21,7 @@ public partial class MainWindow : Window
     private ClipId? _renamingClip;
     private bool _closeConfirmed;
     private bool _syncingScroll;
-    private double _editorHeight = 330;
+    private readonly Dictionary<WorkspaceView, ViewWindow> _detached = [];
 
     public MainWindow() => InitializeComponent();
 
@@ -115,7 +115,7 @@ public partial class MainWindow : Window
         AttachPianoRoll(viewModel);
         AttachEventList(viewModel);
         AttachRecordingOptions(viewModel);
-        EditorSplitter.DragCompleted += (_, _) => _editorHeight = MainArea.RowDefinitions[3].ActualHeight;
+        AttachWorkspace(viewModel);
         ApplyEditorVisibility();
 
         TempoBox.LostFocus += (_, _) => viewModel.CommitTempo(TempoBox.Text ?? string.Empty);
@@ -136,6 +136,183 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DragLeaveEvent, (_, _) => DropOverlay.IsVisible = false);
         AddHandler(DragDrop.DropEvent, OnDrop);
+    }
+
+    /// <summary>
+    /// Connects the semantic workspace (ADR 0036): the detail region's height, windows for detached views, the displays the
+    /// layout is restored onto, and the local layout itself, which is restored now and saved when the window closes.
+    /// </summary>
+    private void AttachWorkspace(MainViewModel vm)
+    {
+        vm.Screens = () => CurrentScreens();
+        vm.Workspace.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WorkspaceViewModel.DetailExtent))
+            {
+                ApplyEditorVisibility();
+            }
+        };
+        vm.Workspace.LayoutChanged += (_, _) => SyncDetachedWindows();
+        MainArea.SizeChanged += (_, _) =>
+        {
+            DetailHandle.MaximumExtent = Math.Max(WorkspaceViewModel.MinimumDetailExtent, MainArea.Bounds.Height - 200);
+
+            // The row shows the saved extent clamped to the new height; the saved extent itself is kept for a taller window.
+            ApplyEditorVisibility();
+        };
+        vm.RestoreLayout();
+        RestoreBounds(vm.Workspace);
+        SyncDetachedWindows();
+
+        // Opening another project restores its layout: the windows go where that layout has them, not where they were.
+        vm.Workspace.LayoutRestored += (_, _) => OnLayoutRestored(vm.Workspace);
+        if (Screens is { } screens)
+        {
+            // A monitor plugged back in brings back the detached windows that were waiting for it.
+            screens.Changed += OnScreensChanged;
+            Closed += (_, _) => screens.Changed -= OnScreensChanged;
+        }
+    }
+
+    /// <summary>
+    /// Puts the main window and the detached windows where a layout restored after startup has them. A window whose layout has
+    /// no bounds reachable on the attached displays stays where it is.
+    /// </summary>
+    private void OnLayoutRestored(WorkspaceViewModel workspace)
+    {
+        RestoreBounds(workspace);
+        SyncDetachedWindows();
+        var screens = CurrentScreens();
+        foreach (var (view, window) in _detached)
+        {
+            Place(window, view, screens);
+        }
+    }
+
+    private void OnScreensChanged(object? sender, EventArgs e) => _viewModel?.Workspace.ReattachAwaitingViews(CurrentScreens());
+
+    /// <summary>The working areas of the attached displays, in the units windows are positioned in.</summary>
+    private List<ScreenArea> CurrentScreens() =>
+        Screens?.All.Select(s => new ScreenArea(s.WorkingArea.X, s.WorkingArea.Y, s.WorkingArea.Width, s.WorkingArea.Height, DesktopScalingOf(s))).ToList() ?? [];
+
+    /// <summary>
+    /// Desktop units (what window positions and display areas are in) per device-independent pixel on <paramref name="screen"/>.
+    /// Windows and Linux position windows in physical pixels, so it is the display's scaling; macOS positions them in points,
+    /// the same as device-independent pixels, on every display (Avalonia.Native's desktop scaling is always 1).
+    /// </summary>
+    private static double DesktopScalingOf(Avalonia.Platform.Screen screen) => OperatingSystem.IsMacOS() ? 1 : screen.Scaling;
+
+    /// <summary>A window's bounds in desktop units, its size included, as they are saved.</summary>
+    private static WindowBounds BoundsOf(Window window) =>
+        LayoutRecovery.Capture(window.Position.X, window.Position.Y, window.Bounds.Width, window.Bounds.Height, window.DesktopScaling);
+
+    /// <summary>Puts the main window where it was on this display setup, if that is still on a display; never off-screen.</summary>
+    private void RestoreBounds(WorkspaceViewModel workspace)
+    {
+        var screens = CurrentScreens();
+        if (screens.Count == 0 || LayoutRecovery.Restore(workspace.MainWindowBounds, screens) is not { } bounds)
+        {
+            return;
+        }
+
+        var (width, height) = LayoutRecovery.WindowSize(bounds, screens);
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Position = new PixelPoint((int)bounds.X, (int)bounds.Y);
+        Width = Math.Max(MinWidth, width);
+        Height = Math.Max(MinHeight, height);
+    }
+
+    /// <summary>Records the main window's and detached windows' bounds under the current display setup, for windows in their normal state.</summary>
+    private void RememberBounds(WorkspaceViewModel workspace)
+    {
+        var screens = CurrentScreens();
+        if (screens.Count == 0)
+        {
+            return;
+        }
+
+        var signature = DisplayConfiguration.Signature(screens);
+        if (WindowState == WindowState.Normal)
+        {
+            workspace.MainWindowBounds = workspace.MainWindowBounds.SetItem(signature, BoundsOf(this));
+        }
+
+        foreach (var (view, window) in _detached.Where(p => p.Value.WindowState == WindowState.Normal))
+        {
+            view.RememberBounds(signature, BoundsOf(window));
+        }
+    }
+
+    /// <summary>Opens a window for each view that is now detached, and closes the windows of views that no longer are.</summary>
+    private void SyncDetachedWindows()
+    {
+        if (_viewModel is not { } vm)
+        {
+            return;
+        }
+
+        foreach (var (view, window) in _detached.Where(p => !p.Key.IsDetached || !vm.Workspace.Views.Contains(p.Key)).ToList())
+        {
+            _detached.Remove(view);
+            window.CloseFromLayout();
+        }
+
+        if (!IsVisible && !IsLoaded)
+        {
+            // Opened once the main window is shown.
+            Opened -= OnOpenedSyncWindows;
+            Opened += OnOpenedSyncWindows;
+            return;
+        }
+
+        var screens = CurrentScreens();
+        foreach (var view in vm.Workspace.Views.Where(v => v.IsDetached && !_detached.ContainsKey(v)).ToList())
+        {
+            Control body = view.Kind switch
+            {
+                WorkspaceViewKind.Browser => new BrowserView { DataContext = vm.Browser },
+                _ => new DeviceViewControl { DataContext = view.DeviceView },
+            };
+            var window = new ViewWindow(view, ViewWindow.Frame(view, body));
+            if (!Place(window, view, screens))
+            {
+                window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            }
+
+            window.Closing += (_, _) =>
+            {
+                // A window closed while another layout is restored shows the replaced layout, which was saved already.
+                // A minimized or maximized window's bounds are not where it goes when restored, so they are not kept.
+                if (!vm.Workspace.IsRestoring && window.WindowState == WindowState.Normal && CurrentScreens() is { Count: > 0 } now)
+                {
+                    view.RememberBounds(DisplayConfiguration.Signature(now), BoundsOf(window));
+                }
+            };
+            _detached[view] = window;
+            window.Show(this);
+        }
+    }
+
+    /// <summary>Puts <paramref name="window"/> where <paramref name="view"/>'s saved bounds are on <paramref name="screens"/>, if any are.</summary>
+    private static bool Place(ViewWindow window, WorkspaceView view, List<ScreenArea> screens)
+    {
+        if (screens.Count == 0 || LayoutRecovery.Restore(view.DetachedBounds, screens) is not { } bounds)
+        {
+            return false;
+        }
+
+        var (width, height) = LayoutRecovery.WindowSize(bounds, screens);
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Position = new PixelPoint((int)bounds.X, (int)bounds.Y);
+        window.Width = width;
+        window.Height = height;
+        return true;
+    }
+
+    private void OnOpenedSyncWindows(object? sender, EventArgs e)
+    {
+        Opened -= OnOpenedSyncWindows;
+        SyncDetachedWindows();
     }
 
     /// <summary>True while the lower pane (an editor, or its toolbar) has keyboard focus.</summary>
@@ -207,7 +384,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Collapses the lower pane to its tab strip, remembering the height it had.</summary>
+    /// <summary>Sizes the detail region from the workspace, or collapses it to its tab strip.</summary>
     private void ApplyEditorVisibility()
     {
         if (_viewModel is null)
@@ -216,19 +393,8 @@ public partial class MainWindow : Window
         }
 
         var row = MainArea.RowDefinitions[3];
-        if (_viewModel.IsEditorVisible)
-        {
-            row.Height = new GridLength(_editorHeight);
-        }
-        else
-        {
-            if (row.ActualHeight > 60)
-            {
-                _editorHeight = row.ActualHeight;
-            }
-
-            row.Height = new GridLength(0);
-        }
+        var limit = MainArea.Bounds.Height > 0 ? Math.Max(WorkspaceViewModel.MinimumDetailExtent, MainArea.Bounds.Height - 200) : double.PositiveInfinity;
+        row.Height = new GridLength(_viewModel.IsEditorVisible ? Math.Min(_viewModel.Workspace.DetailExtent, limit) : 0);
     }
 
     /// <summary>The platform's command key: Cmd on macOS, Ctrl elsewhere.</summary>
@@ -790,6 +956,7 @@ public partial class MainWindow : Window
             (Key.M, KeyModifiers.None) => vm.ToggleMuteCommand,
             (Key.S, KeyModifiers.None) => vm.ToggleSoloCommand,
             (Key.I, KeyModifiers.None) => vm.ToggleInspectorCommand,
+            (Key.B, KeyModifiers.Shift) => vm.Workspace.Browser.ToggleCommand,
             _ => null,
         };
 
@@ -808,6 +975,10 @@ public partial class MainWindow : Window
                 break;
             case Key.B when modifiers == KeyModifiers.None:
                 vm.Arrangement.SplitAtPlayhead();
+                e.Handled = true;
+                break;
+            case Key.E when modifiers == KeyModifiers.None:
+                ShowPane(LowerPane.Devices);
                 e.Handled = true;
                 break;
             case Key.D when modifiers == KeyModifiers.None:
@@ -1000,6 +1171,14 @@ public partial class MainWindow : Window
         if (await _viewModel.ConfirmCloseAsync())
         {
             _closeConfirmed = true;
+            RememberBounds(_viewModel.Workspace);
+            _viewModel.SaveLayout();
+            foreach (var window in _detached.Values.ToList())
+            {
+                window.CloseFromLayout();
+            }
+
+            _detached.Clear();
             _frameTimer.Stop();
             _autosaveTimer.Stop();
             Close();

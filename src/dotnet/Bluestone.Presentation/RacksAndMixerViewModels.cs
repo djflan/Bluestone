@@ -14,7 +14,7 @@ namespace Bluestone.Presentation;
 
 /// <summary>
 /// The project's racks: free-standing device chains that several tracks route into, such as one shared XG
-/// instrument (ADR 0022). A rack is edited in the device strip and connected in the routing inspector.
+/// instrument (ADR 0022). A rack is edited in a Device View and connected in the routing inspector.
 /// </summary>
 public sealed partial class RacksViewModel : ObservableObject
 {
@@ -48,18 +48,18 @@ public sealed partial class RacksViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEmpty));
     }
 
-    /// <summary>Adds an empty rack and opens it in the device strip.</summary>
+    /// <summary>Adds an empty rack and opens it in the active Device View.</summary>
     [RelayCommand]
     private void NewRack()
     {
         var rack = DeviceChain.Create(ChainOwner.Rack, string.Create(CultureInfo.InvariantCulture, $"Rack {Racks.Count + 1}"));
         if (_owner.Execute(DeviceCommands.AddRack(rack)))
         {
-            _owner.DeviceStrip.EditRack(rack.Id);
+            _owner.Workspace.ShowRack(rack.Id);
         }
     }
 
-    internal void Edit(RackRow rack) => _owner.DeviceStrip.EditRack(rack.Id);
+    internal void Edit(RackRow rack) => _owner.Workspace.ShowRack(rack.Id);
 
     internal void Remove(RackRow rack) => _owner.Execute(DeviceCommands.RemoveRack(rack.Id));
 

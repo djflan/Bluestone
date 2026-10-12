@@ -477,6 +477,10 @@ public sealed class MainViewModelTests : IAsyncLifetime
         Assert.Contains(_vm.Messages, m => m.Severity == MessageSeverity.Error && m.Source == "Import");
     }
 
+    /// <summary>Inserts a device into the active Device View, as Return in the Browser does.</summary>
+    private void AddDevice(string name) =>
+        Assert.True(_vm.Browser.InsertIntoActive(_vm.Browser.Items.Single(i => i.Name == name)));
+
     private async Task<(TrackViewModel First, TrackViewModel Second)> TwoTracksAsync()
     {
         var first = await ImportAsync();
@@ -488,23 +492,21 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeviceStrip_AddsReordersBypassesAndEditsDevices_ThroughTheProject()
+    public async Task TheDeviceView_AddsReordersBypassesAndEditsDevices_ThroughTheProject()
     {
         var track = await ImportAsync();
-        var strip = _vm.DeviceStrip;
-        Assert.True(strip.HasTrack);
+        var strip = _vm.DeviceView!;
+        Assert.True(strip.HasChain);
         Assert.True(strip.IsEmpty);
 
-        strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Transpose");
-        strip.AddDeviceCommand.Execute(null);
-        strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Arpeggiator");
-        strip.AddDeviceCommand.Execute(null);
+        AddDevice("Transpose");
+        AddDevice("Arpeggiator");
         await Settle();
 
         Assert.Equal(["Transpose", "Arpeggiator"], strip.Devices.Select(d => d.Name));
         var transpose = strip.Devices[0];
         transpose.Parameters.Single(p => p.Name == "Semitones").Value = 12;
-        strip.Devices[1].MoveUpCommand.Execute(null);
+        strip.Devices[1].MoveLeftCommand.Execute(null);
         await Settle();
 
         Assert.Equal(["Arpeggiator", "Transpose"], strip.Devices.Select(d => d.Name));
@@ -528,9 +530,8 @@ public sealed class MainViewModelTests : IAsyncLifetime
     public async Task ARoutingIndicator_OpensTheRoutingInspector_AndShowsWhereTheDeviceSends()
     {
         var (first, second) = await TwoTracksAsync();
-        var strip = _vm.DeviceStrip;
-        strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Arpeggiator");
-        strip.AddDeviceCommand.Execute(null);
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
         await Settle();
         var shown = false;
         _vm.Connections.ShowRequested += (_, _) => shown = true;
@@ -589,9 +590,8 @@ public sealed class MainViewModelTests : IAsyncLifetime
     public async Task AChainPreset_SavedFromOneTrack_LoadsAsNewDevicesOnAnother()
     {
         var (first, second) = await TwoTracksAsync();
-        var strip = _vm.DeviceStrip;
-        strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Arpeggiator");
-        strip.AddDeviceCommand.Execute(null);
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
         await Settle();
         _ui.NextSavePath = Path.Combine(_directory, "Arp.bluestone-chain");
         await strip.SavePresetCommand.ExecuteAsync(null);
@@ -610,24 +610,24 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ARack_IsCreatedEditedInTheStrip_FedByATrack_AndRemoved()
+    public async Task ARack_IsCreatedEditedInTheDeviceView_FedByATrack_AndRemoved()
     {
         var track = await ImportAsync();
 
         _vm.Racks.NewRackCommand.Execute(null);
         await Settle();
         var rack = Assert.Single(_session.Project.Chains, c => c.Owner.Kind == Bluestone.Domain.Devices.ChainOwnerKind.Rack);
-        Assert.True(_vm.DeviceStrip.IsEditingRack);
-        Assert.Equal("Rack: Rack 1", _vm.DeviceStrip.Heading);
+        Assert.True(_vm.DeviceView!.IsEditingRack);
+        Assert.True(_vm.DeviceView.IsLocked);
+        Assert.Equal("Rack: Rack 1", _vm.DeviceView.Heading);
         Assert.Equal("Rack 1 output", _vm.Connections.Sources[0].Name);
 
-        _vm.DeviceStrip.DeviceToAdd = _vm.DeviceStrip.AvailableDevices.Single(d => d.Name == "Transpose");
-        _vm.DeviceStrip.AddDeviceCommand.Execute(null);
+        AddDevice("Transpose");
         await Settle();
         Assert.Single(_session.Project.FindChain(rack.Id)!.Devices);
         Assert.Null(_session.Project.ChainOf(track.Id));
 
-        _vm.DeviceStrip.BackToTrackCommand.Execute(null);
+        _vm.DeviceView.BackToTrackCommand.Execute(null);
         await Settle();
         _vm.Connections.Destination = _vm.Connections.Destinations.Single(d => d.Name == "Rack: Rack 1");
         _vm.Connections.ConnectCommand.Execute(null);
@@ -676,10 +676,9 @@ public sealed class MainViewModelTests : IAsyncLifetime
     public async Task DraggingAParameterSlider_IsOneUndoStep()
     {
         await ImportAsync();
-        _vm.DeviceStrip.DeviceToAdd = _vm.DeviceStrip.AvailableDevices.Single(d => d.Name == "Transpose");
-        _vm.DeviceStrip.AddDeviceCommand.Execute(null);
+        AddDevice("Transpose");
         await Settle();
-        var semitones = _vm.DeviceStrip.Devices[0].Parameters.Single();
+        var semitones = _vm.DeviceView!.Devices[0].Parameters.Single();
 
         foreach (var value in new[] { 1, 2, 3, 4, 5 })
         {
@@ -690,7 +689,7 @@ public sealed class MainViewModelTests : IAsyncLifetime
         Assert.Equal(5, semitones.Value);
         _vm.UndoCommand.Execute(null);
         await Settle();
-        Assert.Equal(0, _vm.DeviceStrip.Devices[0].Parameters.Single().Value);
+        Assert.Equal(0, _vm.DeviceView!.Devices[0].Parameters.Single().Value);
         Assert.Equal("Add Device", _session.History.UndoLabel);
     }
 

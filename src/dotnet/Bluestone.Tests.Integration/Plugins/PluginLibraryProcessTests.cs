@@ -42,7 +42,7 @@ public sealed class PluginLibraryProcessTests
         """;
 
     [Fact]
-    public async Task AQuarantinedModule_ShowsInThePluginsView_AndRetryingItOnceFixed_PutsItsPluginInTheDeviceStrip()
+    public async Task AQuarantinedModule_ShowsInThePluginsView_AndRetryingItOnceFixed_PutsItsPluginInTheBrowser()
     {
         await using var host = new PluginTestHost();
         var folder = Path.Combine(host.Directory, "plugins");
@@ -68,13 +68,13 @@ public sealed class PluginLibraryProcessTests
             await vm.InitializeAsync();
             vm.Select(vm.Tracks[0]);
             var plugins = vm.Plugins;
-            var strip = vm.DeviceStrip;
+            var browser = vm.Browser;
 
             Assert.Equal(2, scanner.ScannerLaunchCount);
             Assert.Equal(["Reference Gain"], plugins.Plugins.Select(p => p.Name));
             Assert.Equal("crash.bluestone-reference-plugin", Assert.Single(plugins.Quarantined).Module);
             Assert.Contains("crashed the scanner", plugins.Quarantined[0].Problem, StringComparison.Ordinal);
-            Assert.DoesNotContain(strip.AvailableDevices, d => d.Name == "Reference Transpose");
+            Assert.DoesNotContain(browser.Items, d => d.Name == "Reference Transpose");
 
             await plugins.RetryCommand.ExecuteAsync(plugins.Quarantined[0]);
 
@@ -89,10 +89,10 @@ public sealed class PluginLibraryProcessTests
             Assert.Empty(scanner.Quarantined);
             Assert.Equal("crash.bluestone-reference-plugin was read: 1 plugin available.", plugins.StatusText);
             Assert.Equal(["Reference Transpose", "Reference Gain"], plugins.Plugins.Select(p => p.Name));
-            await WaitUntilAsync(() => strip.AvailableDevices.Any(d => d.Name == "Reference Transpose"), StatusTimeout, "the strip to offer the new plugin");
+            await WaitUntilAsync(() => browser.Items.Any(d => d.Name == "Reference Transpose"), StatusTimeout, "the browser to offer the new plugin");
 
-            strip.DeviceToAdd = strip.AvailableDevices.Single(d => d.Name == "Reference Transpose");
-            strip.AddDeviceCommand.Execute(null);
+            var strip = vm.DeviceView!;
+            Assert.True(browser.InsertIntoActive(browser.Items.Single(d => d.Name == "Reference Transpose")));
             await WaitUntilAsync(() => strip.Devices.Count == 1 && strip.Devices[0].Status == "Running", StatusTimeout, "the new plugin to run");
             host.Track(bridge.InstanceOf(strip.Devices[0].Id)!);
 

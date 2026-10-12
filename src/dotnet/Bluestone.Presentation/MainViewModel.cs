@@ -28,9 +28,10 @@ public enum MessageSeverity
     Error,
 }
 
-/// <summary>The tabs of the lower pane.</summary>
+/// <summary>The tabs of the detail region below the arranger: the Device View shown there, then the editors.</summary>
 public enum LowerPane
 {
+    Devices,
     PianoRoll,
     EventList,
     Monitor,
@@ -72,6 +73,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private int _refreshAgain;
     private long _lastInputCount;
     private int _inputActivityFrames;
+    private ProjectId _workspaceProject;
+    private string? _workspacePath;
 
     public MainViewModel(ProjectSession session, PlaybackController playback, EndpointDirectory endpoints, IUserInteraction ui, IUiDispatcher dispatcher, MidiMonitor? monitor = null, ComputerKeyboardViewModel? keyboard = null, PluginDeviceHost? plugins = null)
     {
@@ -85,7 +88,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _monitor = monitor;
         Project = session.Project;
         Selection = new SelectionViewModel(this);
-        DeviceStrip = new DeviceStripViewModel(this);
+        Browser = new BrowserViewModel(this);
+        Workspace = new WorkspaceViewModel(this, Browser);
+        _workspaceProject = session.Project.Id;
+        _workspacePath = session.FilePath;
         Connections = new ConnectionsViewModel(this);
         Racks = new RacksViewModel(this);
         Mixer = new MixerViewModel(this);
@@ -97,7 +103,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         EventList = new EventListViewModel(this, Editor);
         SelectedTracks.CollectionChanged += (_, _) =>
         {
-            DeviceStrip.LeaveRack();
             OnPropertyChanged(nameof(SelectedTrack));
             SyncSelection();
             SyncEditor();
@@ -187,8 +192,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Group tracks: grouping the selection, membership, and folding.</summary>
     public GroupsViewModel Groups { get; }
 
-    /// <summary>The selected track's device chain.</summary>
-    public DeviceStripViewModel DeviceStrip { get; }
+    /// <summary>The semantic workspace: open views, where they are docked, and the Device View in use (ADR 0036).</summary>
+    public WorkspaceViewModel Workspace { get; }
+
+    /// <summary>The Browser palette: devices, plugins, racks, and hardware profiles.</summary>
+    public BrowserViewModel Browser { get; }
+
+    /// <summary>The Device View the musician used last: the one the Browser inserts into.</summary>
+    public DeviceViewViewModel? DeviceView => Workspace.ActiveDeviceView;
+
+    /// <summary>Where local view state is kept, or null to keep none (as in tests).</summary>
+    public WorkspaceStore? LayoutStore { get; init; }
+
+    /// <summary>The displays attached now, supplied by the window, so saved windows are put back where they can be seen.</summary>
+    public Func<IReadOnlyList<ScreenArea>> Screens { get; set; } = () => [];
 
     /// <summary>The selected track's (or edited rack's) connections: the routing inspector.</summary>
     public ConnectionsViewModel Connections { get; }
@@ -207,7 +224,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     internal IUserInteraction UserInteraction => _ui;
 
-    /// <summary>A device's status for the strip: a plugin's from its worker, otherwise from the catalog.</summary>
+    /// <summary>A device's status for its panel: a plugin's from its worker, otherwise from the catalog.</summary>
     internal DeviceStatus DeviceStatus(DeviceInstance device) =>
         _plugins?.StatusOf(device) is { } runtime
             ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
@@ -444,11 +461,24 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public partial bool IsEditorVisible { get; set; } = true;
 
     [ObservableProperty]
-    public partial LowerPane LowerPane { get; set; } = LowerPane.PianoRoll;
+    public partial LowerPane LowerPane { get; set; } = LowerPane.Devices;
+
+    partial void OnIsInspectorVisibleChanged(bool value) => Workspace?.SyncInspector(value);
+
+    /// <summary>Shows <paramref name="pane"/> in the detail region, opening the region if it is closed.</summary>
+    internal void ShowDetail(LowerPane pane)
+    {
+        LowerPane = pane;
+        IsEditorVisible = true;
+    }
 
     partial void OnIsEditorVisibleChanged(bool value) => EventList.IsActive = value && LowerPane == LowerPane.EventList;
 
-    partial void OnLowerPaneChanged(LowerPane value) => EventList.IsActive = IsEditorVisible && value == LowerPane.EventList;
+    partial void OnLowerPaneChanged(LowerPane value)
+    {
+        EventList.IsActive = IsEditorVisible && value == LowerPane.EventList;
+        Workspace?.SyncTabs();
+    }
 
     partial void OnIsMetronomeEnabledChanged(bool value) => ApplyMetronome();
 
@@ -496,8 +526,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        LowerPane = pane;
-        IsEditorVisible = true;
+        if (pane == LowerPane.Devices && Workspace.DetailDeviceView is null)
+        {
+            // Every Device View is collapsed, detached, or closed: bring one back as a tab.
+            var view = Workspace.Views.FirstOrDefault(v => v.Kind == WorkspaceViewKind.DeviceView);
+            if (view is null)
+            {
+                Workspace.NewDeviceView();
+            }
+            else
+            {
+                Workspace.Show(view);
+            }
+        }
+
+        ShowDetail(pane);
     }
 
     [RelayCommand]
@@ -1222,6 +1265,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task SyncAndRefreshAsync()
     {
         Project = _session.Project;
+        SwitchWorkspace();
         ProjectName = Project.Name;
         IsDirty = _session.IsDirty;
         IsLoopEnabled = Project.Loop is not null;
@@ -1332,17 +1376,82 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         Selection.Sync([.. SelectedTracks], [.. Outputs], _playback.Profiles);
         var single = SelectedTracks.Count == 1 ? SelectedTracks[0].Id : (TrackId?)null;
-        DeviceStrip.Sync(Project, single, Devices);
-        Connections.Sync(Project, single, DeviceStrip.Rack);
-        Racks.Sync(Project, DeviceStrip.Rack);
+        Workspace.Sync(Project, single, Devices);
+        var rack = Workspace.ActiveDeviceView?.Rack;
+        Connections.Sync(Project, single, rack);
+        Racks.Sync(Project, rack);
+        Browser.Sync(Devices, Project, _playback.Profiles);
         Mixer.Sync(Project);
+        OnPropertyChanged(nameof(DeviceView));
     }
 
     /// <summary>Runs <paramref name="action"/> later on the UI thread.</summary>
     internal void Post(Action action) => _dispatcher.Post(action);
 
-    /// <summary>Refreshes the device strip, routing inspector, racks, and mixer from the project.</summary>
+    /// <summary>Refreshes the Device Views, Browser, routing inspector, racks, and mixer from the project.</summary>
     internal void SyncDeviceViews() => SyncSelection();
+
+    /// <summary>
+    /// Puts back the local view state saved for the open project, or the user's workspace defaults (ADR 0036). Detached windows
+    /// whose display is missing come back as rail icons. Nothing here touches the project.
+    /// </summary>
+    public void RestoreLayout()
+    {
+        if (LayoutStore?.Load(_session.FilePath) is { } state)
+        {
+            ApplyLayout(state);
+        }
+    }
+
+    /// <summary>Saves the local view state for the open project and as the user's defaults. The project is not marked edited.</summary>
+    public void SaveLayout() => LayoutStore?.Save(_workspacePath, CaptureLayout());
+
+    /// <summary>The current local view state.</summary>
+    public WorkspaceState CaptureLayout() => Workspace.Capture(Browser.Capture());
+
+    /// <summary>Applies saved local view state on the displays attached now.</summary>
+    public void ApplyLayout(WorkspaceState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        Browser.Restore(state.Browser);
+        Workspace.Restore(state, Screens());
+    }
+
+    /// <summary>
+    /// Keeps view state with the project it belongs to: another project's state is saved before this one's is loaded, and a
+    /// project saved under a new name takes its view state with it.
+    /// </summary>
+    private void SwitchWorkspace()
+    {
+        var project = _session.Project.Id;
+        var path = _session.FilePath;
+        if (project == _workspaceProject && path == _workspacePath)
+        {
+            return;
+        }
+
+        var opened = project != _workspaceProject;
+        if (opened)
+        {
+            SaveLayout();
+        }
+
+        _workspaceProject = project;
+        _workspacePath = path;
+        if (!opened)
+        {
+            SaveLayout();
+        }
+        else if (LayoutStore?.Load(path) is { } state)
+        {
+            ApplyLayout(state);
+        }
+        else
+        {
+            // A project with no view state here: keep the layout, but not the other project's track bindings.
+            ApplyLayout(CaptureLayout().AsDefaults());
+        }
+    }
 
     private static string Describe(EndpointTransport transport) => transport switch
     {

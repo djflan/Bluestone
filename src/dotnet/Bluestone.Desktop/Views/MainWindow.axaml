@@ -3,12 +3,42 @@
         xmlns:vm="using:Bluestone.Presentation"
         xmlns:controls="using:Bluestone.Desktop.Controls"
         xmlns:theme="using:Bluestone.Desktop.Theme"
+        xmlns:views="using:Bluestone.Desktop.Views"
         x:Class="Bluestone.Desktop.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="{Binding WindowTitle}"
         Width="1440" Height="900" MinWidth="1040" MinHeight="640"
         WindowStartupLocation="CenterScreen"
         DragDrop.AllowDrop="True">
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:DeviceViewViewModel">
+      <views:DeviceViewControl />
+    </DataTemplate>
+  </Window.DataTemplates>
+  <Window.Resources>
+    <!-- A collapsed or detached view on a border rail: an icon and its name running up the rail. Click to open it docked. -->
+    <DataTemplate x:Key="RailItem" x:DataType="vm:WorkspaceView">
+      <Button Classes="railItem" Classes.open="{Binding IsDocked}" Classes.detached="{Binding IsDetached}" Classes.awaiting="{Binding IsAwaitingDisplay}"
+              Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding Title}" AutomationProperties.Name="{Binding RailLabel}">
+        <StackPanel Spacing="8">
+          <PathIcon Classes="stroke" Data="{Binding Kind, Converter={x:Static theme:WorkspaceIconConverter.Instance}}" />
+          <LayoutTransformControl>
+            <LayoutTransformControl.LayoutTransform>
+              <RotateTransform Angle="-90" />
+            </LayoutTransformControl.LayoutTransform>
+            <TextBlock Text="{Binding RailLabel}" />
+          </LayoutTransformControl>
+        </StackPanel>
+        <Button.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Dock" Command="{Binding DockCommand}" />
+            <MenuItem Header="Detach to Window" Command="{Binding DetachCommand}" IsVisible="{Binding CanDetach}" />
+            <MenuItem Header="Close" Command="{Binding CloseCommand}" IsVisible="{Binding CanClose}" />
+          </ContextMenu>
+        </Button.ContextMenu>
+      </Button>
+    </DataTemplate>
+  </Window.Resources>
   <Panel>
   <Grid RowDefinitions="Auto,*,Auto">
 
@@ -19,7 +49,11 @@
           <ToggleButton Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I)" AutomationProperties.Name="Inspector">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
           </ToggleButton>
-          <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
+          <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
+                        ToolTip.Tip="Show or hide the Browser (Shift+B)" AutomationProperties.Name="Browser">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
+          </ToggleButton>
+          <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the detail region: devices and editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
           </ToggleButton>
           <Border Classes="separator" Height="18" />
@@ -91,7 +125,7 @@
                 <TextBlock Text="{Binding TimeText}" Classes="lcd" FontSize="13" MinWidth="84" Margin="0,3,0,2" AutomationProperties.Name="Elapsed time" />
                 <TextBlock Text="TIME" Classes="lcdLabel" />
               </StackPanel>
-              <Border Width="1" Background="#2A2A2E" Margin="0,4" />
+              <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
               <StackPanel VerticalAlignment="Center">
                 <TextBox x:Name="TempoBox" Classes="lcd" Text="{Binding TempoText, Mode=OneWay}" FontSize="15" Width="56" Margin="0,1,0,1"
                          ToolTip.Tip="Tempo in BPM. Click to type a new tempo." AutomationProperties.Name="Tempo" />
@@ -102,10 +136,10 @@
                          ToolTip.Tip="Time signature. Click to type, e.g. 3/4." AutomationProperties.Name="Time signature" />
                 <TextBlock Text="SIGNATURE" Classes="lcdLabel" />
               </StackPanel>
-              <Border Width="1" Background="#2A2A2E" Margin="0,4" />
+              <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
               <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
-                <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="#2A3A2E" IsVisible="{Binding !HasInputActivity}" />
-                <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="#5BE08A" IsVisible="{Binding HasInputActivity}" />
+                <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputIdle}" IsVisible="{Binding !HasInputActivity}" />
+                <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputActive}" IsVisible="{Binding HasInputActivity}" />
                 <TextBlock Text="IN" Classes="lcdLabel" HorizontalAlignment="Center" />
               </StackPanel>
             </StackPanel>
@@ -151,7 +185,7 @@
                   <ProgressBar Classes="keysMeter" Value="{Binding VelocityFraction}" />
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center" MinWidth="30">
-                  <TextBlock Text="{Binding LastNoteText}" Classes="keysValue" Foreground="{StaticResource Bluestone.LcdText}" />
+                  <TextBlock Text="{Binding LastNoteText}" Classes="keysValue" Foreground="{StaticResource Lcd.Text}" />
                   <TextBlock Text="NOTE" Classes="lcdLabel" />
                 </StackPanel>
               </StackPanel>
@@ -161,19 +195,35 @@
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="2" VerticalAlignment="Center">
           <Button Classes="tool" Command="{Binding PanicCommand}" ToolTip.Tip="Panic: silence every output (Ctrl/Cmd+.)" AutomationProperties.Name="Panic, silence all outputs">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Panic}" Foreground="#E07A7D" />
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Panic}" Foreground="{StaticResource Control.Panic}" />
           </Button>
         </StackPanel>
       </Grid>
     </Border>
 
-    <!-- Workspace -->
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+    <!--
+      Workspace (ADR 0036): border rails for collapsed views, the inspector's region on the left, the Browser's on the right,
+      and the arranger over the detail region (Device Views and editors) in the middle. Docked tools push the rest aside.
+    -->
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+
+      <Border x:Name="LeftRail" Grid.Column="0" Classes="rail left" IsVisible="{Binding Workspace.LeftRail.Count}">
+        <ItemsControl ItemsSource="{Binding Workspace.LeftRail}" ItemTemplate="{StaticResource RailItem}" />
+      </Border>
 
       <!-- Inspector -->
-      <Border Grid.Column="0" Classes="pane" Width="236" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="0,0,1,0"
-              IsVisible="{Binding IsInspectorVisible}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <Panel x:Name="InspectorDock" Grid.Column="1" Width="{Binding Workspace.LeftExtent}" IsVisible="{Binding IsInspectorVisible}" ZIndex="1">
+      <Border Classes="pane" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,*">
+        <Border Classes="dockHeader">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="dockTitle" Text="INSPECTOR" />
+            <Button Grid.Column="1" Classes="tool small" Command="{Binding Workspace.Inspector.CollapseCommand}" ToolTip.Tip="Collapse to the rail (I)" AutomationProperties.Name="Collapse inspector">
+              <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronLeft}" />
+            </Button>
+          </Grid>
+        </Border>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
           <StackPanel>
             <Border Padding="10,10,10,10" IsVisible="{Binding !Selection.HasSelection}">
               <TextBlock Text="Select a track to set its output, instrument, and voice. Shift-click or ⌘/Ctrl-click to select several." Classes="muted" TextWrapping="Wrap" />
@@ -245,7 +295,7 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="x:String">
                     <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,6">
-                      <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource Bluestone.Warning}" VerticalAlignment="Top" Margin="0,2,6,0" />
+                      <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource State.Warning}" VerticalAlignment="Top" Margin="0,2,6,0" />
                       <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" Classes="muted" />
                     </Grid>
                   </DataTemplate>
@@ -268,75 +318,6 @@
                 <CheckBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Content="Equal-power fades" IsChecked="{Binding IsEqualPower}" AutomationProperties.Name="Equal-power fades"
                           ToolTip.Tip="Quarter-sine curves (−3 dB half way) instead of straight lines (−6 dB half way)" />
               </Grid>
-            </Expander>
-
-            <Expander x:Name="DevicesSection" Classes="section" Header="{Binding Heading}" IsExpanded="True" DataContext="{Binding DeviceStrip}" x:DataType="vm:DeviceStripViewModel" IsVisible="{Binding HasTrack}">
-              <StackPanel Spacing="6">
-                <Button Classes="link" Content="← Back to the selected track" IsVisible="{Binding IsEditingRack}" Command="{Binding BackToTrackCommand}" HorizontalAlignment="Left" />
-                <TextBlock Text="{Binding EmptyText}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}" />
-                <ItemsControl ItemsSource="{Binding Devices}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:DeviceViewModel">
-                      <Border BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="1" CornerRadius="3" Padding="6,4" Margin="0,0,0,4">
-                        <StackPanel Spacing="3">
-                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                            <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Margin="0,0,4,0" Foreground="{StaticResource Bluestone.Warning}" IsVisible="{Binding NeedsAttention}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
-                            <Button Grid.Column="2" Classes="tool" Content="↑" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move earlier in the chain" AutomationProperties.Name="Move device up" />
-                            <Button Grid.Column="3" Classes="tool" Content="↓" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move later in the chain" AutomationProperties.Name="Move device down" />
-                            <Button Grid.Column="4" Classes="tool" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove the device" AutomationProperties.Name="Remove device" />
-                          </Grid>
-                          <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="{Binding Kind}" Classes="muted" FontSize="10" TextTrimming="CharacterEllipsis" />
-                            <ToggleButton Grid.Column="1" Content="Bypass" IsChecked="{Binding IsBypassed}" FontSize="10" Padding="6,1"
-                                          ToolTip.Tip="A bypassed device passes everything through unchanged" AutomationProperties.Name="Bypass device" />
-                          </Grid>
-                          <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" Classes="muted" FontSize="10" TextWrapping="Wrap" AutomationProperties.Name="Went down with" />
-                          <Button Classes="raised" Content="Restart" IsVisible="{Binding CanRestart}" Command="{Binding RestartCommand}" HorizontalAlignment="Left"
-                                  ToolTip.Tip="Start the plugin again from its last saved state, with any devices that went down with it" AutomationProperties.Name="Restart plugin" />
-                          <TextBlock Text="{Binding Hosting}" IsVisible="{Binding HasHosting}" Classes="muted" FontSize="10" TextWrapping="Wrap"
-                                     ToolTip.Tip="The worker process this plugin runs in. Change how plugins share processes in Plugins…" AutomationProperties.Name="Plugin process" />
-                          <Button Classes="raised" Content="Open editor" IsVisible="{Binding CanOpenEditor}" Command="{Binding OpenEditorCommand}" HorizontalAlignment="Left"
-                                  ToolTip.Tip="Show the plugin's own editor in a separate window" AutomationProperties.Name="Open plugin editor" />
-                          <Button Classes="link" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}" HorizontalAlignment="Left"
-                                  ToolTip.Tip="This device's output is also sent here. Open the connections." />
-                          <Button Classes="link" Content="Route from here…" IsVisible="{Binding !HasRouting}" Command="{Binding ShowRoutingCommand}" HorizontalAlignment="Left" FontSize="10" />
-                          <Expander Header="Parameters" IsVisible="{Binding Parameters.Count}" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                            <ItemsControl ItemsSource="{Binding Parameters}">
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:ParameterViewModel">
-                                  <StackPanel Margin="0,2">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                      <TextBlock Text="{Binding Name}" Classes="muted" FontSize="10" />
-                                      <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontSize="10" />
-                                    </Grid>
-                                    <Slider Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Value="{Binding Value}" SmallChange="{Binding Step}" LargeChange="{Binding Step}"
-                                            AutomationProperties.Name="{Binding Name}" />
-                                  </StackPanel>
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                          </Expander>
-                        </StackPanel>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
-                  <ComboBox ItemsSource="{Binding AvailableDevices}" SelectedItem="{Binding DeviceToAdd}" PlaceholderText="Add a device…" HorizontalAlignment="Stretch" AutomationProperties.Name="Device to add">
-                    <ComboBox.ItemTemplate>
-                      <DataTemplate x:DataType="vm:DeviceChoice">
-                        <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding Detail}" />
-                      </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                  </ComboBox>
-                  <Button Grid.Column="1" Classes="raised" Content="Add" Command="{Binding AddDeviceCommand}" />
-                </Grid>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Classes="link" Content="Save chain preset…" Command="{Binding SavePresetCommand}" />
-                  <Button Classes="link" Content="Load preset…" Command="{Binding LoadPresetCommand}" />
-                </StackPanel>
-              </StackPanel>
             </Expander>
 
             <Expander x:Name="ConnectionsSection" Classes="section" Header="Connections" IsExpanded="False" DataContext="{Binding Connections}" x:DataType="vm:ConnectionsViewModel" IsVisible="{Binding HasTrack}">
@@ -408,7 +389,7 @@
                 <ItemsControl ItemsSource="{Binding Channels}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:MixerChannelRow">
-                      <Border BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="1" CornerRadius="3" Padding="6,4" Margin="0,0,0,4">
+                      <Border BorderBrush="{StaticResource Line.Divider}" BorderThickness="1" CornerRadius="3" Padding="6,4" Margin="0,0,0,4">
                         <StackPanel Spacing="3">
                           <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
                             <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Channel name" />
@@ -469,10 +450,14 @@
             </Expander>
           </StackPanel>
         </ScrollViewer>
+        </Grid>
       </Border>
+      <controls:ResizeHandle Edge="Left" Extent="{Binding Workspace.LeftExtent}" Width="6" Margin="0,0,-3,0" HorizontalAlignment="Right"
+                             AutomationProperties.Name="Resize inspector" />
+      </Panel>
 
-      <!-- Arrangement above, editors below -->
-      <Grid x:Name="MainArea" Grid.Column="1" RowDefinitions="*,Auto,Auto,330">
+      <!-- Arrangement above, the detail region below -->
+      <Grid x:Name="MainArea" Grid.Column="2" RowDefinitions="*,Auto,Auto,330">
 
         <Grid Grid.Row="0" RowDefinitions="28,30,*" ColumnDefinitions="252,*">
           <!-- Arrangement header -->
@@ -504,14 +489,14 @@
           </Border>
 
           <!-- Ruler row -->
-          <Border Grid.Row="1" Background="#2B2B2E" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="0,0,1,1" />
+          <Border Grid.Row="1" Background="{StaticResource Lane.Ruler}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,1,1" />
           <controls:RulerView x:Name="Ruler" Grid.Row="1" Grid.Column="1" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}"
                               IsRecording="{Binding IsRecording}" AutomationProperties.Name="Bar ruler. Click to move the playhead; drag the top strip to set the cycle." />
 
           <!-- Track headers, scrolled with the lanes -->
           <ScrollViewer x:Name="TrackHeaderScroller" Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"
-                        Background="#1F1F21">
-            <Border BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="0,0,1,0">
+                        Background="{StaticResource Lane.Header}">
+            <Border BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,1,0">
               <ListBox x:Name="TrackList" Classes="tracks" ItemsSource="{Binding Tracks}" SelectedItems="{Binding SelectedTracks}" SelectionMode="Multiple"
                        ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="Tracks">
                 <ListBox.Styles>
@@ -547,7 +532,7 @@
                         <MenuItem Header="Remove from Group" Command="{Binding Groups.RemoveSelectedCommand}" IsEnabled="{Binding Groups.CanRemoveSelected}" />
                       </ContextMenu>
                     </Grid.ContextMenu>
-                    <Border Height="{x:Static vm:TrackViewModel.TrackRowHeight}" BorderBrush="#19191B" BorderThickness="0,0,0,1">
+                    <Border Height="{x:Static vm:TrackViewModel.TrackRowHeight}" BorderBrush="{StaticResource Line.Edge}" BorderThickness="0,0,0,1">
                     <Grid ColumnDefinitions="3,24,Auto,*,Auto" AutomationProperties.Name="{Binding Name}"
                           Margin="{Binding Indent, Converter={x:Static theme:IndentConverter.Instance}}">
                       <Border Background="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
@@ -564,9 +549,9 @@
                       <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="2" Margin="0,0,4,0" Classes.mutedByGroup="{Binding IsMutedByGroup}">
                         <TextBox Classes="inline" Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Track name" />
                         <StackPanel Orientation="Horizontal" Spacing="4" ToolTip.Tip="{Binding RouteText}" AutomationProperties.Name="{Binding HealthText}">
-                          <PathIcon Data="{StaticResource Icon.Check}" Width="8" Height="8" Foreground="{StaticResource Bluestone.Success}" IsVisible="{Binding IsReady}" />
-                          <PathIcon Data="{StaticResource Icon.Warning}" Width="8" Height="8" Foreground="{StaticResource Bluestone.Warning}" IsVisible="{Binding NeedsAttention}" />
-                          <PathIcon Data="{StaticResource Icon.Offline}" Width="8" Height="8" Foreground="#9A6B6D" IsVisible="{Binding IsOffline}" />
+                          <PathIcon Data="{StaticResource Icon.Check}" Width="8" Height="8" Foreground="{StaticResource State.Success}" IsVisible="{Binding IsReady}" />
+                          <PathIcon Data="{StaticResource Icon.Warning}" Width="8" Height="8" Foreground="{StaticResource State.Warning}" IsVisible="{Binding NeedsAttention}" />
+                          <PathIcon Data="{StaticResource Icon.Offline}" Width="8" Height="8" Foreground="{StaticResource Track.Offline}" IsVisible="{Binding IsOffline}" />
                           <TextBlock Text="{Binding StatusLine}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding !IsGroup}" />
                           <TextBlock Text="{Binding MembersText}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding IsGroup}" />
                         </StackPanel>
@@ -624,8 +609,8 @@
                     <ItemsControl Grid.Row="1" ItemsSource="{Binding Lanes}" IsVisible="{Binding IsAutomationExpanded}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:AutomationLaneViewModel">
-                          <Grid Height="{x:Static vm:TrackViewModel.AutomationLaneHeight}" ColumnDefinitions="27,*,Auto" Background="{StaticResource Bluestone.AutomationLane}" AutomationProperties.Name="{Binding Name}">
-                            <Border Grid.Column="1" BorderBrush="#19191B" BorderThickness="0,1,0,0" />
+                          <Grid Height="{x:Static vm:TrackViewModel.AutomationLaneHeight}" ColumnDefinitions="27,*,Auto" Background="{StaticResource Lane.Automation}" AutomationProperties.Name="{Binding Name}">
+                            <Border Grid.Column="1" BorderBrush="{StaticResource Line.Edge}" BorderThickness="0,1,0,0" />
                             <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="muted" FontSize="10.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                             <Button Grid.Column="2" Classes="trackButton" Margin="0,0,8,0" VerticalAlignment="Center"
                                     Command="{Binding Track.RemoveLaneCommand}" CommandParameter="{Binding}"
@@ -645,7 +630,7 @@
 
           <!-- Lanes -->
           <ScrollViewer x:Name="TimelineScroller" Grid.Row="2" Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                        Background="#222224">
+                        Background="{StaticResource Lane.Background}">
             <Panel>
               <controls:TimelineView x:Name="Timeline" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}" ExpandedTracks="{Binding ExpandedTracks}" HiddenTracks="{Binding Groups.HiddenTracks}"
                                      LaneHeight="{x:Static vm:TrackViewModel.TrackRowHeight}" AutomationLaneHeight="{x:Static vm:TrackViewModel.AutomationLaneHeight}"
@@ -662,7 +647,7 @@
           <!-- Empty state -->
           <StackPanel Grid.Row="2" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12"
                       IsVisible="{Binding !Tracks.Count}">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.PianoRoll}" Width="34" Height="34" Foreground="{StaticResource Bluestone.BorderStrong}" />
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.PianoRoll}" Width="34" Height="34" Foreground="{StaticResource Line.BorderStrong}" />
             <TextBlock Text="Start with a MIDI file or a new track" Classes="title" HorizontalAlignment="Center" />
             <TextBlock Text="Drop a .mid or .bluestone file anywhere on the window." Classes="secondary" HorizontalAlignment="Center" />
             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
@@ -672,13 +657,45 @@
           </StackPanel>
         </Grid>
 
-        <GridSplitter x:Name="EditorSplitter" Grid.Row="1" Classes="hairline" Height="1" ResizeDirection="Rows" IsVisible="{Binding IsEditorVisible}"
-                      AutomationProperties.Name="Resize editors" />
+        <controls:ResizeHandle x:Name="DetailHandle" Grid.Row="1" Edge="Below" Extent="{Binding Workspace.DetailExtent}" Height="6" Margin="0,-3,0,-3" ZIndex="1"
+                               IsVisible="{Binding IsEditorVisible}" AutomationProperties.Name="Resize the detail region" />
 
         <!-- Lower pane header: tabs and the active editor's tools -->
         <Border x:Name="EditorHeader" Grid.Row="2" Classes="header" BorderThickness="0,1,0,1">
           <Grid ColumnDefinitions="Auto,*,Auto" Height="28">
             <StackPanel Orientation="Horizontal">
+              <!-- Docked Device Views, each its own tab; "+" opens another that follows the selection. -->
+              <ItemsControl x:Name="DeviceTabs" ItemsSource="{Binding Workspace.DetailTabs}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WorkspaceView">
+                    <RadioButton Classes="tab" GroupName="LowerPane" IsChecked="{Binding IsCurrentTab, Mode=OneWay}" Command="{Binding ShowCommand}"
+                                 AutomationProperties.Name="{Binding RailLabel}" ToolTip.Tip="{Binding Title}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <PathIcon Classes="stroke" Data="{StaticResource Icon.Devices}" Width="13" Height="13" />
+                        <TextBlock Text="{Binding Title}" MaxWidth="140" TextTrimming="CharacterEllipsis" />
+                        <PathIcon Classes="stroke" Data="{StaticResource Icon.Lock}" Width="10" Height="10" IsVisible="{Binding DeviceView.IsLocked, FallbackValue=False}" Opacity="0.7" />
+                      </StackPanel>
+                      <RadioButton.ContextMenu>
+                        <ContextMenu>
+                          <MenuItem Header="Detach to Window" Command="{Binding DetachCommand}" />
+                          <MenuItem Header="Collapse to Rail" Command="{Binding CollapseCommand}" />
+                          <MenuItem Header="Close" Command="{Binding CloseCommand}" />
+                        </ContextMenu>
+                      </RadioButton.ContextMenu>
+                    </RadioButton>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Button Classes="tool small" Command="{Binding Workspace.AddDeviceViewCommand}" VerticalAlignment="Center" Margin="2,0"
+                      ToolTip.Tip="New Device View, following the selected track" AutomationProperties.Name="New Device View">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Plus}" />
+              </Button>
+              <Border Classes="separator" Height="14" />
               <RadioButton Classes="tab" GroupName="LowerPane" IsChecked="{Binding LowerPane, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=PianoRoll}"
                            Command="{Binding ShowPaneCommand}" CommandParameter="{x:Static vm:LowerPane.PianoRoll}" AutomationProperties.Name="Piano roll">
                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -741,7 +758,7 @@
               <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsLaneOverridden}"
                           ToolTip.Tip="A track automation lane controls this, so these events do not play"
                           AutomationProperties.Name="Overridden by track automation">
-                <PathIcon Data="{StaticResource Icon.Warning}" Width="9" Height="9" Foreground="{StaticResource Bluestone.Warning}" />
+                <PathIcon Data="{StaticResource Icon.Warning}" Width="9" Height="9" Foreground="{StaticResource State.Warning}" />
                 <TextBlock Text="Overridden by automation" Classes="muted" FontSize="10.5" VerticalAlignment="Center" />
               </StackPanel>
               <ToggleButton Classes="tool" IsChecked="{Binding FollowPlayhead}" ToolTip.Tip="Follow the playhead" AutomationProperties.Name="Follow playhead">
@@ -768,11 +785,21 @@
         </Border>
 
         <!-- Lower pane content -->
-        <Panel Grid.Row="3" x:Name="EditorPane" IsVisible="{Binding IsEditorVisible}" Background="{StaticResource Bluestone.Panel}">
+        <Panel Grid.Row="3" x:Name="EditorPane" IsVisible="{Binding IsEditorVisible}" Background="{StaticResource Surface.Panel}">
+
+          <!-- The docked Device View whose tab is selected -->
+          <Panel x:Name="DevicePane" IsVisible="{Binding LowerPane, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Devices}">
+            <ContentControl x:Name="DockedDeviceView" Content="{Binding Workspace.DetailDeviceView.DeviceView, FallbackValue={x:Null}}" />
+            <StackPanel Classes="emptyState" IsVisible="{Binding Workspace.DetailDeviceView, Converter={x:Static ObjectConverters.IsNull}}">
+              <PathIcon Classes="stroke" Data="{StaticResource Icon.Devices}" Width="26" Height="26" Foreground="{StaticResource Line.BorderStrong}" />
+              <TextBlock Classes="emptyTitle" Text="No Device View is docked here" />
+              <Button Classes="raised compact" Content="New Device View" Command="{Binding Workspace.AddDeviceViewCommand}" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Panel>
 
           <!-- Piano roll -->
           <Grid RowDefinitions="Auto,*" IsVisible="{Binding LowerPane, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=PianoRoll}">
-            <Border Background="#262628" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="0,0,0,1" Padding="8,3" DataContext="{Binding Editor}" x:DataType="vm:EditorViewModel">
+            <Border Background="{StaticResource TrackRow}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,0,1" Padding="8,3" DataContext="{Binding Editor}" x:DataType="vm:EditorViewModel">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <TextBlock Text="{Binding Track.Name, FallbackValue='No track'}" Classes="title" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" MaxWidth="160" TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="Position" Classes="label" />
@@ -798,7 +825,7 @@
 
           <!-- Event list -->
           <Grid RowDefinitions="Auto,*" IsVisible="{Binding LowerPane, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=EventList}">
-            <Border Background="#262628" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="0,0,0,1" Height="22">
+            <Border Background="{StaticResource TrackRow}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,0,1" Height="22">
               <Grid ColumnDefinitions="100,100,44,80,70,100,*" Margin="0,0,0,0">
                 <TextBlock Text="POSITION" Classes="overline" VerticalAlignment="Center" Margin="10,0" />
                 <TextBlock Grid.Column="1" Text="STATUS" Classes="overline" VerticalAlignment="Center" Margin="6,0" />
@@ -830,7 +857,7 @@
                    IsVisible="{Binding LowerPane, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Monitor}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:MonitorEntry">
-                <TextBlock Text="{Binding Text}" FontFamily="{StaticResource Bluestone.MonoFont}" FontSize="11.5" />
+                <TextBlock Text="{Binding Text}" FontFamily="{StaticResource Font.Mono}" FontSize="11.5" />
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
@@ -850,10 +877,36 @@
           </ListBox>
         </Panel>
       </Grid>
+
+      <!-- Browser -->
+      <Panel x:Name="BrowserDock" Grid.Column="3" Width="{Binding Workspace.RightExtent}" IsVisible="{Binding Workspace.Browser.IsDocked}" ZIndex="1">
+        <Border Classes="pane" BorderBrush="{StaticResource Line.Divider}" BorderThickness="1,0,0,0">
+          <Grid RowDefinitions="Auto,*">
+            <Border Classes="dockHeader">
+              <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock Classes="dockTitle" Text="BROWSER" />
+                <Button Grid.Column="1" Classes="tool small" Command="{Binding Workspace.Browser.DetachCommand}" ToolTip.Tip="Detach to its own window" AutomationProperties.Name="Detach Browser">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Detach}" />
+                </Button>
+                <Button Grid.Column="2" Classes="tool small" Command="{Binding Workspace.Browser.CollapseCommand}" ToolTip.Tip="Collapse to the rail (Shift+B)" AutomationProperties.Name="Collapse Browser">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronRight}" />
+                </Button>
+              </Grid>
+            </Border>
+            <views:BrowserView x:Name="DockedBrowser" Grid.Row="1" DataContext="{Binding Browser}" />
+          </Grid>
+        </Border>
+        <controls:ResizeHandle Edge="Right" Extent="{Binding Workspace.RightExtent}" Width="6" Margin="-3,0,0,0" HorizontalAlignment="Left"
+                               AutomationProperties.Name="Resize Browser" />
+      </Panel>
+
+      <Border x:Name="RightRail" Grid.Column="4" Classes="rail right" IsVisible="{Binding Workspace.RightRail.Count}">
+        <ItemsControl ItemsSource="{Binding Workspace.RightRail}" ItemTemplate="{StaticResource RailItem}" />
+      </Border>
     </Grid>
 
     <!-- Status bar -->
-    <Border Grid.Row="2" Background="#19191B" BorderBrush="{StaticResource Bluestone.Divider}" BorderThickness="0,1,0,0" Height="22">
+    <Border Grid.Row="2" Background="{StaticResource Surface.Chrome}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,1,0,0" Height="22">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,0">
         <TextBlock Text="{Binding OutputsText}" Classes="muted" VerticalAlignment="Center" />
         <TextBlock Grid.Column="1" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0"
@@ -866,9 +919,9 @@
 
   <!-- Shown while a supported file is dragged over the window. -->
   <Border x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False" Margin="8"
-          Background="#CC1C1E22" BorderBrush="{StaticResource Bluestone.Accent}" BorderThickness="2" CornerRadius="4">
+          Background="{StaticResource Overlay.Scrim}" BorderBrush="{StaticResource Accent}" BorderThickness="2" CornerRadius="4">
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-      <PathIcon Data="{StaticResource Icon.Logo}" Width="32" Height="32" Foreground="{StaticResource Bluestone.Accent}" />
+      <PathIcon Data="{StaticResource Icon.Logo}" Width="32" Height="32" Foreground="{StaticResource Accent}" />
       <TextBlock x:Name="DropText" Classes="title" HorizontalAlignment="Center" />
       <TextBlock x:Name="DropDetail" Classes="secondary" HorizontalAlignment="Center" />
     </StackPanel>

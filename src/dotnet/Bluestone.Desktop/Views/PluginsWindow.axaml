@@ -44,7 +44,7 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:ModuleProblemRow">
                 <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
-                  <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource Bluestone.Warning}" VerticalAlignment="Top" Margin="0,3,6,0" />
+                  <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource State.Warning}" VerticalAlignment="Top" Margin="0,3,6,0" />
                   <StackPanel Grid.Column="1">
                     <TextBlock Text="{Binding Module}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ModulePath}" />
                     <TextBlock Text="{Binding Problem}" Classes="muted" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Problem}" />
@@ -91,7 +91,7 @@
                             AutomationProperties.Name="Plugin hosting mode" ToolTip.Tip="How this plugin shares a worker process" />
                 </StackPanel>
                 <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasCrashed}" Margin="0,2,0,0">
-                  <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource Bluestone.Warning}" VerticalAlignment="Center" />
+                  <PathIcon Data="{StaticResource Icon.Warning}" Width="11" Height="11" Foreground="{StaticResource State.Warning}" VerticalAlignment="Center" />
                   <TextBlock Text="{Binding CrashText}" Classes="muted" FontSize="10" TextWrapping="Wrap" MaxWidth="380" VerticalAlignment="Center" AutomationProperties.Name="Crashes" />
                   <Button Classes="raised" Content="Host individually" IsVisible="{Binding CanHostIndividually}" Command="{Binding HostIndividuallyCommand}" FontSize="11"
                           IsEnabled="{Binding !$parent[ItemsControl].((vm:PluginsViewModel)DataContext).IsBusy, FallbackValue=False}"

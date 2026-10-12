@@ -11,7 +11,10 @@ public interface IChainObserver
     /// <summary>The events after <paramref name="device"/>: what a tap on it sends.</summary>
     void AfterDevice(DeviceId device, ReadOnlySpan<SignalEvent> events);
 
-    /// <summary>The events an instrument with no in-process implementation takes in, and so removes from the chain.</summary>
+    /// <summary>
+    /// The events an instrument with no in-process implementation plays. Classes it passes through
+    /// (<see cref="DeviceDefinition.PassesThrough"/>, notes by default) also continue down the chain.
+    /// </summary>
     void InstrumentInput(DeviceId device, ReadOnlySpan<SignalEvent> events);
 }
 
@@ -23,7 +26,8 @@ public enum StageKind
 
     /// <summary>
     /// An instrument (events in, no events out) that runs elsewhere: a plugin worker, or nowhere yet. The
-    /// classes it handles are taken out of the chain and handed to <see cref="IChainObserver.InstrumentInput"/>.
+    /// classes it handles are handed to <see cref="IChainObserver.InstrumentInput"/>; those it passes through
+    /// (notes, unless its definition says otherwise) also go on to the next device, so instruments can layer.
     /// </summary>
     Instrument,
 
@@ -38,9 +42,10 @@ public enum StageKind
 }
 
 /// <summary>
-/// Runs the event side of one device chain, first device to last (ADR 0022). Each device gets only the
+/// Runs the event side of one device chain, first device to last (ADR 0022, ADR 0037). Each device gets only the
 /// event classes its definition handles; everything else (SysEx, controllers, whatever it does not
-/// declare) goes around it and is merged back in canonical order. A bypassed device is skipped entirely.
+/// declare) goes around it and is merged back in canonical order, as do the handled classes the device passes
+/// through (an instrument's notes). A bypassed device is skipped entirely.
 /// </summary>
 /// <remarks>
 /// The runner owns its buffers and reuses them, so once they have grown to the size of the signal, a run
@@ -141,11 +146,15 @@ public sealed class ChainRunner
             _around.Clear();
             foreach (var e in _current.Events)
             {
-                if ((EventClassification.Of(e.Event) & stage.Handles) != EventClass.None)
+                var eventClass = EventClassification.Of(e.Event);
+                if ((eventClass & stage.Handles) == EventClass.None)
                 {
-                    _handled.Add(e);
+                    _around.Add(e);
+                    continue;
                 }
-                else
+
+                _handled.Add(e);
+                if ((eventClass & stage.Thru) != EventClass.None)
                 {
                     _around.Add(e);
                 }
@@ -161,7 +170,12 @@ public sealed class ChainRunner
                 _produced.Clear();
                 if (stage.Kind == StageKind.OutOfProcess)
                 {
-                    RunOutOfProcess(stage, block, changes);
+                    if (!RunOutOfProcess(stage, block, changes))
+                    {
+                        // A failed device passes its input on exactly once; merging would repeat its thru classes.
+                        observer?.AfterDevice(stage.Device.Id, _current.Events);
+                        continue;
+                    }
                 }
                 else
                 {
@@ -213,8 +227,9 @@ public sealed class ChainRunner
         return reports.ToImmutable();
     }
 
-    // The renderer gets this device's changes and its handled events; on failure they pass through unchanged.
-    private void RunOutOfProcess(Stage stage, in SignalBlock block, ReadOnlySpan<ParameterChange> changes)
+    // The renderer gets this device's changes and its handled events. Returns false if it failed, in which case
+    // nothing is produced and the caller passes the stage's input on unchanged.
+    private bool RunOutOfProcess(Stage stage, in SignalBlock block, ReadOnlySpan<ParameterChange> changes)
     {
         var own = new List<ParameterChange>();
         foreach (var change in changes)
@@ -242,16 +257,14 @@ public sealed class ChainRunner
         {
             _produced.AddRange(events.AsSpan());
         }
-        else
-        {
-            _produced.AddRange(_handled.Events);
-        }
 
         foreach (var message in result.Messages)
         {
             var text = result.Events is null ? $"{stage.Device.DisplayName}: {message} Events pass through it unchanged." : $"{stage.Device.DisplayName}: {message}";
             _outOfProcessReports.Add(new SignalDiagnostic(result.Events is null ? SignalDiagnosticCode.NotProcessedHere : SignalDiagnosticCode.DeviceReport, text) { Device = stage.Device.Id });
         }
+
+        return result.Events is not null;
     }
 
     // Splits the block at each change for this device, so a change applies from its own tick onwards.
@@ -303,7 +316,7 @@ public sealed class ChainRunner
         if (catalog.Find(device.Definition.Id) is not { } definition)
         {
             diagnostics.Add(new SignalDiagnostic(SignalDiagnosticCode.DeviceUnavailable, $"{device.DisplayName} is not installed; events pass through it unchanged.") { Device = device.Id });
-            return new Stage(device, StageKind.Transparent, EventClass.None, null, null, null);
+            return new Stage(device, StageKind.Transparent, EventClass.None, EventClass.None, null, null, null);
         }
 
         var consumesEvents = definition.Consumes.HasFlag(SignalKinds.Events) && definition.Handles != EventClass.None;
@@ -314,17 +327,17 @@ public sealed class ChainRunner
                 processor.SetParameter(parameter.Id, device.ValueOf(parameter.Id) ?? parameter.DefaultValue);
             }
 
-            return new Stage(device, consumesEvents ? StageKind.Processor : StageKind.Transparent, definition.Handles, processor, null, null);
+            return new Stage(device, consumesEvents ? StageKind.Processor : StageKind.Transparent, definition.Handles, definition.PassesThrough, processor, null, null);
         }
 
         if (consumesEvents && !definition.Produces.HasFlag(SignalKinds.Events))
         {
-            return new Stage(device, StageKind.Instrument, definition.Handles, null, null, null);
+            return new Stage(device, StageKind.Instrument, definition.Handles, definition.PassesThrough, null, null, null);
         }
 
         if (consumesEvents && catalog.Renderer is { } renderer && renderer.CanRender(device, definition))
         {
-            return new Stage(device, StageKind.OutOfProcess, definition.Handles, null, renderer, definition);
+            return new Stage(device, StageKind.OutOfProcess, definition.Handles, definition.PassesThrough, null, renderer, definition);
         }
 
         if (consumesEvents && !device.IsBypassed)
@@ -335,8 +348,8 @@ public sealed class ChainRunner
             diagnostics.Add(new SignalDiagnostic(SignalDiagnosticCode.NotProcessedHere, message) { Device = device.Id });
         }
 
-        return new Stage(device, StageKind.Transparent, EventClass.None, null, null, null);
+        return new Stage(device, StageKind.Transparent, EventClass.None, EventClass.None, null, null, null);
     }
 
-    private sealed record Stage(DeviceInstance Device, StageKind Kind, EventClass Handles, ISignalProcessor? Processor, IOutOfProcessRenderer? Renderer, DeviceDefinition? Definition);
+    private sealed record Stage(DeviceInstance Device, StageKind Kind, EventClass Handles, EventClass Thru, ISignalProcessor? Processor, IOutOfProcessRenderer? Renderer, DeviceDefinition? Definition);
 }
