@@ -216,6 +216,9 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     /// <summary>Raised when any view's placement changes, so the window can open, close, and lay out regions and windows.</summary>
     public event EventHandler? LayoutChanged;
 
+    /// <summary>Raised when a detached view should come to the front of the other windows, where it is.</summary>
+    public event EventHandler<WorkspaceView>? FrontRequested;
+
     /// <summary>
     /// Raised after a saved layout was restored (at startup or when another project is opened), so the window can put itself
     /// and the detached windows where that layout has them.
@@ -292,7 +295,11 @@ public sealed partial class WorkspaceViewModel : ObservableObject
             return null;
         }
 
-        if (!host.IsDetached)
+        if (host.IsDetached)
+        {
+            FrontRequested?.Invoke(this, host);
+        }
+        else
         {
             Show(host);
         }
@@ -316,7 +323,11 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     /// <summary>Docks the Browser unless it is open already (docked or in its own window) and shows <paramref name="category"/>.</summary>
     public void ShowBrowser(BrowserCategory category)
     {
-        if (!Browser.IsDocked && !Browser.IsDetached)
+        if (Browser.IsDetached)
+        {
+            FrontRequested?.Invoke(this, Browser);
+        }
+        else if (!Browser.IsDocked)
         {
             Show(Browser);
         }

@@ -11,6 +11,7 @@ using Bluestone.Domain.Time;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol;
 using Bluestone.Presentation;
+using Bluestone.Profiles;
 
 namespace Bluestone.Tests.Ui;
 
@@ -59,7 +60,7 @@ public sealed class DawFirstTrackTests
         var sine = Assert.Single(app.ViewModel.Browser.Items);
         Assert.True(sine.IsRecommended);
         Assert.Equal(track.Name, app.ViewModel.DeviceView?.Heading);
-        Assert.Equal($"Inserts into {track.Name}", app.ViewModel.Browser.TargetText);
+        Assert.Equal($"Into {track.Name}, as its first device", app.ViewModel.Browser.TargetText);
 
         Assert.True(app.ViewModel.Browser.InsertIntoActive(sine));
         app.Settle();
@@ -135,5 +136,34 @@ public sealed class DawFirstTrackTests
         app.Settle();
         app.Choose(AppUnderTest.ComboNamed(app.Section("Track"), "Audio output"), o => o is AudioDestinationOption { Name: "Master" });
         Assert.False(section.IsExpanded);
+    });
+
+    [Fact]
+    public Task AHardwareProfile_IsNotOfferedAsADevice_AndIsUsedOnTheSelectedTrack() => HeadlessApp.RunAsync(async () =>
+    {
+        var profiles = ProfileCatalog.Empty.Add("gm", ProfileLoader.Load("""
+            { "format": "bluestone-device-profile", "schemaVersion": 1, "id": "test.gm", "version": "1", "name": "Test GM", "manufacturer": "Test",
+              "provenance": { "sources": ["t"], "contributors": ["t"], "license": "MIT", "redistributionConfirmed": true, "verification": "unverified" },
+              "banks": [ { "id": "main", "name": "Main", "msb": 0, "lsb": 0, "programs": [ { "number": 1, "name": "Piano" } ] } ] }
+            """u8));
+        await using var app = await AppUnderTest.OpenAsync(profiles: profiles);
+        app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        var browser = app.ViewModel.Browser;
+
+        Assert.DoesNotContain(browser.Items, i => i.Kind == BrowserItemKind.HardwareProfile);
+        browser.ShowCategory(BrowserCategory.Hardware);
+        var profile = Assert.Single(browser.Items);
+        browser.SelectedItem = profile;
+        app.Settle();
+        Assert.Equal("Use on Track", app.Find<Button>("ActionButton").Content);
+        Assert.Equal("Sets Track 1's MIDI profile", browser.TargetText);
+
+        app.Click(app.Find<Button>("ActionButton"));
+
+        Assert.Equal("test.gm", app.Session.Project.Instruments.Single().Profile?.ProfileId);
+        Assert.True(app.Find<Expander>("HardwareSection").IsExpanded);
+        Assert.Equal("Test GM", app.ViewModel.Selection.Profile?.Name);
     });
 }

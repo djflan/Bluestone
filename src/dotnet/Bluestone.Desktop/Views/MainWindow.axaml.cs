@@ -147,6 +147,13 @@ public partial class MainWindow : Window
             }
         };
         vm.Workspace.LayoutChanged += (_, _) => SyncDetachedWindows();
+        vm.Workspace.FrontRequested += (_, view) =>
+        {
+            if (_detached.TryGetValue(view, out var window))
+            {
+                window.Activate();
+            }
+        };
         MainArea.SizeChanged += (_, _) =>
         {
             DetailHandle.MaximumExtent = Math.Max(WorkspaceViewModel.MinimumDetailExtent, MainArea.Bounds.Height - 200);

@@ -236,6 +236,23 @@ public sealed partial class SelectionViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Gives the selected tracks the hardware profile <paramref name="profileId"/> (the Browser's "Use on Track") and opens the
+    /// External MIDI section so the output and channel can be chosen next. False when nothing is selected or it is not installed.
+    /// </summary>
+    internal bool UseProfile(string profileId)
+    {
+        if (!HasSelection || ProfileChoices.FirstOrDefault(p => !p.IsMixed && p.Id == profileId) is not { } option)
+        {
+            return false;
+        }
+
+        Profile = option;
+        IsHardwareExpanded = true;
+        _owner.IsInspectorVisible = true;
+        return true;
+    }
+
     private void SyncHardware(bool reselected)
     {
         UsesHardware = _tracks.Any(t => t.UsesHardware);

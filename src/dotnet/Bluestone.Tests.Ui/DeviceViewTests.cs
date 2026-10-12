@@ -104,8 +104,19 @@ public sealed class DeviceViewTests
         Assert.Equal("Not routed", output.Text);
         Assert.Contains("unrouted", output.Classes);
 
-        app.ViewModel.DeviceView!.InsertAt(0, Definition("Arpeggiator"));
+        // A device dragged over the empty chain lights the slot, and lands as the first device.
+        var over = slot.TranslatePoint(new Point(slot.Bounds.Width / 2, slot.Bounds.Height / 2), app.Window)!.Value;
+        var transfer = ChainDrag.Insert(Definition("Arpeggiator")).ToTransfer();
+        app.Window.DragDrop(over, RawDragEventType.DragEnter, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
         app.Settle();
+        Assert.Contains("dropTarget", slot.Classes);
+        Assert.False(AppUnderTest.Within<Control>(deviceView, c => c.Name == "InsertionMarker").IsVisible);
+        app.SaveFrame("device-view-empty-drop");
+        app.Window.DragDrop(over, RawDragEventType.Drop, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+
+        Assert.Equal(["Arpeggiator"], app.Session.Project.ChainOf(app.ViewModel.Tracks[0].Id)!.Devices.Select(d => d.DisplayName));
+        Assert.DoesNotContain("dropTarget", slot.Classes);
         Assert.False(slot.IsEffectivelyVisible);
         app.SaveFrame("device-view-unrouted");
     });
@@ -164,7 +175,7 @@ public sealed class DeviceViewTests
         // A rack opens in a Device View: it needs no chain to insert into.
         browser.SelectedItem = browser.Items.Single(i => i.Kind == Presentation.BrowserItemKind.Rack);
         app.Settle();
-        var insert = AppUnderTest.Within<Button>(app.Find<BrowserView>("DockedBrowser"), b => Avalonia.Automation.AutomationProperties.GetName(b) == "Insert into Device View");
+        var insert = AppUnderTest.Within<Button>(app.Find<BrowserView>("DockedBrowser"), b => b.Name == "ActionButton");
         Assert.True(insert.IsEffectivelyEnabled);
         app.Click(insert);
         app.Settle();

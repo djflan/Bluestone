@@ -217,6 +217,12 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         {
             newValue.IsSelected = true;
         }
+
+        // Where the Browser inserts follows this view's selection.
+        if (_owner.Workspace?.InsertionTarget == this)
+        {
+            _owner.Browser.UpdateTarget();
+        }
     }
 
     /// <summary>Locks the view to <paramref name="rack"/>, as editing a rack from the rack list does.</summary>
