@@ -24,7 +24,7 @@ internal static class AppMenu
         (Key.Z, KeyModifiers.Shift), (Key.T, KeyModifiers.None), (Key.OemPeriod, KeyModifiers.None), (Key.OemPlus, KeyModifiers.None),
         (Key.OemMinus, KeyModifiers.None), (Key.M, KeyModifiers.None), (Key.A, KeyModifiers.None), (Key.D, KeyModifiers.None),
         (Key.X, KeyModifiers.None), (Key.C, KeyModifiers.None), (Key.V, KeyModifiers.None), (Key.OemQuestion, KeyModifiers.None),
-        (Key.G, KeyModifiers.None),
+        (Key.G, KeyModifiers.None), (Key.OemComma, KeyModifiers.None),
     ];
 
     public static void Install(MainWindow window, MainViewModel vm, KeyModifiers command)
@@ -33,13 +33,14 @@ internal static class AppMenu
 
         // Items added to the application menu; macOS supplies Services, Hide, Hide Others, Show All, and Quit.
         var about = Item("About Bluestone", () => _ = new AboutWindow().ShowDialog(window));
+        var settings = Item("Settings…", () => window.ShowSettings(), Cmd(Key.OemComma));
         if (Avalonia.Application.Current is { } app)
         {
-            NativeMenu.SetMenu(app, [about]);
+            NativeMenu.SetMenu(app, [about, new NativeMenuItemSeparator(), settings]);
         }
 
         var editor = vm.Editor;
-        NativeMenu.SetMenu(window,
+        NativeMenuItem[] menus =
         [
             Submenu("File",
                 Item("New Project", vm.NewProjectCommand, Cmd(Key.N)),
@@ -136,7 +137,43 @@ internal static class AppMenu
             Submenu("Help",
                 Item("Keyboard Shortcuts", window.ShowShortcuts, Cmd(Key.OemQuestion)),
                 Item("Bluestone Help", () => _ = window.Launcher.LaunchUriAsync(new Uri(HelpUrl)))),
-        ]);
+        ];
+        foreach (var menu in menus)
+        {
+            ReturnToWorkspace(menu, window);
+        }
+
+        NativeMenu.SetMenu(window, [.. menus]);
+    }
+
+    /// <summary>Items that act within Settings or the window itself, so they leave Settings open.</summary>
+    private static readonly HashSet<string> SettingsSafe =
+        ["Close Window", "Minimize", "Zoom", "Mixer", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
+
+    /// <summary>Items that edit a focused Settings field where it is, and otherwise act on the workspace.</summary>
+    private static readonly HashSet<string> TextEditing = ["Cut", "Copy", "Paste", "Select All"];
+
+    /// <summary>
+    /// Makes every workspace and project item close Settings as it runs, so nothing changes behind it unseen (the window's own
+    /// key bindings do the same through <see cref="MainWindow.InWorkspace"/>).
+    /// </summary>
+    private static void ReturnToWorkspace(NativeMenuItem item, MainWindow window)
+    {
+        foreach (var child in item.Menu?.Items.OfType<NativeMenuItem>() ?? [])
+        {
+            ReturnToWorkspace(child, window);
+        }
+
+        if (item.Menu is not null || item.Header is not { } header || SettingsSafe.Contains(header))
+        {
+            return;
+        }
+
+        // Every leaf item carries a command (Item and Check make one), so Settings closes before it runs.
+        if (item.Command is { } command)
+        {
+            item.Command = TextEditing.Contains(header) ? window.InWorkspaceUnlessEditingText(command) : window.InWorkspace(command);
+        }
     }
 
     private static NativeMenuItem Submenu(string header, params NativeMenuItemBase[] items)
@@ -153,18 +190,13 @@ internal static class AppMenu
     private static NativeMenuItem Item(string header, ICommand command, KeyGesture? gesture = null) =>
         new(header) { Command = command, Gesture = gesture };
 
-    private static NativeMenuItem Item(string header, Action action, KeyGesture? gesture = null)
-    {
-        var item = new NativeMenuItem(header) { Gesture = gesture };
-        item.Click += (_, _) => action();
-        return item;
-    }
+    private static NativeMenuItem Item(string header, Action action, KeyGesture? gesture = null) =>
+        new(header) { Command = new RelayCommand(action), Gesture = gesture };
 
     /// <summary>A checkable item kept in step with a view model property.</summary>
     private static NativeMenuItem Check(string header, INotifyPropertyChanged source, string property, Func<bool> isChecked, Action toggle)
     {
-        var item = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = isChecked() };
-        item.Click += (_, _) => toggle();
+        var item = new NativeMenuItem(header) { ToggleType = MenuItemToggleType.CheckBox, IsChecked = isChecked(), Command = new RelayCommand(toggle) };
         source.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == property)

@@ -50,11 +50,12 @@ public sealed class DeviceAndRoutingCommandsTests
     {
         // An audio tap after the MIDI effect (behind the synth) sends audio to track B. Moving the effect in
         // front of the synth would leave the tap with no audio to send, so the move is refused.
-        var (history, a, b) = TwoTracks();
+        // The chain is built directly: inserting the synth with a command would also make track A hybrid and heard at the
+        // master (TrackSetup), and a hybrid track's own audio would then reach the tap wherever the effect is.
+        var (setup, a, b) = TwoTracks();
         var fx = TestDevices.Instance(TestDevices.MidiFx);
         var synth = TestDevices.Instance(TestDevices.Synth);
-        history.Execute(DeviceCommands.InsertDevice(a.Id, synth, Definitions));
-        history.Execute(DeviceCommands.InsertDevice(a.Id, fx, Definitions));
+        var history = new EditHistory(setup.Current.WithChain(DeviceChain.Create(ChainOwner.ForTrack(a.Id)) with { Devices = [synth, fx] }));
         history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Device(fx.Id), SignalNode.Track(b.Id)), Definitions));
         var before = history.Current;
 

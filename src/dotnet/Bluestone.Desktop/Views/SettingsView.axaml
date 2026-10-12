@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             xmlns:views="using:Bluestone.Desktop.Views"
+             x:Class="Bluestone.Desktop.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+             AutomationProperties.Name="Settings">
+  <!--
+    Settings: categories on the left, the chosen page on the right, as a tool-window surface in Bluestone's own chrome. It is shown
+    in place of the workspace and knows nothing of its host, so a window could show it the same way.
+  -->
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:AudioViewModel">
+      <views:AudioSettingsPage />
+    </DataTemplate>
+    <DataTemplate DataType="vm:PluginsViewModel">
+      <views:PluginSettingsPage />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid ColumnDefinitions="Auto,*">
+    <Border Classes="settingsNav">
+      <Grid RowDefinitions="Auto,Auto,*">
+        <Border Classes="dockHeader">
+          <TextBlock Classes="dockTitle" Text="SETTINGS" />
+        </Border>
+        <Border Grid.Row="1" Classes="searchField" Margin="8,8,8,6">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="12" Height="12" Foreground="{StaticResource Text.Muted}" Margin="8,0,2,0" />
+            <TextBox x:Name="SearchBox" Grid.Column="1" Classes="bare" Text="{Binding SearchText}" PlaceholderText="Search settings"
+                     AutomationProperties.Name="Search settings" />
+            <Button Grid.Column="2" Classes="tool tiny" Command="{Binding ClearSearchCommand}" IsVisible="{Binding SearchText.Length}"
+                    ToolTip.Tip="Clear the search" AutomationProperties.Name="Clear search">
+              <PathIcon Classes="stroke" Data="{StaticResource Icon.Close}" />
+            </Button>
+          </Grid>
+        </Border>
+        <Panel Grid.Row="2">
+          <ListBox x:Name="CategoryList" Classes="settingsCategories" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}"
+                   AutomationProperties.Name="Settings categories">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SettingsCategory">
+                <Grid ColumnDefinitions="Auto,*" AutomationProperties.Name="{Binding Name}">
+                  <PathIcon Classes="stroke" Data="{Binding Page, Converter={x:Static theme:SettingsIconConverter.Instance}}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Classes="caption" Text="No settings match." IsVisible="{Binding IsEmpty}" Margin="16,8" />
+        </Panel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Column="1" RowDefinitions="Auto,*" Background="{StaticResource Surface.Base}">
+      <Border Classes="settingsHeader">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Classes="settingsCrumb" Text="Settings" />
+              <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronRight}" Width="8" Height="8" Foreground="{StaticResource Text.Muted}" />
+              <TextBlock x:Name="PageTitle" Classes="settingsTitle" Text="{Binding SelectedCategory.Name, FallbackValue=''}" />
+            </StackPanel>
+            <TextBlock Classes="muted" Text="{Binding SelectedCategory.Description, FallbackValue=''}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Button x:Name="CloseSettingsButton" Grid.Column="1" Classes="raised compact" Content="Done" Command="{Binding CloseCommand}" VerticalAlignment="Center"
+                  ToolTip.Tip="Back to the workspace (Esc)" AutomationProperties.Name="Close settings" />
+        </Grid>
+      </Border>
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <Panel Classes="settingsPage">
+          <ContentControl x:Name="PageContent" Content="{Binding SelectedCategory.Content, FallbackValue={x:Null}}" />
+          <TextBlock Classes="muted" Text="{Binding SelectedCategory.UnavailableText, FallbackValue=''}" TextWrapping="Wrap"
+                     IsVisible="{Binding !SelectedCategory.IsAvailable, FallbackValue=False}" />
+        </Panel>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,5 +1,6 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
@@ -28,7 +29,8 @@ public sealed class InspectorTests
         return session;
     }
 
-    private static string? Header(Expander section) => section.Header?.ToString();
+    private static string? Header(Expander section) =>
+        section.Header is Control content ? content.GetLogicalDescendants().OfType<TextBlock>().First().Text : section.Header?.ToString();
 
     [Fact]
     public Task TheWindow_Loads_WithTheInspectorsSections_AndRendersAFrame() => HeadlessApp.RunAsync(async () =>

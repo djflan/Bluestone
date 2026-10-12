@@ -109,8 +109,8 @@ public sealed partial class BrowserViewModel : ObservableObject
         new(BrowserCategory.AudioEffects, "Audio FX"),
         new(BrowserCategory.Plugins, "Plugins"),
         new(BrowserCategory.BuiltIn, "Built-in"),
-        new(BrowserCategory.Racks, "Project racks"),
-        new(BrowserCategory.Hardware, "Hardware profiles"),
+        new(BrowserCategory.Racks, "Racks"),
+        new(BrowserCategory.Hardware, "Hardware"),
     ];
 
     /// <summary>The items that match the category and search, recommended first.</summary>
@@ -124,20 +124,45 @@ public sealed partial class BrowserViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InsertCommand))]
+    [NotifyPropertyChangedFor(nameof(ActionText))]
     public partial BrowserItem? SelectedItem { get; set; }
 
-    /// <summary>Where Enter or a double-click would put the selected device: "Into Bass" or why it cannot.</summary>
+    /// <summary>
+    /// What Return, a double-click, or the footer's button does with the selected item, and where: "Into Bass, after
+    /// Arpeggiator", "Opens in the Device View", "Sets Bass's MIDI profile", or why it cannot.
+    /// </summary>
     [ObservableProperty]
     public partial string TargetText { get; private set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(InsertCommand))]
     public partial bool HasTarget { get; private set; }
+
+    /// <summary>The footer button's word for the selected item: Insert a device, Open a rack, Use a hardware profile on a track.</summary>
+    public string ActionText => SelectedItem?.Kind switch
+    {
+        BrowserItemKind.Rack => "Open",
+        BrowserItemKind.HardwareProfile => "Use on Track",
+        _ => "Insert",
+    };
+
+    partial void OnSelectedItemChanged(BrowserItem? value) => UpdateTarget();
 
     public bool IsEmpty => Items.Count == 0;
 
     /// <summary>"No matches for “xyz”." or "No plugins found. Scan in Settings." when the list is empty.</summary>
     [ObservableProperty]
     public partial string EmptyText { get; private set; } = string.Empty;
+
+    /// <summary>The empty list is one that scanning plugins would fill, so it offers the plugin settings.</summary>
+    [ObservableProperty]
+    public partial bool CanOpenPluginSettings { get; private set; }
+
+    /// <summary>Raised to show Settings ▸ Plugins; the host decides how.</summary>
+    public event EventHandler? PluginSettingsRequested;
+
+    [RelayCommand]
+    private void OpenPluginSettings() => PluginSettingsRequested?.Invoke(this, EventArgs.Empty);
 
     partial void OnSearchTextChanged(string value) => Filter();
 
@@ -151,6 +176,13 @@ public sealed partial class BrowserViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(state);
         SearchText = state.Search;
         SelectedCategory = Categories.FirstOrDefault(c => c.Category == state.Category) ?? Categories[0];
+    }
+
+    /// <summary>Shows <paramref name="category"/> with the search cleared, as the inspector's "Add an instrument" does.</summary>
+    public void ShowCategory(BrowserCategory category)
+    {
+        SearchText = string.Empty;
+        SelectedCategory = Categories.First(c => c.Category == category);
     }
 
     /// <summary>Rebuilds the item list from the device catalog, the project's racks, and the installed hardware profiles.</summary>
@@ -170,7 +202,7 @@ public sealed partial class BrowserViewModel : ObservableObject
 
         foreach (var profile in profiles.Profiles)
         {
-            _all.Add(new BrowserItem(BrowserItemKind.HardwareProfile, profile.Id, profile.Name, $"Hardware · {profile.Manufacturer ?? "Profile"} · set as a track's output profile", "Hardware"));
+            _all.Add(new BrowserItem(BrowserItemKind.HardwareProfile, profile.Id, profile.Name, $"MIDI profile · {profile.Manufacturer ?? "Hardware"}", "Hardware"));
         }
 
         Retarget();
@@ -180,8 +212,7 @@ public sealed partial class BrowserViewModel : ObservableObject
     internal void Retarget()
     {
         var target = _owner.Workspace?.InsertionTarget;
-        HasTarget = target is not null;
-        TargetText = target is not null ? $"Inserts into {target.Heading}" : "Open a Device View on a track to insert";
+        UpdateTarget();
         var chain = target?.ChainDefinitions.ToList() ?? [];
         var hasInstrument = chain.Any(d => d?.Category == DeviceCategory.Instrument);
         foreach (var item in _all)
@@ -202,6 +233,37 @@ public sealed partial class BrowserViewModel : ObservableObject
         }
 
         InsertCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Says where the selected item's action lands, after the selection, the active view, or its selected device changed.</summary>
+    internal void UpdateTarget()
+    {
+        if (SelectedItem?.Kind == BrowserItemKind.Rack)
+        {
+            HasTarget = true;
+            TargetText = "Opens in the Device View";
+            return;
+        }
+
+        if (SelectedItem?.Kind == BrowserItemKind.HardwareProfile)
+        {
+            var tracks = _owner.SelectedTracks;
+            HasTarget = tracks.Count > 0;
+            TargetText = tracks.Count switch
+            {
+                0 => "Select a track to use this profile",
+                1 => $"Sets {tracks[0].Name}'s MIDI profile",
+                _ => $"Sets the MIDI profile of {tracks.Count} tracks",
+            };
+            return;
+        }
+
+        var target = _owner.Workspace?.InsertionTarget;
+        HasTarget = target is not null;
+        TargetText = target is null ? (_owner.SelectedTracks.Count > 1 ? "Select one track to insert into it" : "Open a Device View on a track to insert")
+            : target.SelectedDevice is { } after ? $"Into {target.Heading}, after {after.Name}"
+            : target.Devices.Count == 0 ? $"Into {target.Heading}, as its first device"
+            : $"Into {target.Heading}, at the end";
     }
 
     /// <summary>
@@ -229,7 +291,12 @@ public sealed partial class BrowserViewModel : ObservableObject
 
         if (item.Kind == BrowserItemKind.HardwareProfile)
         {
-            _owner.AddMessage(MessageSeverity.Info, "Browser", $"{item.Name} is a hardware profile: choose it as a track's output profile in the inspector.");
+            if (_owner.Selection.UseProfile(item.Key))
+            {
+                return true;
+            }
+
+            _owner.AddMessage(MessageSeverity.Info, "Browser", $"{item.Name} is a hardware profile: select a track to use it, then choose the track's MIDI output in the inspector.");
             return false;
         }
 
@@ -256,7 +323,8 @@ public sealed partial class BrowserViewModel : ObservableObject
         }
     }
 
-    private bool CanInsert() => SelectedItem is not null;
+    // Only when the footer names a place it can go: a rack always opens; a device needs a chain, a profile a selected track.
+    private bool CanInsert() => SelectedItem is not null && (SelectedItem.Kind == BrowserItemKind.Rack || HasTarget);
 
     [RelayCommand]
     private void ClearSearch() => SearchText = string.Empty;
@@ -288,16 +356,20 @@ public sealed partial class BrowserViewModel : ObservableObject
             : category switch
             {
                 BrowserCategory.Plugins => "No plugins found. Scan for plugins in Settings.",
-                BrowserCategory.Racks => "This project has no racks.",
+                BrowserCategory.Instruments => "No instruments yet. Plugin instruments appear here once they are scanned in Settings.",
+                BrowserCategory.AudioEffects => "No audio effects yet. Plugin effects appear here once they are scanned in Settings.",
+                BrowserCategory.Racks => "This project has no racks. Create one in the inspector's Racks section.",
                 BrowserCategory.Hardware => "No hardware profiles are installed.",
                 _ => "Nothing here yet.",
             };
+        CanOpenPluginSettings = Items.Count == 0 && terms.Length == 0 && category is BrowserCategory.Plugins or BrowserCategory.Instruments or BrowserCategory.AudioEffects;
         OnPropertyChanged(nameof(IsEmpty));
     }
 
     private static bool InCategory(BrowserItem item, BrowserCategory category) => category switch
     {
-        BrowserCategory.All => true,
+        // Hardware profiles describe external instruments; they are not chain devices, so they have their own category.
+        BrowserCategory.All => item.Kind != BrowserItemKind.HardwareProfile,
         BrowserCategory.Instruments => item.Definition?.Category == DeviceCategory.Instrument,
         BrowserCategory.NoteEffects => item.Definition?.Category == DeviceCategory.MidiEffect,
         BrowserCategory.AudioEffects => item.Definition?.Category == DeviceCategory.AudioEffect,

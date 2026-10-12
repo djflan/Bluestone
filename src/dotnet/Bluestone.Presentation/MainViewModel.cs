@@ -131,7 +131,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             // A plugin MIDI effect that stops or comes back changes what goes into the plan, so recompile it too.
             _plugins.StatusChanged += (_, device) => _dispatcher.Post(() =>
             {
-                SyncSelection();
+                // Track rows say when their instrument is unavailable, so they are synced too, not only the selection.
+                SyncTracks();
                 if (_plugins.ShapesThePlan(device))
                 {
                     _ = RefreshAsync();
@@ -1119,11 +1120,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Execute(ProjectCommands.SetLoop(new TickRange(start, end)));
     }
 
+    /// <summary>What <paramref name="track"/> sounds through, with its instrument's runtime status.</summary>
+    internal TrackSound SoundOf(TrackId track)
+    {
+        var sound = TrackSound.Of(Project, track, Devices.Lookup);
+        return sound.InstrumentDevices.Any(id => Project.FindDevice(id) is { } found && DeviceStatus(found.Device).NeedsAttention)
+            ? sound with { IsInstrumentUnavailable = true }
+            : sound;
+    }
+
+    /// <summary>Adds a hybrid track whose audio goes to the master, ready for an instrument (no role or routing to choose).</summary>
     [RelayCommand]
     private void AddTrack()
     {
-        var track = Track.Create(string.Create(CultureInfo.InvariantCulture, $"Track {Project.Sequence.Tracks.Length + 1}"));
-        Execute(ProjectCommands.AddTrack(track));
+        var track = Track.Create(string.Create(CultureInfo.InvariantCulture, $"Track {Project.Sequence.Tracks.Length + 1}"), TrackRole.Hybrid);
+        Execute(TrackSetup.NewTrack(track, Devices.Lookup));
         if (Tracks.FirstOrDefault(t => t.Id == track.Id) is { } added)
         {
             Select(added);
@@ -1489,7 +1500,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Tracks.Move(Tracks.IndexOf(existing), i);
             }
 
-            existing.Sync(i + 1, tracks[i], _playback.Tracks.FirstOrDefault(r => r.Track == tracks[i].Id), outputs);
+            existing.Sync(i + 1, tracks[i], _playback.Tracks.FirstOrDefault(r => r.Track == tracks[i].Id), outputs, SoundOf(tracks[i].Id));
         }
 
         Groups.Sync();

@@ -14,7 +14,7 @@
     <Border Classes="searchField" Margin="8,8,8,6">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="12" Height="12" Foreground="{StaticResource Text.Muted}" Margin="8,0,2,0" />
-        <TextBox x:Name="SearchBox" Grid.Column="1" Classes="bare" Text="{Binding SearchText}" Watermark="Search devices, plugins, racks…"
+        <TextBox x:Name="SearchBox" Grid.Column="1" Classes="bare" Text="{Binding SearchText}" PlaceholderText="Search devices, plugins, racks…"
                  AutomationProperties.Name="Search the Browser" />
         <Button Grid.Column="2" Classes="tool tiny" Command="{Binding ClearSearchCommand}" IsVisible="{Binding SearchText.Length}"
                 ToolTip.Tip="Clear the search" AutomationProperties.Name="Clear search">
@@ -57,6 +57,8 @@
       <StackPanel Classes="emptyState" IsVisible="{Binding IsEmpty}">
         <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="22" Height="22" Foreground="{StaticResource Line.BorderStrong}" />
         <TextBlock Classes="caption" Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="200" />
+        <Button x:Name="PluginSettingsLink" Classes="link" Content="Plugin settings…" HorizontalAlignment="Center" IsVisible="{Binding CanOpenPluginSettings}"
+                Command="{Binding OpenPluginSettingsCommand}" AutomationProperties.Name="Open plugin settings" />
       </StackPanel>
     </Panel>
 
@@ -64,9 +66,10 @@
       <Grid ColumnDefinitions="Auto,*,Auto">
         <Ellipse Classes="targetDot" Classes.on="{Binding HasTarget}" />
         <TextBlock Grid.Column="1" Classes="caption" Text="{Binding TargetText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                   ToolTip.Tip="Where Return or a double-click inserts. Drag onto any Device View to choose the exact place." />
-        <Button Grid.Column="2" Classes="raised compact" Content="Insert" Command="{Binding InsertCommand}"
-                ToolTip.Tip="Insert into the active Device View, after its selected device (Return)" AutomationProperties.Name="Insert into Device View" />
+                   ToolTip.Tip="Where Return or a double-click puts the selected item. Drag a device onto any Device View to choose the exact place." />
+        <Button x:Name="ActionButton" Grid.Column="2" Classes="raised compact" Content="{Binding ActionText}" Command="{Binding InsertCommand}"
+                ToolTip.Tip="Insert a device into the active Device View after its selected device, open a rack, or use a profile on the selected tracks (Return)"
+                AutomationProperties.Name="{Binding ActionText}" />
       </Grid>
     </Border>
   </Grid>

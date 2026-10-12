@@ -113,7 +113,9 @@ internal sealed class AppUnderTest : IAsyncDisposable
     /// <summary>The named control in the window.</summary>
     public T Find<T>(string name)
         where T : Control =>
-        Window.FindControl<T>(name) ?? throw new InvalidOperationException($"No control named {name}.");
+        Window.FindControl<T>(name)
+        ?? Window.GetLogicalDescendants().OfType<T>().FirstOrDefault(c => c.Name == name)
+        ?? throw new InvalidOperationException($"No control named {name}.");
 
     /// <summary>The first control of type <typeparamref name="T"/> inside <paramref name="scope"/> that matches.</summary>
     public static T Within<T>(Control scope, Func<T, bool> match)
@@ -226,7 +228,7 @@ internal sealed class AppUnderTest : IAsyncDisposable
 
     /// <summary>The section (expander) with the header <paramref name="header"/>.</summary>
     public Expander Section(string header) =>
-        Within<Expander>(Window, e => Equals(e.Header, header));
+        Within<Expander>(Window, e => Equals(e.Header, header) || (e.Header is Control content && content.GetLogicalDescendants().OfType<TextBlock>().FirstOrDefault()?.Text == header));
 
     /// <summary>Waits, letting the UI thread run, until <paramref name="condition"/> holds.</summary>
     public static async Task WaitUntilAsync(Func<bool> condition, string what)
@@ -241,6 +243,17 @@ internal sealed class AppUnderTest : IAsyncDisposable
 
             await Task.Delay(20);
             Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    /// <summary>Lets transitions (an expander's chevron, a fade) and pending refreshes finish, so a saved frame shows a settled state.</summary>
+    public async Task SettleTransitionsAsync()
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromMilliseconds(400);
+        while (DateTime.UtcNow < until)
+        {
+            await Task.Delay(20);
+            Settle();
         }
     }
 

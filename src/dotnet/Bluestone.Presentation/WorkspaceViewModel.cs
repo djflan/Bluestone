@@ -216,6 +216,9 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     /// <summary>Raised when any view's placement changes, so the window can open, close, and lay out regions and windows.</summary>
     public event EventHandler? LayoutChanged;
 
+    /// <summary>Raised when a detached view should come to the front of the other windows, where it is.</summary>
+    public event EventHandler<WorkspaceView>? FrontRequested;
+
     /// <summary>
     /// Raised after a saved layout was restored (at startup or when another project is opened), so the window can put itself
     /// and the detached windows where that layout has them.
@@ -277,6 +280,60 @@ public sealed partial class WorkspaceViewModel : ObservableObject
 
     [RelayCommand]
     private void AddDeviceView() => NewDeviceView();
+
+    /// <summary>
+    /// Brings the selected track's chain into view, as the inspector's Instrument and Devices links do: the active Device View
+    /// when it shows that track, otherwise the first one following the selection (docked again if it was collapsed), otherwise a
+    /// new one. Selects <paramref name="device"/> there when given. A detached view is used where it is.
+    /// </summary>
+    public DeviceViewViewModel? RevealSelectedChain(DeviceId? device = null)
+    {
+        var view = ActiveDeviceView is { IsLocked: false, HasChain: true, IsEditingRack: false } active ? active
+            : DeviceViews.FirstOrDefault(v => !v.IsLocked) ?? NewDeviceView().DeviceView;
+        if (view?.Host is not { } host)
+        {
+            return null;
+        }
+
+        if (host.IsDetached)
+        {
+            FrontRequested?.Invoke(this, host);
+        }
+        else
+        {
+            Show(host);
+        }
+
+        Activate(view);
+        if (device is { } id && view.Devices.FirstOrDefault(d => d.Id == id) is { } panel)
+        {
+            view.SelectedDevice = panel;
+        }
+
+        return view;
+    }
+
+    /// <summary>Shows the Browser on its instruments, with the selected track's chain as where Return inserts.</summary>
+    public void BrowseInstruments()
+    {
+        RevealSelectedChain();
+        ShowBrowser(BrowserCategory.Instruments);
+    }
+
+    /// <summary>Docks the Browser unless it is open already (docked or in its own window) and shows <paramref name="category"/>.</summary>
+    public void ShowBrowser(BrowserCategory category)
+    {
+        if (Browser.IsDetached)
+        {
+            FrontRequested?.Invoke(this, Browser);
+        }
+        else if (!Browser.IsDocked)
+        {
+            Show(Browser);
+        }
+
+        _owner.Browser.ShowCategory(category);
+    }
 
     /// <summary>Makes <paramref name="view"/> the one Browser insertions go to; called when the musician uses it.</summary>
     public void Activate(DeviceViewViewModel view)

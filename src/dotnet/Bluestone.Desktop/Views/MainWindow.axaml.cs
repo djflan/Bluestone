@@ -41,12 +41,8 @@ public partial class MainWindow : Window
         _autosaveTimer.Tick += async (_, _) => await viewModel.AutosaveAsync();
         _autosaveTimer.Start();
 
-        viewModel.Connections.ShowRequested += (_, _) =>
-        {
-            viewModel.IsInspectorVisible = true;
-            ConnectionsSection.IsExpanded = true;
-            ConnectionsSection.BringIntoView();
-        };
+        InspectorContent.Attach(viewModel);
+        AttachSettings(viewModel);
         Ruler.SeekRequested += (_, tick) => viewModel.SeekTo(tick);
         Ruler.LoopRequested += (_, loop) => viewModel.SetLoop(loop);
         Timeline.LaneClicked += (_, click) =>
@@ -114,7 +110,6 @@ public partial class MainWindow : Window
 
         AttachPianoRoll(viewModel);
         AttachEventList(viewModel);
-        AttachRecordingOptions(viewModel);
         AttachWorkspace(viewModel);
         ApplyEditorVisibility();
 
@@ -153,6 +148,13 @@ public partial class MainWindow : Window
             }
         };
         vm.Workspace.LayoutChanged += (_, _) => SyncDetachedWindows();
+        vm.Workspace.FrontRequested += (_, view) =>
+        {
+            if (_detached.TryGetValue(view, out var window))
+            {
+                window.Activate();
+            }
+        };
         MainArea.SizeChanged += (_, _) =>
         {
             DetailHandle.MaximumExtent = Math.Max(WorkspaceViewModel.MinimumDetailExtent, MainArea.Bounds.Height - 200);
@@ -349,14 +351,6 @@ public partial class MainWindow : Window
 
     private void AttachEventList(MainViewModel vm) =>
         EventListBox.SelectionChanged += (_, _) => vm.EventList.OnRowsSelected();
-
-    private void AttachRecordingOptions(MainViewModel vm)
-    {
-        TakeModeBox.SelectedIndex = vm.IsReplaceRecording ? 1 : 0;
-        TakeModeBox.SelectionChanged += (_, _) => vm.IsReplaceRecording = TakeModeBox.SelectedIndex == 1;
-        CountInBox.SelectedIndex = vm.CountInBars - 1;
-        CountInBox.SelectionChanged += (_, _) => vm.CountInBars = Math.Max(1, CountInBox.SelectedIndex + 1);
-    }
 
     private void SyncPianoRollScrollBars()
     {
@@ -627,7 +621,7 @@ public partial class MainWindow : Window
             var isMenuGesture = modifiers.HasFlag(command) && AppMenu.MenuGestures.Contains((key, modifiers & ~command));
             if (!(skipMenuGestures && isMenuGesture))
             {
-                KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(key, modifiers), Command = target });
+                KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(key, modifiers), Command = key == Key.OemComma ? target : InWorkspace(target) });
             }
         }
 
@@ -644,6 +638,7 @@ public partial class MainWindow : Window
         Bind(Key.G, command, vm.Groups.GroupSelectedCommand);
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
+        Bind(Key.OemComma, command, new CommunityToolkit.Mvvm.Input.RelayCommand(() => ShowSettings()));
     }
 
     private void SyncSelectedLanes()
@@ -878,17 +873,6 @@ public partial class MainWindow : Window
 
     internal void ShowShortcuts() => _ = Shortcuts.CreateWindow().ShowDialog(this);
 
-    /// <summary>Opens the plugins view (Window ▸ Plugins… in the macOS menu bar, File ▸ Plugins… elsewhere), when the host offers it.</summary>
-    internal void ShowPlugins()
-    {
-        if (_viewModel?.Plugins is { } plugins)
-        {
-            _ = new PluginsWindow { DataContext = plugins }.ShowDialog(this);
-        }
-    }
-
-    private void OnShowPlugins(object? sender, RoutedEventArgs e) => ShowPlugins();
-
     /// <summary>
     /// Single-key and navigation shortcuts. Runs before focused controls (tunnel) so that, for
     /// example, Space plays even when the track list has focus, but never while text is being edited.
@@ -896,7 +880,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnShortcutKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_viewModel is not { } vm)
+        // While Settings replaces the workspace, keys belong to Settings' controls: the hidden workspace must not change.
+        if (_viewModel is not { } vm || Settings.IsOpen)
         {
             return;
         }

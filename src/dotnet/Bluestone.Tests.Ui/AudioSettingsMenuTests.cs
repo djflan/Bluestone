@@ -1,11 +1,12 @@
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Bluestone.Application.Audio;
 using Bluestone.Desktop.Views;
 using Bluestone.Presentation;
 
 namespace Bluestone.Tests.Ui;
 
-/// <summary>Audio settings can be opened on macOS, where the window's own File menu is hidden.</summary>
+/// <summary>Settings ▸ Audio can be opened on macOS, where the window's own File menu is hidden.</summary>
 public sealed class AudioSettingsMenuTests
 {
     [Fact]
@@ -21,8 +22,10 @@ public sealed class AudioSettingsMenuTests
         item.Command!.Execute(null);
         app.Settle();
 
-        var settings = Assert.Single(app.Window.OwnedWindows.OfType<AudioWindow>());
-        settings.Close();
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+        Assert.Single(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>(), p => p.IsEffectivelyVisible);
+        app.Window.Settings.Close();
         if (Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);

@@ -51,13 +51,17 @@ public sealed class TrackInspectorTests
     {
         await using var app = await AppUnderTest.OpenAsync(Tracks("Lead"), profiles: Profiles);
         SelectTrack(app, 0);
-        var routing = app.Section("Routing");
+        var routing = app.Section("External MIDI");
+        Assert.False(routing.IsExpanded);
+        routing.IsExpanded = true;
+        app.Settle();
         var lead = app.Session.Project.Sequence.Tracks[0].Id;
 
         app.Choose(AppUnderTest.ComboNamed(routing, "MIDI output"), o => o is OutputOption { Name: "Synth" });
         app.Choose(AppUnderTest.ComboNamed(routing, "Instrument profile"), o => o is ProfileOption { Name: "Test GM" });
         app.Choose(AppUnderTest.ComboNamed(routing, "Channel"), o => o is ChannelOption { Channel.Number: 3 });
-        var voice = app.Section("Voice");
+        Assert.Equal("Synth · Ch 3", app.ViewModel.Selection.HardwareSummary);
+        var voice = routing;
         app.Choose(AppUnderTest.ComboNamed(voice, "Voice bank"), o => o is BankOption { Id: "main" });
         app.Choose(AppUnderTest.ComboNamed(voice, "Voice program"), o => o is ProgramOption { Program.Number: 5 });
 
@@ -85,7 +89,9 @@ public sealed class TrackInspectorTests
     {
         await using var app = await AppUnderTest.OpenAsync(Tracks("Lead"));
         SelectTrack(app, 0);
-        var transpose = AppUnderTest.Within<NumericUpDown>(app.Section("Routing"), n => Avalonia.Automation.AutomationProperties.GetName(n) == "Transpose in semitones");
+        app.Section("External MIDI").IsExpanded = true;
+        app.Settle();
+        var transpose = AppUnderTest.Within<NumericUpDown>(app.Section("External MIDI"), n => Avalonia.Automation.AutomationProperties.GetName(n) == "Transpose in semitones");
         var field = transpose.GetVisualDescendants().OfType<TextBox>().First();
 
         app.Click(field);
@@ -102,23 +108,31 @@ public sealed class TrackInspectorTests
     });
 
     [Fact]
-    public Task Role_ChosenWithTheMouse_ChangesTheTrack_AndARefusedRoleIsExplained() => HeadlessApp.RunAsync(async () =>
+    public Task Role_ShownForAnInstrumentTrack_IsChosenWithTheMouse_ARefusedRoleIsExplained_AndAHybridTrackLeavesItToTheContextMenu() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync(Tracks("Lead"));
         SelectTrack(app, 0);
         var role = AppUnderTest.ComboNamed(app.Section("Track"), "Track role");
         Assert.Equal(TrackRole.Instrument, role.SelectedItem);
+        Assert.True(role.IsEffectivelyVisible);
+
+        app.Choose(role, r => r is TrackRole.Effect);
+
+        Assert.Equal(TrackRole.Instrument, app.Session.Project.Sequence.Tracks[0].Role);
+        var message = Assert.Single(app.ViewModel.Messages, m => m.Source == "Track Role");
+        Assert.Equal(message.Text, app.Find<TextBlock>("LastMessage").Text);
+        Assert.Equal(TrackRole.Instrument, role.SelectedItem);
+        app.SaveFrame("track-role-refused");
 
         app.Choose(role, r => r is TrackRole.Hybrid);
 
         Assert.Equal(TrackRole.Hybrid, app.Session.Project.Sequence.Tracks[0].Role);
+        Assert.False(role.IsEffectivelyVisible);
 
-        app.Choose(role, r => r is TrackRole.Effect);
-
-        Assert.Equal(TrackRole.Hybrid, app.Session.Project.Sequence.Tracks[0].Role);
-        var message = Assert.Single(app.ViewModel.Messages, m => m.Source == "Track Role");
-        Assert.Equal(message.Text, app.Find<TextBlock>("LastMessage").Text);
-        Assert.Equal(TrackRole.Hybrid, role.SelectedItem);
-        app.SaveFrame("track-role-refused");
+        // The track's context menu still offers every role.
+        app.ViewModel.Tracks[0].SetRoleCommand.Execute(TrackRole.Instrument);
+        app.Settle();
+        Assert.Equal(TrackRole.Instrument, app.Session.Project.Sequence.Tracks[0].Role);
+        Assert.True(role.IsEffectivelyVisible);
     });
 }

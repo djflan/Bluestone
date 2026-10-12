@@ -114,6 +114,21 @@ public sealed partial class TrackViewModel : ObservableObject
     /// <summary>How many tracks the group holds, for the group's header.</summary>
     public string MembersText => string.Create(CultureInfo.InvariantCulture, $"{MemberCount} track{(MemberCount == 1 ? string.Empty : "s")}");
 
+    /// <summary>The roles a track can be given from its context menu.</summary>
+    public static IReadOnlyList<TrackRole> RoleChoices { get; } = Enum.GetValues<TrackRole>();
+
+    /// <summary>Changes the role of the selected tracks, selecting this one first if it is not among them (its context menu).</summary>
+    [RelayCommand]
+    private Task SetRoleAsync(TrackRole role)
+    {
+        if (!_owner.SelectedTracks.Contains(this))
+        {
+            _owner.Select(this);
+        }
+
+        return _owner.ChangeRoleAsync(role);
+    }
+
     /// <summary>Adds a lane for <paramref name="option"/> on the track's channel, and shows the lanes.</summary>
     [RelayCommand]
     private void AddLane(AutomationOption option) => _owner.AddAutomationLane(this, option);
@@ -176,24 +191,42 @@ public sealed partial class TrackViewModel : ObservableObject
 
     public bool IsOffline => Health == RouteHealth.Offline;
 
+    /// <summary>Nothing sounds yet and nothing is wrong: an empty track waiting for an instrument.</summary>
+    public bool IsIdle => Health == RouteHealth.Idle;
+
     /// <summary>A word for the route's health, so status never depends on colour alone.</summary>
     public string HealthText => Health switch
     {
         RouteHealth.Ready => "Ready",
         RouteHealth.Attention => "Check",
+        RouteHealth.Idle => "Empty",
         _ => "Offline",
     };
 
+    /// <summary>What the track sounds through: its chain's instrument, where its audio and notes go, what it holds.</summary>
+    public TrackSound Sound { get; private set; } = TrackSound.Empty;
+
+    /// <summary>The track sends notes to external MIDI hardware (an output is chosen).</summary>
+    public bool UsesHardware => Route.Endpoint is not null;
+
     /// <summary>
-    /// The output and, when it is not ready, a word for why: "Synth", "Synth · Check", "No output". A track in a
-    /// group shows the group, which is where its output goes.
+    /// What the track sounds through and, when it is not ready, a word for why: "Surge XT", "Synth · Check",
+    /// "→ Strings", "No instrument". A track in a group shows the group, which is where its output goes.
     /// </summary>
-    public string StatusLine => GroupName is { } group ? $"→ {group}" : Health switch
+    public string StatusLine => GroupName is { } group ? $"→ {group}" : (UsesHardware, Health) switch
     {
-        RouteHealth.Ready => Output.Name,
-        RouteHealth.Attention => $"{Output.Name} · Check",
-        _ when Route.Endpoint is null => "No output",
-        _ => $"{Output.Name} · Offline",
+        (true, RouteHealth.Ready) => Output.Name,
+        (true, RouteHealth.Attention) => $"{Output.Name} · Check",
+        (true, _) => $"{Output.Name} · Offline",
+        (false, RouteHealth.Offline) => "No output",
+        _ when Sound.InstrumentSummary is { } instrument => Sound.IsInstrumentUnavailable ? $"{instrument} · Unavailable"
+            : Sound.IsInstrumentBypassed ? $"{instrument} · Bypassed"
+            : Health == RouteHealth.Attention ? $"{instrument} · Check"
+            : instrument,
+        _ when Sound.MissingDevice is { } missing => $"{missing} · Not installed",
+        _ when Sound.NoteDestination is { } destination => $"→ {destination}",
+        _ when Sound.HoldsAudio => Sound.AudioDestination is { } audio ? $"Audio → {audio}" : "Audio",
+        _ => "No instrument",
     };
 
     /// <summary>"Profile → Output", showing the two independent choices side by side.</summary>
@@ -202,9 +235,14 @@ public sealed partial class TrackViewModel : ObservableObject
 
     public IReadOnlyList<string> Problems { get; private set; } = [];
 
-    public bool CanInitialize => ResolvedProfile is { Initialization.Length: > 0 } && Health != RouteHealth.Offline;
+    public bool CanInitialize => ResolvedProfile is { Initialization.Length: > 0 } && UsesHardware && Health != RouteHealth.Offline;
 
-    internal void Sync(int number, Track track, ResolvedTrackOutput? resolved, IReadOnlyList<OutputOption> outputs)
+    internal static string MissingDeviceProblem(string device) =>
+        $"{device} is not installed, so this track may not sound as it was saved. Install it, or replace it in the Device View.";
+
+    internal const string NoInstrumentProblem = "No instrument plays this track's notes. Add one from the Browser, or choose an external MIDI output.";
+
+    internal void Sync(int number, Track track, ResolvedTrackOutput? resolved, IReadOnlyList<OutputOption> outputs, TrackSound sound)
     {
         _syncing = true;
         try
@@ -218,6 +256,7 @@ public sealed partial class TrackViewModel : ObservableObject
             SyncLanes(track);
             Role = track.Role;
             Route = resolved?.Output ?? TrackOutput.None;
+            Sound = sound;
             ResolvedProfile = resolved?.Instrument?.Profile.Profile;
             Output = ResolveOutput(outputs, resolved);
             Profile = Route.Profile is not { } reference
@@ -226,20 +265,41 @@ public sealed partial class TrackViewModel : ObservableObject
                     ? new ProfileOption(installed.Id, installed.Name, true)
                     : new ProfileOption(reference.ProfileId, $"{reference.DisplayName ?? reference.ProfileId} (not installed)", false);
 
+            var problems = resolved?.Problems ?? [];
+            // Notes with no instrument at all are a problem; an instrument the musician bypassed is a choice, shown as such.
+            var unplayedNotes = !UsesHardware && sound.HoldsNotes && sound.Instrument is null && sound.NoteDestination is null && sound.MissingDevice is null
+                && resolved?.Live is null && !problems.Contains(RouteResolver.NoOutputProblem);
+            IReadOnlyList<string> extra = sound.MissingDevice is { } missing
+                ? [MissingDeviceProblem(missing)]
+                : unplayedNotes ? [NoInstrumentProblem] : [];
+            Problems = [.. problems, .. extra];
             Health = resolved switch
             {
-                null or { CanPlay: false, Live: null } => RouteHealth.Offline,
-                { Problems.Length: > 0 } => RouteHealth.Attention,
-                _ => RouteHealth.Ready,
+                null => RouteHealth.Offline,
+                _ when UsesHardware => resolved switch
+                {
+                    { CanPlay: false, Live: null } => RouteHealth.Offline,
+                    _ when Problems.Count > 0 || sound.IsInstrumentUnavailable => RouteHealth.Attention,
+                    _ => RouteHealth.Ready,
+                },
+                _ when problems.Contains(RouteResolver.NoOutputProblem) => RouteHealth.Offline,
+                _ when sound.IsInstrumentUnavailable || Problems.Count > 0 => RouteHealth.Attention,
+                _ when sound.IsInstrumentBypassed && sound.NoteDestination is null && !sound.HoldsAudio => RouteHealth.Idle,
+                _ when sound.Instrument is not null || sound.NoteDestination is not null || sound.HoldsAudio || resolved.Live is not null => RouteHealth.Ready,
+                _ => RouteHealth.Idle,
             };
-            Problems = resolved?.Problems ?? [];
             SyncHardwareParameters(track, resolved);
-            RouteText = $"{Profile.Name} → {Output.Name}";
+            RouteText = UsesHardware
+                ? $"{Profile.Name} → {Output.Name}"
+                : $"{sound.InstrumentSummary ?? sound.NoteDestination ?? "No instrument"} → {sound.AudioDestination ?? "no audio output"}";
             OnPropertyChanged(nameof(HealthText));
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(IsReady));
             OnPropertyChanged(nameof(NeedsAttention));
             OnPropertyChanged(nameof(IsOffline));
+            OnPropertyChanged(nameof(IsIdle));
+            OnPropertyChanged(nameof(UsesHardware));
+            OnPropertyChanged(nameof(Sound));
             OnPropertyChanged(nameof(ColorIndex));
         }
         finally

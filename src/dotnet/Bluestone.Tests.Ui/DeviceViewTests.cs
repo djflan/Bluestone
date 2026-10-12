@@ -74,6 +74,54 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task AnEmptyChain_IsOneCompositionBetweenItsBoundaries_ThatSayWhereTheSignalComesFromAndGoes() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Workspace.Browser.CollapseCommand.Execute(null);
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var slot = AppUnderTest.Within<Panel>(deviceView, p => p.Name == "EmptySlot");
+        var input = AppUnderTest.Within<TextBlock>(deviceView, t => t.Name == "InputText");
+        var output = AppUnderTest.Within<TextBlock>(deviceView, t => t.Name == "OutputText");
+
+        Assert.True(slot.IsEffectivelyVisible);
+        Assert.Equal("Track", input.Text);
+        Assert.Equal("Master", output.Text);
+        var inNode = input.TranslatePoint(default, deviceView)!.Value;
+        var slotAt = slot.TranslatePoint(default, deviceView)!.Value;
+        var outNode = output.TranslatePoint(default, deviceView)!.Value;
+        Assert.True(inNode.X < slotAt.X && slotAt.X + slot.Bounds.Width < outNode.X, "IN, the empty slot, and OUT read left to right.");
+
+        app.Click(AppUnderTest.Within<Button>(deviceView, b => b.Name == "BrowseInstrumentsButton"));
+        Assert.True(app.ViewModel.Workspace.Browser.IsDocked);
+        Assert.Equal(Presentation.BrowserCategory.Instruments, app.ViewModel.Browser.SelectedCategory.Category);
+
+        app.ViewModel.Selection.Track.AudioDestination = app.ViewModel.Selection.Track.AudioDestinationChoices.Single(o => o.Destination is null && !o.IsMixed);
+        app.Settle();
+        Assert.Equal("Not routed", output.Text);
+        Assert.Contains("unrouted", output.Classes);
+
+        // A device dragged over the empty chain lights the slot, and lands as the first device.
+        var over = slot.TranslatePoint(new Point(slot.Bounds.Width / 2, slot.Bounds.Height / 2), app.Window)!.Value;
+        var transfer = ChainDrag.Insert(Definition("Arpeggiator")).ToTransfer();
+        app.Window.DragDrop(over, RawDragEventType.DragEnter, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+        Assert.Contains("dropTarget", slot.Classes);
+        Assert.False(AppUnderTest.Within<Control>(deviceView, c => c.Name == "InsertionMarker").IsVisible);
+        app.SaveFrame("device-view-empty-drop");
+        app.Window.DragDrop(over, RawDragEventType.Drop, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+
+        Assert.Equal(["Arpeggiator"], app.Session.Project.ChainOf(app.ViewModel.Tracks[0].Id)!.Devices.Select(d => d.DisplayName));
+        Assert.DoesNotContain("dropTarget", slot.Classes);
+        Assert.False(slot.IsEffectivelyVisible);
+        app.SaveFrame("device-view-unrouted");
+    });
+
+    [Fact]
     public Task AKnob_NudgesASteppedParameterOneStep_AndAContinuousOneFinely() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);
@@ -127,7 +175,7 @@ public sealed class DeviceViewTests
         // A rack opens in a Device View: it needs no chain to insert into.
         browser.SelectedItem = browser.Items.Single(i => i.Kind == Presentation.BrowserItemKind.Rack);
         app.Settle();
-        var insert = AppUnderTest.Within<Button>(app.Find<BrowserView>("DockedBrowser"), b => Avalonia.Automation.AutomationProperties.GetName(b) == "Insert into Device View");
+        var insert = AppUnderTest.Within<Button>(app.Find<BrowserView>("DockedBrowser"), b => b.Name == "ActionButton");
         Assert.True(insert.IsEffectivelyEnabled);
         app.Click(insert);
         app.Settle();

@@ -77,6 +77,9 @@
     <StreamGeometry x:Key="Icon.Warning">M8,1 L15,14 H1 Z M7.2,5 V10 H8.8 V5 Z M7.2,11 V12.6 H8.8 V11 Z</StreamGeometry>
     <StreamGeometry x:Key="Icon.Offline">M8,1 A7,7 0 1 1 7.99,1 Z M5,4 L4,5 L11,12 L12,11 Z</StreamGeometry>
     <StreamGeometry x:Key="Icon.Dot">M8,5 A3,3 0 1 1 7.99,5 Z</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Speaker">M2.5,6 H5 L8.5,3 V13 L5,10 H2.5 Z M10.8,5.6 Q12.4,8 10.8,10.4 M12.6,3.8 Q15.4,8 12.6,12.2</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Plug">M5.5,2 V5 M10.5,2 V5 M3.5,5 H12.5 V8 A4.5,4.5 0 0 1 3.5,8 Z M8,12.5 V14.5</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Settings">M8,5.5 A2.5,2.5 0 1 1 7.99,5.5 Z M8,1.8 V3.6 M8,12.4 V14.2 M1.8,8 H3.6 M12.4,8 H14.2 M3.6,3.6 L4.9,4.9 M11.1,11.1 L12.4,12.4 M3.6,12.4 L4.9,11.1 M11.1,4.9 L12.4,3.6</StreamGeometry>
     </ResourceDictionary>
   </Styles.Resources>
 
@@ -543,6 +546,134 @@
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="0" />
   </Style>
+  <Style Selector="Expander.section /template/ ToggleButton#ExpanderHeader">
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <!-- A closed section's one-line state, right of its title: "Off", "Synth · Ch 3". -->
+  <Style Selector="TextBlock.sectionSummary">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="Margin" Value="{StaticResource Inset.Header}" />
+  </Style>
+  <Style Selector="TextBlock.sectionSummary.active">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+
+  <!-- The inspector's title block and label/value rows. -->
+  <Style Selector="Grid.inspectorTitle">
+    <Setter Property="Margin" Value="10,10,10,8" />
+  </Style>
+  <Style Selector="Border.trackSwatch">
+    <Setter Property="Width" Value="4" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    <Setter Property="Margin" Value="0,1,8,1" />
+  </Style>
+  <Style Selector="StackPanel.fields">
+    <Setter Property="Spacing" Value="{StaticResource Space.S}" />
+  </Style>
+  <Style Selector="Grid.field">
+    <Setter Property="MinHeight" Value="{StaticResource Height.Control}" />
+  </Style>
+  <!-- A value that opens where it is edited (the instrument in the Device View): a field, not a push button. -->
+  <Style Selector="Button.value">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="MinHeight" Value="{StaticResource Height.Control}" />
+    <Setter Property="Padding" Value="8,0,6,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Field}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="Button.value:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.value.empty">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.value TextBlock">
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.value PathIcon">
+    <Setter Property="Width" Value="{StaticResource Icon.SizeSmall}" />
+    <Setter Property="Height" Value="{StaticResource Icon.SizeSmall}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="Margin" Value="6,0,0,0" />
+  </Style>
+
+  <!-- Settings: a category list beside the page, in the workspace's own chrome. -->
+  <Style Selector="Border.settingsNav">
+    <Setter Property="Width" Value="{StaticResource Width.SettingsNav}" />
+    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+  <Style Selector="ListBox.settingsCategories">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0,2" />
+  </Style>
+  <Style Selector="ListBox.settingsCategories ListBoxItem">
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="MinHeight" Value="{StaticResource Height.Row}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+  </Style>
+  <Style Selector="ListBox.settingsCategories ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Selected}" />
+  </Style>
+  <Style Selector="ListBox.settingsCategories ListBoxItem PathIcon">
+    <Setter Property="Width" Value="{StaticResource Icon.SizeMedium}" />
+    <Setter Property="Height" Value="{StaticResource Icon.SizeMedium}" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <Style Selector="ListBox.settingsCategories ListBoxItem TextBlock">
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.settingsHeader">
+    <Setter Property="Padding" Value="24,12,16,12" />
+    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="TextBlock.settingsCrumb">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Title}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.settingsTitle">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Title}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Panel.settingsPage">
+    <Setter Property="MaxWidth" Value="{StaticResource Width.SettingsPage}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="24,16,24,24" />
+  </Style>
+  <Style Selector="StackPanel.settingsGroups">
+    <Setter Property="Spacing" Value="{StaticResource Space.XXL}" />
+  </Style>
+  <Style Selector="StackPanel.settingsGroup">
+    <Setter Property="Spacing" Value="{StaticResource Space.M}" />
+  </Style>
+  <Style Selector="StackPanel.settingsGroup > TextBlock.overline">
+    <Setter Property="Margin" Value="0,0,0,2" />
+  </Style>
+  <Style Selector="Grid.settingRow">
+    <Setter Property="MinHeight" Value="{StaticResource Height.Control}" />
+  </Style>
+  <Style Selector="TextBlock.settingHint">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+  </Style>
 
   <!-- Dense lists (messages, monitor, event list) -->
   <Style Selector="ListBox.dense">
@@ -803,7 +934,7 @@
     <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
   </Style>
   <Style Selector="Border.chainNode">
-    <Setter Property="Width" Value="22" />
+    <Setter Property="Width" Value="{StaticResource DevicePanel.NodeWidth}" />
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
   </Style>
   <Style Selector="Ellipse.nodeDot">
@@ -811,6 +942,55 @@
     <Setter Property="Height" Value="{StaticResource DevicePanel.NodeSize}" />
     <Setter Property="Stroke" Value="{StaticResource Text.Muted}" />
     <Setter Property="StrokeThickness" Value="1.5" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Ellipse.nodeDot.routed">
+    <Setter Property="Stroke" Value="{StaticResource Signal.Audio}" />
+  </Style>
+  <!-- Where the chain's signal comes from and goes, under its boundary node. -->
+  <Style Selector="TextBlock.nodeDetail">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="MaxWidth" Value="{StaticResource DevicePanel.NodeWidth}" />
+  </Style>
+  <Style Selector="TextBlock.nodeDetail.unrouted">
+    <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
+  </Style>
+  <!-- The empty chain's slot: the size of a panel, outlined, the place a first device goes. -->
+  <Style Selector="Panel.emptySlot">
+    <Setter Property="Width" Value="{StaticResource DevicePanel.LargeWidth}" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
+  </Style>
+  <Style Selector="Rectangle.slotOutline">
+    <Setter Property="Stroke" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="StrokeThickness" Value="1" />
+    <Setter Property="StrokeDashArray" Value="4,3" />
+    <Setter Property="RadiusX" Value="4" />
+    <Setter Property="RadiusY" Value="4" />
+    <Setter Property="Fill" Value="Transparent" />
+  </Style>
+  <Style Selector="Panel.emptySlot.dropTarget Rectangle.slotOutline">
+    <Setter Property="Stroke" Value="{StaticResource State.Focus}" />
+    <Setter Property="Fill" Value="{StaticResource State.SelectedSubtle}" />
+  </Style>
+  <Style Selector="StackPanel.slotContent">
+    <Setter Property="Spacing" Value="{StaticResource Space.M}" />
+    <Setter Property="Margin" Value="{StaticResource Inset.Section}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="StackPanel.slotContent > PathIcon">
+    <Setter Property="Width" Value="{StaticResource Icon.SizeLarge}" />
+    <Setter Property="Height" Value="{StaticResource Icon.SizeLarge}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.slotTitle">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
     <Setter Property="HorizontalAlignment" Value="Center" />
   </Style>
   <Style Selector="TextBlock.nodeLabel">
@@ -836,7 +1016,7 @@
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="CornerRadius" Value="1.5" />
     <Setter Property="Background" Value="{StaticResource State.Focus}" />
-    <Setter Property="BoxShadow" Value="0 0 6 0 #806AA2E4" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.Focus}" />
   </Style>
 
   <Style Selector="Border.devicePanel">
@@ -859,8 +1039,15 @@
   <Style Selector="Border.deviceHeader">
     <Setter Property="Height" Value="{StaticResource DevicePanel.HeaderHeight}" />
     <Setter Property="Padding" Value="4,2,2,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Raised}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="Border.devicePanel.selected Border.deviceHeader">
+    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+  </Style>
+  <Style Selector="Border.devicePanel.bypassed Border.roleStripe">
+    <Setter Property="Opacity" Value="0.35" />
   </Style>
   <Style Selector="Border.roleStripe">
     <Setter Property="Height" Value="2" />
@@ -917,6 +1104,11 @@
   </Style>
   <Style Selector="Panel.deviceBody">
     <Setter Property="Margin" Value="6,6,6,0" />
+  </Style>
+  <!-- Controls sit as a balanced block in the panel's fixed height, not packed against its top. -->
+  <Style Selector="Panel.deviceBody > ItemsControl">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="StackPanel.knobCell">
     <Setter Property="Width" Value="{StaticResource DevicePanel.KnobCellWidth}" />
@@ -998,7 +1190,7 @@
     <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
   </Style>
   <Style Selector="Grid.deviceFooter">
-    <Setter Property="Height" Value="22" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.FooterHeight}" />
     <Setter Property="Margin" Value="8,0,4,0" />
   </Style>
   <Style Selector="Button.collapsedName">

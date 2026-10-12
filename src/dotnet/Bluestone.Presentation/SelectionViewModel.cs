@@ -22,7 +22,11 @@ public sealed partial class SelectionViewModel : ObservableObject
     private DeviceProfile? _sharedProfile;
     private bool _syncing;
 
-    internal SelectionViewModel(MainViewModel owner) => _owner = owner;
+    internal SelectionViewModel(MainViewModel owner)
+    {
+        _owner = owner;
+        Track = new TrackSectionViewModel(owner);
+    }
 
     public IReadOnlyList<TrackViewModel> Tracks => _tracks;
 
@@ -90,13 +94,39 @@ public sealed partial class SelectionViewModel : ObservableObject
 
     /// <summary>The selected tracks' role, or null when they differ.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsRole))]
     public partial TrackRole? Role { get; set; }
+
+    /// <summary>
+    /// The role is shown only when it says something: a hybrid track (the default) can hold anything, so its role is left
+    /// to the track's context menu; an instrument, audio, effect, or group track, or a mixed selection, shows it.
+    /// </summary>
+    public bool ShowsRole => HasSelection && Role != TrackRole.Hybrid;
+
+    /// <summary>The Track section: what plays the selected tracks, their devices, and where their audio goes.</summary>
+    public TrackSectionViewModel Track { get; }
+
+    /// <summary>Any selected track sends notes to external MIDI hardware.</summary>
+    [ObservableProperty]
+    public partial bool UsesHardware { get; private set; }
+
+    /// <summary>The External MIDI section's one-line summary: "Off", "Synth · Ch 3" (output and forced channel), or "Mixed".</summary>
+    [ObservableProperty]
+    public partial string HardwareSummary { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Whether the External MIDI section is open. It opens by itself for a track that uses hardware and stays closed for one
+    /// that does not; the musician's own choice holds until the selection changes.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsHardwareExpanded { get; set; }
 
     internal void Sync(IReadOnlyList<TrackViewModel> tracks, IReadOnlyList<OutputOption> outputs, ProfileCatalog catalog)
     {
         _syncing = true;
         try
         {
+            var reselected = !_tracks.Select(t => t.Id).SequenceEqual(tracks.Select(t => t.Id));
             _tracks = [.. tracks];
             Title = tracks.Count switch
             {
@@ -114,6 +144,8 @@ public sealed partial class SelectionViewModel : ObservableObject
             SyncVoice();
             var roles = tracks.Select(t => t.Role).Distinct().ToList();
             Role = roles.Count == 1 ? roles[0] : null;
+            Track.Sync(tracks);
+            SyncHardware(reselected);
 
             Problems = tracks.Count == 1
                 ? tracks[0].Problems
@@ -122,6 +154,7 @@ public sealed partial class SelectionViewModel : ObservableObject
             CanInitialize = tracks.Count == 1 && tracks[0].CanInitialize;
 
             OnPropertyChanged(nameof(Count));
+            OnPropertyChanged(nameof(ShowsRole));
             OnPropertyChanged(nameof(HasSelection));
             OnPropertyChanged(nameof(IsSingle));
             OnPropertyChanged(nameof(IsMultiple));
@@ -200,6 +233,55 @@ public sealed partial class SelectionViewModel : ObservableObject
         if (!_syncing && value is { IsMixed: false } && VoiceBank is { IsMixed: false, Id: { } bank } && CanEditVoice)
         {
             _owner.ApplyToSelection("Change Voice", r => r with { Voice = new VoiceAssignment(bank, value.Program) });
+        }
+    }
+
+    /// <summary>
+    /// Gives the selected tracks the hardware profile <paramref name="profileId"/> (the Browser's "Use on Track") and opens the
+    /// External MIDI section so the output and channel can be chosen next. False when nothing is selected or it is not installed.
+    /// </summary>
+    internal bool UseProfile(string profileId)
+    {
+        if (!HasSelection || ProfileChoices.FirstOrDefault(p => !p.IsMixed && p.Id == profileId) is not { } option)
+        {
+            return false;
+        }
+
+        Profile = option;
+        IsHardwareExpanded = true;
+        _owner.IsInspectorVisible = true;
+        return true;
+    }
+
+    private void SyncHardware(bool reselected)
+    {
+        UsesHardware = _tracks.Any(t => t.UsesHardware);
+        var summaries = _tracks.Select(Summarize).Distinct().ToList();
+        HardwareSummary = summaries.Count switch
+        {
+            0 => string.Empty,
+            1 => summaries[0],
+            _ => "Mixed",
+        };
+        if (reselected)
+        {
+            IsHardwareExpanded = UsesHardware;
+        }
+
+        static string Summarize(TrackViewModel track)
+        {
+            if (!track.UsesHardware)
+            {
+                return "Off";
+            }
+
+            var parts = new List<string> { track.Output.Name };
+            if (track.Route.Channel is { } channel)
+            {
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"Ch {channel.Number}"));
+            }
+
+            return string.Join(" · ", parts);
         }
     }
 

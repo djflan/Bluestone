@@ -18,8 +18,8 @@ Record the date, operating system and version, interface, audio device, plugins,
 
 | # | Step | Expected |
 | - | ---- | -------- |
-| 1 | Open the inspector's **Output** list | The interface port is listed as *Hardware* with its name; Bluestone Monitor and Bluestone Out are also listed |
-| 2 | Import `samples/bluestone-demo.mid`, route all tracks to the interface (**Use this output for all tracks**) | All tracks show **Ready** |
+| 1 | Open the inspector's **External MIDI ▸ Output** list | The interface port is listed as *Hardware* with its name; Bluestone Monitor and Bluestone Out are also listed |
+| 2 | Import `samples/bluestone-demo.mid`, route all tracks to the interface (**Use for all tracks**) | All tracks show **Ready** |
 | 3 | Press Space | The instrument plays drums, bass, keys, and lead in time; the status bar shows 0 late, 0 dropped |
 | 4 | Select *Bass*, choose profile **Generic XG**, voice bank *Normal voices (MSB 0)*, any program; play from the start | The bass voice changes at the start of playback |
 | 5 | Select a track with an XG profile and press **Initialize Instrument…** | A confirmation names *XG System On*; **Cancel** sends nothing; **Send** resets the instrument (check its display) |
@@ -53,8 +53,8 @@ These need an instrument whose MIDI OUT is connected to the interface's MIDI IN.
 ## Audio output
 
 Run these on each operating system: macOS (CoreAudio), Windows (WASAPI), and Linux (ALSA). Windows
-and Linux output is built and tested in CI but has not been heard. Audio Settings is under
-**Window ▸ Audio Settings…** on macOS and **File ▸ Audio Settings…** on Windows and Linux.
+and Linux output is built and tested in CI but has not been heard. Audio settings are in
+**Settings ▸ Audio** (⌘/Ctrl + ,; also **Window ▸ Audio Settings…** on macOS and **File ▸ Audio Settings…** on Windows and Linux).
 
 | # | Step | Expected |
 | - | ---- | -------- |

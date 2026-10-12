@@ -125,6 +125,31 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     [ObservableProperty]
     public partial string EmptyText { get; private set; } = string.Empty;
 
+    /// <summary>What feeds the chain, under its IN node: "Track", or "2 sources" for a rack.</summary>
+    [ObservableProperty]
+    public partial string InputText { get; private set; } = string.Empty;
+
+    /// <summary>Where the chain's output goes, under its OUT node: "Master", a channel or track, or "Not routed".</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRouted))]
+    public partial string OutputText { get; private set; } = string.Empty;
+
+    /// <summary>Every destination of the chain's output, or what to do when there is none.</summary>
+    [ObservableProperty]
+    public partial string OutputDetail { get; private set; } = string.Empty;
+
+    public bool IsRouted => OutputText is not ("Not routed" or "");
+
+    /// <summary>Opens the Browser on instruments, aimed at this view's chain: the empty chain's invitation.</summary>
+    [RelayCommand]
+    private void BrowseInstruments()
+    {
+        Activate();
+        _owner.Workspace.ShowBrowser(BrowserCategory.Instruments);
+    }
+
+    private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
     /// <summary>The track colour index for the view's accent, or -1 for a rack or nothing.</summary>
     [ObservableProperty]
     public partial int AccentIndex { get; private set; } = -1;
@@ -191,6 +216,12 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         if (newValue is not null)
         {
             newValue.IsSelected = true;
+        }
+
+        // Where the Browser inserts follows this view's selection.
+        if (_owner.Workspace?.InsertionTarget == this)
+        {
+            _owner.Browser.UpdateTarget();
         }
     }
 
@@ -275,8 +306,21 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             : "Devices";
         AccentIndex = Track is { } trackId ? _owner.Tracks.FirstOrDefault(t => t.Id == trackId)?.ColorIndex ?? -1 : -1;
         EmptyText = IsUnavailable ? (_lockedRack is not null ? "The rack this view was locked to has been removed." : "The track this view was locked to has been removed.")
+            : !HasChain && _owner.SelectedTracks.Count > 1 ? "Several tracks are selected. Select one to see its devices."
             : !HasChain ? "Select a track to see its devices."
-            : "Drop a device here from the Browser.";
+            : "Drop an instrument or effect here";
+        var node = Rack is { } shownRack ? SignalNode.Rack(shownRack) : Track is { } shownTrack ? SignalNode.Track(shownTrack) : (SignalNode?)null;
+        InputText = node is not { } input ? string.Empty
+            : Rack is not null ? Count(project.ConnectionsTo(input).Select(c => c.Source).Distinct().Count(), "source")
+            : "Track";
+        var destinations = node is { } output ? project.ConnectionsFrom(output).Select(c => c.Destination).Distinct().Select(d => TrackSound.NameOf(project, d)).ToList() : [];
+        OutputText = destinations.Count switch
+        {
+            0 => "Not routed",
+            1 => destinations[0],
+            _ => Count(destinations.Count, "destination"),
+        };
+        OutputDetail = destinations.Count == 0 ? "Nothing leaves this chain yet: give it an audio output in the inspector, or a connection." : string.Join(", ", destinations);
 
         var devices = chain?.Devices ?? [];
         var selectedId = SelectedDevice?.Id ?? _restoredSelection;

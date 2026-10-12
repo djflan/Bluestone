@@ -61,6 +61,15 @@ public sealed partial class ConnectionsViewModel : ObservableObject
     [ObservableProperty]
     public partial bool HasTrack { get; private set; }
 
+    /// <summary>The section's one-line state when closed: "2 out · 1 in", or "None".</summary>
+    public string Summary => (Outgoing.Count, Incoming.Count) switch
+    {
+        (0, 0) => "None",
+        (var o, 0) => $"{o} out",
+        (0, var i) => $"{i} in",
+        var (o, i) => $"{o} out · {i} in",
+    };
+
     /// <summary>Raised when a device's routing indicator asks to show this inspector.</summary>
     public event EventHandler? ShowRequested;
 
@@ -88,6 +97,7 @@ public sealed partial class ConnectionsViewModel : ObservableObject
             HasTrack = false;
             Sources.Clear();
             Destinations.Clear();
+            OnPropertyChanged(nameof(Summary));
             return;
         }
 
@@ -106,6 +116,7 @@ public sealed partial class ConnectionsViewModel : ObservableObject
             }
         }
 
+        OnPropertyChanged(nameof(Summary));
         var source = Source?.Node;
         Sources.Clear();
         Sources.Add(new SourceOption(node, $"{name} output"));

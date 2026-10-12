@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             x:Class="Bluestone.Desktop.Views.AudioSettingsPage"
+             x:DataType="vm:AudioViewModel"
+             AutomationProperties.Name="Audio settings">
+  <!-- Audio output (ADR 0032): device, rate, buffer, render-ahead, the engine on or off, a test tone, and what it is doing. -->
+  <StackPanel Classes="settingsGroups">
+    <StackPanel Classes="settingsGroup">
+      <TextBlock Classes="overline" Text="OUTPUT" />
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Device" />
+        <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+          <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding Device}" HorizontalAlignment="Stretch" AutomationProperties.Name="Audio device" />
+          <Button Grid.Column="1" Classes="raised compact" Content="Refresh" Command="{Binding RefreshDevicesCommand}"
+                  ToolTip.Tip="List the output devices again" AutomationProperties.Name="Refresh audio devices" />
+        </Grid>
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Sample rate" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" HorizontalAlignment="Stretch" AutomationProperties.Name="Sample rate" />
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Buffer (frames)" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding BufferSizes}" SelectedItem="{Binding BufferFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Buffer size" />
+      </Grid>
+    </StackPanel>
+
+    <StackPanel Classes="settingsGroup">
+      <TextBlock Classes="overline" Text="LATENCY" />
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Render-ahead (frames)" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding QueueSizes}" SelectedItem="{Binding QueuedFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Render-ahead queue" />
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Live render-ahead" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding LiveQueueSizes}" SelectedItem="{Binding LiveQueuedFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Live render-ahead queue" />
+      </Grid>
+      <CheckBox Classes="settingCheck" Content="Low-latency monitoring: no delay compensation for the instrument played live" IsChecked="{Binding LowLatencyMonitoring}"
+                AutomationProperties.Name="Low-latency monitoring" />
+      <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                 Text="Render-ahead absorbs .NET garbage-collection pauses at the cost of latency; 0 renders in the device callback. While you play a plugin instrument the live render-ahead is used (0 keeps the other)." />
+    </StackPanel>
+
+    <StackPanel Classes="settingsGroup">
+      <TextBlock Classes="overline" Text="ENGINE" />
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button x:Name="StartAudioButton" Classes="primary" Content="Start audio" Command="{Binding StartCommand}" IsVisible="{Binding !IsRunning}"
+                ToolTip.Tip="Open the device with these settings and save them" AutomationProperties.Name="Start audio" />
+        <Button Classes="primary" Content="Restart with these settings" Command="{Binding StartCommand}" IsVisible="{Binding IsRunning}"
+                ToolTip.Tip="Reopen the device with the settings above and save them" AutomationProperties.Name="Restart audio with these settings" />
+        <Button Classes="raised" Content="Stop audio" Command="{Binding StopCommand}" IsEnabled="{Binding IsRunning}" AutomationProperties.Name="Stop audio" />
+        <CheckBox Content="Test tone" IsChecked="{Binding TestTone}" VerticalAlignment="Center" AutomationProperties.Name="Test tone"
+                  ToolTip.Tip="A 440 Hz tone at −18 dBFS through the open device" />
+      </StackPanel>
+      <TextBlock x:Name="AudioStatus" Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.Name="Audio status" />
+      <TextBlock Text="{Binding MasterLevel}" Classes="secondary" FontFamily="{StaticResource Font.Mono}" FontSize="{StaticResource FontSize.Small}" />
+      <TextBlock Text="{Binding Latency}" Classes="secondary" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Problems}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding Problems.Length}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

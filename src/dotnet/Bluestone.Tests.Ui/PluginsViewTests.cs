@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
+using Avalonia.VisualTree;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Services;
@@ -49,8 +50,15 @@ public sealed class PluginsViewTests : IDisposable
         Directory.Delete(_directory, recursive: true);
     }
 
-    private static PluginsWindow OpenedPlugins(AppUnderTest app) =>
-        app.Window.OwnedWindows.OfType<PluginsWindow>().SingleOrDefault() ?? throw new InvalidOperationException("The plugins view did not open.");
+    /// <summary>The Plugins page of Settings, shown in the main window in place of the workspace.</summary>
+    private static PluginSettingsPage OpenedPlugins(AppUnderTest app)
+    {
+        app.Settle();
+        Assert.True(app.Window.Settings.IsOpen, "Settings should be open.");
+        Assert.False(app.Find<Grid>("WorkspaceGrid").IsVisible);
+        return app.Window.GetVisualDescendants().OfType<PluginSettingsPage>().SingleOrDefault(p => p.IsEffectivelyVisible)
+            ?? throw new InvalidOperationException("The plugins page did not open.");
+    }
 
     [Fact]
     public Task PluginsFromTheFileMenu_ListsScannedPluginsAndTheQuarantinedModule_AndRescansWithTheMouse() => HeadlessApp.RunAsync(async () =>
@@ -66,7 +74,7 @@ public sealed class PluginsViewTests : IDisposable
         Assert.Equal(["Reference Gain", "Reference Transpose"], Texts(view.FindControl<ItemsControl>("PluginList")!).Where(t => t.StartsWith("Reference", StringComparison.Ordinal)));
         Assert.Contains("crash.bluestone-reference-plugin", Texts(view.FindControl<ItemsControl>("QuarantinedList")!));
         Assert.Equal("2 plugins available from 2 modules. 1 module quarantined.", view.FindControl<TextBlock>("StatusLine")!.Text);
-        app.SaveFrame("plugins-view", view);
+        app.SaveFrame("settings-plugins");
 
         app.Click(AppUnderTest.Within<Button>(view, b => Equals(b.Content, "Rescan all")));
         await AppUnderTest.WaitUntilAsync(() => !plugins.IsBusy, "the rescan to finish");
@@ -78,7 +86,9 @@ public sealed class PluginsViewTests : IDisposable
         await AppUnderTest.WaitUntilAsync(() => !plugins.IsBusy, "the retry to finish");
 
         Assert.StartsWith("crash.bluestone-reference-plugin is still quarantined.", view.FindControl<TextBlock>("StatusLine")!.Text, StringComparison.Ordinal);
-        view.Close();
+        app.Window.Settings.Close();
+        app.Settle();
+        Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
     });
 
     [Fact]
@@ -92,7 +102,7 @@ public sealed class PluginsViewTests : IDisposable
         app.Settle();
 
         Assert.IsType<PluginsViewModel>(OpenedPlugins(app).DataContext);
-        OpenedPlugins(app).Close();
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
     });
 
     [Fact]
@@ -121,7 +131,7 @@ public sealed class PluginsViewTests : IDisposable
         Assert.Equal("Global (Together)", gainRow.SelectionBoxItem?.ToString());
         app.Choose(gainRow, i => i is HostingChoice { Mode: HostingMode.Individually });
         await AppUnderTest.WaitUntilAsync(() => !plugins.IsBusy, "the plugin's hosting to apply");
-        app.SaveFrame("plugins-view-hosting", view);
+        app.SaveFrame("settings-plugins-hosting");
 
         var saved = store.Load();
         Assert.Equal(HostingMode.Together, saved.Mode);
@@ -131,7 +141,9 @@ public sealed class PluginsViewTests : IDisposable
         Assert.Equal(saved, bridge.Hosting);
         Assert.Equal("Reference Gain is now hosted individually.", view.FindControl<TextBlock>("StatusLine")!.Text);
         Assert.Equal(0, manager.WorkerLaunchCount);
-        view.Close();
+        app.Window.Settings.Close();
+        app.Settle();
+        Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
     });
 
     private static MenuItem OpenedMenuItem(AppUnderTest app, string header)

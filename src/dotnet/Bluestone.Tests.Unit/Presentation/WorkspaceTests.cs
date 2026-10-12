@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Sessions;
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
@@ -284,6 +285,48 @@ public sealed class WorkspaceTests : IAsyncLifetime
         Assert.Empty(panel.Parameters);
         Assert.Null(panel.Definition);
         Assert.Equal(DeviceRole.Note, First.Devices[0].Role);
+    }
+
+    [Fact]
+    public async Task AddingAnInstrument_BringsADetachedBrowserForward_WhereItIs_AndDocksACollapsedOne()
+    {
+        var fronted = new List<WorkspaceView>();
+        _vm.Workspace.FrontRequested += (_, view) => fronted.Add(view);
+        _vm.Workspace.Browser.DetachCommand.Execute(null);
+        await Settle();
+
+        _vm.Selection.Track.AddInstrumentCommand.Execute(null);
+
+        Assert.Equal([_vm.Workspace.Browser], fronted);
+        Assert.True(_vm.Workspace.Browser.IsDetached);
+        Assert.Equal(BrowserCategory.Instruments, _vm.Browser.SelectedCategory.Category);
+
+        _vm.Workspace.Browser.CollapseCommand.Execute(null);
+        _vm.Browser.ShowCategory(BrowserCategory.All);
+        _vm.Selection.Track.AddInstrumentCommand.Execute(null);
+
+        Assert.True(_vm.Workspace.Browser.IsDocked);
+        Assert.Single(fronted);
+        Assert.Equal(BrowserCategory.Instruments, _vm.Browser.SelectedCategory.Category);
+    }
+
+    [Fact]
+    public async Task ARacksInput_CountsTheTracksFeedingIt_NotTheirConnections()
+    {
+        var rack = DeviceChain.Create(ChainOwner.Rack, "Shared");
+        _session.Execute(DeviceCommands.AddRack(rack));
+        foreach (var kind in new[] { SignalKind.Events, SignalKind.Audio })
+        {
+            _session.Execute(new ProjectCommand("Feed the rack", p => p with { Connections = p.Connections.Add(SignalConnection.Create(kind, SignalNode.Track(Keys.Id), SignalNode.Rack(rack.Id))) }));
+        }
+
+        await Settle();
+        First.LockToRack(rack.Id);
+        Assert.Equal("1 source", First.InputText);
+
+        _session.Execute(new ProjectCommand("Feed the rack", p => p with { Connections = p.Connections.Add(SignalConnection.Create(SignalKind.Events, SignalNode.Track(Bass.Id), SignalNode.Rack(rack.Id))) }));
+        await Settle();
+        Assert.Equal("2 sources", First.InputText);
     }
 
     [Fact]
