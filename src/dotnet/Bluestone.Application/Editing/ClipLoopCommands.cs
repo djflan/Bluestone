@@ -19,11 +19,12 @@ public static class ClipLoopCommands
         ArgumentNullException.ThrowIfNull(sequence);
         var start = clip.ContentOffset.Value;
         var length = clip.Length.Value;
-        if (clip is AudioClip audio && audio.Source.SampleRate > 0 && clip.Origin >= 0)
+        if (clip is AudioClip audio && audio.Source.SampleRate > 0)
         {
+            // The origin can be before tick 0 (a trimmed clip moved to the start); only a file ending before it is skipped.
             var tempo = sequence.TempoMap;
-            var origin = tempo.TimeAt(new Tick(clip.Origin));
-            var fileEnd = tempo.TickAt(origin + TimeSpan.FromSeconds(audio.Source.Frames / (double)audio.Source.SampleRate)).Value - clip.Origin;
+            var end = tempo.SignedTimeAt(clip.Origin) + TimeSpan.FromSeconds(audio.Source.Frames / (double)audio.Source.SampleRate);
+            var fileEnd = end < TimeSpan.Zero ? long.MinValue : tempo.TickAt(end).Value - clip.Origin;
             if (fileEnd > start)
             {
                 length = Math.Min(length, fileEnd - start);

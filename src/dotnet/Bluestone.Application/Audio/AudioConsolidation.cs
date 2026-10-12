@@ -77,7 +77,7 @@ public static class AudioConsolidation
         var format = reader.Format;
         var rate = format.SampleRate;
         var channels = format.Channels;
-        double Seconds(long tick) => tempo.TimeAt(new Tick(tick)).TotalSeconds;
+        double Seconds(long tick) => tempo.SignedTimeAt(tick).TotalSeconds;
 
         // As the engine plays it (ProjectAudioGraph, ClipSource): the unwrapped position at the clip's start, and the loop
         // in whole frames measured where the content starts.

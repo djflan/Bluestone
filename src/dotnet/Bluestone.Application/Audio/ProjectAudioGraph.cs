@@ -197,8 +197,10 @@ public sealed class ProjectAudioGraph : IDisposable
     }
 
     // Song time in seconds; before tick 0 at the first tempo.
-    private static double SecondsAt(TempoMap tempo, Tick position) =>
-        position.Value >= 0 ? tempo.TimeAt(position).TotalSeconds : -tempo.TimeAt(new Tick(-position.Value)).TotalSeconds;
+    private static double SecondsAt(TempoMap tempo, Tick position) => SecondsAt(tempo, position.Value);
+
+    // A clip's origin can be before tick 0 (a trimmed clip moved to the start).
+    private static double SecondsAt(TempoMap tempo, long position) => tempo.SignedTimeAt(position).TotalSeconds;
 
     private sealed record ClipEntry(ImmutableArray<AudioClipRegion> Regions, ClipPlayerNode Node, IReadOnlyList<string> Problems);
 
@@ -441,9 +443,9 @@ public sealed class ProjectAudioGraph : IDisposable
                 var startFrame = (long)Math.Round(start * rate);
                 var endFrame = (long)Math.Round(SecondsAt(tempo, clip.End) * rate);
                 var (fadeIn, fadeOut) = clip.EffectiveFades;
-                var origin = SecondsAt(tempo, new Tick(clip.Origin));
+                var origin = SecondsAt(tempo, clip.Origin);
                 // A loop is a fixed stretch of the file, measured where the clip's content starts (no time-stretching).
-                var loop = clip.Loop is { IsEnabled: true } l ? (Start: SecondsAt(tempo, new Tick(clip.Origin + l.Start.Value)) - origin, Length: SecondsAt(tempo, new Tick(clip.Origin + l.End.Value)) - SecondsAt(tempo, new Tick(clip.Origin + l.Start.Value))) : default((double Start, double Length)?);
+                var loop = clip.Loop is { IsEnabled: true } l ? (Start: SecondsAt(tempo, clip.Origin + l.Start.Value) - origin, Length: SecondsAt(tempo, clip.Origin + l.End.Value) - SecondsAt(tempo, clip.Origin + l.Start.Value)) : default((double Start, double Length)?);
                 return new AudioClipRegion(Resolve(clip.Source.Location), startFrame, endFrame, start - origin)
                 {
                     LoopStartSeconds = loop?.Start,

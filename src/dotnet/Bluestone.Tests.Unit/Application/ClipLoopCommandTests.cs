@@ -163,6 +163,25 @@ public sealed class ClipLoopCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task AnAudioClipWhoseFileStartsBeforeTickZero_GetsAFileEndLoop_AndConsolidates()
+    {
+        // Half a second of audio (960 ticks at 120 BPM), trimmed by 96 ticks and moved to tick 0: its origin is -96.
+        TestAudioFiles.Wave(_directory, "early.wav", "float32", 48_000, 2, TestAudioFiles.Sine(48_000, 2, 997, 24_000));
+        var clip = new AudioClip(ClipId.New(), Tick.Zero, new TickSpan(1920), new TickSpan(96), new AudioSource("early.wav", 48_000, 24_000, 2));
+        var project = Project.CreateNew();
+        Assert.Equal(-96, clip.Origin);
+        Assert.Equal(TimeSpan.FromSeconds(-0.05), project.Sequence.TempoMap.SignedTimeAt(-96));
+
+        var loop = ClipLoopCommands.DefaultLoop(clip, project.Sequence);
+        Assert.Equal((96L, 960L - 96), (loop.Start.Value, loop.Length.Value));
+
+        var track = new Track(TrackId.New(), "a", [clip with { Loop = loop }], role: TrackRole.Audio);
+        project = project with { Sequence = project.Sequence.WithTrack(track) };
+        var result = await ClipLoopCommandTests.Consolidate(project, track.Id, clip.Id, _directory);
+        Assert.Null(result.Command.Apply(project).Sequence.FindTrack(track.Id)!.FindClip(clip.Id)!.Loop);
+    }
+
+    [Fact]
     public async Task AnAudioClipEditedWhileConsolidating_IsLeftAsItIs()
     {
         TestAudioFiles.Wave(_directory, "edit.wav", "float32", 48_000, 2, TestAudioFiles.Sine(48_000, 2, 997, 48_000));
