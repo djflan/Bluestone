@@ -19,6 +19,8 @@ using Bluestone.Signal;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
+using Bluestone.Presentation.Timeline;
+
 namespace Bluestone.Presentation;
 
 public enum MessageSeverity
@@ -98,8 +100,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
         Loop = new ArrangerLoopViewModel(this);
-        Arrangement.Changed += (_, _) => Loop.SelectionChanged();
-        Editor.Changed += (_, _) => Loop.SelectionChanged();
+        Arrangement.Changed += (_, _) =>
+        {
+            Loop.SelectionChanged();
+            ZoomToSelectionCommand.NotifyCanExecuteChanged();
+        };
+        Editor.Changed += (_, _) =>
+        {
+            Loop.SelectionChanged();
+            ZoomToSelectionCommand.NotifyCanExecuteChanged();
+        };
         AudioClip = new AudioClipViewModel(this);
         Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         ClipLoop = new ClipLoopViewModel(this);
@@ -558,17 +568,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private void ToggleEditor() => IsEditorVisible = !IsEditorVisible;
 
-    public const double MinZoom = 6;
+    public const double MinZoom = 2;
     public const double MaxZoom = 160;
     public const double ZoomStep = 1.25;
 
-    /// <summary>Timeline scale in pixels per quarter note, shared by the slider, menu, keys, and gestures.</summary>
+    /// <summary>How far the arrangement zooms, in pixels per quarter note.</summary>
+    public static TimelineZoomLimits ArrangerZoomLimits { get; } = new(MinZoom, MaxZoom);
+
+    /// <summary>Timeline scale in pixels per quarter note, shared by the menu, keys, and gestures.</summary>
     [ObservableProperty]
     public partial double Zoom { get; set; } = 40;
 
+    /// <summary>
+    /// Asks the arrangement's view to zoom by a factor around its anchor (the playhead when in view), or to show a range;
+    /// only the view knows its width and scroll. Without a view, factors apply directly to <see cref="Zoom"/>.
+    /// </summary>
+    public event EventHandler<TimelineZoomRequest>? ArrangerZoomRequested;
+
     partial void OnZoomChanged(double value)
     {
-        var clamped = Math.Clamp(value, MinZoom, MaxZoom);
+        var clamped = ArrangerZoomLimits.Clamp(value);
         if (clamped != value)
         {
             Zoom = clamped;
@@ -576,13 +595,60 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Multiplies the zoom by <paramref name="factor"/>, staying within range.</summary>
-    public void ZoomBy(double factor) => Zoom = Math.Clamp(Zoom * factor, MinZoom, MaxZoom);
+    public void ZoomBy(double factor) => Zoom = ArrangerZoomLimits.Clamp(Zoom * factor);
 
     [RelayCommand]
-    private void ZoomIn() => ZoomBy(ZoomStep);
+    private void ZoomIn() => RequestZoom(TimelineZoomRequest.By(ZoomStep));
 
     [RelayCommand]
-    private void ZoomOut() => ZoomBy(1 / ZoomStep);
+    private void ZoomOut() => RequestZoom(TimelineZoomRequest.By(1 / ZoomStep));
+
+    /// <summary>Shows the whole project (to the end of its last clip or automation point, or four bars when empty).</summary>
+    [RelayCommand]
+    private void ZoomToFit()
+    {
+        var sequence = Project.Sequence;
+        var end = Math.Max(sequence.EndPosition.Value, 16L * sequence.Ppqn.TicksPerQuarterNote);
+        RequestZoom(TimelineZoomRequest.Show(0, Quarters(end)));
+    }
+
+    /// <summary>Shows the selected clips (or, in the piano roll, the selected notes).</summary>
+    [RelayCommand(CanExecute = nameof(HasZoomSelection))]
+    private void ZoomToSelection()
+    {
+        var clips = Project.Sequence.Tracks.SelectMany(t => t.Clips).Where(c => Arrangement.SelectedClips.Contains(c.Id)).ToList();
+        RequestZoom(clips.Count > 0
+            ? TimelineZoomRequest.Show(Quarters(clips.Min(c => c.Start.Value)), Quarters(clips.Max(c => c.End.Value)), selection: true)
+            : TimelineZoomRequest.Show(0, 0, selection: true));
+    }
+
+    private bool HasZoomSelection() => Arrangement.HasClipSelection || Editor.HasSelection;
+
+    /// <summary>Shows the arranger loop's range.</summary>
+    [RelayCommand(CanExecute = nameof(HasLoopRange))]
+    private void ZoomToLoop()
+    {
+        if (Project.Loop.Range is { } range)
+        {
+            RequestZoom(TimelineZoomRequest.Show(Quarters(range.Start.Value), Quarters(range.End.Value)));
+        }
+    }
+
+    private bool HasLoopRange() => Project.Loop.Range is not null;
+
+    private double Quarters(long ticks) => ticks / (double)Project.Sequence.Ppqn.TicksPerQuarterNote;
+
+    private void RequestZoom(TimelineZoomRequest request)
+    {
+        if (ArrangerZoomRequested is { } handler)
+        {
+            handler(this, request);
+        }
+        else if (request.Factor is { } factor)
+        {
+            ZoomBy(factor);
+        }
+    }
 
     /// <summary>Loads routes and outputs for the initial project.</summary>
     public Task InitializeAsync() => SyncAndRefreshAsync();
@@ -1271,6 +1337,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ProjectName = Project.Name;
         IsDirty = _session.IsDirty;
         Loop.Sync();
+        ZoomToLoopCommand.NotifyCanExecuteChanged();
         SyncTracks();
         SyncEditor();
         Arrangement.Sync();

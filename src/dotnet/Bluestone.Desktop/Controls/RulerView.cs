@@ -8,7 +8,9 @@ using Bluestone.Presentation.Timeline;
 namespace Bluestone.Desktop.Controls;
 
 /// <summary>
-/// The bar ruler above the arrangement. Click or drag in the lower part to move the playhead. The loop strip on top
+/// The bar ruler above the arrangement. In the beat ruler, a click moves the playhead, and a drag navigates: up zooms
+/// in, down zooms out (around the position first pressed), sideways scrolls (see <see cref="RulerNavigationGesture"/>).
+/// The loop strip on top
 /// edits the arranger loop: drag empty space to draw a loop (and turn looping on), drag the loop to move it, drag an
 /// edge to resize it; ⌘ (Ctrl on Windows and Linux) ignores the grid while dragging, as in the piano roll. A click selects the loop (arrow keys then nudge it by
 /// the grid, Shift + arrow by a bar) and never deletes it; a double-click turns looping on or off.
@@ -23,12 +25,15 @@ public sealed class RulerView : Control
 
     private const double EdgeGrip = 5;
     private const double DragThreshold = 3;
+    private const string BeatRulerTip = "Click to move the playhead. Drag up or down to zoom, sideways to scroll.";
+    private const string LoopStripTip = "Loop strip: drag to draw a loop, drag the loop to move it or its edges to resize; double-click it to turn looping on or off.";
+    private static readonly Cursor NavigateCursor = new(StandardCursorType.SizeAll);
 
     private LoopStripDrag? _loopDrag;
     private Point _pressPoint;
     private TickRange? _loopDraft;
     private bool _dragged;
-    private bool _seeking;
+    private RulerNavigationGesture? _navigation;
     private bool _loopSelected;
     private LoopStripPart _hover = LoopStripPart.Empty;
 
@@ -70,8 +75,14 @@ public sealed class RulerView : Control
         set => SetValue(IsRecordingProperty, value);
     }
 
-    /// <summary>Raised with the tick under the pointer when the user clicks or drags to seek.</summary>
+    /// <summary>Raised with the tick under the pointer when the user clicks the beat ruler.</summary>
     public event EventHandler<long>? SeekRequested;
+
+    /// <summary>Raised while the beat ruler is dragged, with the zoom and scroll the view should take.</summary>
+    public event EventHandler<TimelineViewport>? NavigateRequested;
+
+    /// <summary>How far the view this ruler belongs to may zoom.</summary>
+    public TimelineZoomLimits ZoomLimits { get; set; } = Presentation.MainViewModel.ArrangerZoomLimits;
 
     /// <summary>Raised once at the end of a loop-strip drag with the new range, whether to turn looping on, and the undo label.</summary>
     public event EventHandler<LoopRangeRequest>? LoopRangeRequested;
@@ -148,8 +159,7 @@ public sealed class RulerView : Control
         }
         else
         {
-            _seeking = true;
-            SeekRequested?.Invoke(this, TickAt(point.X));
+            _navigation = new RulerNavigationGesture(point.X, point.Y, new TimelineViewport(PixelsPerQuarter, ScrollX), ZoomLimits);
         }
 
         e.Handled = true;
@@ -177,9 +187,9 @@ public sealed class RulerView : Control
             _loopDraft = drag.RangeAt(TickAt(point.X), tick => unsnapped ? tick : Snap(tick));
             InvalidateVisual();
         }
-        else if (_seeking)
+        else if (_navigation?.Move(point.X, point.Y) is { } view)
         {
-            SeekRequested?.Invoke(this, TickAt(point.X));
+            NavigateRequested?.Invoke(this, view);
         }
     }
 
@@ -200,6 +210,12 @@ public sealed class RulerView : Control
             }
         }
 
+        else if (_navigation is { IsNavigating: false })
+        {
+            // A click in the beat ruler moves the playhead (on release, so a drag never jumps it first).
+            SeekRequested?.Invoke(this, TickAt(_pressPoint.X));
+        }
+
         EndGesture(e.Pointer);
         UpdateHover(e.GetPosition(this));
     }
@@ -210,7 +226,7 @@ public sealed class RulerView : Control
         _loopDrag = null;
         _loopDraft = null;
         _dragged = false;
-        _seeking = false;
+        _navigation = null;
         InvalidateVisual();
     }
 
@@ -267,7 +283,7 @@ public sealed class RulerView : Control
         _loopDrag = null;
         _loopDraft = null;
         _dragged = false;
-        _seeking = false;
+        _navigation = null;
         pointer.Capture(null);
         InvalidateVisual();
     }
@@ -275,8 +291,9 @@ public sealed class RulerView : Control
     private void UpdateHover(Point point)
     {
         var part = InLoopStrip(point) ? PartAt(point.X) : LoopStripPart.Empty;
+        ToolTip.SetTip(this, InLoopStrip(point) ? LoopStripTip : BeatRulerTip);
         Cursor = !InLoopStrip(point)
-            ? Cursor.Default
+            ? NavigateCursor
             : part switch
             {
                 LoopStripPart.StartEdge or LoopStripPart.EndEdge => new Cursor(StandardCursorType.SizeWestEast),

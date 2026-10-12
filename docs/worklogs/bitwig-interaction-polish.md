@@ -218,6 +218,20 @@ Decisions are numbered for reference from reviews and commits.
   **Loop** section (shown for any clip selection) has a two-state *Loop the clip* box (unset when the clips differ),
   exact start (from the content's start) and length fields with *Mixed* placeholders, *Consolidate*, and a one-line
   summary ("Plays a pickup, then 7 passes."). Every change, over any number of clips, is one undo step.
+- **D12 Timeline navigation.** A pure `TimelineViewport` (zoom in pixels per quarter, scroll; anchored zoom; fit; NaN,
+  infinity, and negative scroll impossible) and `RulerNavigationGesture` (Presentation/Timeline) serve both the
+  arrangement and the piano roll, each with its own state (`MainViewModel.Zoom` + the arranger's scroll viewer;
+  `EditorViewModel.Zoom` + the piano roll's scroll). In a beat ruler a press that moves less than 4 px is a click and
+  seeks on release; beyond that, vertical movement zooms exponentially (×e per 100 px; up zooms in) around the musical
+  position first pressed, and horizontal movement scrolls with that position following the pointer. Both axes stay
+  live (the usual DAW ruler gesture) but each has its own 4 px dead zone (Review 1 #13). The loop strip stays reserved
+  for loop editing. The arranger's zoom slider is gone; its header keeps zoom out, zoom in, and a new *Zoom to fit*
+  button. View menu: Zoom to Fit (⌘/Ctrl + 0), Zoom to Selection (⇧ + ⌘/Ctrl + 0, the selected clips or, in the piano
+  roll, notes), Zoom to Loop; these and ⌘/Ctrl + =/− act on the piano roll while it has the keyboard. Zoom in/out anchor
+  on the playhead when it is in view. Wheel, ⌘-wheel, and pinch go through the same model. The arranger's minimum zoom
+  went from 6 to 2 pixels per quarter so long projects fit. Arranger navigation moved out of `MainWindow.axaml.cs` into
+  `MainWindow.Navigation.cs`. Cursor: four-way arrows over the beat rulers, with a tooltip saying what clicking and
+  dragging do (Avalonia has no standard magnifier cursor; a custom bitmap cursor was not worth the platform risk).
 
 ## Reviews and responses
 

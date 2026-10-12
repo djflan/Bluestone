@@ -108,9 +108,7 @@ public partial class MainWindow : Window
         viewModel.Messages.CollectionChanged += (_, _) =>
             LastMessage.Text = viewModel.Messages.Count > 0 ? viewModel.Messages[^1].Text : string.Empty;
 
-        TimelineScroller.AddHandler(PointerWheelChangedEvent, OnTimelineWheel, RoutingStrategies.Tunnel);
-        TimelineScroller.AddHandler(InputElement.PointerTouchPadGestureMagnifyEvent, OnTimelinePinch, RoutingStrategies.Tunnel);
-        Ruler.AddHandler(PointerWheelChangedEvent, OnRulerWheel, RoutingStrategies.Tunnel);
+        AttachNavigation(viewModel);
 
         AttachPianoRoll(viewModel);
         AttachEventList(viewModel);
@@ -526,54 +524,10 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>⌘/Ctrl + scroll zooms the arrangement around the pointer.</summary>
-    private void OnTimelineWheel(object? sender, PointerWheelEventArgs e)
-    {
-        var command = CommandModifier;
-        if (!e.KeyModifiers.HasFlag(command) || e.Delta.Y == 0)
-        {
-            return;
-        }
-
-        ZoomAround(e.GetPosition(TimelineScroller).X, Math.Pow(1.12, e.Delta.Y));
-        e.Handled = true;
-    }
-
-    /// <summary>Plain scrolling over the bar ruler zooms, as in most sequencers.</summary>
-    private void OnRulerWheel(object? sender, PointerWheelEventArgs e)
-    {
-        if (e.Delta.Y != 0)
-        {
-            ZoomAround(e.GetPosition(Ruler).X, Math.Pow(1.12, e.Delta.Y));
-            e.Handled = true;
-        }
-    }
-
     private void OnTrackHeaderWheel(object? sender, PointerWheelEventArgs e)
     {
         TimelineScroller.Offset = new Vector(TimelineScroller.Offset.X, Math.Max(0, TimelineScroller.Offset.Y - (e.Delta.Y * 40)));
         e.Handled = true;
-    }
-
-    private void OnTimelinePinch(object? sender, PointerDeltaEventArgs e)
-    {
-        ZoomAround(e.GetPosition(TimelineScroller).X, 1 + e.Delta.X);
-        e.Handled = true;
-    }
-
-    /// <summary>Zooms while keeping the musical position under <paramref name="viewportX"/> in place.</summary>
-    private void ZoomAround(double viewportX, double factor)
-    {
-        if (_viewModel is null || factor <= 0)
-        {
-            return;
-        }
-
-        var tick = Timeline.XToTick(TimelineScroller.Offset.X + viewportX);
-        _viewModel.ZoomBy(factor);
-        TimelineScroller.UpdateLayout();
-        var x = Timeline.TickToX(tick) - viewportX;
-        TimelineScroller.Offset = new Vector(Math.Max(0, x), TimelineScroller.Offset.Y);
     }
 
     // Commits a loop field when its text changed; a field left as it was (or emptied) changes nothing.
@@ -661,6 +615,8 @@ public partial class MainWindow : Window
         Bind(Key.L, command, vm.Loop.LoopSelectionCommand);
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
+        Bind(Key.D0, command, vm.ZoomToFitCommand);
+        Bind(Key.D0, command | KeyModifiers.Shift, vm.ZoomToSelectionCommand);
         Bind(Key.OemComma, command, new CommunityToolkit.Mvvm.Input.RelayCommand(() => ShowSettings()));
     }
 
