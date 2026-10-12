@@ -9,7 +9,7 @@ Bluestone started as a MIDI workstation for Yamaha XG instruments and the QY100,
 > [!NOTE]
 > Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. Yamaha, XG, QY100, and other product names and trademarks belong to their respective owners and are used solely to describe compatibility.
 
-![Bluestone main window: the inspector with track, routing, voice, and device sections beside the arrangement and the piano roll](docs/images/bluestone-main-window.png)
+![Bluestone main window: the inspector with track, routing, voice, and connection sections beside the arrangement, a Device View with an Arpeggiator and a VST3 instrument whose editor is open, and the Browser](docs/images/bluestone-main-window.png)
 
 ## Status
 
