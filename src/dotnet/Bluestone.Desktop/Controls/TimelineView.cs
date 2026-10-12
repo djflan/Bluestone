@@ -51,6 +51,9 @@ public sealed class TimelineView : Control
     private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor MoveCursor = new(StandardCursorType.DragMove);
     private static readonly Cursor CopyCursor = new(StandardCursorType.DragCopy);
+    private static readonly Cursor LoopCursor = new(StandardCursorType.DragLink);
+    private static readonly IDashStyle FirstRepeatDash = new Avalonia.Media.Immutable.ImmutableDashStyle([3, 2], 0);
+    private static readonly IDashStyle LaterRepeatDots = new Avalonia.Media.Immutable.ImmutableDashStyle([1, 2], 0);
     private static readonly IBrush LaneBrush = new SolidColorBrush(Palette.Lane);
     private static readonly IBrush LaneAltBrush = new SolidColorBrush(Palette.LaneAlt);
     private static readonly IBrush LaneSelected = new SolidColorBrush(Palette.LaneSelected);
@@ -99,7 +102,16 @@ public sealed class TimelineView : Control
         Body,
         StartEdge,
         EndEdge,
+
+        /// <summary>The lower-right corner: extends or shortens the clip with its loop repeating.</summary>
+        LoopEnd,
+
+        /// <summary>The first repeat's dashed marker: changes the loop's length.</summary>
+        RepeatMarker,
     }
+
+    // The clip and loop grip under the pointer while nothing is dragged, for the handle's highlight.
+    private (ClipId Clip, Grip Grip)? _hover;
 
     /// <summary>What is under the pointer: a track, and the automation lane in its row (or -1 for its clips).</summary>
     private readonly record struct Row(int Lane, int Automation);
@@ -210,6 +222,12 @@ public sealed class TimelineView : Control
 
     /// <summary>Raised when a clip's edge is dragged, with its new bounds in ticks.</summary>
     public event EventHandler<(ClipId Clip, long Start, long End)>? ClipResized;
+
+    /// <summary>Raised when a clip's loop handle (its lower-right corner) is dragged, with the clip's new end in ticks.</summary>
+    public event EventHandler<(ClipId Clip, long End)>? ClipLoopExtended;
+
+    /// <summary>Raised when a looping clip's first repeat marker is dragged, with the loop's new length in ticks.</summary>
+    public event EventHandler<(ClipId Clip, long Length)>? ClipLoopLengthChanged;
 
     /// <summary>Raised when an automation lane's points are edited: the lane's track, the lane, an undo label, and the new points.</summary>
     public event EventHandler<(int Lane, AutomationLaneId Automation, string Label, IReadOnlyList<AutomationPoint> Points)>? AutomationEdited;
@@ -371,7 +389,7 @@ public sealed class TimelineView : Control
             return;
         }
 
-        var (clip, grip) = HitClip(project.Sequence.Tracks[row.Lane], point.Position.X);
+        var (clip, grip) = HitClip(project.Sequence.Tracks[row.Lane], row.Lane, point.Position);
         var lane = row.Lane;
         if (clip is null)
         {
@@ -430,10 +448,16 @@ public sealed class TimelineView : Control
 
         if (_drag == Grip.None || !ReferenceEquals(e.Pointer.Captured, this))
         {
-            // Show where an edge can be grabbed.
+            // Show where an edge, the loop handle, or the first repeat marker can be grabbed.
             var row = RowAt(project.Sequence, position.Y);
-            var edge = row.Lane >= 0 && row.Automation < 0 && HitClip(project.Sequence.Tracks[row.Lane], position.X).Grip is Grip.StartEdge or Grip.EndEdge;
-            SetCursor(edge ? ResizeCursor : Cursor.Default);
+            var (hovered, grip) = row.Lane >= 0 && row.Automation < 0 ? HitClip(project.Sequence.Tracks[row.Lane], row.Lane, position) : (null, Grip.None);
+            SetCursor(grip switch
+            {
+                Grip.StartEdge or Grip.EndEdge or Grip.RepeatMarker => ResizeCursor,
+                Grip.LoopEnd => LoopCursor,
+                _ => Cursor.Default,
+            });
+            SetHover(hovered is not null && grip is Grip.LoopEnd or Grip.RepeatMarker or Grip.EndEdge ? (hovered.Id, grip) : null);
             return;
         }
 
@@ -467,9 +491,13 @@ public sealed class TimelineView : Control
                 // Edges stop at neighbouring clips, as the resize does.
                 _dragDelta = Math.Clamp(SnapClip(sequence, clip.Start.Value + raw), track.Neighbours(clip.Id).Before.Value, clip.End.Value - 1) - clip.Start.Value;
                 break;
-            case Grip.EndEdge:
+            case Grip.EndEdge or Grip.LoopEnd:
                 var after = track.Neighbours(clip.Id).After?.Value ?? long.MaxValue;
                 _dragDelta = Math.Clamp(SnapClip(sequence, clip.End.Value + raw), clip.Start.Value + 1, after) - clip.End.Value;
+                break;
+            case Grip.RepeatMarker:
+                var marker = clip.Start.Value + clip.FirstPassLength;
+                _dragDelta = Math.Clamp(SnapClip(sequence, marker + raw), MinimumFirstRepeat(clip), clip.End.Value) - marker;
                 break;
         }
 
@@ -515,7 +543,43 @@ public sealed class TimelineView : Control
             case Grip.EndEdge when delta != 0:
                 ClipResized?.Invoke(this, (clip.Id, clip.Start.Value, clip.End.Value + delta));
                 break;
+            case Grip.LoopEnd when delta != 0 || !clip.IsLooping:
+                ClipLoopExtended?.Invoke(this, (clip.Id, clip.End.Value + delta));
+                break;
+            case Grip.RepeatMarker when delta != 0:
+                RaiseLoopLength(clip, delta);
+                break;
         }
+    }
+
+    // The first repeat moved by `delta` ticks: the loop's end moves with it, its start stays.
+    private void RaiseLoopLength(Clip clip, long delta) =>
+        ClipLoopLengthChanged?.Invoke(this, (clip.Id, LoopLengthWithFirstRepeatAt(clip, clip.Start.Value + clip.FirstPassLength + delta)));
+
+    // The loop length that puts the first repeat at `tick`: the first pass ends where the loop does.
+    private static long LoopLengthWithFirstRepeatAt(Clip clip, long tick) =>
+        Math.Max(1, (tick - clip.Start.Value) + clip.ContentAt(0) - clip.Loop!.Start.Value);
+
+    // The first repeat cannot come before the loop's start has been reached (nor at the clip's start).
+    private static long MinimumFirstRepeat(Clip clip) =>
+        clip.Start.Value + Math.Max(1, clip.Loop!.Start.Value + 1 - clip.ContentAt(0));
+
+    private void SetHover((ClipId Clip, Grip Grip)? hover)
+    {
+        if (_hover == hover)
+        {
+            return;
+        }
+
+        _hover = hover;
+        ToolTip.SetTip(this, hover?.Grip switch
+        {
+            Grip.LoopEnd => "Drag to repeat the clip's loop (makes the clip loop)",
+            Grip.RepeatMarker => "Drag to change the loop's length",
+            Grip.EndEdge => "Drag to change the clip's length; drag the lower corner to repeat its loop",
+            _ => null,
+        });
+        InvalidateVisual();
     }
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
@@ -600,6 +664,36 @@ public sealed class TimelineView : Control
         }
 
         return last < 0 ? (0, 0, sequence.Tracks.Length - 1) : (earliest, first, last);
+    }
+
+    /// <summary>
+    /// The clip at <paramref name="position"/> in a track's clip row and the part of it there: the lower half of the
+    /// right edge is the loop handle, and a looping clip's first repeat marker can be grabbed below its name strip.
+    /// </summary>
+    private (Clip? Clip, Grip Grip) HitClip(Track track, int lane, Point position)
+    {
+        var (clip, grip) = HitClip(track, position.X);
+        if (clip is null || lane >= _tops.Length)
+        {
+            return (clip, grip);
+        }
+
+        var body = ClipBody(clip, _tops[lane], 0);
+        if (grip == Grip.EndEdge && position.Y > body.Y + (body.Height / 2))
+        {
+            return (clip, Grip.LoopEnd);
+        }
+
+        if (grip == Grip.Body && clip.IsLooping && clip.FirstPassLength < clip.Length.Value && position.Y > body.Y + ClipHeaderHeight)
+        {
+            var marker = TickToX(clip.Start.Value + clip.FirstPassLength);
+            if (Math.Abs(position.X - marker) <= 3)
+            {
+                return (clip, Grip.RepeatMarker);
+            }
+        }
+
+        return (clip, grip);
     }
 
     /// <summary>The clip at <paramref name="x"/> in a track's clip row, and which part of it: its body or an edge.</summary>
@@ -873,11 +967,16 @@ public sealed class TimelineView : Control
 
             var slice = (first, end);
             first = end;
-            if (_dragging && _drag is Grip.StartEdge or Grip.EndEdge && clip.Id == _dragClip?.Id)
+            if (_dragging && _drag is Grip.StartEdge or Grip.EndEdge or Grip.LoopEnd or Grip.RepeatMarker && clip.Id == _dragClip?.Id && Project is { } project)
             {
-                // The clip as it will be: trimmed content hidden, or hidden content revealed.
+                // The clip as it will be: trimmed content hidden, hidden content revealed, or the loop repeated.
                 var (start, until) = _drag == Grip.StartEdge ? (clip.Start.Value + _dragDelta, clip.End.Value) : (clip.Start.Value, clip.End.Value + _dragDelta);
-                var resized = clip.WithBounds(new Tick(start), new Tick(until));
+                var resized = _drag switch
+                {
+                    Grip.LoopEnd => (clip.IsLooping ? clip : clip with { Loop = Application.Editing.ClipLoopCommands.DefaultLoop(clip, project.Sequence) }) with { Length = new TickSpan(until - start) },
+                    Grip.RepeatMarker => clip with { Loop = new ClipLoop(clip.Loop!.Start, new TickSpan(LoopLengthWithFirstRepeatAt(clip, clip.Start.Value + clip.FirstPassLength + _dragDelta))) },
+                    _ => clip.WithBounds(new Tick(start), new Tick(until)),
+                };
                 var shown = resized is NoteClip noteClip ? noteClip.Arrange().OfType<NoteEvent>().ToList() : [];
                 DrawClip(context, track, resized, shown, (0, shown.Count), range, lane, top, left, right, 0);
                 continue;
@@ -957,6 +1056,8 @@ public sealed class TimelineView : Control
             context.DrawText(name, new Point(labelX, body.Y + 0.5));
         }
 
+        DrawLoop(context, clip, body, shift, color, left, right);
+
         if (clip is AudioClip audio)
         {
             // No waveform is drawn: say what the clip holds, plainly, with its gain, and draw its fades as ramps.
@@ -1012,6 +1113,68 @@ public sealed class TimelineView : Control
                 var opacity = 0.55 + (0.45 * note.Velocity.Value / 127.0);
                 context.FillRectangle(new SolidColorBrush(noteColor, opacity), new Rect(x, y, w, noteHeight));
             }
+        }
+    }
+
+    // A looping clip's repeats: the first boundary dashed, later ones dotted and lighter, thinned out so they never
+    // crowd closer than 6 pixels; and the loop handle in the lower-right corner, stronger while it is hovered.
+    private void DrawLoop(DrawingContext context, Clip clip, Rect body, double shift, Color color, double left, double right)
+    {
+        var hovered = _hover is { } hover && hover.Clip == clip.Id ? hover.Grip : Grip.None;
+        if (clip.IsLooping && clip.FirstPassLength < clip.Length.Value)
+        {
+            var top = body.Y + ClipHeaderHeight + 1;
+            var bottom = body.Bottom - 1;
+            var first = new Pen(new SolidColorBrush(Palette.Lighten(color, 0.75), hovered == Grip.RepeatMarker ? 1 : 0.85), hovered == Grip.RepeatMarker ? 1.5 : 1, FirstRepeatDash);
+            var later = new Pen(new SolidColorBrush(Palette.Lighten(color, 0.7), 0.8), 1, LaterRepeatDots);
+            var passes = clip.Passes.Count;
+            var loopTicks = clip.Loop!.Length.Value;
+
+            // Later repeats are drawn every `step` passes so they never crowd closer than 6 pixels; the first visible one is
+            // found arithmetically, so a very long clip with a very short loop costs only what is on screen.
+            var step = Math.Max(1L, (long)Math.Ceiling(6 / Math.Max(1e-9, TickToX(loopTicks))));
+            var visibleFrom = XToTick(Math.Max(0, Math.Max(left, body.X) - shift));
+            var visibleTo = XToTick(Math.Max(0, Math.Min(right, body.Right) - shift));
+            using (context.PushClip(body))
+            {
+                var firstRepeat = clip.RepeatStart(1);
+                if (firstRepeat >= visibleFrom - 1 && firstRepeat <= visibleTo + 1)
+                {
+                    var x = Math.Round(TickToX(firstRepeat) + shift) + 0.5;
+                    context.DrawLine(first, new Point(x, top), new Point(x, bottom));
+                }
+
+                var index = Math.Max(1 + step, 1 + (((Math.Max(0, visibleFrom - firstRepeat) / loopTicks) / step) * step));
+                for (; index < passes; index += step)
+                {
+                    var tick = clip.RepeatStart(index);
+                    if (tick > visibleTo + 1)
+                    {
+                        break;
+                    }
+
+                    var x = Math.Round(TickToX(tick) + shift) + 0.5;
+                    context.DrawLine(later, new Point(x, top), new Point(x, bottom));
+                }
+            }
+        }
+
+        if (body.Width >= 4 * EdgeGrip)
+        {
+            // A small corner tab: always visible on looping clips, faint on others, so the gesture can be found.
+            var strong = hovered == Grip.LoopEnd;
+            var opacity = strong ? 0.95 : clip.IsLooping ? 0.7 : hovered == Grip.EndEdge ? 0.45 : 0.18;
+            var tab = new StreamGeometry();
+            using (var g = tab.Open())
+            {
+                var (x, y) = (body.Right - 1, body.Bottom - 1);
+                g.BeginFigure(new Point(x, y - 7), true);
+                g.LineTo(new Point(x, y));
+                g.LineTo(new Point(x - 7, y));
+                g.EndFigure(true);
+            }
+
+            context.DrawGeometry(new SolidColorBrush(Palette.Lighten(color, 0.8), opacity), null, tab);
         }
     }
 

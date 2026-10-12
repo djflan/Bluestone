@@ -121,8 +121,8 @@ public sealed class ClipLoopCommandTests : IDisposable
         var track = new Track(TrackId.New(), "a", [clip], role: TrackRole.Audio);
         var project = Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(track) };
 
-        var command = await ClipLoopCommandTests.Consolidate(project, track.Id, clip.Id, _directory);
-        var consolidated = (AudioClip)command.Apply(project).Sequence.FindTrack(track.Id)!.FindClip(clip.Id)!;
+        var result = await ClipLoopCommandTests.Consolidate(project, track.Id, clip.Id, _directory);
+        var consolidated = (AudioClip)result.Command.Apply(project).Sequence.FindTrack(track.Id)!.FindClip(clip.Id)!;
 
         Assert.Null(consolidated.Loop);
         Assert.Equal(TickSpan.Zero, consolidated.ContentOffset);
@@ -142,6 +142,25 @@ public sealed class ClipLoopCommandTests : IDisposable
         }
     }
 
-    private static Task<IProjectCommand> Consolidate(Project project, TrackId track, ClipId clip, string directory) =>
+    [Fact]
+    public async Task AnAudioClipEditedWhileConsolidating_IsLeftAsItIs()
+    {
+        TestAudioFiles.Wave(_directory, "edit.wav", "float32", 48_000, 2, TestAudioFiles.Sine(48_000, 2, 997, 48_000));
+        var clip = new AudioClip(ClipId.New(), Tick.Zero, new TickSpan(1920), TickSpan.Zero, new AudioSource("edit.wav", 48_000, 48_000, 2))
+        {
+            Loop = new ClipLoop(Tick.Zero, new TickSpan(480)),
+        };
+        var track = new Track(TrackId.New(), "a", [clip], role: TrackRole.Audio);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(track) });
+
+        var result = await Consolidate(history.Current, track.Id, clip.Id, _directory);
+        history.Execute(ClipCommands.SetAudioClipGain(track.Id, clip.Id, -6));
+
+        Assert.Throws<CommandRefusedException>(() => history.Execute(result.Command));
+        Assert.Equal(-6, ((AudioClip)Find(history, track.Id, clip.Id)).GainDecibels);
+        Assert.True(Find(history, track.Id, clip.Id).IsLooping);
+    }
+
+    private static Task<AudioConsolidationResult> Consolidate(Project project, TrackId track, ClipId clip, string directory) =>
         AudioConsolidation.ConsolidateAsync(project, track, clip, directory);
 }

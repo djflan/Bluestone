@@ -12,7 +12,9 @@ namespace Bluestone.Application.Audio;
 /// The clip keeps its position, length, gain, and fades (which belong to its outer edges and so are unchanged).
 /// </summary>
 /// <remarks>
-/// Frames are copied, never resampled. A clip whose start falls between two of its file's frames plays the new file
+/// The edit applies only if the clip is still exactly as it was when writing started; otherwise it is refused (the
+/// caller deletes the file), so an edit made meanwhile is never overwritten. Files over the WAVE format's 4 GiB limit
+/// are refused before anything is written. Frames are copied, never resampled. A clip whose start falls between two of its file's frames plays the new file
 /// from the nearest frame (less than half a sample from where it played), which is as close as a frame-based file can
 /// hold it. The new file is not deleted by Undo: undo restores the clip, and the file stays for a redo.
 /// </remarks>
@@ -30,7 +32,7 @@ public static class AudioConsolidation
     /// </summary>
     /// <exception cref="FileNotFoundException">The clip's file is missing.</exception>
     /// <exception cref="AudioFileException">The clip's file cannot be read.</exception>
-    public static async Task<IProjectCommand> ConsolidateAsync(Project project, TrackId trackId, ClipId clipId, string? projectDirectory, CancellationToken cancellationToken = default)
+    public static async Task<AudioConsolidationResult> ConsolidateAsync(Project project, TrackId trackId, ClipId clipId, string? projectDirectory, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
         if (project.Sequence.FindTrack(trackId)?.FindClip(clipId) is not AudioClip clip)
@@ -47,12 +49,26 @@ public static class AudioConsolidation
         var path = Path.Combine(folder, $"{name} {clip.Id.Value.ToString("N")[..8]} {DateTime.Now:yyyyMMdd-HHmmss}.wav");
 
         var tempo = project.Sequence.TempoMap;
-        var (frames, channels, rate) = await Task.Run(() => Write(clip, tempo, sourcePath, path, cancellationToken), cancellationToken).ConfigureAwait(false);
+        (long Frames, int Channels, int Rate) written;
+        try
+        {
+            written = await Task.Run(() => Write(clip, tempo, sourcePath, path, cancellationToken), cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            File.Delete(path);
+            throw;
+        }
 
         var location = projectDirectory is null ? path : Path.GetRelativePath(projectDirectory, path);
-        var source = new AudioSource(location, rate, frames, channels);
+        var source = new AudioSource(location, written.Rate, written.Frames, written.Channels);
         var consolidated = clip with { Source = source, ContentOffset = TickSpan.Zero, Loop = null };
-        return ProjectCommands.EditTrack("Consolidate Clip", trackId, t => t.FindClip(clipId) is AudioClip ? t.WithClip(consolidated) : t);
+        var command = ProjectCommands.EditTrack("Consolidate Clip", trackId, t => t.FindClip(clipId) switch
+        {
+            AudioClip current when current == clip => t.WithClip(consolidated),
+            _ => throw new CommandRefusedException("The clip changed while it was being consolidated, so it was left as it is. Consolidate it again."),
+        });
+        return new AudioConsolidationResult(command, path);
     }
 
     private static (long Frames, int Channels, int Rate) Write(AudioClip clip, TempoMap tempo, string sourcePath, string path, CancellationToken cancellationToken)
@@ -76,6 +92,11 @@ public static class AudioConsolidation
         }
 
         long Map(long played) => loopStart < 0 || played < loopStart + loopLength ? played : loopStart + ((played - loopStart - loopLength) % loopLength);
+
+        if (total * channels * 4L > uint.MaxValue - 36)
+        {
+            throw new IOException("The clip is too long to write as one WAVE file (over 4 GiB).");
+        }
 
         var buffer = new float[ChunkFrames * channels];
         using (var writer = new WaveFileWriter(path, rate, channels))
@@ -107,3 +128,6 @@ public static class AudioConsolidation
         return (total, channels, rate);
     }
 }
+
+/// <summary>The edit that switches a clip to its consolidated file, and that file (to delete if the edit is refused).</summary>
+public sealed record AudioConsolidationResult(IProjectCommand Command, string Path);

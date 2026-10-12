@@ -102,6 +102,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Editor.Changed += (_, _) => Loop.SelectionChanged();
         AudioClip = new AudioClipViewModel(this);
         Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
+        ClipLoop = new ClipLoopViewModel(this);
+        Arrangement.Changed += (_, _) => ClipLoop.Sync();
         Groups = new GroupsViewModel(this);
         EventList = new EventListViewModel(this, Editor);
         SelectedTracks.CollectionChanged += (_, _) =>
@@ -195,6 +197,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Gain and fades of the selected audio clip.</summary>
     public AudioClipViewModel AudioClip { get; }
+
+    /// <summary>The selected clips' loop, for the inspector and the arranger's loop gestures.</summary>
+    public ClipLoopViewModel ClipLoop { get; }
+
+    /// <summary>The project file's folder, or null while the project is unsaved.</summary>
+    internal string? ProjectDirectory => _session.FilePath is { } path ? Path.GetDirectoryName(path) : null;
 
     /// <summary>Group tracks: grouping the selection, membership, and folding.</summary>
     public GroupsViewModel Groups { get; }
@@ -1267,6 +1275,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SyncEditor();
         Arrangement.Sync();
         AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
+        ClipLoop.Sync();
         await SyncPluginsAsync();
         await RefreshAsync();
     }

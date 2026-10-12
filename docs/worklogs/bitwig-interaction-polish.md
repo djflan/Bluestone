@@ -182,6 +182,42 @@ Decisions are numbered for reference from reviews and commits.
   ruler (it takes focus on click), ← → nudge it by the adaptive grid step and ⇧ ← → by a bar; Esc deselects.
   *Alternative rejected*: an inspector section; the inspector is about the selected track, and the transport already
   holds the comparable tempo and signature fields.
+- **D6 Clip loop model.** `Clip.Loop` is an optional `ClipLoop` (content-tick start, length, enabled) on note and
+  audio clips; null means "never looped", so a loop turned off keeps its region. `ContentOffset` stays absolute and is
+  never wrapped (Review 1 #1, Review 2 #4); `Clip.ContentAt` maps clip time to content (pickup from `ContentOffset`,
+  then wrapping into the loop), and `Clip.Passes` enumerates passes without allocating. Defaults on first enabling: the
+  span the clip plays now (`[ContentOffset, + Length)`, an audio loop stopping at its file's end), so turning looping on
+  changes nothing audible until the clip is lengthened. *Rejected*: loop bounds relative to `ContentOffset` (moving
+  the left edge would drag the loop); destructive duplication into clips.
+- **D7 Note-clip playback.** Repeats are produced by `NoteClip.Arrange()` at plan time, so playback, plugin rendering,
+  and MIDI export agree. Notes are cut at the end of their pass (a note starting in the loop retriggers each pass; one
+  crossing the loop's end stops there: the convention in DAWs, and no note can hang). At each repetition
+  `ClipLoopChase` restores the loop start's controller state by the engine's own wrap rule (`ChaseState.AtWrap`),
+  including bank-with-program restoration (Review 2 #3). Repeats keep their source event's ID. Track automation is
+  separate and never loops.
+- **D8 Bounded expansion.** At most 262,144 arranged events per clip and 1,048,576 from looping clips across the
+  sequence (Review 2 #2), counted arithmetically when tracks and sequences are built; an edit beyond either is refused
+  with a message (`ClipLoopLimitException` → `CommandRefusedException`), and such a file is refused when read. A loop
+  whose region is empty is never walked pass by pass (Review 2 #1). Marker drawing finds visible repeats arithmetically.
+  *Rejected*: lazy expansion inside the engine (it would duplicate the chase/ordering machinery on the real-time thread).
+- **D9 Audio-clip playback.** No time-stretching exists, so an audio loop is a fixed stretch of the file in whole source
+  frames, measured where the clip's content starts (ADR 0039). `ClipSource` resamples over the played (virtual) stream:
+  interpolation across a wrap reads the loop's start; any number of wraps fit in one block; output depends only on song
+  position. The loop start is preloaded (or found in the clip-start preload) and the disk ring is sent ahead to where
+  that preload ends once per pass. Fades stay at the clip's outer edges; no crossfade is added at wraps.
+- **D10 Editing semantics.** Move and copy keep loop and phase. Trim never wraps the offset or drops content. Content
+  rebased by an edit moves the loop with it. Split of a clip with a loop keeps all content in both parts (right part with
+  new event IDs and the unwrapped offset), so both sound as before. Consolidate: note clips write out their arranged
+  events (chase values included) without a loop; audio clips get a new 32-bit float WAVE file of the played frames at
+  the file's rate (`AudioConsolidation`), refused if the clip changed while writing or if the file would exceed 4 GiB,
+  the unused file then deleted (Review 2 #5, #6).
+- **D11 Clip-loop UI.** The upper half of a clip's right edge keeps changing its length; the lower half is the loop
+  handle (link cursor, a small corner tab always visible on looping clips and faint on others, a tooltip), which turns
+  looping on and extends or shortens with repeats. The first repeat boundary is a dashed line that can be dragged to
+  change the loop's length; later ones are lighter dotted lines, thinned to at least 6 px apart. The inspector's
+  **Loop** section (shown for any clip selection) has a two-state *Loop the clip* box (unset when the clips differ),
+  exact start (from the content's start) and length fields with *Mixed* placeholders, *Consolidate*, and a one-line
+  summary ("Plays a pickup, then 7 passes."). Every change, over any number of clips, is one undo step.
 
 ## Reviews and responses
 
@@ -208,9 +244,32 @@ Agent B reviewed the proposed decisions before implementation. Findings, Agent B
 | 15 | Monitor-loss recentring adds scope | Optional refinement | Done where cheap and reliable (macOS, Windows) when an editor is shown (D15); Linux documented. |
 | 16 | No Wayland key interception or editor embedding | Rejected scope | Agreed. |
 
+### Review 2: core domain and runtime (Agent B)
+
+After commits `404f59f` and `97ae6cd`. Fixed in the clip-loop UI commit unless noted.
+
+| # | Finding | Class | Response |
+| - | ------- | ----- | -------- |
+| 1 | An empty one-tick loop over a huge clip passes the budget but walks billions of passes | Required now | Fixed: an empty loop region yields only the first pass; drawing computes visible repeats arithmetically; test with a `long.MaxValue / 4` clip |
+| 2 | The per-clip limit does not bound the whole plan | Required now | Fixed: a sequence-wide limit of 1,048,576 looped events, cached per track (`Track.LoopedEventCount`); tested |
+| 3 | Clip chase misses bank select changed inside the loop | Required now | Fixed: bank MSB/LSB tracked with the program and restored together, as `ChaseState.AtWrap` does; tested |
+| 4 | Split stored the wrapped phase as the right part's offset | Required now | Fixed: the unwrapped offset is stored; `ContentAt` maps it; test updated to assert both |
+| 5 | Audio consolidation could overwrite edits made while writing | Required now | Fixed: the edit is refused unless the clip is unchanged, and the unused file is deleted; tested |
+| 6 | Large consolidation wrote an invalid WAVE file | Required now | Fixed: refused over 4 GiB before writing, the writer throws rather than lie in its header, partial output is deleted |
+| 7 | Checked arithmetic for loop bounds and pass counts | Important follow-up | Fixed: `ClipLoop` refuses bounds past `long.MaxValue / 2`; pass count without overflow |
+| 8 | More `ClipSource` edge tests | Important follow-up | Added: loop beyond the file's end; an arranger wrap with a one-frame clip loop. Slow-disk across clip wraps and graph rebuilds while playing remain covered only by the existing generic tests (deferred) |
+| 9 | Broader serialization tests | Important follow-up | Partly: disabled loops round-trip; zero length refused; over-limit loops refused through the shared domain check. Path-specific assertions per case deferred |
+
 ## Deviations and discoveries
 
-(Recorded as they occur.)
+- **Audio transport, pre-existing**: the audio transport wraps an arranger loop at most once per block, so an arranger
+  loop shorter than one audio block (a few milliseconds) plays incorrectly in audio; the MIDI engine wraps any number
+  of times per pump. Not changed by this milestone (clip loops wrap any number of times per block). Recorded as
+  deferred work.
+- **Audio clips have no import UI** (they come from project files), so audio clip loops are reachable today only on
+  projects that already contain audio clips.
+- **Tick resolution**: new projects use 960 PPQN; some older tests assume 480. New tests derive bar lengths from the
+  project.
 
 ## Deferred work
 

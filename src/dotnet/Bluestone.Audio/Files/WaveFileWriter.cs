@@ -4,7 +4,8 @@ namespace Bluestone.Audio.Files;
 
 /// <summary>
 /// Writes a WAVE file of 32-bit float samples (format tag 3), which <see cref="AudioFileReader"/> reads back exactly.
-/// Frames are appended in blocks; the header's sizes are written on <see cref="Dispose"/>. Not for the audio thread.
+/// Frames are appended in blocks; the header's sizes are written on <see cref="Dispose"/>. Writing past the format's
+/// 4 GiB limit throws rather than produce a file whose header lies. Not for the audio thread.
 /// </summary>
 public sealed class WaveFileWriter : IDisposable
 {
@@ -48,6 +49,11 @@ public sealed class WaveFileWriter : IDisposable
             BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(i * 4), interleaved[i]);
         }
 
+        if (((_frames * _channels) + interleaved.Length) * 4L > uint.MaxValue - 36)
+        {
+            throw new IOException("A WAVE file holds at most 4 GiB of samples.");
+        }
+
         _file.Write(_buffer, 0, bytes);
         _frames += interleaved.Length / _channels;
     }
@@ -57,7 +63,7 @@ public sealed class WaveFileWriter : IDisposable
         var data = _frames * _channels * 4;
         Span<byte> header = stackalloc byte[HeaderBytes];
         "RIFF"u8.CopyTo(header);
-        BinaryPrimitives.WriteUInt32LittleEndian(header[4..], (uint)Math.Min(uint.MaxValue, 36 + data));
+        BinaryPrimitives.WriteUInt32LittleEndian(header[4..], (uint)(36 + data));
         "WAVE"u8.CopyTo(header[8..]);
         "fmt "u8.CopyTo(header[12..]);
         BinaryPrimitives.WriteInt32LittleEndian(header[16..], 16);
@@ -68,7 +74,7 @@ public sealed class WaveFileWriter : IDisposable
         BinaryPrimitives.WriteUInt16LittleEndian(header[32..], (ushort)(_channels * 4));
         BinaryPrimitives.WriteUInt16LittleEndian(header[34..], 32);
         "data"u8.CopyTo(header[36..]);
-        BinaryPrimitives.WriteUInt32LittleEndian(header[40..], (uint)Math.Min(uint.MaxValue, data));
+        BinaryPrimitives.WriteUInt32LittleEndian(header[40..], (uint)data);
         _file.Position = 0;
         _file.Write(header);
         _file.Dispose();

@@ -112,13 +112,13 @@ public sealed record AudioClip : Clip
     }
 
     /// <remarks>
-    /// The left part keeps the fade-in, the right part the fade-out; no fade is added at the cut. A looping clip's right
-    /// part starts at the audio heard at <paramref name="at"/>, with the same loop.
+    /// The left part keeps the fade-in, the right part the fade-out; no fade is added at the cut. The right part's offset is
+    /// the unwrapped position at the cut, so with the same loop it plays on exactly as before.
     /// </remarks>
     public override (Clip Left, Clip Right) SplitAt(Tick at, ClipId rightId)
     {
         EnsureInside(at);
-        var offset = IsLooping ? PhaseOffsetAt(at.Value - Start.Value) : new TickSpan(at.Value - Origin);
+        var offset = new TickSpan(at.Value - Origin);
         var left = (this with { Length = at - Start, FadeOut = TickSpan.Zero }).WithFadesInside();
         var right = (this with { Id = rightId, Start = at, Length = End - at, ContentOffset = offset, FadeIn = TickSpan.Zero }).WithFadesInside();
         return (left, right);

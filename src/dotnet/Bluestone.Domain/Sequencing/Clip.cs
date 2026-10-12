@@ -71,6 +71,12 @@ public abstract record Clip
     public ClipPasses Passes => new(this);
 
     /// <summary>
+    /// The timeline tick where repetition <paramref name="index"/> (1 or later) starts, computed directly so a view can
+    /// draw only the repeats it shows. Meaningful only while the clip loops.
+    /// </summary>
+    public long RepeatStart(long index) => Start.Value + FirstPassLength + ((index - 1) * Loop!.Length.Value);
+
+    /// <summary>
     /// The content tick heard <paramref name="clipTicks"/> after the clip's start: <see cref="ContentOffset"/> onward,
     /// and with the loop on, wrapped into the loop's region once past its end. <see cref="ContentOffset"/> itself is
     /// never wrapped, so trimming keeps what the clip hides.
@@ -87,7 +93,7 @@ public abstract record Clip
     }
 
     /// <summary>The length of the first pass: up to the loop's end (when looping), at most the clip's length.</summary>
-    internal long FirstPassLength => Math.Min(Length.Value, IsLooping ? Loop!.End.Value - ContentAt(0) : Length.Value);
+    public long FirstPassLength => Math.Min(Length.Value, IsLooping ? Loop!.End.Value - ContentAt(0) : Length.Value);
 
     /// <summary>
     /// Where content tick 0 falls on the timeline. Negative when trimmed content would start before the
@@ -124,12 +130,6 @@ public abstract record Clip
             throw new ArgumentOutOfRangeException(nameof(at), at, "A clip can only be split strictly inside it.");
         }
     }
-
-    /// <summary>
-    /// The content offset a clip starting <paramref name="clipTicks"/> into this one needs to go on playing exactly as
-    /// this one does: the content heard there (see <see cref="ContentAt"/>).
-    /// </summary>
-    protected TickSpan PhaseOffsetAt(long clipTicks) => new(ContentAt(clipTicks));
 
     protected static void EnsureBounds(Tick start, Tick until)
     {
@@ -209,6 +209,13 @@ public sealed record NoteClip : Clip
             return ArrangePass(new ClipPass(Start.Value, ContentOffset.Value, Length.Value, 0));
         }
 
+        // Repeats of a loop that holds nothing add nothing: only the first pass can play anything (and a one-tick empty
+        // loop over a very long clip must not be walked pass by pass).
+        if (CountStarting(Loop!.Start.Value, Loop.End.Value) == 0)
+        {
+            return ArrangePass(new ClipPass(Start.Value, ContentAt(0), FirstPassLength, 0));
+        }
+
         var chase = ClipLoopChase.AtRepeat(Id, Content, Loop!);
         var events = new List<TrackEvent>();
         foreach (var pass in Passes)
@@ -241,7 +248,7 @@ public sealed record NoteClip : Clip
         var first = FirstPassLength;
         var start = ContentAt(0);
         var count = CountStarting(start, start + first);
-        if (passes > 1)
+        if (passes > 1 && CountStarting(loop.Start.Value, loop.End.Value) > 0)
         {
             var perLoop = CountStarting(loop.Start.Value, loop.End.Value) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
             var lastLength = Length.Value - first - ((passes - 2) * loop.Length.Value);
@@ -383,17 +390,16 @@ public sealed record NoteClip : Clip
 
     /// <remarks>
     /// A clip with a loop (on or off) keeps all its content in both parts, so each can still repeat its loop; the right
-    /// part starts at the content heard at <paramref name="at"/> and gets new event IDs. A clip without a loop is cut
-    /// in two: events before <paramref name="at"/> stay left.
+    /// part's content offset is the left part's moved by the cut (never wrapped, see <see cref="Clip.ContentAt"/>), and
+    /// its events get new IDs. A clip without a loop is cut in two: events before <paramref name="at"/> stay left.
     /// </remarks>
     public override (Clip Left, Clip Right) SplitAt(Tick at, ClipId rightId)
     {
         EnsureInside(at);
         if (Loop is not null)
         {
-            var phase = PhaseOffsetAt(at.Value - Start.Value);
             var copy = CopyTo(at);
-            return (this with { Length = at - Start }, copy with { Id = rightId, Length = End - at, ContentOffset = phase });
+            return (this with { Length = at - Start }, copy with { Id = rightId, Length = End - at, ContentOffset = new TickSpan(ContentOffset.Value + (at.Value - Start.Value)) });
         }
 
         var cut = at.Value - Origin;

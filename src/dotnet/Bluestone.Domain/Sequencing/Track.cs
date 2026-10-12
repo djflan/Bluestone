@@ -22,6 +22,9 @@ public sealed class Track
     // Computed on first use. ImmutableArray is a single reference, written atomically.
     private ImmutableArray<TrackEvent> _arranged;
 
+    // Computed on first use; -1 until then.
+    private long _loopedEvents = -1;
+
     public const int MaxAutomationLanes = 1024;
 
     private Track(TrackId id, string name, ImmutableArray<Clip> clips, ImmutableArray<AutomationLane> automation, bool isMuted, bool isSoloed, TrackRole role, TrackId? group, bool isFolded)
@@ -102,6 +105,29 @@ public sealed class Track
             }
 
             return _arranged;
+        }
+    }
+
+    /// <summary>How many events this track's looping note clips play (counted, not produced).</summary>
+    public long LoopedEventCount
+    {
+        get
+        {
+            if (_loopedEvents < 0)
+            {
+                long total = 0;
+                foreach (var clip in Clips)
+                {
+                    if (clip is NoteClip { IsLooping: true } notes)
+                    {
+                        total += notes.ArrangedEventCount();
+                    }
+                }
+
+                _loopedEvents = total;
+            }
+
+            return _loopedEvents;
         }
     }
 

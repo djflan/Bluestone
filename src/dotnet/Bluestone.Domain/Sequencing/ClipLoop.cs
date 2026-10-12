@@ -18,8 +18,10 @@ public sealed record ClipLoop
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="length"/> is under one tick.</exception>
     public ClipLoop(Tick start, TickSpan length, bool isEnabled = true)
     {
-        Start = start;
         Length = length.Value >= 1 ? length : throw new ArgumentOutOfRangeException(nameof(length), length, "A clip loop must last at least one tick.");
+        Start = start.Value <= long.MaxValue / 2 && length.Value <= long.MaxValue / 2
+            ? start
+            : throw new ArgumentOutOfRangeException(nameof(start), start, "A clip loop must end within the timeline's range.");
         IsEnabled = isEnabled;
     }
 
@@ -71,10 +73,9 @@ public readonly struct ClipPasses(Clip clip)
                 return 1;
             }
 
-            var first = clip.FirstPassLength;
-            var rest = clip.Length.Value - first;
+            var rest = clip.Length.Value - clip.FirstPassLength;
             var loop = clip.Loop!.Length.Value;
-            return 1 + ((rest + loop - 1) / loop);
+            return 1 + (rest / loop) + (rest % loop == 0 ? 0 : 1);
         }
     }
 
@@ -163,7 +164,7 @@ public static class ClipLoopChase
         var result = new List<TrackEvent>();
         foreach (var (at, end) in atEnd.OrderBy(p => p.Key.Channel).ThenBy(p => p.Key.Key))
         {
-            if (atLoopStartTick.Contains(at))
+            if (at.Key is BankMsb or BankLsb or Program || atLoopStartTick.Contains(at))
             {
                 continue;
             }
@@ -181,13 +182,52 @@ public static class ClipLoopChase
             }
         }
 
+        // A bank takes effect only with a program change: the voice is restored whole, and only when the loop's start
+        // has a program to restore (as at an arranger-loop wrap). A bank first selected inside the loop goes back to 0.
+        foreach (var channel in atEnd.Keys.Select(k => k.Channel).Distinct().Order())
+        {
+            if (atStart.GetValueOrDefault((channel, Program)) is not ProgramEvent program)
+            {
+                continue;
+            }
+
+            ChannelEvent? Target(int key) => atStart.GetValueOrDefault((channel, key))
+                ?? (atEnd.GetValueOrDefault((channel, key)) is ControllerEvent set ? set with { Value = ControlValue.Min } : null);
+            var msb = Target(BankMsb);
+            var lsb = Target(BankLsb);
+            var endProgram = atEnd.GetValueOrDefault((channel, Program));
+            var changed = !SameOrBothMissing(msb, atEnd.GetValueOrDefault((channel, BankMsb)))
+                || !SameOrBothMissing(lsb, atEnd.GetValueOrDefault((channel, BankLsb)))
+                || endProgram is null || !SameValue(program, endProgram);
+            if (!changed)
+            {
+                continue;
+            }
+
+            foreach (var (key, restore) in new[] { (BankMsb, msb), (BankLsb, lsb), (Program, (ChannelEvent?)program) })
+            {
+                if (restore is not null && !atLoopStartTick.Contains((channel, key)))
+                {
+                    result.Add(restore with { Id = SyntheticId(clip, (channel, key)), Position = Tick.Zero });
+                }
+            }
+        }
+
         return [.. result.OrderBy(e => e.Phase)];
     }
+
+    private const int Program = 1000;
+    private const int BankMsb = 1003;
+    private const int BankLsb = 1004;
+
+    private static bool SameOrBothMissing(ChannelEvent? a, ChannelEvent? b) => a is null ? b is null : b is not null && SameValue(a, b);
 
     // Program, pitch bend, pressure, and each chased controller have their own key.
     private static int? KeyOf(ChannelEvent e) => e switch
     {
-        ProgramEvent => 1000,
+        ProgramEvent => Program,
+        ControllerEvent { Controller.Value: 0 } => BankMsb,
+        ControllerEvent { Controller.Value: 32 } => BankLsb,
         PitchBendEvent => 1001,
         ChannelPressureEvent => 1002,
         ControllerEvent c when IsChased(c.Controller) => c.Controller.Value,

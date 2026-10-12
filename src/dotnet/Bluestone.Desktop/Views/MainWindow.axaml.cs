@@ -75,6 +75,8 @@ public partial class MainWindow : Window
         };
         Timeline.ClipsDragged += (_, drag) => viewModel.Arrangement.MoveSelection(drag.DeltaTicks, drag.LaneDelta, drag.Copy);
         Timeline.ClipResized += (_, resize) => viewModel.Arrangement.ResizeClip(resize.Clip, resize.Start, resize.End);
+        Timeline.ClipLoopExtended += (_, extend) => viewModel.ClipLoop.ExtendLooping(extend.Clip, extend.End);
+        Timeline.ClipLoopLengthChanged += (_, change) => viewModel.ClipLoop.SetLoopLength(change.Clip, change.Length);
         Timeline.AutomationEdited += (_, edit) =>
         {
             if (edit.Lane < viewModel.Tracks.Count)

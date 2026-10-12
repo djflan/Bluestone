@@ -197,8 +197,9 @@ public sealed class ClipLoopTests
 
         var (left, right) = clip.SplitAt(new Tick(2000), ClipId.New());
 
-        // 1000 ticks in: content 100..900 (800 ticks), then 500 + 200.
-        Assert.Equal(700, right.ContentOffset.Value);
+        // The offset is the unwrapped position (100 + 1000), never wrapped into the loop; it plays content 700 there.
+        Assert.Equal(1100, right.ContentOffset.Value);
+        Assert.Equal(700, right.ContentAt(0));
         Assert.Equal(clip.Loop, right.Loop);
         Assert.Equal(TickSpan.Zero, ((AudioClip)left).FadeOut);
         Assert.Equal(TickSpan.Zero, ((AudioClip)right).FadeIn);
@@ -230,6 +231,55 @@ public sealed class ClipLoopTests
         json["project"]!["sequence"]!["tracks"]![0]!["clips"]![0]!["loop"]!["length"] = 0;
         Assert.Throws<ProjectFormatException>(() => ProjectSerializer.Default.Deserialize(Encoding.UTF8.GetBytes(json.ToJsonString())));
     }
+
+    [Fact]
+    public void ABankChangedInsideTheLoop_IsRestoredWithTheProgram_AsAtAnArrangerWrap()
+    {
+        var program = new ProgramEvent(Tick.Zero, One, new ProgramSelection(new ProgramNumber(5)));
+        var content = new EventList([Cc(0, 0, 1), program, Cc(600, 0, 9), Note(480, 100)]);
+        var clip = new NoteClip(ClipId.New(), Tick.Zero, new TickSpan(1440), TickSpan.Zero, content) { Loop = new ClipLoop(new Tick(480), new TickSpan(480)) };
+
+        var atRepeat = clip.Arrange().Where(e => e.Position.Value == 960).ToList();
+
+        Assert.IsType<ControllerEvent>(atRepeat[0]);
+        Assert.Equal(ControlValue.FromSevenBit(1), ((ControllerEvent)atRepeat[0]).Value);
+        Assert.Equal(program.Selection, Assert.IsType<ProgramEvent>(atRepeat[1]).Selection);
+        Assert.IsType<NoteEvent>(atRepeat[^1]);
+    }
+
+    [Fact]
+    public void AnEmptyOneTickLoopOverAVeryLongClip_IsArrangedWithoutWalkingEveryPass()
+    {
+        var clip = new NoteClip(ClipId.New(), Tick.Zero, new TickSpan(long.MaxValue / 4), TickSpan.Zero, new EventList([Note(0, 10)]))
+        {
+            Loop = new ClipLoop(new Tick(100), new TickSpan(1)),
+        };
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var arranged = clip.Arrange().ToList();
+
+        Assert.Single(arranged);
+        Assert.Equal(1, clip.ArrangedEventCount());
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ManyLoopingClipsTogether_AreLimitedAcrossTheSequence()
+    {
+        // Each clip is under the per-clip limit; five of them together are over the project's.
+        Track Dense() => new(TrackId.New(), "t", [new NoteClip(ClipId.New(), Tick.Zero, new TickSpan(200_000 * 10L), TickSpan.Zero, new EventList([Note(0, 1)])) { Loop = new ClipLoop(Tick.Zero, new TickSpan(10)) }]);
+        var sequence = Sequence.CreateEmpty(Ppqn.Default);
+        for (var i = 0; i < 5; i++)
+        {
+            sequence = sequence.WithTrack(Dense());
+        }
+
+        Assert.Throws<ClipLoopLimitException>(() => sequence.WithTrack(Dense()));
+    }
+
+    [Fact]
+    public void ALoopEndingBeyondTheTimelinesRange_IsRefused() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ClipLoop(new Tick(long.MaxValue - 5), new TickSpan(10)));
 
     private static List<ClipPass> EnumeratePasses(Clip clip)
     {

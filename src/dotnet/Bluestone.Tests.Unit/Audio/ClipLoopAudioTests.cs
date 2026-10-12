@@ -170,6 +170,43 @@ public sealed class ClipLoopAudioTests : IDisposable
     }
 
     [Fact]
+    public void ALoopBeyondTheFilesEnd_RepeatsSilence_WithoutUnderruns()
+    {
+        var samples = TestAudioFiles.Sine(4_800, 2, 440, 48_000);
+        var path = TestAudioFiles.Wave(_directory, "i.wav", "float32", 48_000, 2, samples);
+        var (engine, driver) = Play(48_000, Looping(path, 0, 20_000, 0, 6_000, 3_000, 48_000));
+
+        var output = driver.Render(20_000, Block);
+
+        Assert.Equal(0, Node(engine).UnderrunFrames);
+        AssertPlays(samples, output, Enumerable.Range(0, 4_800).Select(n => (long)n));
+        Assert.All(output.AsSpan(2 * 4_800).ToArray(), s => Assert.Equal(0f, s));
+        engine.Dispose();
+    }
+
+    [Fact]
+    public void AnArrangerWrapAndAOneFrameClipLoop_InTheSameBlocks_PlayExactly()
+    {
+        var samples = TestAudioFiles.Sine(4_800, 2, 440, 48_000);
+        var path = TestAudioFiles.Wave(_directory, "k.wav", "float32", 48_000, 2, samples);
+        var (engine, driver) = Play(48_000, Looping(path, 0, 48_000, 0, 1_000, 1, 48_000));
+        // The transport wraps an arranger loop at most once per block, so this one is longer than a block (a 1-frame clip
+        // loop wraps every frame regardless).
+        engine.Transport.SetLoop(900, 1_300);
+
+        var output = driver.Render(4_000, Block);
+
+        var frame = 0L;
+        for (var i = 0; i < 4_000; i++)
+        {
+            Assert.True((float)samples[2 * Map(frame, 1_000, 1)] == output[2 * i], $"output {i} (song {frame}): {output[2 * i]}, expected {samples[2 * Map(frame, 1_000, 1)]}; source[{2 * Map(frame, 1_000, 1)}]");
+            frame = frame + 1 == 1_300 ? 900 : frame + 1;
+        }
+
+        engine.Dispose();
+    }
+
+    [Fact]
     public void Rendering_AResampledLoopingClip_AllocatesNothing()
     {
         var path = TestAudioFiles.Wave(_directory, "h.wav", "pcm16", 44_100, 2, TestAudioFiles.Sine(88_200, 2, 1000, 44_100));

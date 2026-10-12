@@ -52,6 +52,34 @@ public static class ClipLoopCommands
             (false, true) => "Stop Looping Clip",
             (false, false) => "Stop Looping Clips",
         };
+        return Edit(label, clips, (c, sequence) => Enabled(c, enabled, sequence));
+    }
+
+    /// <summary>
+    /// Sets the loop's start (content ticks) on every clip in <paramref name="clips"/>, keeping each loop's length and
+    /// state (a clip without a loop gets the default loop, moved, and looping on).
+    /// </summary>
+    public static IProjectCommand SetStart(IReadOnlyCollection<(TrackId Track, ClipId Clip)> clips, Tick start) =>
+        Edit("Change Clip Loop Start", clips, (c, sequence) =>
+        {
+            var loop = c.Loop ?? DefaultLoop(c, sequence);
+            return c with { Loop = new ClipLoop(start, loop.Length, c.Loop?.IsEnabled ?? true) };
+        });
+
+    /// <summary>Sets the loop's length on every clip in <paramref name="clips"/>, keeping each loop's start and state.</summary>
+    public static IProjectCommand SetLength(IReadOnlyCollection<(TrackId Track, ClipId Clip)> clips, TickSpan length) =>
+        length.Value < 1
+            ? new ProjectCommand("Change Clip Loop Length", p => p)
+            : Edit("Change Clip Loop Length", clips, (c, sequence) =>
+            {
+                var loop = c.Loop ?? DefaultLoop(c, sequence);
+                return c with { Loop = new ClipLoop(loop.Start, length, c.Loop?.IsEnabled ?? true) };
+            });
+
+    // One step over clips on any number of tracks.
+    private static ProjectCommand Edit(string label, IReadOnlyCollection<(TrackId Track, ClipId Clip)> clips, Func<Clip, Sequence, Clip> edit)
+    {
+        ArgumentNullException.ThrowIfNull(clips);
         return new ProjectCommand(label, p =>
         {
             var sequence = p.Sequence;
@@ -63,7 +91,7 @@ public static class ClipLoopCommands
                 }
 
                 var ids = group.Select(c => c.Clip).ToHashSet();
-                var changed = track.Clips.Select(c => ids.Contains(c.Id) ? Enabled(c, enabled, sequence) : c).ToList();
+                var changed = track.Clips.Select(c => ids.Contains(c.Id) ? edit(c, p.Sequence) : c).ToList();
                 if (!changed.SequenceEqual(track.Clips))
                 {
                     sequence = sequence.WithTrack(track.WithClips(changed));
