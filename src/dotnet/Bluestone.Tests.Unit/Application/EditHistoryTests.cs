@@ -178,10 +178,10 @@ public sealed class EditHistoryTests
         var history = new EditHistory(Project.CreateNew());
 
         history.Execute(ProjectCommands.SetTempo(Tick.Zero, Tempo.FromBeatsPerMinute(90)));
-        history.Execute(ProjectCommands.SetLoop(new TickRange(Tick.Zero, new Tick(100))));
+        history.Execute(LoopCommands.SetRange(new TickRange(Tick.Zero, new Tick(100)), enable: true));
 
         Assert.Equal(Tempo.FromBeatsPerMinute(90), history.Current.Sequence.TempoMap.TempoAt(Tick.Zero));
-        Assert.Equal(new Tick(100), history.Current.Loop!.End);
+        Assert.Equal(new Tick(100), history.Current.Loop.Active!.End);
         Assert.False(history.Execute(ProjectCommands.SetTempo(Tick.Zero, Tempo.FromBeatsPerMinute(90))));
     }
 

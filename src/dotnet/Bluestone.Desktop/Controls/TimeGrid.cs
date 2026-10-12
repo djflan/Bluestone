@@ -1,11 +1,13 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Input;
 using Avalonia.Media;
 using Bluestone.Application.Editing;
 using Bluestone.Desktop.Theme;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
+using Bluestone.Presentation.Timeline;
 
 namespace Bluestone.Desktop.Controls;
 
@@ -14,6 +16,17 @@ namespace Bluestone.Desktop.Controls;
 /// the bar ruler with its cycle strip. Positions are in pixels from the left of the content, so
 /// <c>x = tick × pixelsPerQuarter / PPQN − scroll</c>.
 /// </summary>
+/// <summary>How the loop strip draws the arranger loop: its range, whether it loops, and the state of the pointer over it.</summary>
+/// <param name="Range">The loop's range, or null for none.</param>
+/// <param name="Enabled">Whether it loops (solid) or not (subdued).</param>
+/// <param name="Selected">Whether it is selected for keyboard nudging.</param>
+/// <param name="Hover">The part under the pointer, for its grips.</param>
+/// <param name="Feedback">Start and length while it is dragged, or null.</param>
+internal readonly record struct LoopStripVisual(TickRange? Range, bool Enabled, bool Selected = false, LoopStripPart Hover = LoopStripPart.Empty, string? Feedback = null)
+{
+    public static LoopStripVisual Of(ArrangerLoop loop) => new(loop.Range, loop.IsEnabled);
+}
+
 internal static class TimeGrid
 {
     public const double CycleStripHeight = 11;
@@ -32,6 +45,13 @@ internal static class TimeGrid
     private static readonly IBrush CycleFill = new SolidColorBrush(Palette.Cycle, 0.85);
     private static readonly IPen CycleEdge = new Pen(new SolidColorBrush(Palette.Darken(Palette.Cycle, 0.35)), 1);
     private static readonly IBrush CycleShade = new SolidColorBrush(Palette.Cycle, 0.05);
+    private static readonly IBrush CycleOffFill = new SolidColorBrush(Palette.Cycle, 0.22);
+    private static readonly IPen CycleOffEdge = new Pen(new SolidColorBrush(Palette.Cycle, 0.6), 1);
+    private static readonly IPen CycleSelectedEdge = new Pen(new SolidColorBrush(Color.Parse("#F2F2F4")), 1);
+    private static readonly IBrush CycleHandle = new SolidColorBrush(Palette.Darken(Palette.Cycle, 0.55));
+    private static readonly IBrush CycleOffHandle = new SolidColorBrush(Palette.Cycle, 0.75);
+    private static readonly IBrush FeedbackBack = new SolidColorBrush(Color.Parse("#1B1B1D"), 0.92);
+    private static readonly IBrush FeedbackText = new SolidColorBrush(Color.Parse("#E6E6E9"));
     private static readonly IPen RulerTickPen = new Pen(new SolidColorBrush(Color.Parse("#6A6A70")), 1);
     private static readonly IPen RulerEdgePen = new Pen(new SolidColorBrush(Palette.Divider), 1);
     private static readonly IBrush RulerText = new SolidColorBrush(Color.Parse("#B4B4B9"));
@@ -39,6 +59,10 @@ internal static class TimeGrid
     private static readonly IBrush RecordBrush = new SolidColorBrush(Palette.Record);
     private static readonly StreamGeometry PlayheadHead = StreamGeometry.Parse("M -5,0 L 5,0 L 5,3 L 0,8 L -5,3 Z");
     private static readonly Typeface Face = new("Inter", FontStyle.Normal, FontWeight.Medium);
+
+    /// <summary>The platform's command modifier: ⌘ on macOS, Ctrl elsewhere. Held while dragging, it ignores the grid.</summary>
+    public static KeyModifiers CommandModifier =>
+        Avalonia.Application.Current?.PlatformSettings?.HotkeyConfiguration.CommandModifiers ?? KeyModifiers.Control;
 
     public static double TickToX(long tick, Sequence sequence, double pixelsPerQuarter) =>
         tick * pixelsPerQuarter / sequence.Ppqn.TicksPerQuarterNote;
@@ -96,19 +120,33 @@ internal static class TimeGrid
     }
 
     /// <summary>
-    /// Draws the bar ruler: a cycle strip on top (the loop, in yellow), bar numbers and beat ticks
-    /// below, and the playhead marker.
+    /// Draws the bar ruler: a loop strip on top (the arranger loop: solid when looping, subdued when not), bar numbers
+    /// and beat ticks below, and the playhead marker.
     /// </summary>
-    public static void DrawRuler(DrawingContext context, Sequence sequence, TickRange? loop, double pixelsPerQuarter, double scroll, Rect bounds, long playhead, bool recording)
+    public static void DrawRuler(DrawingContext context, Sequence sequence, LoopStripVisual loop, double pixelsPerQuarter, double scroll, Rect bounds, long playhead, bool recording)
     {
         context.FillRectangle(RulerBrush, bounds);
         context.FillRectangle(CycleStrip, new Rect(bounds.Left, bounds.Top, bounds.Width, CycleStripHeight));
-        if (loop is { } cycle)
+        if (loop.Range is { } cycle)
         {
-            var x0 = TickToX(cycle.Start.Value, sequence, pixelsPerQuarter) - scroll;
-            var x1 = TickToX(cycle.End.Value, sequence, pixelsPerQuarter) - scroll;
-            var rect = new Rect(x0, bounds.Top + 1, Math.Max(2, x1 - x0), CycleStripHeight - 2);
-            context.DrawRectangle(CycleFill, CycleEdge, rect, 2, 2);
+            var x0 = Math.Round(TickToX(cycle.Start.Value, sequence, pixelsPerQuarter) - scroll);
+            var x1 = Math.Round(TickToX(cycle.End.Value, sequence, pixelsPerQuarter) - scroll);
+            var rect = new Rect(x0 + 0.5, bounds.Top + 1.5, Math.Max(2, x1 - x0 - 1), CycleStripHeight - 3);
+            var edge = loop.Selected ? CycleSelectedEdge : loop.Enabled ? CycleEdge : CycleOffEdge;
+            context.DrawRectangle(loop.Enabled ? CycleFill : CycleOffFill, edge, rect, 2, 2);
+            if (loop.Hover is not LoopStripPart.Empty || loop.Selected)
+            {
+                // Restrained grips: short bars just inside each edge, the hovered one a little stronger.
+                var handle = loop.Enabled ? CycleHandle : CycleOffHandle;
+                var top = bounds.Top + 3;
+                var height = CycleStripHeight - 6;
+                if (rect.Width >= 10)
+                {
+                    context.FillRectangle(handle, new Rect(x0 + 2, top, loop.Hover == LoopStripPart.StartEdge ? 2 : 1, height));
+                    context.FillRectangle(handle, new Rect(x1 - (loop.Hover == LoopStripPart.EndEdge ? 4 : 3), top, loop.Hover == LoopStripPart.EndEdge ? 2 : 1, height));
+                }
+            }
+
         }
 
         var meter = sequence.MeterMap;
@@ -161,6 +199,15 @@ internal static class TimeGrid
         }
 
         context.DrawLine(RulerEdgePen, new Point(bounds.Left, baseline - 0.5), new Point(bounds.Right, baseline - 0.5));
+        if (loop is { Range: { } dragged, Feedback: { Length: > 0 } feedback })
+        {
+            // Over the bar numbers, so it is never hidden while dragging.
+            var text = new FormattedText(feedback, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, FeedbackText);
+            var at = new Point(Math.Max(bounds.Left + 2, Math.Round(TickToX(dragged.Start.Value, sequence, pixelsPerQuarter) - scroll)), bounds.Top + CycleStripHeight + 1);
+            context.FillRectangle(FeedbackBack, new Rect(at.X - 1, at.Y, text.Width + 8, text.Height + 2), 2);
+            context.DrawText(text, new Point(at.X + 3, at.Y + 1));
+        }
+
         var px = Snap(TickToX(playhead, sequence, pixelsPerQuarter) - scroll);
         if (px >= bounds.Left - 6 && px <= bounds.Right + 6)
         {
@@ -171,7 +218,45 @@ internal static class TimeGrid
         }
     }
 
-    /// <summary>Faintly shades the cycle range over a content area so the loop is visible below the ruler.</summary>
+    /// <summary>
+    /// The nearest position the arranger snaps to: beats when they are wide enough to aim at (24 pixels), otherwise bars.
+    /// </summary>
+    public static long SnapAdaptive(long tick, Sequence sequence, double pixelsPerQuarter)
+    {
+        var meter = sequence.MeterMap;
+        var bar = meter.BarStart(new Tick(Math.Max(0, tick)));
+        var beat = BeatTicks(sequence, bar);
+        if (TickToX(beat, sequence, pixelsPerQuarter) >= 24)
+        {
+            return bar.Value + ((long)Math.Round((tick - bar.Value) / (double)beat) * beat);
+        }
+
+        var next = meter.NextBarStart(bar);
+        return tick - bar.Value < next.Value - tick ? bar.Value : next.Value;
+    }
+
+    /// <summary>The step <see cref="SnapAdaptive"/> uses at <paramref name="tick"/>: a beat when beats are wide enough, otherwise a bar.</summary>
+    public static long AdaptiveStep(long tick, Sequence sequence, double pixelsPerQuarter)
+    {
+        var meter = sequence.MeterMap;
+        var bar = meter.BarStart(new Tick(Math.Max(0, tick)));
+        var beat = BeatTicks(sequence, bar);
+        return TickToX(beat, sequence, pixelsPerQuarter) >= 24 ? beat : BarTicks(sequence, tick);
+    }
+
+    /// <summary>The length of the bar containing <paramref name="tick"/>.</summary>
+    public static long BarTicks(Sequence sequence, long tick)
+    {
+        var meter = sequence.MeterMap;
+        var bar = meter.BarStart(new Tick(Math.Max(0, tick)));
+        var length = meter.NextBarStart(bar).Value - bar.Value;
+        return length > 0 ? length : 4L * sequence.Ppqn.TicksPerQuarterNote;
+    }
+
+    private static long BeatTicks(Sequence sequence, Tick bar) =>
+        sequence.MeterMap.SignatureAt(bar).TryGetTicksPerBeat(sequence.Ppqn, out var span) ? span.Value : sequence.Ppqn.TicksPerQuarterNote;
+
+    /// <summary>Faintly shades the active loop over a content area so it is visible below the ruler.</summary>
     public static void ShadeCycle(DrawingContext context, Sequence sequence, TickRange? loop, double pixelsPerQuarter, double scroll, Rect area)
     {
         if (loop is { } cycle)

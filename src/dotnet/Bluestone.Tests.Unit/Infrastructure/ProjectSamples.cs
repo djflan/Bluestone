@@ -81,7 +81,7 @@ internal static class ProjectSamples
             Id = ProjectId.New(),
             Name = "Demo",
             Sequence = sequence,
-            Loop = new TickRange(Tick.Zero, new Tick(1920)),
+            Loop = ArrangerLoop.Enabled(new TickRange(Tick.Zero, new Tick(1920))),
             Mixer = new Mixer
             {
                 Channels = [bus with { Output = master.Id, Sends = [new MixerSend(reverb.Id, -12.5, preFader: true)] }, master.WithSend(new MixerSend(reverb.Id)), reverb],
@@ -124,7 +124,7 @@ internal static class ProjectSamples
         var s = project.Sequence;
         var lines = new List<string>
         {
-            $"{project.Id} {project.Name} loop={project.Loop?.Start}-{project.Loop?.End} ppqn={s.Ppqn}",
+            $"{project.Id} {project.Name} loop={project.Loop.Range?.Start}-{project.Loop.Range?.End}:{project.Loop.IsEnabled} ppqn={s.Ppqn}",
             "tempo " + string.Join(",", s.TempoMap.Changes),
             "meter " + string.Join(",", s.MeterMap.Changes),
             "markers " + string.Join(",", s.Markers),

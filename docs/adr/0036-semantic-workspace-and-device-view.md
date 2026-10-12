@@ -5,10 +5,10 @@
 
 ## Context
 
-Bluestone is becoming a device-oriented DAW in the manner of Bitwig: a track's device chain is a central place to
-work, not a list in an inspector. The device chain was edited in an inspector section (`DeviceStripViewModel`):
-one instance, bound to the selected track, with an *Add a device…* combo box and up/down buttons. Window layout was
-not saved at all, and colours, sizes, and margins were written inline across the views.
+Bluestone is becoming a device-oriented DAW, a workflow inspired by Bitwig Studio: a track's device chain is a
+central place to work, not a list in an inspector. The device chain was edited in an inspector section
+(`DeviceStripViewModel`): one instance, bound to the selected track, with an *Add a device…* combo box and up/down
+buttons. Window layout was not saved at all, and colours, sizes, and margins were written inline across the views.
 
 The owner asked for a device-centric slice: a dark design system, a workspace with regions, a dockable Browser, a
 first-class Device View that can follow or be locked, several Device Views at once, and local persistence of all of

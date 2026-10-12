@@ -184,7 +184,7 @@ public sealed class PlaybackController : IAsyncDisposable
 
             var plan = prepared.Compile(project.Sequence);
             Engine.Load(plan);
-            Engine.SetLoop(project.Loop is { } loop ? new LoopRegion(loop.Start, loop.End) : null);
+            Engine.SetLoop(project.Loop.Active is { } loop ? new LoopRegion(loop.Start, loop.End) : null);
             PlanDiagnostics = [.. plan.Diagnostics];
             OutputProblems = problems.ToImmutable();
         }
@@ -280,7 +280,7 @@ public sealed class PlaybackController : IAsyncDisposable
         var project = _session.Project;
         var end = Engine.Position;
         // The loop is the take's range only if playback actually wrapped while recording.
-        var loop = project.Loop is { } l && Engine.LoopWraps != _takeWraps ? l : null;
+        var loop = project.Loop.Active is { } l && Engine.LoopWraps != _takeWraps ? l : null;
         var take = Recorder.Stop(end, loop);
         ApplyMetronome();
         ApplyThru();

@@ -105,6 +105,8 @@
                                   <MenuItem Header="Move Left" Command="{Binding MoveLeftCommand}" />
                                   <MenuItem Header="Move Right" Command="{Binding MoveRightCommand}" />
                                   <MenuItem Header="Route Output…" Command="{Binding ShowRoutingCommand}" />
+                                  <MenuItem Header="Replace with Browser Selection" Command="{Binding ReplaceWithBrowserSelectionCommand}"
+                                            ToolTip.Tip="Put the device selected in the Browser here instead (one undo step); or drop it on this panel" />
                                   <Separator />
                                   <MenuItem Header="Remove" Command="{Binding RemoveCommand}" />
                                 </MenuFlyout>
@@ -178,10 +180,22 @@
                             <Button Classes="link micro" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}"
                                     ToolTip.Tip="This device's output is also sent here. Open the connections." />
                           </StackPanel>
-                          <Button Grid.Column="1" Classes="tool tiny" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
-                                  ToolTip.Tip="Open the plugin's editor" AutomationProperties.Name="Open plugin editor">
-                            <PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" />
-                          </Button>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="1">
+                            <!-- The open editor window: pinned (when editors follow the selection), and where its keys go. -->
+                            <ToggleButton Classes="tool tiny" IsChecked="{Binding IsEditorPinned, Mode=OneWay}" Command="{Binding ToggleEditorPinnedCommand}"
+                                          IsVisible="{Binding CanPinEditor}" ToolTip.Tip="{Binding PinTip}" AutomationProperties.Name="Pin plugin editor">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Pin}" />
+                            </ToggleButton>
+                            <ToggleButton Classes="tool tiny" IsChecked="{Binding EditorKeysToBluestone, Mode=OneWay}" Command="{Binding ToggleEditorKeysCommand}"
+                                          IsVisible="{Binding IsEditorOpen}" IsEnabled="{Binding CanRouteEditorKeys}" ToolTip.Tip="{Binding KeysTip}"
+                                          ToolTip.ShowOnDisabled="True" AutomationProperties.Name="Send editor keys to Bluestone">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" />
+                            </ToggleButton>
+                            <Button Classes="tool tiny" Classes.editorHidden="{Binding IsEditorHidden}" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
+                                    ToolTip.Tip="Open the plugin's editor (or bring it forward)" AutomationProperties.Name="Open plugin editor">
+                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" />
+                            </Button>
+                          </StackPanel>
                         </Grid>
                       </Grid>
 
@@ -239,6 +253,12 @@
       <!-- Where a dragged device will land. -->
       <Canvas IsHitTestVisible="False">
         <Border x:Name="InsertionMarker" Classes="insertionMarker" IsVisible="False" />
+        <Border x:Name="ReplaceOverlay" Classes="replaceOverlay" IsVisible="False">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="2">
+            <TextBlock x:Name="ReplaceTitle" Classes="replaceTitle" Text="Replace" HorizontalAlignment="Center" />
+            <TextBlock x:Name="ReplaceDetail" Classes="replaceDetail" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
       </Canvas>
 
       <!-- No chain to show: nothing selected, or the locked track or rack is gone. -->

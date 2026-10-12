@@ -161,6 +161,25 @@
         </Expander>
       </StackPanel>
 
+      <Expander x:Name="ClipLoopSection" Classes="section" IsExpanded="True" DataContext="{Binding ClipLoop}" x:DataType="vm:ClipLoopViewModel" IsVisible="{Binding HasClips}">
+        <Expander.Header>
+          <TextBlock Text="{Binding Header}" VerticalAlignment="Center" />
+        </Expander.Header>
+        <Grid ColumnDefinitions="64,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="4">
+          <CheckBox Grid.ColumnSpan="2" Content="Loop the clip" IsThreeState="False" IsChecked="{Binding IsLooping}" AutomationProperties.Name="Loop the clip"
+                    ToolTip.Tip="Repeat part of the clip's content for as long as the clip lasts. Turning it off keeps the loop's region." />
+          <Button Grid.Column="2" Classes="raised compact" Content="Consolidate" Command="{Binding ConsolidateCommand}" AutomationProperties.Name="Consolidate"
+                  ToolTip.Tip="Write out what the looping clips play: repeats become ordinary notes, or a new audio file" />
+          <TextBlock Grid.Row="1" Text="Loop start" Classes="label" VerticalAlignment="Center" />
+          <TextBox x:Name="ClipLoopStartBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="commit" Text="{Binding StartText, Mode=OneWay}" PlaceholderText="{Binding StartPlaceholder}"
+                   AutomationProperties.Name="Clip loop start" ToolTip.Tip="Where the loop starts, in bars.beats.ticks from the content's start. Content before it plays once." />
+          <TextBlock Grid.Row="2" Text="Length" Classes="label" VerticalAlignment="Center" />
+          <TextBox x:Name="ClipLoopLengthBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="commit" Text="{Binding LengthText, Mode=OneWay}" PlaceholderText="{Binding LengthPlaceholder}"
+                   AutomationProperties.Name="Clip loop length" ToolTip.Tip="The loop's length in bars.beats.ticks (or ticks with a t suffix)" />
+          <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding Summary}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+        </Grid>
+      </Expander>
+
       <Expander x:Name="AudioClipSection" Classes="section" Header="Audio Clip" IsExpanded="True" DataContext="{Binding AudioClip}" x:DataType="vm:AudioClipViewModel" IsVisible="{Binding HasClip}">
         <Grid ColumnDefinitions="64,*,64" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="4">
           <TextBlock Grid.ColumnSpan="3" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />

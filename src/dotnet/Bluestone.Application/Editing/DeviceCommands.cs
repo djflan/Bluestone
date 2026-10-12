@@ -62,6 +62,54 @@ public static class DeviceCommands
             return p.WithChain(found.Chain.Remove(device)) with { Connections = p.Connections.RemoveAll(c => c.Source == tap) };
         });
 
+    /// <summary>
+    /// Replaces <paramref name="device"/> with <paramref name="replacement"/> at the same place in its chain, in one step.
+    /// The replacement has its own ID: automation of the old device is never bound to the new one's parameters unless it
+    /// is the same device (the same built-in or the same plugin), when its lanes follow it. Other lanes keep targeting the
+    /// old device and stay in the project (shown as having no device), so nothing is lost and Undo restores everything.
+    /// The old device's taps (connections from it) move to the replacement when it produces that kind of signal, and are
+    /// removed otherwise. A track that had no audio path gets one when the replacement makes sound, as an insertion does.
+    /// </summary>
+    public static IProjectCommand ReplaceDevice(DeviceId device, DeviceInstance replacement, DeviceDefinitionLookup definitions) =>
+        RoutingGuard.Command("Replace Device", definitions, p =>
+        {
+            ArgumentNullException.ThrowIfNull(replacement);
+            if (p.FindDevice(device) is not { } found)
+            {
+                return p;
+            }
+
+            var index = found.Chain.Devices.IndexOf(found.Device);
+            var chain = found.Chain.Remove(device).Insert(index, replacement);
+            var produces = definitions(replacement.Definition.Id)?.Produces ?? SignalKinds.None;
+            var tap = SignalNode.Device(device);
+            var connections = p.Connections
+                .Where(c => c.Source != tap || produces.Includes(c.Kind))
+                .Select(c => c.Source == tap ? c with { Source = SignalNode.Device(replacement.Id) } : c);
+            var project = p.WithChain(chain) with { Connections = [.. connections] };
+            if (replacement.Definition.Id == found.Device.Definition.Id)
+            {
+                project = project with { Sequence = RetargetLanes(project.Sequence, device, replacement.Id) };
+            }
+
+            return chain.Owner.Kind == ChainOwnerKind.Track ? HeardIfAudible(project, chain.Owner.Track, [replacement], definitions) : project;
+        });
+
+    // Lanes automating `from` now automate `to`, parameter for parameter (only for the same kind of device).
+    private static Sequence RetargetLanes(Sequence sequence, DeviceId from, DeviceId to)
+    {
+        foreach (var track in sequence.Tracks)
+        {
+            if (track.Automation.Any(l => l.Target.IsDevice && l.Target.Device == from))
+            {
+                sequence = sequence.WithTrack(track.WithAutomation(track.Automation.Select(l =>
+                    l.Target.IsDevice && l.Target.Device == from ? new AutomationLane(l.Id, AutomationTarget.ForDevice(to, l.Target.DeviceParameter), l.Points) : l)));
+            }
+        }
+
+        return sequence;
+    }
+
     /// <summary>Moves a device within its chain. Its identity, parameters, automation, and taps are unchanged.</summary>
     public static IProjectCommand MoveDevice(DeviceId device, int newIndex, DeviceDefinitionLookup definitions) =>
         RoutingGuard.Command("Move Device", definitions, p =>

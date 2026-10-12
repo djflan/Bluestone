@@ -373,6 +373,56 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Replaces <paramref name="target"/> with a new device of <paramref name="definition"/> at the same place, in one
+    /// undo step (see <see cref="DeviceCommands.ReplaceDevice"/>). A plugin is started in its worker first: if it cannot
+    /// run, the chain is left exactly as it was and a message says why.
+    /// </summary>
+    public async Task<bool> ReplaceAsync(DeviceId target, DeviceDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (!HasChain || Devices.FirstOrDefault(d => d.Id == target) is not { } old)
+        {
+            return false;
+        }
+
+        var replacement = DeviceInstance.Create(definition.ToReference());
+        var host = _owner.PluginHost;
+        var staged = host?.Hosts(definition.Id) == true;
+        if (staged)
+        {
+            string? reason;
+            try
+            {
+                reason = await host!.StageAsync(replacement);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                reason = ex.Message;
+            }
+
+            if (reason is not null)
+            {
+                _owner.AddMessage(MessageSeverity.Warning, "Replace Device", $"{old.Name} was not replaced: {reason}");
+                return false;
+            }
+        }
+
+        if (!_owner.Execute(DeviceCommands.ReplaceDevice(target, replacement, Definitions)))
+        {
+            if (staged)
+            {
+                await host!.UnstageAsync(replacement.Id);
+            }
+
+            return false;
+        }
+
+        Activate();
+        SelectedDevice = Devices.FirstOrDefault(d => d.Id == replacement.Id);
+        return true;
+    }
+
     /// <summary>Inserts after the selected device, or at the end: where Enter or a double-click in the Browser puts a device.</summary>
     public bool Insert(DeviceDefinition definition) =>
         InsertAt(SelectedDevice is { } after ? after.Index + 1 : Devices.Count, definition);
@@ -397,6 +447,33 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     /// The gap a drop at <paramref name="x"/> lands in, given the horizontal centres of the panels in order: before the first panel
     /// whose centre is right of the pointer, or after the last.
     /// </summary>
+    /// <summary>
+    /// Where a drop at <paramref name="x"/> goes: onto device <c>Index</c> to replace it when <paramref name="canReplace"/>
+    /// and the pointer is over the middle half of that device's panel; otherwise into the gap <c>Index</c> (see
+    /// <see cref="GapAt"/>). The outer quarters of each panel stay insertion zones, so the edges are never ambiguous.
+    /// </summary>
+    /// <param name="panels">Each device panel's left and right edges, in chain order.</param>
+    /// <param name="x">The pointer, in the same coordinates.</param>
+    /// <param name="canReplace">Whether the dragged item may replace a device (a Browser item, not a chain device being moved).</param>
+    public static (bool Replace, int Index) DropTargetAt(IReadOnlyList<(double Left, double Right)> panels, double x, bool canReplace)
+    {
+        ArgumentNullException.ThrowIfNull(panels);
+        if (canReplace)
+        {
+            for (var i = 0; i < panels.Count; i++)
+            {
+                var (left, right) = panels[i];
+                var quarter = (right - left) / 4;
+                if (x >= left + quarter && x <= right - quarter)
+                {
+                    return (true, i);
+                }
+            }
+        }
+
+        return (false, GapAt([.. panels.Select(p => (p.Left + p.Right) / 2)], x));
+    }
+
     public static int GapAt(IReadOnlyList<double> centers, double x)
     {
         ArgumentNullException.ThrowIfNull(centers);
@@ -497,6 +574,26 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     internal Task RestartAsync(DevicePanelViewModel device) => _owner.RestartDeviceAsync(device.Id);
 
     internal Task OpenEditorAsync(DevicePanelViewModel device) => _owner.OpenDeviceEditorAsync(device.Id);
+
+    /// <summary>
+    /// Replaces <paramref name="device"/> with the device selected in the Browser (the keyboard and menu path to the same
+    /// replacement a drop makes). Says what to do when the Browser has no device selected.
+    /// </summary>
+    internal async Task ReplaceWithBrowserSelectionAsync(DevicePanelViewModel device)
+    {
+        if (_owner.Browser.SelectedItem is { Kind: BrowserItemKind.Device, Definition: { } definition })
+        {
+            await ReplaceAsync(device.Id, definition);
+            return;
+        }
+
+        _owner.AddMessage(MessageSeverity.Info, "Replace Device", "Select a device in the Browser first, then choose Replace with Browser Selection.");
+    }
+
+    internal void SetEditorPinned(DevicePanelViewModel device, bool pinned) => _owner.EditorWindows?.SetPinned(device.Id, pinned);
+
+    internal Task SetEditorKeysAsync(DevicePanelViewModel device, bool toBluestone) =>
+        _owner.EditorWindows?.SetKeysToBluestoneAsync(device.Id, toBluestone) ?? Task.CompletedTask;
 }
 
 /// <summary>
@@ -560,6 +657,42 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     /// <summary>A running VST3 or CLAP plugin can show its own editor, in a window of its worker process.</summary>
     [ObservableProperty]
     public partial bool CanOpenEditor { get; private set; }
+
+    /// <summary>The plugin's editor window is open (shown, or hidden while its track is not selected).</summary>
+    [ObservableProperty]
+    public partial bool IsEditorOpen { get; private set; }
+
+    /// <summary>The open editor stays visible whatever is selected.</summary>
+    [ObservableProperty]
+    public partial bool IsEditorPinned { get; private set; }
+
+    /// <summary>Keys typed in the open editor go to Bluestone (shortcuts, computer-keyboard MIDI), not the plugin.</summary>
+    [ObservableProperty]
+    public partial bool EditorKeysToBluestone { get; private set; }
+
+    /// <summary>The open editor is hidden because its track is not selected.</summary>
+    [ObservableProperty]
+    public partial bool IsEditorHidden { get; private set; }
+
+    /// <summary>Pinning matters only while editors follow the selection; otherwise the pin is not shown.</summary>
+    [ObservableProperty]
+    public partial bool CanPinEditor { get; private set; }
+
+    /// <summary>Whether this system can send an editor's keys to Bluestone (macOS, Windows; not Linux).</summary>
+    [ObservableProperty]
+    public partial bool CanRouteEditorKeys { get; private set; } = PluginEditorWindows.KeyRoutingSupported;
+
+    public string PinTip => IsEditorPinned
+        ? "Pinned: the editor stays open whatever is selected. Click to let it follow the selected track again."
+        : "Pin the editor so it stays open when another track is selected";
+
+    public string KeysTip => !CanRouteEditorKeys
+        ? PluginEditorWindows.KeyRoutingSupported
+            ? "This plugin's editor manages its own window, so its keys always go to the plugin."
+            : "On this system the plugin's editor always keeps its keys (X11 gives a plugin its own input)."
+        : EditorKeysToBluestone
+            ? "Keys typed in the editor go to Bluestone (shortcuts, computer-keyboard MIDI). Click to give them to the plugin."
+            : "Keys typed in the editor go to the plugin. Click to send them to Bluestone instead; the mouse still works in the editor.";
 
     /// <summary>For a plugin, which worker process it runs in.</summary>
     [ObservableProperty]
@@ -645,6 +778,14 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             NeedsAttention = status.NeedsAttention;
             CanRestart = status.CanRestart;
             CanOpenEditor = status.CanOpenEditor;
+            IsEditorOpen = status.Editor is not null;
+            IsEditorPinned = status.Editor?.Pinned == true;
+            EditorKeysToBluestone = status.Editor?.KeysToBluestone == true;
+            IsEditorHidden = status.Editor?.Hidden == true;
+            CanPinEditor = status.Editor is { FollowsSelection: true, CanHide: true };
+            CanRouteEditorKeys = status.Editor?.CanRouteKeys ?? PluginEditorWindows.KeyRoutingSupported;
+            OnPropertyChanged(nameof(PinTip));
+            OnPropertyChanged(nameof(KeysTip));
             Hosting = status.Hosting;
             Detail = status.Detail;
             Title = status.NeedsAttention ? $"[{device.DisplayName}: {status.Text}]" : device.DisplayName;
@@ -748,6 +889,15 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     [RelayCommand]
     private Task OpenEditorAsync() => _view.OpenEditorAsync(this);
 
+    [RelayCommand]
+    private Task ReplaceWithBrowserSelectionAsync() => _view.ReplaceWithBrowserSelectionAsync(this);
+
+    [RelayCommand]
+    private void ToggleEditorPinned() => _view.SetEditorPinned(this, !IsEditorPinned);
+
+    [RelayCommand]
+    private Task ToggleEditorKeysAsync() => _view.SetEditorKeysAsync(this, !EditorKeysToBluestone);
+
     internal void SetParameter(ParameterId parameter, ControlValue value)
     {
         if (!_syncing)
@@ -838,8 +988,21 @@ public sealed partial class ParameterViewModel : ObservableObject
 /// A device's status in words, and whether it needs the musician's attention. For a plugin, <c>Hosting</c> says which
 /// worker process it is in and <c>Detail</c> what else went down with it when it failed.
 /// </summary>
+/// <summary>An open plugin editor window's state: pinned, keys to Bluestone, hidden because its track is not selected, and whether editors follow the selection.</summary>
+public sealed record EditorWindowStatus(bool Pinned, bool KeysToBluestone, bool Hidden, bool FollowsSelection)
+{
+    /// <summary>Whether this editor can send its keys to Bluestone (the system can, and the editor has not refused).</summary>
+    public bool CanRouteKeys { get; init; } = PluginEditorWindows.KeyRoutingSupported;
+
+    /// <summary>Whether this editor can be hidden by following the selection.</summary>
+    public bool CanHide { get; init; } = true;
+}
+
 public sealed record DeviceStatus(string Text, bool NeedsAttention = false, bool CanRestart = false, bool CanOpenEditor = false, string Hosting = "", string Detail = "")
 {
+    /// <summary>The plugin's editor window, while it is open.</summary>
+    public EditorWindowStatus? Editor { get; init; }
+
     public static DeviceStatus Of(DeviceInstance device, DeviceCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(device);

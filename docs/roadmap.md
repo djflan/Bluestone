@@ -17,10 +17,11 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; XG map unverified on hardware |
 | Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, mixer with sends, clip gain and fades, meters, device-loss fallback, one transport (ADR 0032) | Done, tested with an offline driver and the real default device; heard on macOS only |
 | Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS |
-| Third-party plugins: VST3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins as VST3 and CLAP; installed plugins tested on macOS |
+| Third-party plugins: VST 3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins as VST 3 and CLAP; installed plugins tested on macOS |
 | Plugin hosting modes: together, by manufacturer, by plugin (default), individually; per-plugin override; crash blast radius and counts (ADR 0034) | Done, tested with real workers |
 | UI: Plugins view (rescan, quarantine retry, hosting), Mixer console, Audio Settings, editor button, group menu, instrument parameter lanes | Done; view-model and headless UI tests; the app launched as a smoke test only |
 | Device-centric workspace: design tokens, semantic regions and rails, dockable/detachable Browser, multiple follow/lock Device Views with per-view presentation, drag-and-drop insertion and reordering, local layout persistence with monitor recovery (ADR 0036); parallel signal bundle in chains (ADR 0037) | Done; view-model and headless UI tests with frames at 1280×800 and 1920×1080; the real app launched under Xvfb; not checked on real multiple monitors |
+| Interaction polish: arranger loop kept while off, clip loops on note and audio clips with Consolidate, format 5 (ADR 0039); ruler drag zoom and scroll, Zoom to Fit/Selection/Loop; drag to replace a device; floating editors that follow the selection, pin, and send keys to Bluestone (ADR 0040) | Done; unit, view-model, and headless UI tests; editor hiding and key forwarding checked on macOS only ([worklog](worklogs/bitwig-interaction-polish.md)) |
 | Headless UI tests: Device View, Browser, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
 | Acceptance scenarios 1–15 | All have tests: tables in [architecture.md](architecture.md#acceptance-scenarios-and-their-tests) and [plugin-hosting.md](plugin-hosting.md#acceptance-scenarios) |
 | Rust | Two cdylib crates (`bluestone_audio`, `bluestone_plugin_host`) plus test plugins, each with a measured or native-ABI reason (ADRs 0032, 0033) |
@@ -34,7 +35,7 @@ a Rust toolchain (`cargo`; the hosted CI runners have one). `dotnet build` build
 `dotnet test --project src/dotnet/Bluestone.Tests.Unit --filter-namespace "Bluestone.Tests.Unit.Signal"`. Rust:
 `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` in `src/native/`.
 
-- `CoreMidiProviderTests` fail intermittently on macOS under load (real CoreMIDI timing; up to three of them in a
+- `CoreMidiProviderTests` fail intermittently on macOS under load (real Core MIDI timing; up to three of them in a
   full run while other builds run; they pass alone). CI leaves them out. Not a regression.
 - Plugin tests that make a worker call `Environment.FailFast` leave macOS crash reports in
   `~/Library/Logs/DiagnosticReports`. Harmless.
@@ -113,22 +114,25 @@ says so.
     round once more. (It used to re-post itself, which spins the UI queue, and overflows the stack with an inline
     test dispatcher.) `PlaybackController` evaluates the graph on the thread pool only when a device will be rendered
     out of process, so refreshes without plugin MIDI effects keep their old synchronous behaviour.
-27. **Scope of the audio and plugin work (owner, 2026-10-11).** The audio engine, VST3 and CLAP plugins, plugin
+27. **Scope of the audio and plugin work (owner, 2026-10-11).** The audio engine, VST 3 and CLAP plugins, plugin
     rescanning, group tracks, hardware parameter automation, the mixer console, more headless UI tests, live input
     through plugins and built-in devices, plugin delay compensation, and hosting modes (ADRs 0030 to 0035). MIDI
     2.0/UMP, MPE, the visual node graph, and feedback routing stay out of scope.
-28. **VST3 first, then CLAP**, tested with installed plugins and open-source CLAP plugins installed locally (never
+28. **VST 3 first, then CLAP**, tested with installed plugins and open-source CLAP plugins installed locally (never
     vendored). The native host is Rust and loads only in the worker (ADR 0033).
 29. **Audio output is Rust (cpal); the render graph is C#.** The callback was built in C# first and measured: .NET GC
     pauses missed deadlines, so only the device callback moved to Rust, copying from a ring a .NET thread fills ahead
     (ADR 0032). Live input shrinks the ring (ADR 0035).
 30. **A group's mute and solo reach its members** (amends decision 11 for groups; ADR 0030).
-31. **"Sandboxing" means crash isolation with hosting modes** (Bitwig-style), not operating-system containment;
-    plugins keep network and file access (ADR 0034).
+31. **"Sandboxing" means crash isolation with hosting modes** (as Bitwig Studio uses the word), not operating-system
+    containment; plugins keep network and file access (ADR 0034).
 32. **Hardware parameters are automation targets** through profile parameter maps; still no "external instrument
     device kind" (decision 4; ADR 0031).
 33. **New project data is additive optional fields in format 4** (group folding, parked connections, instrument
     automation targets, sends, clip gain and fades): no version bump, files without them are unchanged.
+34. **Format 5 separates a loop's range from whether it loops** (ADR 0039): disabling a loop never deletes it, and
+    format 4 files migrate as enabled arranger loops. Clip-loop repeats are produced at plan time, never on the
+    real-time thread, within a per-clip and per-sequence event bound; edits beyond it are refused, not truncated.
 
 ## 5. Regression net
 
@@ -149,7 +153,8 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 - Audio output heard on Windows and Linux (CI has no audio devices); unplugging a real device (device loss is tested
   with a test backend).
 - Plugin editors on Windows and Linux (they build, and CI runs the rest of the plugin path there); closing or
-  resizing an editor by hand.
+  resizing an editor by hand; hiding and showing editors and sending their keys to Bluestone on Windows (compiled
+  and linted only), and editor hiding under a Linux window manager.
 - A third-party MIDI effect plugin (none installed: Scaler 3 and Melody Sauce 3 report as instruments); third-party
   plugins live and delay-compensated through the audio engine on a real device (reference and test plugins only).
 - The acoustic round trip of live input (no loopback recording); measured numbers include the device's reported
@@ -168,9 +173,13 @@ Suggested order:
    (Rosetta), SysEx to native plugins, note expressions, a protocol message for a worker-side idle-handler failure
    (today it is logged to standard error and that instance's notifications stop). The full list is in
    [plugin-hosting.md](plugin-hosting.md#not-done).
-3. **Groups:** drag and drop into a group; a folded group's lane summarizing its members' clips.
-4. **Out of scope by decision 27:** MIDI 2.0/UMP, MPE, visual node-graph editing, feedback routing.
-5. **Device-centric workspace (ADR 0036, 0037), next steps:** live input fanning out to every instrument of a
+3. **Interaction polish follow-ups**
+   ([deferred work](worklogs/bitwig-interaction-polish.md#deferred-work)): Windows key routing on non-US layouts,
+   arranger loops shorter than one audio block, ghost repeats in the piano roll, audio repeat markers under tempo
+   changes, per-clip loop crossfades, and remembered editor geometry.
+4. **Groups:** drag and drop into a group; a folded group's lane summarizing its members' clips.
+5. **Out of scope by decision 27:** MIDI 2.0/UMP, MPE, visual node-graph editing, feedback routing.
+6. **Device-centric workspace (ADR 0036, 0037), next steps:** live input fanning out to every instrument of a
    layered chain; plugin preset browsing and remote-parameter pages in the compact plugin panel (the host protocol
    exposes neither yet); a stable per-note ID in the domain for expressive notes; container devices with child-chain
    slots shown inline in the Device View; declarative third-party panel layouts and optional custom Avalonia editors;

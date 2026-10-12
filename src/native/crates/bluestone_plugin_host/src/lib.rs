@@ -24,6 +24,7 @@ mod clap;
 mod clap_host;
 mod common;
 mod gui;
+mod keys;
 mod loader;
 mod vst3;
 mod vst3_host;
@@ -521,6 +522,42 @@ pub unsafe extern "C" fn bph_plugin_close_editor(plugin: *mut PluginHandle) {
     if let Some(p) = unsafe { self::plugin(plugin) } {
         p.instance.close_editor();
     }
+}
+
+/// Hides (0) or shows (1) the editor's window, keeping the editor. Returns 1 when done, 0 when the editor could not
+/// (none is open, or a plugin-owned window refused). Main thread.
+///
+/// # Safety
+/// `plugin` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bph_plugin_set_editor_visible(
+    plugin: *mut PluginHandle,
+    visible: i32,
+) -> i32 {
+    // SAFETY: per the contract above.
+    unsafe { self::plugin(plugin) }.is_some_and(|p| p.instance.set_editor_visible(visible != 0))
+        as i32
+}
+
+/// Sends the editor window's keys to the host (1) or to the plugin (0). Returns 1 when done, 0 when this editor or
+/// platform cannot (keys then stay with the plugin). Main thread.
+///
+/// # Safety
+/// `plugin` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bph_plugin_route_editor_keys(
+    plugin: *mut PluginHandle,
+    to_host: i32,
+) -> i32 {
+    // SAFETY: per the contract above.
+    unsafe { self::plugin(plugin) }
+        .is_some_and(|p| p.instance.route_editor_keys_to_host(to_host != 0)) as i32
+}
+
+/// 1 when this platform can send an editor's keys to the host (macOS, Windows), 0 otherwise (Linux).
+#[unsafe(no_mangle)]
+pub extern "C" fn bph_editor_key_routing_supported() -> i32 {
+    gui::KEY_ROUTING_SUPPORTED as i32
 }
 
 /// 1 while the editor window is open. Main thread.

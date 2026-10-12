@@ -54,4 +54,40 @@ public sealed class PluginEditorTests
         Assert.True(instance.IsEditorOpen);
         await instance.CloseEditorAsync(Ct);
     }
+
+    [Theory]
+    [MemberData(nameof(WithEditors))]
+    public async Task AnEditor_HidesAndShowsAgain_AndSendsItsKeysToTheHostWhenAsked_ThroughARestart(string format, string modulePath, string name)
+    {
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Editor windows are verified on macOS only.");
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("CI") == "true", "CI runners have no plugins and no desktop session.");
+        Assert.SkipUnless(Directory.Exists(modulePath), $"{name} ({format}) is not installed at {modulePath}.");
+        await using var host = new PluginTestHost();
+        using var scanner = new PluginScanner(new PluginScannerOptions(Path.Combine(host.Directory, "scan")) { ScanTimeout = TimeSpan.FromSeconds(60) });
+        var plugin = (await scanner.RescanAsync(modulePath, ignoreQuarantine: true, Ct)).Plugins.Single(p => p.DisplayName == name);
+        var instance = await host.CreateRunningAsync(new PluginInstanceRequest(plugin, 48_000, 256, 2, 2) { ModulePath = modulePath });
+
+        // Nothing to hide or route before the editor is open.
+        Assert.False(await instance.SetEditorKeyboardAsync(true, Ct));
+
+        await instance.OpenEditorAsync(name, Ct);
+        await instance.SetEditorVisibleAsync(false, Ct);
+        Assert.True(instance.IsEditorOpen);
+        await instance.SetEditorVisibleAsync(true, Ct);
+        Assert.True(instance.IsEditorOpen);
+
+        // CLAP editors embedded in a worker window can route keys; a floating CLAP editor (its own window) cannot.
+        var routed = await instance.SetEditorKeyboardAsync(true, Ct);
+        Assert.True(routed || format == "clap", "A VST3 editor in a worker window must route its keys on macOS.");
+        Assert.True(await instance.SetEditorKeyboardAsync(false, Ct) || !routed);
+
+        KillProcess(instance.WorkerProcessId!.Value);
+        await WaitForStateAsync(instance, PluginInstanceState.Unavailable);
+        Assert.False(await instance.SetEditorKeyboardAsync(true, Ct));
+        Assert.Equal(PluginInstanceState.Running, (await instance.RestartAsync(Ct)).State);
+        host.Track(instance);
+        await instance.OpenEditorAsync(name, Ct);
+        Assert.Equal(routed, await instance.SetEditorKeyboardAsync(true, Ct));
+        await instance.CloseEditorAsync(Ct);
+    }
 }

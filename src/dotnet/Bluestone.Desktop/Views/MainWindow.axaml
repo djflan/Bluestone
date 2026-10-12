@@ -111,7 +111,7 @@
           </Border>
           <Border Classes="transport">
             <StackPanel Orientation="Horizontal" Spacing="1">
-              <ToggleButton Classes="cycle" IsChecked="{Binding IsLoopEnabled, Mode=OneWay}" Command="{Binding ToggleLoopCommand}" ToolTip.Tip="Cycle: loop four bars from the playhead (L), or drag in the ruler" AutomationProperties.Name="Cycle">
+              <ToggleButton x:Name="LoopButton" Classes="cycle" IsChecked="{Binding Loop.IsEnabled, Mode=OneWay}" Command="{Binding Loop.ToggleCommand}" ToolTip.Tip="{Binding Loop.ToggleTip}" AutomationProperties.Name="Loop">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Cycle}" Width="15" Height="15" />
               </ToggleButton>
             </StackPanel>
@@ -140,6 +140,19 @@
                 <TextBlock Text="SIGNATURE" Classes="lcdLabel" />
               </StackPanel>
               <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
+              <StackPanel x:Name="LoopFields" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Classes.loopOff="{Binding !Loop.IsEnabled}">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBox x:Name="LoopStartBox" Classes="lcd" Text="{Binding Loop.StartText, Mode=OneWay}" FontSize="13" Width="62" Margin="0,3,0,2" PlaceholderText="–"
+                           ToolTip.Tip="Loop start as bar.beat.tick. Type a position; the length stays." AutomationProperties.Name="Loop start" />
+                  <TextBlock Text="LOOP START" Classes="lcdLabel" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBox x:Name="LoopLengthBox" Classes="lcd" Text="{Binding Loop.LengthText, Mode=OneWay}" FontSize="13" Width="62" Margin="0,3,0,2" PlaceholderText="–"
+                           ToolTip.Tip="Loop length as bars.beats.ticks (or ticks with a t suffix). The start stays." AutomationProperties.Name="Loop length" />
+                  <TextBlock Text="LENGTH" Classes="lcdLabel" />
+                </StackPanel>
+              </StackPanel>
+              <Border x:Name="LoopFieldsRule" Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" IsVisible="{Binding #LoopFields.IsVisible}" />
               <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
                 <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputIdle}" IsVisible="{Binding !HasInputActivity}" />
                 <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputActive}" IsVisible="{Binding HasInputActivity}" />
@@ -255,14 +268,15 @@
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.Trash}" Width="13" Height="13" />
                 </Button>
               </StackPanel>
-              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="8,0" VerticalAlignment="Center">
-                <Button Classes="tool" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (Ctrl/Cmd+−)" AutomationProperties.Name="Zoom out">
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="8,0" VerticalAlignment="Center">
+                <Button Classes="tool" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (Ctrl/Cmd+−). Or drag down in the beat ruler" AutomationProperties.Name="Zoom out">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.ZoomOut}" Width="13" Height="13" />
                 </Button>
-                <Slider x:Name="ZoomSlider" Minimum="6" Maximum="160" Value="{Binding Zoom}" Width="110" VerticalAlignment="Center"
-                        ToolTip.Tip="Zoom (⌘/Ctrl + scroll, pinch, or scroll over the ruler)" AutomationProperties.Name="Timeline zoom" />
-                <Button Classes="tool" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (Ctrl/Cmd+=)" AutomationProperties.Name="Zoom in">
+                <Button Classes="tool" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (Ctrl/Cmd+=). Or drag up in the beat ruler" AutomationProperties.Name="Zoom in">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.ZoomIn}" Width="13" Height="13" />
+                </Button>
+                <Button Classes="tool" Command="{Binding ZoomToFitCommand}" ToolTip.Tip="Zoom to fit the project (Ctrl/Cmd+0). Selected clips: Shift+Ctrl/Cmd+0; the loop: Alt+Ctrl/Cmd+0" AutomationProperties.Name="Zoom to fit">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.ZoomFit}" Width="13" Height="13" />
                 </Button>
               </StackPanel>
             </Grid>
@@ -271,7 +285,7 @@
           <!-- Ruler row -->
           <Border Grid.Row="1" Background="{StaticResource Lane.Ruler}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,0,1,1" />
           <controls:RulerView x:Name="Ruler" Grid.Row="1" Grid.Column="1" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}"
-                              IsRecording="{Binding IsRecording}" AutomationProperties.Name="Bar ruler. Click to move the playhead; drag the top strip to set the cycle." />
+                              IsRecording="{Binding IsRecording}" AutomationProperties.Name="Bar ruler. Click to move the playhead; drag up or down to zoom and sideways to scroll. In the loop strip on top, drag to draw, move, or resize the loop; double-click it to turn looping on or off. When the ruler has focus, the arrow keys nudge the loop." />
 
           <!-- Track headers, scrolled with the lanes -->
           <ScrollViewer x:Name="TrackHeaderScroller" Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"
@@ -429,7 +443,7 @@
               <controls:TimelineView x:Name="Timeline" Project="{Binding Project}" PixelsPerQuarter="{Binding Zoom}" ExpandedTracks="{Binding ExpandedTracks}" HiddenTracks="{Binding Groups.HiddenTracks}"
                                      LaneHeight="{x:Static vm:TrackViewModel.TrackRowHeight}" AutomationLaneHeight="{x:Static vm:TrackViewModel.AutomationLaneHeight}"
                                      RecordingLane="{Binding RecordingLane}" RecordingPreview="{Binding RecordingPreview}"
-                                     AutomationProperties.Name="Arrangement. Click a clip to select it and drag to move it; double-click to edit its notes. Click in an automation lane to add a point." />
+                                     AutomationProperties.Name="Arrangement. Click a clip to select it and drag to move it; double-click to edit its notes. Drag a clip's lower-right corner to repeat its loop, and its dashed repeat marker to change the loop's length. Click in an automation lane to add a point." />
               <controls:PlayheadOverlay x:Name="Playhead" IsRecording="{Binding IsRecording}" IsVisible="{Binding Tracks.Count}" />
               <!-- Renames a clip in place, over its name strip (double-click the strip, or Return). -->
               <Canvas>

@@ -33,7 +33,7 @@ memory-safe.
 - **Expected first candidates**, not yet justified and not yet built: the audio callback and graph
   execution of a future audio engine (a .NET garbage collection pauses every managed thread, including an
   allocation-free one, while a Rust callback on a thread .NET does not manage is not paused), and the
-  native VST3 hosting layer inside a plugin worker (for safety with native binaries). Plugin workers are
+  native VST 3 hosting layer inside a plugin worker (for safety with native binaries). Plugin workers are
   separate processes (ADR 0025), so a worker's garbage collector cannot pause Bluestone; a C# worker is the
   default there.
 - **C and C++** are used only for third-party libraries, vendor SDK requirements, and thin ABI shims.

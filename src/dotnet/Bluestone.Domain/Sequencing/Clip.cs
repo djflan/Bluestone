@@ -7,9 +7,11 @@ namespace Bluestone.Domain.Sequencing;
 /// track can hold clips of any type (ADR 0020). Clips are immutable records.
 /// </summary>
 /// <remarks>
-/// Content has its own positions, starting at the content origin. The clip shows content ticks
-/// [<see cref="ContentOffset"/>, <see cref="ContentOffset"/> + <see cref="Length"/>) from
-/// <see cref="Start"/> onward; content outside that window is kept but neither played nor drawn.
+/// Content has its own positions, starting at the content origin. Without a loop, the clip shows content ticks
+/// [<see cref="ContentOffset"/>, <see cref="ContentOffset"/> + <see cref="Length"/>) from <see cref="Start"/> onward;
+/// content outside that window is kept but neither played nor drawn. With a <see cref="Loop"/> on, content from
+/// <see cref="ContentOffset"/> plays up to the loop's end, and the loop's region then repeats until the clip ends (see
+/// <see cref="ContentAt"/> and <see cref="Passes"/>).
 /// </remarks>
 public abstract record Clip
 {
@@ -56,8 +58,42 @@ public abstract record Clip
         }
     }
 
+    /// <summary>The clip's loop, on or off; null when it has never had one.</summary>
+    public ClipLoop? Loop { get; init; }
+
+    /// <summary>Whether the clip's loop is on.</summary>
+    public bool IsLooping => Loop is { IsEnabled: true };
+
     /// <summary>The first tick after the clip.</summary>
     public Tick End => Start + Length;
+
+    /// <summary>The clip's passes over its content, in timeline order (one when it does not loop).</summary>
+    public ClipPasses Passes => new(this);
+
+    /// <summary>
+    /// The timeline tick where repetition <paramref name="index"/> (1 or later) starts, computed directly so a view can
+    /// draw only the repeats it shows. Meaningful only while the clip loops.
+    /// </summary>
+    public long RepeatStart(long index) => Start.Value + FirstPassLength + ((index - 1) * Loop!.Length.Value);
+
+    /// <summary>
+    /// The content tick heard <paramref name="clipTicks"/> after the clip's start: <see cref="ContentOffset"/> onward,
+    /// and with the loop on, wrapped into the loop's region once past its end. <see cref="ContentOffset"/> itself is
+    /// never wrapped, so trimming keeps what the clip hides.
+    /// </summary>
+    public long ContentAt(long clipTicks)
+    {
+        var content = ContentOffset.Value + clipTicks;
+        if (Loop is not { IsEnabled: true } loop || content < loop.End.Value)
+        {
+            return content;
+        }
+
+        return loop.Start.Value + ((content - loop.End.Value) % loop.Length.Value);
+    }
+
+    /// <summary>The length of the first pass: up to the loop's end (when looping), at most the clip's length.</summary>
+    public long FirstPassLength => Math.Min(Length.Value, IsLooping ? Loop!.End.Value - ContentAt(0) : Length.Value);
 
     /// <summary>
     /// Where content tick 0 falls on the timeline. Negative when trimmed content would start before the
@@ -107,6 +143,13 @@ public abstract record Clip
 /// <summary>A clip of channel and system events: notes, controllers, programs, SysEx, and the rest.</summary>
 public sealed record NoteClip : Clip
 {
+    /// <summary>
+    /// The most events a looping clip may play. Repeats are produced when a project is prepared for playback, not on
+    /// a real-time thread, but a very short loop over a long clip could still make millions; an edit that would go past
+    /// this is refused (<see cref="ClipLoopLimitException"/>), so nothing ever silently stops playing.
+    /// </summary>
+    public const int MaxArrangedEvents = 1 << 18;
+
     private readonly EventList _content = EventList.Empty;
 
     /// <summary>A clip whose <paramref name="content"/> is at content positions (see <see cref="Clip"/>).</summary>
@@ -154,22 +197,103 @@ public sealed record NoteClip : Clip
     }
 
     /// <summary>
-    /// The events that play, at timeline positions: those starting inside the clip, with notes cut at
-    /// its end.
+    /// The events that play, at timeline positions: those starting inside the clip, with notes cut at its end. A
+    /// looping clip plays each pass's content, notes cut at the end of their pass (a note starting inside the loop
+    /// sounds again on every pass; one crossing the loop's end stops there), and restores the controller state at each
+    /// repetition (<see cref="ClipLoopChase"/>). Repeats keep the IDs of the content events they come from.
     /// </summary>
     public IEnumerable<TrackEvent> Arrange()
     {
-        var from = ContentOffset.Value;
-        var to = from + Length.Value;
-        var shift = Origin;
-        foreach (var e in Content.Items)
+        if (!IsLooping)
         {
-            var position = e.Position.Value;
-            if (position < from)
+            return ArrangePass(new ClipPass(Start.Value, ContentOffset.Value, Length.Value, 0));
+        }
+
+        // Repeats of a loop that holds nothing add nothing: only the first pass can play anything (and a one-tick empty
+        // loop over a very long clip must not be walked pass by pass).
+        if (CountStarting(Loop!.Start.Value, Loop.End.Value) == 0)
+        {
+            return ArrangePass(new ClipPass(Start.Value, ContentAt(0), FirstPassLength, 0));
+        }
+
+        var chase = ClipLoopChase.AtRepeat(Id, Content, Loop!);
+        var events = new List<TrackEvent>();
+        foreach (var pass in Passes)
+        {
+            if (pass.Index > 0)
             {
-                continue;
+                foreach (var e in chase)
+                {
+                    events.Add(Shifted(e, pass.TimelineStart));
+                }
             }
 
+            events.AddRange(ArrangePass(pass));
+        }
+
+        // Chase events go before the content at a pass's first tick, in phase order.
+        return events.Order(Comparer<TrackEvent>.Create(EventOrder.Compare));
+    }
+
+    /// <summary>How many events <see cref="Arrange"/> yields, counted without producing them; <see cref="long.MaxValue"/> when that overflows.</summary>
+    public long ArrangedEventCount()
+    {
+        try
+        {
+            return CountArranged();
+        }
+        catch (OverflowException)
+        {
+            return long.MaxValue;
+        }
+    }
+
+    private long CountArranged()
+    {
+        checked
+        {
+            if (!IsLooping)
+            {
+                return CountStarting(ContentOffset.Value, ContentOffset.Value + Length.Value);
+            }
+
+            var loop = Loop!;
+            var passes = Passes.Count;
+            var first = FirstPassLength;
+            var start = ContentAt(0);
+            var count = CountStarting(start, start + first);
+            if (passes > 1 && CountStarting(loop.Start.Value, loop.End.Value) > 0)
+            {
+                var perLoop = CountStarting(loop.Start.Value, loop.End.Value) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
+                var lastLength = Length.Value - first - ((passes - 2) * loop.Length.Value);
+                count += ((passes - 2) * perLoop) + CountStarting(loop.Start.Value, loop.Start.Value + lastLength) + ClipLoopChase.AtRepeat(Id, Content, loop).Length;
+            }
+
+            return count;
+        }
+    }
+
+    /// <summary>
+    /// The clip with what it plays as ordinary content: repeats written out, chase values included, notes cut where
+    /// they stop, and no loop. Playback is the same; the copy can be edited pass by pass.
+    /// </summary>
+    public NoteClip Consolidated()
+    {
+        var shift = -Start.Value;
+        var played = Arrange().Select(e => Shifted(e, shift) with { Id = EventId.New() });
+        return this with { ContentOffset = TickSpan.Zero, Content = new EventList(played), Loop = null };
+    }
+
+    private IEnumerable<TrackEvent> ArrangePass(ClipPass pass)
+    {
+        var from = pass.ContentStart;
+        var to = pass.ContentEnd;
+        var shift = pass.Shift;
+        var items = Content.Items;
+        for (var i = FirstAtOrAfter(from); i < items.Length; i++)
+        {
+            var e = items[i];
+            var position = e.Position.Value;
             if (position >= to)
             {
                 yield break;
@@ -179,6 +303,29 @@ public sealed record NoteClip : Clip
                 ? note with { Position = new Tick(position + shift), Duration = new TickSpan(to - position) }
                 : Shifted(e, shift);
         }
+    }
+
+    // Events starting in content ticks [from, to).
+    private long CountStarting(long from, long to) => to <= from ? 0 : FirstAtOrAfter(to) - FirstAtOrAfter(from);
+
+    private int FirstAtOrAfter(long position)
+    {
+        var items = Content.Items;
+        int low = 0, high = items.Length;
+        while (low < high)
+        {
+            var mid = (low + high) / 2;
+            if (items[mid].Position.Value < position)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+
+        return low;
     }
 
     /// <summary>
@@ -197,11 +344,24 @@ public sealed record NoteClip : Clip
         }
     }
 
-    /// <summary>Whether <paramref name="e"/>, at its content position, is inside the clip's window.</summary>
+    /// <summary>Whether <paramref name="e"/>, at its content position, plays on some pass of the clip.</summary>
     public bool Shows(TrackEvent e)
     {
         ArgumentNullException.ThrowIfNull(e);
-        return e.Position >= new Tick(ContentOffset.Value) && e.Position.Value < ContentOffset.Value + Length.Value;
+        var position = e.Position.Value;
+        var start = ContentAt(0);
+        if (position >= start && position < start + FirstPassLength)
+        {
+            return true;
+        }
+
+        if (!IsLooping || Passes.Count < 2)
+        {
+            return false;
+        }
+
+        var reach = Math.Min(Loop!.Length.Value, Length.Value - FirstPassLength);
+        return position >= Loop.Start.Value && position < Loop.Start.Value + reach;
     }
 
     /// <summary>
@@ -223,6 +383,7 @@ public sealed record NoteClip : Clip
         {
             Content = new EventList(kept.Concat(added)),
             ContentOffset = new TickSpan(ContentOffset.Value + rebase),
+            Loop = Loop?.Shifted(rebase),
         };
     }
 
@@ -238,12 +399,24 @@ public sealed record NoteClip : Clip
                 Length = until - start,
                 ContentOffset = TickSpan.Zero,
                 Content = new EventList(Content.Items.Select(e => Shifted(e, -offset))),
+                Loop = Loop?.Shifted(-offset),
             };
     }
 
+    /// <remarks>
+    /// A clip with a loop (on or off) keeps all its content in both parts, so each can still repeat its loop; the right
+    /// part's content offset is the left part's moved by the cut (never wrapped, see <see cref="Clip.ContentAt"/>), and
+    /// its events get new IDs. A clip without a loop is cut in two: events before <paramref name="at"/> stay left.
+    /// </remarks>
     public override (Clip Left, Clip Right) SplitAt(Tick at, ClipId rightId)
     {
         EnsureInside(at);
+        if (Loop is not null)
+        {
+            var copy = CopyTo(at);
+            return (this with { Length = at - Start }, copy with { Id = rightId, Length = End - at, ContentOffset = new TickSpan(ContentOffset.Value + (at.Value - Start.Value)) });
+        }
+
         var cut = at.Value - Origin;
         var left = this with { Length = at - Start, Content = new EventList(Content.Items.Where(e => e.Position.Value < cut)) };
         var right = this with

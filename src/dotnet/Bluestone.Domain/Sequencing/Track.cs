@@ -22,6 +22,9 @@ public sealed class Track
     // Computed on first use. ImmutableArray is a single reference, written atomically.
     private ImmutableArray<TrackEvent> _arranged;
 
+    // Computed on first use; -1 until then.
+    private long _loopedEvents = -1;
+
     public const int MaxAutomationLanes = 1024;
 
     private Track(TrackId id, string name, ImmutableArray<Clip> clips, ImmutableArray<AutomationLane> automation, bool isMuted, bool isSoloed, TrackRole role, TrackId? group, bool isFolded)
@@ -102,6 +105,30 @@ public sealed class Track
             }
 
             return _arranged;
+        }
+    }
+
+    /// <summary>How many events this track's looping note clips play (counted, not produced).</summary>
+    public long LoopedEventCount
+    {
+        get
+        {
+            if (_loopedEvents < 0)
+            {
+                long total = 0;
+                foreach (var clip in Clips)
+                {
+                    if (clip is NoteClip { IsLooping: true } notes)
+                    {
+                        var count = notes.ArrangedEventCount();
+                        total = count > long.MaxValue - total ? long.MaxValue : total + count;
+                    }
+                }
+
+                _loopedEvents = total;
+            }
+
+            return _loopedEvents;
         }
     }
 
@@ -337,6 +364,16 @@ public sealed class Track
             if (i > 0 && sorted[i - 1].End > sorted[i].Start)
             {
                 throw new ArgumentException($"Clips {sorted[i - 1].Id} and {sorted[i].Id} overlap.", nameof(clips));
+            }
+        }
+
+        foreach (var notes in sorted.OfType<NoteClip>())
+        {
+            if (notes.IsLooping && notes.ArrangedEventCount() is var count && count > NoteClip.MaxArrangedEvents)
+            {
+                throw new ClipLoopLimitException(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"The clip would play {count:N0} events with its loop; a clip plays at most {NoteClip.MaxArrangedEvents:N0}. Make its loop longer or the clip shorter."));
             }
         }
 

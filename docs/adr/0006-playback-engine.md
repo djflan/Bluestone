@@ -6,7 +6,7 @@
 ## Context
 
 Playback must be precise, never leave notes hanging, tolerate edits while playing, and be testable
-without hardware or wall-clock time. Endpoints differ: some (CoreMIDI) accept timestamped messages
+without hardware or wall-clock time. Endpoints differ: some (Core MIDI) accept timestamped messages
 for future delivery, others (WinMM, many network transports) only send immediately.
 
 ## Decision

@@ -10,11 +10,11 @@ everything else goes around it. An instrument (events in, no events out) **took*
 chain. A chain therefore behaved as "MIDI until the first instrument, audio after it": a second instrument after the
 first never received notes, and a note effect after an instrument had nothing to transform.
 
-Bluestone is meant to work like Bitwig's device chains: notes, non-note control and protocol events, and audio travel
-through a chain side by side, with timing and transport as shared context. Each device works on the signals it
-understands and passes the others on. The audio side already did this: `ProjectAudioGraph` puts an instrument's
-output beside the audio already in the chain (so instruments layer), an audio effect replaces the audio with its
-output, and a note effect leaves audio alone. Only the event side was exclusive.
+Bluestone's device chains are inspired by the workflow of Bitwig Studio's: notes, non-note control and protocol
+events, and audio travel through a chain side by side, with timing and transport as shared context. Each device works
+on the signals it understands and passes the others on. The audio side already did this: `ProjectAudioGraph` puts an
+instrument's output beside the audio already in the chain (so instruments layer), an audio effect replaces the audio
+with its output, and a note effect leaves audio alone. Only the event side was exclusive.
 
 ## Decision
 

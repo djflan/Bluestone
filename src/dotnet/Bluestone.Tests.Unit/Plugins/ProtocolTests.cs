@@ -53,6 +53,9 @@ public sealed class FrameCodecTests
         new PluginNotification(Instance, NotificationKind.StateDirty, 0, 0),
         new PluginNotification(Instance, NotificationKind.EditorClosed, 0, 0),
         new PluginNotification(Instance, NotificationKind.ParametersChanged, 0, 0),
+        new SetEditorVisible(Instance, false),
+        new SetEditorKeyboard(Instance, true),
+        new PluginNotification(Instance, NotificationKind.EditorKey, 44, 1 | 8 | 256 | 512),
     ];
 
     private static readonly PluginIdentity Vst3 = new("vst3", "Synth", "0123456789ABCDEF0123456789ABCDEF", "Synth", "Vendor", PluginKind.Instrument, "1.0");
@@ -78,11 +81,23 @@ public sealed class FrameCodecTests
     [InlineData(NotificationKind.LatencyChanged, 3u, 12)]
     [InlineData(NotificationKind.StateDirty, 0u, 1)]
     [InlineData(NotificationKind.EditorClosed, 9u, 0)]
+    [InlineData(NotificationKind.EditorKey, 0u, 256)]
+    [InlineData(NotificationKind.EditorKey, 300u, 256)]
+    [InlineData(NotificationKind.EditorKey, 44u, 16)]
+    [InlineData(NotificationKind.EditorKey, 44u, 256.5)]
     public void Decode_ANotificationWithValuesItsKindDoesNotAllow_Throws(NotificationKind kind, uint parameterId, double value)
     {
         var encoded = FrameCodec.Encode(0, new PluginNotification(Instance, kind, parameterId, value));
 
         Assert.Throws<ProtocolException>(() => FrameCodec.Decode(encoded));
+    }
+
+    [Fact]
+    public void AnEditorKeyNotification_DecodesItsUsageModifiersAndFlags()
+    {
+        var key = EditorKey.From(new PluginNotification(Instance, NotificationKind.EditorKey, 15, EditorKey.Shift | EditorKey.Meta | 256));
+
+        Assert.Equal(new EditorKey(15, EditorKey.Shift | EditorKey.Meta, Down: true, Repeat: false), key);
     }
 
     [Fact]

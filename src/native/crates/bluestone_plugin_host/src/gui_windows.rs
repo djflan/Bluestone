@@ -8,9 +8,13 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromWindow};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use super::{WindowCallback, WindowEvent};
@@ -56,10 +60,56 @@ pub fn pump(timeout: Duration) {
         );
         let mut message: MSG = std::mem::zeroed();
         while PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+            if take_key(&message) {
+                continue;
+            }
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
     }
+}
+
+/// Takes a keyboard message for an editor window whose keys go to the host (the window or any child of it): key presses
+/// and releases are queued, character messages dropped, and none reaches the plugin. True when taken.
+fn take_key(message: &MSG) -> bool {
+    let kind = message.message;
+    let is_key = matches!(kind, WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP);
+    if !is_key && !matches!(kind, WM_CHAR | WM_SYSCHAR | WM_DEADCHAR | WM_SYSDEADCHAR) {
+        return false;
+    }
+    // SAFETY: GetAncestor accepts any window handle, including one that no longer exists.
+    let root = unsafe { GetAncestor(message.hwnd, GA_ROOT) };
+    let Some(queue) = super::routed_queue(root as usize) else {
+        return false;
+    };
+    if is_key {
+        let usage = crate::keys::from_windows(message.wParam as u32);
+        if usage != 0 {
+            // SAFETY: GetKeyState reads this thread's keyboard state.
+            let held = |vk: u16| unsafe { GetKeyState(vk as i32) } < 0;
+            let mut modifiers = 0;
+            if held(VK_SHIFT) {
+                modifiers |= crate::keys::modifier::SHIFT;
+            }
+            if held(VK_CONTROL) {
+                modifiers |= crate::keys::modifier::CONTROL;
+            }
+            if held(VK_MENU) {
+                modifiers |= crate::keys::modifier::ALT;
+            }
+            if held(VK_LWIN) || held(VK_RWIN) {
+                modifiers |= crate::keys::modifier::META;
+            }
+            let down = kind == WM_KEYDOWN || kind == WM_SYSKEYDOWN;
+            queue.borrow_mut().push(super::KeyEvent {
+                usage,
+                modifiers,
+                down,
+                repeat: down && (message.lParam >> 30) & 1 == 1,
+            });
+        }
+    }
+    true
 }
 
 pub fn wake() {
@@ -200,6 +250,34 @@ impl Window {
         // SAFETY: our own window.
         let dpi = unsafe { GetDpiForWindow(self.handle) };
         if dpi == 0 { 1.0 } else { dpi as f64 / 96.0 }
+    }
+
+    /// The window handle, which the root of any message for the editor's views resolves to.
+    pub fn native_id(&self) -> usize {
+        self.handle as usize
+    }
+
+    pub fn set_visible(&self, visible: bool) {
+        // SAFETY: our own window.
+        unsafe {
+            if !visible {
+                ShowWindow(self.handle, SW_HIDE);
+                return;
+            }
+            // A window left on a monitor that is no longer attached comes back near the primary monitor's corner.
+            if MonitorFromWindow(self.handle, MONITOR_DEFAULTTONULL).is_null() {
+                SetWindowPos(
+                    self.handle,
+                    std::ptr::null_mut(),
+                    80,
+                    80,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            ShowWindow(self.handle, SW_SHOWNOACTIVATE);
+        }
     }
 }
 

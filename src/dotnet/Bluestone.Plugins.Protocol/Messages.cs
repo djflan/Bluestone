@@ -30,6 +30,8 @@ public enum MessageType : ushort
     OpenEditor = 23,
     CloseEditor = 24,
     PluginNotification = 25,
+    SetEditorVisible = 26,
+    SetEditorKeyboard = 27,
 }
 
 /// <summary>What a worker process was launched to do.</summary>
@@ -263,6 +265,27 @@ public sealed record CloseEditor(PluginInstanceId InstanceId) : ProtocolMessage
     public override MessageType Type => MessageType.CloseEditor;
 }
 
+/// <summary>
+/// Hides the instance's editor window (the editor, its state, and the instance stay) or shows it again without taking
+/// focus. Replies <see cref="Ack"/>, or <see cref="ErrorReply"/> with <see cref="ErrorCode.NotSupported"/> when no editor
+/// is open or a plugin-owned editor window (a floating CLAP editor) refused.
+/// </summary>
+public sealed record SetEditorVisible(PluginInstanceId InstanceId, bool Visible) : ProtocolMessage
+{
+    public override MessageType Type => MessageType.SetEditorVisible;
+}
+
+/// <summary>
+/// Sends the keys typed in the instance's editor window to the host (<paramref name="ToHost"/>) or to the plugin. While
+/// they go to the host they arrive as <see cref="NotificationKind.EditorKey"/> notifications and never reach the plugin;
+/// the mouse keeps working in the editor. Replies <see cref="Ack"/>, or <see cref="ErrorReply"/> with
+/// <see cref="ErrorCode.NotSupported"/> when the platform or the editor cannot (keys then stay with the plugin).
+/// </summary>
+public sealed record SetEditorKeyboard(PluginInstanceId InstanceId, bool ToHost) : ProtocolMessage
+{
+    public override MessageType Type => MessageType.SetEditorKeyboard;
+}
+
 /// <summary>What a plugin did on its own, reported by the worker without being asked.</summary>
 public enum NotificationKind : byte
 {
@@ -280,6 +303,37 @@ public enum NotificationKind : byte
 
     /// <summary>The plugin's parameter list or names changed.</summary>
     ParametersChanged = 5,
+
+    /// <summary>
+    /// A key in the editor window while its keys go to the host: <see cref="PluginNotification.ParameterId"/> is the USB
+    /// HID keyboard usage (1–255), <see cref="PluginNotification.Value"/> the modifiers (1 Shift, 2 Control, 4 Alt, 8
+    /// Meta), plus 256 when pressed and 512 for an auto-repeat (see <see cref="EditorKey"/>).
+    /// </summary>
+    EditorKey = 6,
+}
+
+/// <summary>A key from an editor window whose keys go to the host, decoded from a <see cref="NotificationKind.EditorKey"/> notification.</summary>
+/// <param name="Usage">The USB HID keyboard usage ID.</param>
+/// <param name="Modifiers">1 Shift, 2 Control, 4 Alt, 8 Meta.</param>
+/// <param name="Down">Pressed (true) or released.</param>
+/// <param name="Repeat">An auto-repeat of a held key.</param>
+public readonly record struct EditorKey(int Usage, int Modifiers, bool Down, bool Repeat)
+{
+    public const int Shift = 1;
+    public const int Control = 2;
+    public const int Alt = 4;
+    public const int Meta = 8;
+
+    /// <summary>Whether a notification's fields are a key: a usage of 1–255 and only the defined flag bits.</summary>
+    public static bool IsValid(uint usage, double value) =>
+        usage is >= 1 and <= 255 && value is >= 0 and <= 1023 && value == Math.Floor(value) && ((int)value & ~(15 | 256 | 512)) == 0;
+
+    public static EditorKey From(PluginNotification notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        var bits = (int)notification.Value;
+        return new EditorKey((int)notification.ParameterId, bits & 15, (bits & 256) != 0, (bits & 512) != 0);
+    }
 }
 
 /// <summary>

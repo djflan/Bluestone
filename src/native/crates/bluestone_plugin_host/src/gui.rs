@@ -22,6 +22,32 @@ pub enum WindowEvent {
 
 pub type WindowCallback = Rc<dyn Fn(WindowEvent)>;
 
+/// Keys a window has taken from its plugin for the host, oldest first.
+pub type KeyQueue = Rc<RefCell<Vec<KeyEvent>>>;
+
+pub use crate::keys::KeyEvent;
+
+/// Whether this platform can give an editor window's keys to the host instead of the plugin. On macOS and Windows the
+/// worker pumps its own events, so key events for a window can be taken before they are delivered. On Linux (X11) a
+/// plugin's view usually reads input on its own X connection, which the host cannot intercept.
+pub const KEY_ROUTING_SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
+
+thread_local! {
+    // Windows whose keys go to the host, by their platform identity (window number, HWND).
+    static ROUTED: RefCell<Vec<(usize, KeyQueue)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The queue of the routed window `native`, if its keys go to the host. Main thread (the pump).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub(crate) fn routed_queue(native: usize) -> Option<KeyQueue> {
+    ROUTED.with_borrow(|routed| {
+        routed
+            .iter()
+            .find(|(id, _)| *id == native)
+            .map(|(_, q)| q.clone())
+    })
+}
+
 /// Records the calling thread as the main thread and prepares the platform's event loop.
 pub fn init() -> Result<(), String> {
     let current = std::thread::current().id();
@@ -144,6 +170,7 @@ pub fn timer_count() -> usize {
 /// A top-level window that hosts a plugin editor.
 pub struct Window {
     inner: platform::Window,
+    keys: KeyQueue,
 }
 
 impl Window {
@@ -165,7 +192,34 @@ impl Window {
                 resizable,
                 callback,
             )?,
+            keys: Rc::new(RefCell::new(Vec::new())),
         })
+    }
+
+    /// Hides the window (keeping the editor and its state) or shows it again without taking focus, moved onto a screen
+    /// if the one it was on is gone.
+    pub fn set_visible(&self, visible: bool) {
+        self.inner.set_visible(visible);
+    }
+
+    /// Sends the window's keys to the host (`true`) or to the plugin. False when this platform cannot.
+    pub fn route_keys_to_host(&self, to_host: bool) -> bool {
+        if !KEY_ROUTING_SUPPORTED {
+            return false;
+        }
+        let native = self.inner.native_id();
+        ROUTED.with_borrow_mut(|routed| {
+            routed.retain(|(id, _)| *id != native);
+            if to_host {
+                routed.push((native, self.keys.clone()));
+            }
+        });
+        true
+    }
+
+    /// The keys taken from the plugin since the last call.
+    pub fn take_keys(&self) -> Vec<KeyEvent> {
+        std::mem::take(&mut *self.keys.borrow_mut())
     }
 
     /// NSView* on macOS, HWND on Windows, the X11 window id on Linux.
@@ -180,6 +234,13 @@ impl Window {
     /// Display scale for plugins that size themselves in pixels (Windows, Linux); 1 on macOS, where sizes are points.
     pub fn content_scale(&self) -> f64 {
         self.inner.content_scale()
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        let native = self.inner.native_id();
+        ROUTED.with_borrow_mut(|routed| routed.retain(|(id, _)| *id != native));
     }
 }
 

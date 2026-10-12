@@ -20,6 +20,9 @@ public partial class MainWindow : Window
     private bool _keyboardToggleHeld;
     private ClipId? _renamingClip;
     private bool _closeConfirmed;
+
+    // Below this window width the transport display drops the loop's start and length fields.
+    private const double NarrowTransportWidth = 1400;
     private bool _syncingScroll;
     private readonly Dictionary<WorkspaceView, ViewWindow> _detached = [];
 
@@ -44,7 +47,9 @@ public partial class MainWindow : Window
         InspectorContent.Attach(viewModel);
         AttachSettings(viewModel);
         Ruler.SeekRequested += (_, tick) => viewModel.SeekTo(tick);
-        Ruler.LoopRequested += (_, loop) => viewModel.SetLoop(loop);
+        Ruler.LoopRangeRequested += (_, request) => viewModel.Loop.SetRange(request.Range, request.Enable, request.Label);
+        Ruler.LoopToggleRequested += (_, _) => viewModel.Loop.ToggleCommand.Execute(null);
+        Ruler.LoopNudgeRequested += (_, ticks) => viewModel.Loop.Nudge(ticks);
         Timeline.LaneClicked += (_, click) =>
         {
             viewModel.Arrangement.ClearSelection();
@@ -73,6 +78,8 @@ public partial class MainWindow : Window
         };
         Timeline.ClipsDragged += (_, drag) => viewModel.Arrangement.MoveSelection(drag.DeltaTicks, drag.LaneDelta, drag.Copy);
         Timeline.ClipResized += (_, resize) => viewModel.Arrangement.ResizeClip(resize.Clip, resize.Start, resize.End);
+        Timeline.ClipLoopExtended += (_, extend) => viewModel.ClipLoop.ExtendLooping(extend.Clip, extend.End);
+        Timeline.ClipLoopLengthChanged += (_, change) => viewModel.ClipLoop.SetLoopLength(change.Clip, change.Length);
         Timeline.AutomationEdited += (_, edit) =>
         {
             if (edit.Lane < viewModel.Tracks.Count)
@@ -104,9 +111,8 @@ public partial class MainWindow : Window
         viewModel.Messages.CollectionChanged += (_, _) =>
             LastMessage.Text = viewModel.Messages.Count > 0 ? viewModel.Messages[^1].Text : string.Empty;
 
-        TimelineScroller.AddHandler(PointerWheelChangedEvent, OnTimelineWheel, RoutingStrategies.Tunnel);
-        TimelineScroller.AddHandler(InputElement.PointerTouchPadGestureMagnifyEvent, OnTimelinePinch, RoutingStrategies.Tunnel);
-        Ruler.AddHandler(PointerWheelChangedEvent, OnRulerWheel, RoutingStrategies.Tunnel);
+        AttachNavigation(viewModel);
+        AttachEditorKeys(viewModel);
 
         AttachPianoRoll(viewModel);
         AttachEventList(viewModel);
@@ -115,6 +121,10 @@ public partial class MainWindow : Window
 
         TempoBox.LostFocus += (_, _) => viewModel.CommitTempo(TempoBox.Text ?? string.Empty);
         MeterBox.LostFocus += (_, _) => viewModel.CommitMeter(MeterBox.Text ?? string.Empty);
+        // The transport's loop fields need room; in a narrow window the loop button's tooltip and the ruler give the range.
+        SizeChanged += (_, e) => LoopFields.IsVisible = e.NewSize.Width >= NarrowTransportWidth;
+        LoopStartBox.LostFocus += (_, _) => CommitLoopField(LoopStartBox, viewModel.Loop.StartText, viewModel.Loop.CommitStart);
+        LoopLengthBox.LostFocus += (_, _) => CommitLoopField(LoopLengthBox, viewModel.Loop.LengthText, viewModel.Loop.CommitLength);
 
         var command = CommandModifier;
         var nativeMenuBar = UseNativeMenuBar;
@@ -520,54 +530,26 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>⌘/Ctrl + scroll zooms the arrangement around the pointer.</summary>
-    private void OnTimelineWheel(object? sender, PointerWheelEventArgs e)
-    {
-        var command = CommandModifier;
-        if (!e.KeyModifiers.HasFlag(command) || e.Delta.Y == 0)
-        {
-            return;
-        }
-
-        ZoomAround(e.GetPosition(TimelineScroller).X, Math.Pow(1.12, e.Delta.Y));
-        e.Handled = true;
-    }
-
-    /// <summary>Plain scrolling over the bar ruler zooms, as in most sequencers.</summary>
-    private void OnRulerWheel(object? sender, PointerWheelEventArgs e)
-    {
-        if (e.Delta.Y != 0)
-        {
-            ZoomAround(e.GetPosition(Ruler).X, Math.Pow(1.12, e.Delta.Y));
-            e.Handled = true;
-        }
-    }
-
     private void OnTrackHeaderWheel(object? sender, PointerWheelEventArgs e)
     {
         TimelineScroller.Offset = new Vector(TimelineScroller.Offset.X, Math.Max(0, TimelineScroller.Offset.Y - (e.Delta.Y * 40)));
         e.Handled = true;
     }
 
-    private void OnTimelinePinch(object? sender, PointerDeltaEventArgs e)
+    // Commits a loop field when its text changed; a field left as it was (or emptied) changes nothing.
+    private static void CommitLoopField(TextBox box, string shown, Func<string, bool> commit)
     {
-        ZoomAround(e.GetPosition(TimelineScroller).X, 1 + e.Delta.X);
-        e.Handled = true;
-    }
-
-    /// <summary>Zooms while keeping the musical position under <paramref name="viewportX"/> in place.</summary>
-    private void ZoomAround(double viewportX, double factor)
-    {
-        if (_viewModel is null || factor <= 0)
+        var text = box.Text?.Trim() ?? string.Empty;
+        if (text.Length == 0 || text == shown)
         {
+            box.Text = shown;
             return;
         }
 
-        var tick = Timeline.XToTick(TimelineScroller.Offset.X + viewportX);
-        _viewModel.ZoomBy(factor);
-        TimelineScroller.UpdateLayout();
-        var x = Timeline.TickToX(tick) - viewportX;
-        TimelineScroller.Offset = new Vector(Math.Max(0, x), TimelineScroller.Offset.Y);
+        if (!commit(text))
+        {
+            box.Text = shown;
+        }
     }
 
     private void OnFrame()
@@ -636,8 +618,12 @@ public partial class MainWindow : Window
         Bind(Key.E, command, vm.ExportMidiCommand);
         Bind(Key.T, command, vm.AddTrackCommand);
         Bind(Key.G, command, vm.Groups.GroupSelectedCommand);
+        Bind(Key.L, command, vm.Loop.LoopSelectionCommand);
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
+        Bind(Key.D0, command, vm.ZoomToFitCommand);
+        Bind(Key.D0, command | KeyModifiers.Alt, vm.ZoomToLoopCommand);
+        Bind(Key.D0, command | KeyModifiers.Shift, vm.ZoomToSelectionCommand);
         Bind(Key.OemComma, command, new CommunityToolkit.Mvvm.Input.RelayCommand(() => ShowSettings()));
     }
 
@@ -937,7 +923,7 @@ public partial class MainWindow : Window
             (Key.End, KeyModifiers.None) => vm.GoToEndCommand,
             (Key.OemComma, KeyModifiers.None) => vm.PreviousBarCommand,
             (Key.OemPeriod, KeyModifiers.None) => vm.NextBarCommand,
-            (Key.L, KeyModifiers.None) => vm.ToggleLoopCommand,
+            (Key.L, KeyModifiers.None) => vm.Loop.ToggleCommand,
             (Key.M, KeyModifiers.None) => vm.ToggleMuteCommand,
             (Key.S, KeyModifiers.None) => vm.ToggleSoloCommand,
             (Key.I, KeyModifiers.None) => vm.ToggleInspectorCommand,
@@ -1124,11 +1110,14 @@ public partial class MainWindow : Window
                 track.Name = editing.Text.Trim();
             }
         }
-        else if (editing == TempoBox || editing == MeterBox)
+        else if (editing == TempoBox || editing == MeterBox || editing == LoopStartBox || editing == LoopLengthBox)
         {
             if (e.Key == Key.Escape)
             {
-                editing.Text = editing == TempoBox ? vm.TempoText : vm.MeterText;
+                editing.Text = editing == TempoBox ? vm.TempoText
+                    : editing == MeterBox ? vm.MeterText
+                    : editing == LoopStartBox ? vm.Loop.StartText
+                    : vm.Loop.LengthText;
             }
         }
         else if (editing.Classes.Contains("commit") && e.Key == Key.Escape)

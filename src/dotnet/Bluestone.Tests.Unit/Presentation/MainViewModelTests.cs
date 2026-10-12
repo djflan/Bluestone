@@ -198,18 +198,21 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ToggleLoop_LoopsFourBarsThenClears()
+    public async Task ToggleLoop_LoopsFourBars_ThenTurnsOffKeepingTheRange()
     {
         await ImportAsync();
 
-        _vm.ToggleLoopCommand.Execute(null);
+        _vm.Loop.ToggleCommand.Execute(null);
         await Settle();
-        Assert.True(_vm.IsLoopEnabled);
-        Assert.Equal(new Tick(4 * 4 * 480), _session.Project.Loop!.End);
+        Assert.True(_vm.Loop.IsEnabled);
+        Assert.Equal(new Tick(4 * 4 * 480), _session.Project.Loop.Active!.End);
 
-        _vm.ToggleLoopCommand.Execute(null);
+        _vm.Loop.ToggleCommand.Execute(null);
         await Settle();
-        Assert.False(_vm.IsLoopEnabled);
+        Assert.False(_vm.Loop.IsEnabled);
+        Assert.Null(_session.Project.Loop.Active);
+        Assert.Equal(new Tick(4 * 4 * 480), _session.Project.Loop.Range!.End);
+        Assert.True(_vm.Loop.HasRange);
     }
 
     [Fact]

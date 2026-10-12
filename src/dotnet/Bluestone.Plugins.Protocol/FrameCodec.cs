@@ -276,6 +276,14 @@ public static class FrameCodec
             case CloseEditor m:
                 w.WriteGuid(m.InstanceId.Value);
                 break;
+            case SetEditorVisible m:
+                w.WriteGuid(m.InstanceId.Value);
+                w.WriteBool(m.Visible);
+                break;
+            case SetEditorKeyboard m:
+                w.WriteGuid(m.InstanceId.Value);
+                w.WriteBool(m.ToHost);
+                break;
             case PluginNotification m:
                 w.WriteGuid(m.InstanceId.Value);
                 w.WriteByte((byte)m.Kind);
@@ -446,6 +454,10 @@ public static class FrameCodec
                 return new OpenEditor(ReadInstanceId(ref r), r.ReadString());
             case MessageType.CloseEditor:
                 return new CloseEditor(ReadInstanceId(ref r));
+            case MessageType.SetEditorVisible:
+                return new SetEditorVisible(ReadInstanceId(ref r), r.ReadBool());
+            case MessageType.SetEditorKeyboard:
+                return new SetEditorKeyboard(ReadInstanceId(ref r), r.ReadBool());
             case MessageType.PluginNotification:
                 return ReadNotification(ref r);
             default:
@@ -513,6 +525,7 @@ public static class FrameCodec
         {
             NotificationKind.ParameterEdited => NormalizedValue.IsValid(value),
             NotificationKind.LatencyChanged => parameterId == 0 && value is >= 0 and <= 1 << 24 && value == Math.Floor(value),
+            NotificationKind.EditorKey => EditorKey.IsValid(parameterId, value),
             _ => parameterId == 0 && value == 0,
         };
         return valid ? new PluginNotification(id, kind, parameterId, value) : throw new ProtocolException($"Invalid {kind} notification.");

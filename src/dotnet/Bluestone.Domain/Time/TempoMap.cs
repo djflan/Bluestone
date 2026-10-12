@@ -75,6 +75,13 @@ public sealed class TempoMap
     }
 
     /// <summary>
+    /// Elapsed time from the sequence start to <paramref name="position"/>, which may lie before it (an audio clip's file
+    /// can start before tick 0); there the first tempo is extended backwards and the time is negative.
+    /// </summary>
+    public TimeSpan SignedTimeAt(long position) =>
+        position >= 0 ? TimeAt(new Tick(position)) : -ToTimeSpan(-(Int128)position * Changes[0].Tempo.MicrosecondsPerQuarterNote);
+
+    /// <summary>
     /// The last tick whose <see cref="TimeAt"/> is at or before <paramref name="elapsed"/>.
     /// For any tick <c>t</c>, <c>TickAt(TimeAt(t)) ≥ t</c>, with equality whenever a tick lasts at least 100 ns.
     /// </summary>

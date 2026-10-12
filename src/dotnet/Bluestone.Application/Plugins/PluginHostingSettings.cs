@@ -14,7 +14,7 @@ namespace Bluestone.Application.Plugins;
 /// </summary>
 public sealed record PluginHostingSettings
 {
-    /// <summary>The global default: one worker per plugin module, as in Bitwig. ADR 0034 has the reasoning.</summary>
+    /// <summary>The global default: one worker per plugin module, as in Bitwig Studio. ADR 0034 has the reasoning.</summary>
     public const HostingMode DefaultMode = HostingMode.ByPlugin;
 
     /// <summary>The modes a user can choose, from most sharing to least. Hosting within Bluestone is never offered.</summary>
@@ -25,6 +25,12 @@ public sealed record PluginHostingSettings
 
     /// <summary>Restart a plugin whose worker failed, a few times, with back-off (<see cref="RestartPolicy"/>); off by default.</summary>
     public bool AutoRestart { get; init; }
+
+    /// <summary>
+    /// Whether floating plugin editor windows follow the selected track: unpinned editors hide while their track is not
+    /// selected and come back when it is. A workspace preference; it changes nothing that plays.
+    /// </summary>
+    public bool EditorsFollowSelection { get; init; } = true;
 
     /// <summary>Modes chosen for single plugins, by device definition ID (<c>plugin:&lt;format&gt;:&lt;module&gt;/&lt;plugin&gt;</c>).</summary>
     public ImmutableDictionary<string, HostingMode> Overrides { get; init; } = ImmutableDictionary<string, HostingMode>.Empty;
@@ -75,10 +81,10 @@ public sealed record PluginHostingSettings
     };
 
     public bool Equals(PluginHostingSettings? other) =>
-        other is not null && Mode == other.Mode && AutoRestart == other.AutoRestart
+        other is not null && Mode == other.Mode && AutoRestart == other.AutoRestart && EditorsFollowSelection == other.EditorsFollowSelection
         && Overrides.Count == other.Overrides.Count && Overrides.All(o => other.Overrides.TryGetValue(o.Key, out var m) && m == o.Value);
 
-    public override int GetHashCode() => HashCode.Combine(Mode, AutoRestart, Overrides.Count);
+    public override int GetHashCode() => HashCode.Combine(Mode, AutoRestart, EditorsFollowSelection, Overrides.Count);
 }
 
 /// <summary>Reads and writes <see cref="PluginHostingSettings"/> as a small JSON file. A missing or unreadable file gives the defaults.</summary>

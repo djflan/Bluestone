@@ -143,7 +143,7 @@ and Linux; separate tests check the macOS menu's items, gestures, and Window men
 | Hosting modes (how plugins share workers) | the user's settings in `Bluestone.Application/Plugins/PluginHostingSettings.cs`; worker keys in `Bluestone.Plugins` |
 | Worker processes, supervision, scanning and quarantine | `Bluestone.Plugins` (`Workers`, `Scanning`); the plugin folders in `Bluestone.Application/Plugins/PluginLibrary.cs` |
 | What a worker does with a plugin | `Bluestone.PluginWorker` (`IHostedPlugin`) |
-| Loading VST3 or CLAP binaries, plugin editor windows | `src/native/crates/bluestone_plugin_host` (Rust), its C ABI in `Bluestone.PluginWorker/Native` |
+| Loading VST 3 or CLAP binaries, plugin editor windows | `src/native/crates/bluestone_plugin_host` (Rust), its C ABI in `Bluestone.PluginWorker/Native` |
 | How something is shown or edited | `Bluestone.Presentation` (logic), `Bluestone.Desktop` (views) |
 
 ### Abstractions
@@ -167,7 +167,7 @@ must call code it cannot reference:
   output streams come from (the operating system's devices through cpal, or a test backend whose devices come and
   go). `IStreamedSource` (internal): what the disk-streamer thread may call on a node that reads files.
 - `IPluginScanner`: scanning in scanner processes, or a fake in view-model tests. `IHostedPlugin` (internal to
-  the worker): a reference plugin or a VST3 or CLAP plugin in the native host.
+  the worker): a reference plugin or a VST 3 or CLAP plugin in the native host.
 - `IUserInteraction`, `IUiDispatcher`: keep the UI framework out of the view models.
 
 Everything else is concrete. SysEx dialects, for example, are static classes chosen by a `switch`
@@ -242,7 +242,7 @@ Bluestone does not send MIDI 2.0. The design leaves room for it:
   same semantic operations. In MIDI 2.0 some operations become atomic: a `ProgramSelection` is one
   program change with a bank, not three messages.
 - Transport would get a separate UMP send path with its own capability flag (ADR 0005). Platform
-  adapters for Windows MIDI Services and CoreMIDI's event lists are natural UMP endpoints.
+  adapters for Windows MIDI Services and Core MIDI's event lists are natural UMP endpoints.
 - The playback plan compiler encodes every event with `Midi1Encoder`. It would pick the encoder for
   each output from its capabilities.
 - The domain already holds controller, pitch bend, and pressure values at MIDI 2.0 resolution, and
@@ -298,7 +298,7 @@ messages whichever profile a track is routed to.
 
 | Concern | Examples | Lives in |
 | ------- | -------- | -------- |
-| Transport | CoreMIDI, WinMM, ALSA, future Windows MIDI Services | `Bluestone.Platform.*` |
+| Transport | Core MIDI, WinMM, ALSA, future Windows MIDI Services | `Bluestone.Platform.*` |
 | Protocol | MIDI 1.0 bytes, SMF, future UMP | `Bluestone.Midi` |
 | Dialect and device semantics | Universal, XG, GS, device profiles and their parameter maps | `Bluestone.Midi/SysEx`, `Bluestone.Profiles`, `/profiles` |
 
@@ -331,6 +331,15 @@ to an audio file, a gain (-120 to 24 dB), and a fade-in and fade-out (lengths in
 linear or equal-power); the audio engine streams it from disk (ADR 0032). `Track.ArrangedEvents` is
 what the note clips play. `TrackRendering` adds MIDI automation lanes, sampled into channel events, and
 returns device automation separately as parameter changes.
+
+Loops keep their range apart from whether they loop (ADR 0039). The arranger loop (`ArrangerLoop`) is an optional
+range and an enabled flag; only `ArrangerLoop.Active` reaches playback, the audio transport, and cycle recording.
+A clip's optional `ClipLoop` (start and length in content ticks) makes the clip play from `ContentOffset` once, as a
+pickup, and then repeat the loop region for as long as the clip lasts. Note clips produce their repeats in
+`NoteClip.Arrange()`, when the plan is compiled and never on a real-time thread, with each pass's notes cut at its
+end and controller state restored at each repeat; the number of arranged events is bounded and an edit beyond it is
+refused. Audio clips are not time-stretched: an audio loop is a fixed stretch of the file that `ClipSource` maps
+frame by frame, so any number of wraps can fall in one block.
 
 ### Groups
 
@@ -481,8 +490,14 @@ View state and model state are kept apart. A `DeviceViewViewModel` holds only wh
 selection, or locked to a track or rack by ID) and its presentation (collapsed devices, selection, scroll); the
 chain and its devices are the project's and change only through project commands, so several Device Views over
 one chain share devices but not presentation. The Browser (`BrowserViewModel`) is a palette: dropping onto a
-Device View picks the chain and gap; Return inserts into the most recently active Device View that shows a chain,
-or nowhere.
+Device View picks the chain and gap, or, over the middle of a device's panel, the device to replace
+(`DeviceCommands.ReplaceDevice`: one undo step, a new device identity, a plugin started in its worker before the
+project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
+
+Time navigation is one pure model, `TimelineViewport` (zoom in pixels per quarter and scroll, anchored zoom, fit),
+with one ruler gesture, `RulerNavigationGesture`, in the arrangement and the piano roll, each keeping its own state:
+a click seeks, a vertical drag zooms around the position first pressed, and a horizontal drag scrolls. The
+arranger's loop strip is reserved for loop editing (`LoopStripDrag`, committed once on release).
 
 Layout is local state, never project state: `WorkspaceStore` keeps user defaults and per-project state as small
 versioned JSON in the settings folder, with window bounds per display configuration. `LayoutRecovery` never
@@ -491,18 +506,19 @@ saved window. Colours, type, spacing, and device-panel geometry are design token
 
 ### Plugin workers
 
-Third-party plugins are hosted in separate worker processes (ADR 0025), never loaded into Bluestone's
-own process. Process isolation is crash isolation, not a security sandbox. VST3 and CLAP plugins are
-loaded by the Rust plugin host inside the worker (ADR 0033). The user chooses how plugins share workers
-(ADR 0034): together, by manufacturer, by plugin (the default: one worker per plugin module), or
-individually, with a mode per plugin that overrides the global one. These are user settings
-(`PluginHostingSettings`), not project data; `PluginDeviceHost` applies them and moves running plugins
-with their state, and a worker crash marks every device in it Crashed and says which went down together.
-When the plan is compiled, a plugin MIDI effect runs in its worker over the arrangement and its output
-joins the chain like a built-in device's (ADR 0028). A plugin's editor opens in a separate window owned
-by its worker. Modules are scanned in their own scanner processes from a list of plugin folders; the
-Plugins view (Window ▸ Plugins… on macOS, File ▸ Plugins… elsewhere) rescans them and retries
-quarantined modules, and plugins it finds join the device catalog without a restart. See
+Third-party plugins are hosted in separate worker processes (ADR 0025), never loaded into Bluestone's own
+process. Process isolation is crash isolation, not a security sandbox. VST 3 and CLAP plugins are loaded by the
+Rust plugin host inside the worker (ADR 0033). The user chooses how plugins share workers (ADR 0034): together,
+by manufacturer, by plugin (the default: one worker per plugin module), or individually, with a mode per plugin
+that overrides the global one. These are user settings (`PluginHostingSettings`), not project data;
+`PluginDeviceHost` applies them and moves running plugins with their state, and a worker crash marks every
+device in it Crashed and says which went down together. When the plan is compiled, a plugin MIDI effect runs in
+its worker over the arrangement and its output joins the chain like a built-in device's (ADR 0028). A plugin's
+editor opens in a separate window owned by its worker; `PluginEditorWindows` hides and shows editors as the
+selection moves, keeps per-editor pins, and can ask the worker to forward an editor's keys to Bluestone (macOS
+and Windows; not Linux X11) (ADR 0040). Modules are scanned in their own scanner processes from a list of
+plugin folders; the Plugins view (Window ▸ Plugins… on macOS, File ▸ Plugins… elsewhere) rescans them and
+retries quarantined modules, and plugins it finds join the device catalog without a restart. See
 [plugin-hosting.md](plugin-hosting.md).
 
 ## Known compromises
@@ -628,11 +644,14 @@ Not built; [roadmap.md](roadmap.md) keeps the full list:
 | A group's mute and solo reach its members; joining a group routes into it; folding is saved | ADR 0030 |
 | Hardware parameters are automated through profile parameter maps, translated when the plan is compiled | ADR 0031 |
 | Audio: cpal output in Rust, the graph in C# rendered ahead into a ring, one transport | ADR 0032 |
-| VST3 and CLAP through a Rust plugin host loaded only in the worker | ADR 0033 |
+| VST 3 and CLAP through a Rust plugin host loaded only in the worker | ADR 0033 |
 | Users choose how plugins share worker processes; by plugin by default | ADR 0034 |
 | Live input through every device on the live route; a live render-ahead queue; plugin delay compensation | ADR 0035 |
 | A semantic workspace; Device Views own presentation, the project owns devices; layout is local state | ADR 0036 |
 | A chain carries notes, events, and audio in parallel; instruments pass notes on and layer | ADR 0037 |
+| New tracks are hybrid and heard through explicit connections; Settings takes the workspace's place | ADR 0038 |
+| Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; project format 5 | ADR 0039 |
+| Floating plugin editors follow the selection, can be pinned, and can send their keys to Bluestone | ADR 0040 |
 
 ## Native technology
 
@@ -645,13 +664,13 @@ Rust code lives in a Cargo workspace, `src/native/`, one crate per component (`s
 a cdylib with a small, versioned C ABI. `dotnet build` builds the crates a project names
 (`src/dotnet/Native.targets`) and copies the library beside the assemblies. The crates and why each is Rust:
 
-- `bluestone_audio` (ADR 0032): audio device output through cpal (CoreAudio, WASAPI, ALSA). The device
+- `bluestone_audio` (ADR 0032): audio device output through cpal (Core Audio, WASAPI, ALSA). The device
   callback only copies from a ring, because the measurement showed a .NET collection holding a managed
   callback past its deadline. The render graph stays in C#.
-- `bluestone_plugin_host` (ADR 0033): loads VST3 and CLAP plugin binaries and opens their editors, which
+- `bluestone_plugin_host` (ADR 0033): loads VST 3 and CLAP plugin binaries and opens their editors, which
   is ADR 0026's native-interface reason. Only `Bluestone.PluginWorker` loads it, so no plugin code ever
   runs in Bluestone's process. The data plane, supervision, and everything else in plugin hosting stay C#.
-- `bluestone_test_plugins`: small VST3 and CLAP plugins for the tests; not shipped.
+- `bluestone_test_plugins`: small VST 3 and CLAP plugins for the tests; not shipped.
 
 ## Acceptance scenarios and their tests
 

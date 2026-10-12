@@ -29,5 +29,7 @@ macOS).
    project was opened. Parameter map entries are sent by automation without asking, so each must
    set only its one parameter.
 4. **Name trademarks factually.** Add a non-affiliation notice to `notices` when a profile names a
-   vendor's product or format.
+   vendor's product or format, worded like the one in `generic-xg.bluestone-profile.json` (see
+   [TRADEMARKS.md](../TRADEMARKS.md)). Do not state who owns a name unless the owner's own published material
+   says so.
 5. Run `dotnet test src/dotnet/Bluestone.slnx`; the integration suite validates every profile here.

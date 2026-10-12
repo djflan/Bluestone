@@ -61,6 +61,9 @@ public sealed class EditHistory
 
     public string? UndoLabel => _undo.Last?.Value.Label;
 
+    /// <summary>How many steps can be undone.</summary>
+    public int UndoCount => _undo.Count;
+
     public string? RedoLabel => _redo.TryPeek(out var top) ? top.Label : null;
 
     /// <summary>Raised after every change to <see cref="Current"/>.</summary>
@@ -70,7 +73,16 @@ public sealed class EditHistory
     public bool Execute(IProjectCommand command)
     {
         ArgumentNullException.ThrowIfNull(command);
-        var next = command.Apply(Current);
+        Project next;
+        try
+        {
+            next = command.Apply(Current);
+        }
+        catch (Bluestone.Domain.Sequencing.ClipLoopLimitException ex)
+        {
+            throw new CommandRefusedException(ex.Message, ex);
+        }
+
         if (ReferenceEquals(next, Current))
         {
             return false;

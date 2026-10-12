@@ -11,8 +11,15 @@ public sealed record Marker(Tick Position, string Name);
 /// </summary>
 public sealed class Sequence
 {
+    /// <summary>
+    /// The most events looping clips may play across the whole sequence (each clip also has its own limit,
+    /// <see cref="NoteClip.MaxArrangedEvents"/>), so many clips just under that cannot together exhaust memory.
+    /// </summary>
+    public const long MaxLoopedEvents = 1 << 20;
+
     private Sequence(Ppqn ppqn, TempoMap tempoMap, MeterMap meterMap, ImmutableArray<Track> tracks, ImmutableArray<Marker> markers)
     {
+        CheckLoopBudget(tracks);
         Ppqn = ppqn;
         TempoMap = tempoMap;
         MeterMap = meterMap;
@@ -34,7 +41,24 @@ public sealed class Sequence
         TempoMap = tempoMap;
         MeterMap = meterMap;
         Tracks = ValidateTracks(tracks);
+        CheckLoopBudget(Tracks);
         Markers = SortMarkers(markers);
+    }
+
+    private static void CheckLoopBudget(ImmutableArray<Track> tracks)
+    {
+        long total = 0;
+        foreach (var track in tracks)
+        {
+            total = track.LoopedEventCount > long.MaxValue - total ? long.MaxValue : total + track.LoopedEventCount;
+        }
+
+        if (total > MaxLoopedEvents)
+        {
+            throw new ClipLoopLimitException(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Looping clips would play {total:N0} events in all; the project plays at most {MaxLoopedEvents:N0} from loops. Make loops longer or looping clips shorter."));
+        }
     }
 
     public static Sequence CreateEmpty(Ppqn ppqn) =>

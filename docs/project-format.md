@@ -8,11 +8,11 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
 ```json
 {
   "format": "bluestone-project",
-  "formatVersion": 4,
+  "formatVersion": 5,
   "project": {
     "id": "0199b0f2-…",
     "name": "Demo",
-    "loop": { "start": 0, "end": 7680 },
+    "loop": { "start": 0, "end": 7680, "enabled": true },
     "sequence": {
       "ppqn": 960,
       "tempo":   [ { "tick": 0, "microsecondsPerQuarter": 500000 } ],
@@ -24,6 +24,7 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
         { "id": "…", "name": "Bass", "muted": false, "soloed": false, "role": "instrument", "group": "…",
           "clips": [
             { "id": "…", "type": "note", "start": 3840, "length": 7680, "offset": 0, "name": "Verse",
+              "loop": { "start": 0, "length": 3840, "enabled": true },
               "events": [
                 { "id": "…", "tick": 0, "type": "program", "channel": 2, "program": 34, "bankMsb": 0, "bankLsb": 0 },
                 { "id": "…", "tick": 0, "type": "controller", "channel": 2, "controller": 7, "value": 3355443200 },
@@ -97,12 +98,19 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
 ## Rules
 
 - Channels and program numbers are one-based (1–16, 1–128), as musicians see them.
-- `loop` (optional) is the loop range in ticks; it must end after it starts.
+- `loop` (optional) is the arranger loop: its range in ticks (`start`, and `end` after it) and whether
+  playback loops over it (`enabled`, default false). The range is kept while looping is off, so turning
+  looping on again reuses it. Without `loop`, no range has been defined.
 - A track holds clips (ADR 0020), in any order on disk but never overlapping. A clip's `start` and
   `length` (at least 1) are timeline ticks. A note clip's events' `tick`s are relative to the clip's
   content, and the clip shows content ticks from `offset` to `offset + length`. Content outside that
   window is kept but not played, so trimming a clip loses nothing. `name` is optional; without it the clip
   shows the track's name.
+- A clip's `loop` (optional, on note and audio clips) repeats part of its content (ADR 0039): `start` (content
+  ticks), `length` (at least 1), and `enabled` (default false; the loop is kept while off). Content from `offset`
+  plays up to the loop's end, then the loop's region repeats until the clip ends; content before `start` therefore
+  plays once. `offset` is never wrapped into the loop. A note clip whose loop would play more than 262,144 events is
+  refused, as is a file whose looping clips would together play more than 1,048,576.
 - A track's `role` is `instrument`, `audio`, `hybrid`, `effect`, or `group` (ADR 0021). Roles are
   stored, and on reading a role that cannot show the track's content is widened (an instrument track
   with audio clips becomes hybrid). `group` (optional) is the ID of the group track it belongs to.
@@ -174,9 +182,13 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
 ## Versions and migrations
 
 `formatVersion` increases whenever the structure changes. Older files are upgraded in memory by a
-chain of migrations (`Format2To3Migration`, `Format3To4Migration`) before they are read; saving always
+chain of migrations (`Format2To3Migration`, `Format3To4Migration`, `Format4To5Migration`) before they are read; saving always
 writes the current version. A file from a newer Bluestone is refused with an explanation and never
 overwritten.
+
+Format 5 separated the arranger loop's range from whether it loops (`loop.enabled`) and added clip loops.
+A format 4 file had a `loop` only while looping was on, so it becomes an enabled loop; its clips have no
+loops and play as before. A format 4 reader refuses a format 5 file and never overwrites it.
 
 Format 4 replaced the per-track `routing` with `instruments`, `chains`, `connections`, and `mixer`,
 and added track `role` and `group`, audio clips, and device automation targets (ADR 0027). Each format 3

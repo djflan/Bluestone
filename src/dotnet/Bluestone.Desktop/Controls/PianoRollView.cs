@@ -10,6 +10,7 @@ using Bluestone.Desktop.Theme;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Presentation;
+using Bluestone.Presentation.Timeline;
 using SelectionMode = Bluestone.Presentation.SelectionMode;
 
 namespace Bluestone.Desktop.Controls;
@@ -112,6 +113,13 @@ public sealed class PianoRollView : Control
         Seek,
     }
 
+    // The ruler drag in progress, and how far right the user has scrolled by dragging (room beyond the content).
+    private RulerNavigationGesture? _navigation;
+    private double _navigatedExtent;
+
+    /// <summary>How far the piano roll zooms: further in than the arrangement, for detail.</summary>
+    public static TimelineZoomLimits ZoomLimits { get; } = new(MainViewModel.MinZoom, MainViewModel.MaxZoom * 2);
+
     public Project? Project
     {
         get => GetValue(ProjectProperty);
@@ -185,8 +193,46 @@ public sealed class PianoRollView : Control
     public double GridHeight => Math.Max(0, Bounds.Height - RulerHeight - LaneHeight);
 
     public double ExtentWidth => Project is { } p && _editor is { } e
-        ? TimeGrid.TickToX(Math.Max(p.Sequence.EndPosition.Value, _editor.Clip is { } clip ? clip.Origin + clip.Content.EndPosition.Value : 0) + (32L * p.Sequence.Ppqn.TicksPerQuarterNote), p.Sequence, e.Zoom)
+        ? Math.Max(_navigatedExtent, TimeGrid.TickToX(Math.Max(p.Sequence.EndPosition.Value, _editor.Clip is { } clip ? clip.Origin + clip.Content.EndPosition.Value : 0) + (32L * p.Sequence.Ppqn.TicksPerQuarterNote), p.Sequence, e.Zoom))
         : 0;
+
+    /// <summary>The piano roll's own zoom and scroll (independent of the arrangement's).</summary>
+    public TimelineViewport Viewport => new(Zoom, _scrollX);
+
+    /// <summary>Puts the piano roll at <paramref name="view"/>'s zoom and scroll, with room to scroll past the content.</summary>
+    public void Show(TimelineViewport view)
+    {
+        if (_editor is null)
+        {
+            return;
+        }
+
+        _navigatedExtent = view.ScrollX + GridWidth;
+        _editor.Zoom = ZoomLimits.Clamp(view.PixelsPerQuarter);
+        ScrollX = view.ScrollX;
+    }
+
+    /// <summary>Shows the edited clip, or the selected notes when <paramref name="selection"/> and there are some.</summary>
+    public void ZoomToFit(bool selection)
+    {
+        if (_editor is not { } editor || Project is not { } p || editor.Clip is not { } clip)
+        {
+            return;
+        }
+
+        var quarter = (double)p.Sequence.Ppqn.TicksPerQuarterNote;
+        var (from, to) = selection && editor.SelectedNotesSpan() is { } span ? (span.Start.Value, span.End.Value) : (clip.Start.Value, clip.End.Value);
+        Show(Viewport.Fitted(from / quarter, to / quarter, GridWidth, ZoomLimits));
+    }
+
+    /// <summary>Shows quarter notes [<paramref name="from"/>, <paramref name="to"/>) of the timeline.</summary>
+    public void ShowQuarters(double from, double to)
+    {
+        if (_editor is not null && to > from)
+        {
+            Show(Viewport.Fitted(from, to, GridWidth, ZoomLimits));
+        }
+    }
 
     public double ExtentHeight => 128 * KeyHeight;
 
@@ -225,9 +271,7 @@ public sealed class PianoRollView : Control
             return;
         }
 
-        var tick = TimeGrid.XToTick(_scrollX + gridX, p.Sequence, Zoom);
-        _editor.Zoom *= factor;
-        ScrollX = Math.Max(0, TimeGrid.TickToX(tick, p.Sequence, Zoom) - gridX);
+        Show(Viewport.ZoomedAround(gridX, factor, ZoomLimits));
     }
 
     public override void Render(DrawingContext context)
@@ -260,7 +304,7 @@ public sealed class PianoRollView : Control
             {
                 var local = new Rect(0, grid.Top, grid.Width, grid.Height);
                 TimeGrid.DrawLines(context, sequence, Zoom, _scrollX, local, _editor.Snap.Division);
-                TimeGrid.ShadeCycle(context, sequence, project.Loop, Zoom, _scrollX, local);
+                TimeGrid.ShadeCycle(context, sequence, project.Loop.Active, Zoom, _scrollX, local);
                 ShadeOutsideClip(context, sequence, local);
                 DrawNotes(context, sequence, track, color, local);
                 DrawRecording(context, sequence, local);
@@ -291,7 +335,7 @@ public sealed class PianoRollView : Control
         using (context.PushClip(new Rect(KeyboardWidth, 0, GridWidth, RulerHeight)))
         using (context.PushTransform(Matrix.CreateTranslation(KeyboardWidth, 0)))
         {
-            TimeGrid.DrawRuler(context, sequence, project.Loop, Zoom, _scrollX, new Rect(0, 0, GridWidth, RulerHeight), PlayheadTick, IsRecording);
+            TimeGrid.DrawRuler(context, sequence, LoopStripVisual.Of(project.Loop), Zoom, _scrollX, new Rect(0, 0, GridWidth, RulerHeight), PlayheadTick, IsRecording);
         }
 
         context.FillRectangle(Corner, new Rect(0, 0, KeyboardWidth, RulerHeight));
@@ -364,12 +408,9 @@ public sealed class PianoRollView : Control
 
         if (y < RulerHeight)
         {
+            // A click seeks (on release); a drag zooms and scrolls, like the arrangement's beat ruler.
             _gesture = x >= KeyboardWidth ? Gesture.Seek : Gesture.None;
-            if (_gesture == Gesture.Seek)
-            {
-                SeekRequested?.Invoke(this, TickAt(x));
-            }
-
+            _navigation = _gesture == Gesture.Seek ? new RulerNavigationGesture(x - KeyboardWidth, y, Viewport, ZoomLimits) : null;
             return;
         }
 
@@ -469,7 +510,11 @@ public sealed class PianoRollView : Control
         switch (_gesture)
         {
             case Gesture.Seek:
-                SeekRequested?.Invoke(this, TickAt(position.X));
+                if (_navigation?.Move(position.X - KeyboardWidth, position.Y) is { } view)
+                {
+                    Show(view);
+                }
+
                 break;
             case Gesture.Keyboard:
                 if (PitchAt(position.Y) != _auditionPitch)
@@ -552,6 +597,12 @@ public sealed class PianoRollView : Control
         }
 
         EndAudition();
+        if (gesture == Gesture.Seek && _navigation is { IsNavigating: false })
+        {
+            SeekRequested?.Invoke(this, TickAt(_press.X));
+        }
+
+        _navigation = null;
         switch (gesture)
         {
             case Gesture.Move when !_moved && _anchor is { } clicked && editor.SelectionCount > 1:
@@ -1036,6 +1087,14 @@ public sealed class PianoRollView : Control
 
     private void UpdateCursor(Point position)
     {
+        var inRuler = position.Y < RulerHeight && position.X >= KeyboardWidth;
+        ToolTip.SetTip(this, inRuler ? "Click to move the playhead. Drag up or down to zoom, sideways to scroll." : null);
+        if (inRuler)
+        {
+            Cursor = new Cursor(StandardCursorType.SizeAll);
+            return;
+        }
+
         if (_editor is null || position.X < KeyboardWidth || position.Y < RulerHeight)
         {
             Cursor = Cursor.Default;

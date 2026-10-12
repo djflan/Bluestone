@@ -32,6 +32,8 @@ public sealed record TickRange
     public Tick Start { get; }
 
     public Tick End { get; }
+
+    public TickSpan Length => End - Start;
 }
 
 /// <summary>
@@ -52,6 +54,7 @@ public sealed record Project
     private readonly ImmutableArray<SignalConnection> _connections = [];
     private readonly ImmutableArray<SignalConnection> _parked = [];
     private readonly Mixer _mixer = Mixer.Empty;
+    private readonly ArrangerLoop _loop = ArrangerLoop.None;
 
     public required ProjectId Id { get; init; }
 
@@ -112,7 +115,12 @@ public sealed record Project
         init => _mixer = value ?? throw new ArgumentNullException(nameof(value));
     }
 
-    public TickRange? Loop { get; init; }
+    /// <summary>The arranger loop: its range, kept while looping is off, and whether playback loops.</summary>
+    public ArrangerLoop Loop
+    {
+        get => _loop;
+        init => _loop = value ?? throw new ArgumentNullException(nameof(value));
+    }
 
     /// <summary>The chain a track hosts, or null if it has none yet.</summary>
     public DeviceChain? ChainOf(TrackId track)

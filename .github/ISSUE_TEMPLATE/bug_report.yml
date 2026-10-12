@@ -50,7 +50,7 @@ body:
     id: os-version
     attributes:
       label: OS version and CPU architecture
-      placeholder: macOS 26.1, Apple Silicon
+      placeholder: macOS 26.1, Apple silicon
   - type: input
     id: commit
     attributes:

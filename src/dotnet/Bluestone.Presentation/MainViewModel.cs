@@ -14,6 +14,7 @@ using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Files;
 using Bluestone.Playback;
 using Bluestone.Plugins;
+using Bluestone.Presentation.Timeline;
 using Bluestone.Profiles;
 using Bluestone.Signal;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -97,14 +98,28 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Mixer = new MixerViewModel(this);
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
+        Loop = new ArrangerLoopViewModel(this);
+        Arrangement.Changed += (_, _) =>
+        {
+            Loop.SelectionChanged();
+            ZoomToSelectionCommand.NotifyCanExecuteChanged();
+        };
+        Editor.Changed += (_, _) =>
+        {
+            Loop.SelectionChanged();
+            ZoomToSelectionCommand.NotifyCanExecuteChanged();
+        };
         AudioClip = new AudioClipViewModel(this);
         Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
+        ClipLoop = new ClipLoopViewModel(this);
+        Arrangement.Changed += (_, _) => ClipLoop.Sync();
         Groups = new GroupsViewModel(this);
         EventList = new EventListViewModel(this, Editor);
         SelectedTracks.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(SelectedTrack));
             SyncSelection();
+            EditorWindows?.SelectionChanged();
             SyncEditor();
             Arrangement.KeepOnTracks([.. SelectedTracks.Select(t => t.Id)]);
             Groups.SyncSelection();
@@ -126,6 +141,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _endpoints.EndpointsChanged += (_, _) => _dispatcher.Post(() => _ = RefreshAsync());
         if (_plugins is not null)
         {
+            EditorWindows = new PluginEditorWindows(this, _plugins, _dispatcher);
             _playback.UseDevices(_plugins.Extend(DeviceCatalog.BuiltIn));
             _playback.Live.UsePlugins(_plugins.InstanceOf);
             // A plugin MIDI effect that stops or comes back changes what goes into the plan, so recompile it too.
@@ -187,8 +203,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The clip selection and clip edits in the arrangement.</summary>
     public ArrangementViewModel Arrangement { get; }
 
+    /// <summary>The arranger loop: its range, whether it loops, and the commands that change it.</summary>
+    public ArrangerLoopViewModel Loop { get; }
+
     /// <summary>Gain and fades of the selected audio clip.</summary>
     public AudioClipViewModel AudioClip { get; }
+
+    /// <summary>The selected clips' loop, for the inspector and the arranger's loop gestures.</summary>
+    public ClipLoopViewModel ClipLoop { get; }
+
+    /// <summary>Floating plugin editor windows: following the selection, pinning, and where their keys go. Null without plugin hosting.</summary>
+    public PluginEditorWindows? EditorWindows { get; }
+
+    /// <summary>The plugin host, when plugins are hosted.</summary>
+    internal PluginDeviceHost? PluginHost => _plugins;
+
+    /// <summary>The project file's folder, or null while the project is unsaved.</summary>
+    internal string? ProjectDirectory => _session.FilePath is { } path ? Path.GetDirectoryName(path) : null;
 
     /// <summary>Group tracks: grouping the selection, membership, and folding.</summary>
     public GroupsViewModel Groups { get; }
@@ -229,6 +260,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     internal DeviceStatus DeviceStatus(DeviceInstance device) =>
         _plugins?.StatusOf(device) is { } runtime
             ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
+            {
+                Editor = EditorWindows is { } windows && windows.IsOpen(device.Id)
+                    ? new EditorWindowStatus(windows.IsPinned(device.Id), windows.SendsKeysToBluestone(device.Id), windows.IsHiddenByFollow(device.Id), windows.FollowsSelection)
+                    {
+                        CanRouteKeys = windows.CanRouteKeys(device.Id),
+                        CanHide = windows.CanHide(device.Id),
+                    }
+                    : null,
+            }
             : Presentation.DeviceStatus.Of(device, Devices);
 
     private string CrashMessage(PluginCrash crash)
@@ -276,7 +316,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        if (await _plugins.OpenEditorAsync(device) is { } problem)
+        if (await (EditorWindows?.OpenAsync(device) ?? _plugins.OpenEditorAsync(device)) is { } problem)
         {
             AddMessage(MessageSeverity.Warning, "Plugins", $"The plugin's editor could not be opened: {problem}");
         }
@@ -386,9 +426,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     public partial string MeterText { get; private set; } = "4/4";
-
-    [ObservableProperty]
-    public partial bool IsLoopEnabled { get; private set; }
 
     [ObservableProperty]
     public partial string TimingText { get; private set; } = "Idle";
@@ -547,17 +584,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private void ToggleEditor() => IsEditorVisible = !IsEditorVisible;
 
-    public const double MinZoom = 6;
+    public const double MinZoom = 2;
     public const double MaxZoom = 160;
     public const double ZoomStep = 1.25;
 
-    /// <summary>Timeline scale in pixels per quarter note, shared by the slider, menu, keys, and gestures.</summary>
+    /// <summary>How far the arrangement zooms, in pixels per quarter note.</summary>
+    public static TimelineZoomLimits ArrangerZoomLimits { get; } = new(MinZoom, MaxZoom);
+
+    /// <summary>Timeline scale in pixels per quarter note, shared by the menu, keys, and gestures.</summary>
     [ObservableProperty]
     public partial double Zoom { get; set; } = 40;
 
+    /// <summary>
+    /// Asks the arrangement's view to zoom by a factor around its anchor (the playhead when in view), or to show a range;
+    /// only the view knows its width and scroll. Without a view, factors apply directly to <see cref="Zoom"/>.
+    /// </summary>
+    public event EventHandler<TimelineZoomRequest>? ArrangerZoomRequested;
+
     partial void OnZoomChanged(double value)
     {
-        var clamped = Math.Clamp(value, MinZoom, MaxZoom);
+        var clamped = ArrangerZoomLimits.Clamp(value);
         if (clamped != value)
         {
             Zoom = clamped;
@@ -565,13 +611,60 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Multiplies the zoom by <paramref name="factor"/>, staying within range.</summary>
-    public void ZoomBy(double factor) => Zoom = Math.Clamp(Zoom * factor, MinZoom, MaxZoom);
+    public void ZoomBy(double factor) => Zoom = ArrangerZoomLimits.Clamp(Zoom * factor);
 
     [RelayCommand]
-    private void ZoomIn() => ZoomBy(ZoomStep);
+    private void ZoomIn() => RequestZoom(TimelineZoomRequest.By(ZoomStep));
 
     [RelayCommand]
-    private void ZoomOut() => ZoomBy(1 / ZoomStep);
+    private void ZoomOut() => RequestZoom(TimelineZoomRequest.By(1 / ZoomStep));
+
+    /// <summary>Shows the whole project (to the end of its last clip or automation point, or four bars when empty).</summary>
+    [RelayCommand]
+    private void ZoomToFit()
+    {
+        var sequence = Project.Sequence;
+        var end = Math.Max(sequence.EndPosition.Value, 16L * sequence.Ppqn.TicksPerQuarterNote);
+        RequestZoom(TimelineZoomRequest.Show(0, Quarters(end)));
+    }
+
+    /// <summary>Shows the selected clips (or, in the piano roll, the selected notes).</summary>
+    [RelayCommand(CanExecute = nameof(HasZoomSelection))]
+    private void ZoomToSelection()
+    {
+        var clips = Project.Sequence.Tracks.SelectMany(t => t.Clips).Where(c => Arrangement.SelectedClips.Contains(c.Id)).ToList();
+        RequestZoom(clips.Count > 0
+            ? TimelineZoomRequest.Show(Quarters(clips.Min(c => c.Start.Value)), Quarters(clips.Max(c => c.End.Value)), selection: true)
+            : TimelineZoomRequest.Show(0, 0, selection: true));
+    }
+
+    private bool HasZoomSelection() => Arrangement.HasClipSelection || Editor.HasSelection;
+
+    /// <summary>Shows the arranger loop's range.</summary>
+    [RelayCommand(CanExecute = nameof(HasLoopRange))]
+    private void ZoomToLoop()
+    {
+        if (Project.Loop.Range is { } range)
+        {
+            RequestZoom(TimelineZoomRequest.ShowLoop(Quarters(range.Start.Value), Quarters(range.End.Value)));
+        }
+    }
+
+    private bool HasLoopRange() => Project.Loop.Range is not null;
+
+    private double Quarters(long ticks) => ticks / (double)Project.Sequence.Ppqn.TicksPerQuarterNote;
+
+    private void RequestZoom(TimelineZoomRequest request)
+    {
+        if (ArrangerZoomRequested is { } handler)
+        {
+            handler(this, request);
+        }
+        else if (request.Factor is { } factor)
+        {
+            ZoomBy(factor);
+        }
+    }
 
     /// <summary>Loads routes and outputs for the initial project.</summary>
     public Task InitializeAsync() => SyncAndRefreshAsync();
@@ -687,7 +780,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (IsRecording && _playback.Recorder.RecordingTrack is { } recording)
         {
             RecordingLane = Tracks.IndexOf(Tracks.FirstOrDefault(t => t.Id == recording)!);
-            RecordingPreview = _playback.Recorder.Preview(tick, Project.Loop);
+            RecordingPreview = _playback.Recorder.Preview(tick, Project.Loop.Active);
         }
         else if (RecordingLane >= 0 || RecordingPreview.Count > 0)
         {
@@ -1100,26 +1193,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         AddMessage(MessageSeverity.Info, "Panic", "Sent All Notes Off, All Sound Off, and sustain off on every channel of every output.");
     }
 
-    /// <summary>Sets the loop (cycle) range, or turns it off with null, e.g. from the ruler.</summary>
-    public void SetLoop(TickRange? loop) => Execute(ProjectCommands.SetLoop(loop));
-
-    /// <summary>Turns the loop off, or loops four bars starting at the bar containing the playhead.</summary>
-    [RelayCommand]
-    private void ToggleLoop()
-    {
-        if (Project.Loop is not null)
-        {
-            Execute(ProjectCommands.SetLoop(null));
-            return;
-        }
-
-        var meter = Project.Sequence.MeterMap;
-        var start = meter.BarStart(new Tick(PlayheadTick));
-        var bar = meter.ToBarBeatTick(start).Bar;
-        var end = meter.TryGetTick(new BarBeatTick(bar + 4, 1, 0), out var e) ? e : start + new TickSpan(16L * Project.Sequence.Ppqn.TicksPerQuarterNote);
-        Execute(ProjectCommands.SetLoop(new TickRange(start, end)));
-    }
-
     /// <summary>What <paramref name="track"/> sounds through, with its instrument's runtime status.</summary>
     internal TrackSound SoundOf(TrackId track)
     {
@@ -1279,11 +1352,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SwitchWorkspace();
         ProjectName = Project.Name;
         IsDirty = _session.IsDirty;
-        IsLoopEnabled = Project.Loop is not null;
+        Loop.Sync();
+        ZoomToLoopCommand.NotifyCanExecuteChanged();
         SyncTracks();
         SyncEditor();
         Arrangement.Sync();
         AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
+        ClipLoop.Sync();
         await SyncPluginsAsync();
         await RefreshAsync();
     }
@@ -1398,6 +1473,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Runs <paramref name="action"/> later on the UI thread.</summary>
     internal void Post(Action action) => _dispatcher.Post(action);
+
+    /// <summary>Refreshes the device panels (for example, an editor window's pin or keyboard state).</summary>
+    internal void RefreshDevicePanels() => SyncSelection();
 
     /// <summary>Refreshes the Device Views, Browser, routing inspector, racks, and mixer from the project.</summary>
     internal void SyncDeviceViews() => SyncSelection();

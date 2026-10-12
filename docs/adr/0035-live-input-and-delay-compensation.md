@@ -67,7 +67,7 @@ built-in devices, and plugin delay compensation, in scope for this epic.
 - Live notes go into the next block rendered (the latest one not yet handed to the device), at its first frame. That
   is the lowest latency the queue allows; the price is jitter of up to one render chunk.
 - **Measured** (`dotnet run -c Release --project src/Bluestone.Benchmarks -- --live 20 ...`; macOS 26, Apple
-  Silicon, Jabra Evolve2 50 USB headset reporting 4.8 ms output latency, render thread with real-time priority,
+  silicon, Jabra Evolve2 50 USB headset reporting 4.8 ms output latency, render thread with real-time priority,
   32 tone strips rendering, other agents' builds running): from the input's timestamp to when its block is heard.
 
   | Buffer, pressure | Queue | p50 | p95 | Max | Underrun frames in 20 s |
@@ -131,6 +131,6 @@ built-in devices, and plugin delay compensation, in scope for this epic.
 - Not measured: the acoustic round trip (no loopback recording); live input on Windows and Linux devices (the code is
   the same; CI has no audio devices). Plugin delay compensation is tested with the reference plugins and the
   offline driver; third-party plugins' reported latencies were not checked against their audio.
-- Considered and rejected: rendering live tracks in a second, low-latency graph outside the queue (Reaper's
+- Considered and rejected: rendering live tracks in a second, low-latency graph outside the queue (REAPER's
   anticipative processing). It needs managed code in the device callback or a second ring, which ADR 0032 measured
   against; the adjustable queue gets most of the gain without it.

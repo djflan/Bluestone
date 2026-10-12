@@ -52,7 +52,8 @@ public enum FadeShape
 /// </summary>
 /// <remarks>
 /// Fades are measured from the clip's edges in ticks, so they follow the tempo like the clip does. Stored fades
-/// may add up to more than the clip (after a trim); <see cref="EffectiveFades"/> are what plays.
+/// may add up to more than the clip (after a trim); <see cref="EffectiveFades"/> are what plays. Fades belong to the
+/// clip's outer edges: a loop repeats the audio, not the fades.
 /// </remarks>
 public sealed record AudioClip : Clip
 {
@@ -110,12 +111,16 @@ public sealed record AudioClip : Clip
         return (this with { Start = edge, Length = until - edge, ContentOffset = new TickSpan(edge.Value - Origin) }).WithFadesInside();
     }
 
-    /// <remarks>The left part keeps the fade-in, the right part the fade-out; no fade is added at the cut.</remarks>
+    /// <remarks>
+    /// The left part keeps the fade-in, the right part the fade-out; no fade is added at the cut. The right part's offset is
+    /// the unwrapped position at the cut, so with the same loop it plays on exactly as before.
+    /// </remarks>
     public override (Clip Left, Clip Right) SplitAt(Tick at, ClipId rightId)
     {
         EnsureInside(at);
+        var offset = new TickSpan(at.Value - Origin);
         var left = (this with { Length = at - Start, FadeOut = TickSpan.Zero }).WithFadesInside();
-        var right = (this with { Id = rightId, Start = at, Length = End - at, ContentOffset = new TickSpan(at.Value - Origin), FadeIn = TickSpan.Zero }).WithFadesInside();
+        var right = (this with { Id = rightId, Start = at, Length = End - at, ContentOffset = offset, FadeIn = TickSpan.Zero }).WithFadesInside();
         return (left, right);
     }
 

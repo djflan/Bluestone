@@ -6,7 +6,7 @@
   "name": "Generic XG",
   "description": "Instruments compatible with the XG format: bank select layout, XG System On, and XG parameter change messages. Voice names are intentionally not included; programs are shown by number.",
   "notices": [
-    "XG is a trademark of Yamaha Corporation. Bluestone is an independent project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. The name is used only to describe compatibility."
+    "Bluestone is an independent project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. Yamaha and XG belong to their respective owners and are used only to describe compatibility with the XG format."
   ],
   "provenance": {
     "sources": [

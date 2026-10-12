@@ -510,6 +510,19 @@ public sealed class EditorViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public void SelectedNotesSpan_IgnoresSelectedEventsThatAreNotNotes()
+    {
+        _session.Execute(ProjectCommands.AddEvent(Track.Id, Track.Clips[0].Id, new ControllerEvent(new Tick(5000), MidiChannel.FromNumber(1), ControllerNumber.ChannelVolume, ControlValue.Max)));
+        var controller = Track.ArrangedEvents.OfType<ControllerEvent>().Single();
+
+        Editor.Select([controller.Id]);
+        Assert.Null(Editor.SelectedNotesSpan());
+
+        Editor.Select([controller.Id, Track.ArrangedEvents[0].Id]);
+        Assert.Equal((new Tick(0), new Tick(240)), Editor.SelectedNotesSpan());
+    }
+
+    [Fact]
     public void AutomationOptions_ShowTheirControllerInMenus()
     {
         Assert.Equal("Volume (CC 7)", AutomationOption.Volume.ToString());
