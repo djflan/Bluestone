@@ -216,6 +216,55 @@ public sealed class ChainDragTests
         app.Settle();
     });
 
+    [Fact]
+    public Task ADeviceDraggedFromAnotherViewOfTheSameChain_IsOfferedAsAMove_AndOneFromAnotherChainIsRefused() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenWithChainAsync(plugins);
+        var detached = app.ViewModel.Workspace.NewDeviceView();
+        detached.DeviceView!.IsLocked = true;
+        detached.DetachCommand.Execute(null);
+        app.Settle();
+        var window = Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+        window.Width = 1200;
+        window.Height = 340;
+        window.UpdateLayout();
+        app.Settle();
+        var control = window.GetVisualDescendants().OfType<DeviceViewControl>().Single();
+        using var source = RecordingDragSource.Install();
+        var ids = ChainIds(app);
+
+        // The same chain in another view: the source allows only Move, so the target must offer Move for the drop to land.
+        var gripped = StartGripDrag(window, control, detached.DeviceView.Devices[0]);
+        var move = Assert.Single(source.Drags);
+        var moved = source.DropAt(move, app.Window, AfterLastPanel(app, Docked(app)));
+        RecordingDragSource.Finish(move, moved);
+        FinishGesture(window, gripped);
+
+        Assert.Equal(DragDropEffects.Move, moved);
+        Assert.Equal([ids[1], ids[2], ids[0]], ChainIds(app));
+
+        // Another chain: a device cannot move between chains, so nothing is offered and nothing changes.
+        app.ViewModel.Workspace.DeviceViews.First().LockToTrack(app.ViewModel.Tracks[0].Id);
+        detached.DeviceView.LockToTrack(app.ViewModel.Tracks[1].Id);
+        detached.DeviceView.InsertAt(0, BuiltIn("Transpose"));
+        window.UpdateLayout();
+        app.Settle();
+        Assert.Equal("Pad", detached.DeviceView.Heading);
+        var lead = ChainIds(app);
+
+        var other = StartGripDrag(window, control, detached.DeviceView.Devices[0]);
+        var refused = source.Drags[1];
+        var effect = source.DropAt(refused, app.Window, AfterLastPanel(app, Docked(app)));
+        RecordingDragSource.Finish(refused, effect);
+        FinishGesture(window, other);
+
+        Assert.Equal(DragDropEffects.None, effect);
+        Assert.Equal(lead, ChainIds(app));
+        window.Close();
+        app.Settle();
+    });
+
     /// <summary>
     /// What Avalonia.Native would hand AppKit for <paramref name="transfer"/>: per item, the formats that are not in-process.
     /// Each item needs at least one, with a pasteboard type name and a string value, and none may carry anything in

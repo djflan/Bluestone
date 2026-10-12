@@ -157,12 +157,22 @@ public partial class DeviceViewControl : UserControl
             return;
         }
 
+        var effect = EffectOf(vm, drag);
+        if (effect == DragDropEffects.None)
+        {
+            // A device from another chain: devices do not move between chains, so there is no gap to offer.
+            InsertionMarker.IsVisible = false;
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
         var (_, markerX) = GapAt(e.GetPosition(ChainArea).X);
         var top = ChainRow.TranslatePoint(new Point(0, ChainRow.Margin.Top), ChainArea)?.Y ?? 0;
         Canvas.SetLeft(InsertionMarker, markerX - (InsertionMarker.Width / 2));
         Canvas.SetTop(InsertionMarker, Math.Max(0, top - ChainRow.Margin.Top));
         InsertionMarker.IsVisible = true;
-        e.DragEffects = drag.Source == vm ? DragDropEffects.Move : DragDropEffects.Copy;
+        e.DragEffects = effect;
         e.Handled = true;
     }
 
@@ -174,12 +184,32 @@ public partial class DeviceViewControl : UserControl
             return;
         }
 
+        e.DragEffects = EffectOf(vm, drag);
         e.Handled = true;
+        if (e.DragEffects == DragDropEffects.None)
+        {
+            return;
+        }
+
         var (gap, _) = GapAt(e.GetPosition(ChainArea).X);
 
         // Change the chain after the platform's drop callback returns, not inside the native drag session: the change rebuilds
         // panels (and can start a plugin), which must not happen while the session still holds the drag source and target.
         Dispatcher.UIThread.Post(() => Drop(vm, drag, gap));
+    }
+
+    /// <summary>
+    /// What a drop of <paramref name="drag"/> on <paramref name="target"/> does: a definition is copied in; a device moves when it
+    /// is in the chain <paramref name="target"/> shows (from this view or another view of the same chain); otherwise nothing.
+    /// </summary>
+    internal static DragDropEffects EffectOf(DeviceViewViewModel target, ChainDrag drag)
+    {
+        if (drag.Definition is not null)
+        {
+            return DragDropEffects.Copy;
+        }
+
+        return drag.Device is { } device && target.Devices.Any(d => d.Id == device) ? DragDropEffects.Move : DragDropEffects.None;
     }
 
     /// <summary>Applies a drop at <paramref name="gap"/>: inserts a definition, or moves a device (between views of the same chain too).</summary>

@@ -113,6 +113,29 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task TheBrowsersInsertButton_DoesWhatReturnDoes_EvenWithNoDeviceViewShowingAChain() => HeadlessApp.RunAsync(async () =>
+    {
+        var session = TwoTracks();
+        session.Execute(DeviceCommands.AddRack(DeviceChain.Create(ChainOwner.Rack, "Rack 1")));
+        await using var app = await AppUnderTest.OpenAsync(session);
+        app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+        app.ViewModel.DeviceView!.Host!.CollapseCommand.Execute(null);
+        app.Settle();
+        var browser = app.ViewModel.Browser;
+        Assert.False(browser.HasTarget);
+
+        // A rack opens in a Device View: it needs no chain to insert into.
+        browser.SelectedItem = browser.Items.Single(i => i.Kind == Presentation.BrowserItemKind.Rack);
+        app.Settle();
+        var insert = AppUnderTest.Within<Button>(app.Find<BrowserView>("DockedBrowser"), b => Avalonia.Automation.AutomationProperties.GetName(b) == "Insert into Device View");
+        Assert.True(insert.IsEffectivelyEnabled);
+        app.Click(insert);
+        app.Settle();
+
+        Assert.Equal("Rack: Rack 1", AppUnderTest.Within<TextBlock>(app.Find<ContentControl>("DockedDeviceView"), t => t.Name == "HeadingText").Text);
+    });
+
+    [Fact]
     public Task ABrowserItemDroppedOnTheChain_IsInsertedAtTheGapUnderThePointer() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);
