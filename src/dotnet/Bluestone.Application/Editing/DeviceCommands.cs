@@ -24,11 +24,18 @@ public static class DeviceCommands
         {
             ArgumentNullException.ThrowIfNull(device);
             var chain = p.ChainOf(track) ?? DeviceChain.Create(ChainOwner.ForTrack(track));
-            var inserted = p.WithChain(chain.Insert(index ?? chain.Devices.Length, device));
-            return definitions(device.Definition.Id)?.Produces.HasFlag(SignalKinds.Audio) == true
-                ? TrackSetup.WithAudioPath(inserted, track)
-                : inserted;
+            return HeardIfAudible(p.WithChain(chain.Insert(index ?? chain.Devices.Length, device)), track, [device], definitions);
         });
+
+    /// <summary>
+    /// Gives <paramref name="track"/> its default audio path (<see cref="TrackSetup.WithAudioPath"/>) when any of
+    /// <paramref name="added"/> makes audio: every way devices arrive in a track's chain (a device, a preset, a moved
+    /// chain) leaves an inserted instrument audible.
+    /// </summary>
+    private static Project HeardIfAudible(Project project, TrackId track, IEnumerable<DeviceInstance> added, DeviceDefinitionLookup definitions) =>
+        added.Any(d => definitions(d.Definition.Id)?.Produces.HasFlag(SignalKinds.Audio) == true)
+            ? TrackSetup.WithAudioPath(project, track)
+            : project;
 
     /// <summary>Inserts <paramref name="device"/> into the chain <paramref name="chain"/> (a track's or a rack's).</summary>
     public static IProjectCommand InsertDevice(DeviceChainId chain, DeviceInstance device, DeviceDefinitionLookup definitions, int? index = null) =>
@@ -120,12 +127,13 @@ public static class DeviceCommands
             ArgumentNullException.ThrowIfNull(preset);
             var chain = p.ChainOf(track) ?? DeviceChain.Create(ChainOwner.ForTrack(track));
             var at = index ?? chain.Devices.Length;
-            foreach (var device in preset.Devices.Select(d => d.Instantiate()).Reverse())
+            var devices = preset.Devices.Select(d => d.Instantiate()).ToList();
+            foreach (var device in Enumerable.Reverse(devices))
             {
                 chain = chain.Insert(at, device);
             }
 
-            return p.WithChain(chain);
+            return HeardIfAudible(p.WithChain(chain), track, devices, definitions);
         });
 
     /// <summary>A preset of <paramref name="chain"/>: its devices as templates, without identities or connections.</summary>
@@ -180,6 +188,7 @@ public static class DeviceCommands
                 throw new CommandRefusedException("That track already has devices. Remove them, or load the chain as a preset instead.");
             }
 
-            return p.WithChain(found with { Owner = owner });
+            var moved = p.WithChain(found with { Owner = owner });
+            return owner.Kind == ChainOwnerKind.Track ? HeardIfAudible(moved, owner.Track, found.Devices, definitions) : moved;
         });
 }

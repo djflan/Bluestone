@@ -205,4 +205,46 @@ public sealed class TrackSetupTests
         Assert.Empty(history.Current.Connections);
         Assert.False(TrackSetup.HasAudioPath(history.Current, track.Id));
     }
+
+    [Fact]
+    public void APresetOrAMovedChainWithAnInstrument_IsHeardLikeAnInsertedInstrument()
+    {
+        var imported = Track.Create("Imported");
+        var other = Track.Create("Other");
+        var rack = DeviceChain.Create(ChainOwner.Rack, "Synths") with { Devices = [TestDevices.Instance(TestDevices.Synth)] };
+        var history = new EditHistory((Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(imported).WithTrack(other) }).WithChain(rack));
+        var preset = DeviceChainPreset.From(DeviceChain.Create(ChainOwner.Rack, "p") with { Devices = [TestDevices.Instance(TestDevices.MidiFx), TestDevices.Instance(TestDevices.Synth)] }, "Lead");
+
+        history.Execute(DeviceCommands.LoadPreset(imported.Id, preset, Definitions));
+
+        Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, imported.Id)).Destination);
+        Assert.Equal(TrackRole.Hybrid, history.Current.Sequence.FindTrack(imported.Id)!.Role);
+
+        history.Execute(DeviceCommands.MoveChain(rack.Id, ChainOwner.ForTrack(other.Id), Definitions));
+
+        Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, other.Id)).Destination);
+
+        // A preset of note effects alone adds no path.
+        var notesOnly = DeviceChainPreset.From(DeviceChain.Create(ChainOwner.Rack, "p") with { Devices = [TestDevices.Instance(TestDevices.MidiFx)] }, "Arp");
+        var third = Track.Create("Third");
+        var plain = new EditHistory(Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(third) });
+        plain.Execute(DeviceCommands.LoadPreset(third.Id, notesOnly, Definitions));
+        Assert.Empty(plain.Current.Connections);
+    }
+
+    [Fact]
+    public void NoAudioOutput_RemovesTheSendsToo_SoNoSendBecomesThePrimaryOutput()
+    {
+        var history = Empty();
+        var track = Track.Create("Lead", TrackRole.Hybrid);
+        var verb = MixerChannel.Create("Verb");
+        history.Execute(TrackSetup.NewTrack(track, Definitions));
+        history.Execute(RoutingCommands.AddMixerChannel(verb));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(verb.Id)), Definitions));
+
+        history.Execute(TrackSetup.SetAudioDestination([track.Id], null, Definitions));
+
+        Assert.Empty(AudioFrom(history.Current, track.Id));
+        Assert.Null(TrackSetup.PrimaryAudioOutput(history.Current, track.Id));
+    }
 }

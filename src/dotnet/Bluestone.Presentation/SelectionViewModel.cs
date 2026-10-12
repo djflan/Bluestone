@@ -110,7 +110,7 @@ public sealed partial class SelectionViewModel : ObservableObject
     [ObservableProperty]
     public partial bool UsesHardware { get; private set; }
 
-    /// <summary>The External MIDI section's one-line summary: "Off", "Synth · Ch 3 · Test GM", or "Mixed".</summary>
+    /// <summary>The External MIDI section's one-line summary: "Off", "Synth · Ch 3" (output and forced channel), or "Mixed".</summary>
     [ObservableProperty]
     public partial string HardwareSummary { get; private set; } = string.Empty;
 

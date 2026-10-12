@@ -75,9 +75,11 @@ public static class TrackSetup
 
     /// <summary>
     /// Points each track's primary audio output (<see cref="PrimaryAudioOutput"/>) at <paramref name="destination"/> (the master,
-    /// a mixer channel, or another track), adding one when it has none, or removes it when <paramref name="destination"/> is
-    /// null. A send that already goes to <paramref name="destination"/> becomes the primary output in its place, so a track
-    /// never sends the same audio to one destination twice. One undo step; refused if it would make a routing error.
+    /// a mixer channel, or another track), adding one when it has none. A send that already goes to <paramref name="destination"/>
+    /// becomes the primary output in its place, so a track never sends the same audio to one destination twice. Null means "no
+    /// audio output": every audio connection from the track's output goes, sends included, since a remaining send would
+    /// otherwise become the primary output and the track would still be heard. Taps on its devices are left alone. One undo
+    /// step; refused if it would make a routing error.
     /// </summary>
     public static IProjectCommand SetAudioDestination(IReadOnlyCollection<TrackId> tracks, SignalNode? destination, DeviceDefinitionLookup definitions)
     {
@@ -91,7 +93,7 @@ public static class TrackSetup
                 var primary = PrimaryAudioOutput(result, track);
                 if (destination is not { } target)
                 {
-                    result = primary is null ? result : result with { Connections = result.Connections.Remove(primary) };
+                    result = result with { Connections = result.Connections.RemoveAll(c => c.Kind == SignalKind.Audio && c.Source == output) };
                     continue;
                 }
 
