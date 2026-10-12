@@ -10,7 +10,8 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// A compact rotary parameter control for device panels. Drag vertically to change it (Shift for fine), scroll, or use the
-/// arrow keys; double-click returns it to its default. Dragging writes the value live, so the change is heard as it is
+/// arrow keys; double-click returns it to its default. A stepped parameter (<see cref="Step"/> above zero) moves one step per
+/// key press or wheel notch; a continuous one moves 2% of its range (0.2% with Shift). Dragging writes the value live, so the change is heard as it is
 /// made; the project's history coalesces consecutive edits of one parameter into a single undo step.
 /// </summary>
 public sealed class Knob : Control
@@ -23,6 +24,9 @@ public sealed class Knob : Control
     public static readonly StyledProperty<double> MaximumProperty = AvaloniaProperty.Register<Knob, double>(nameof(Maximum), 1);
 
     public static readonly StyledProperty<double> DefaultValueProperty = AvaloniaProperty.Register<Knob, double>(nameof(DefaultValue));
+
+    /// <summary>The distance between a stepped parameter's positions, or 0 (the default) for a continuous parameter.</summary>
+    public static readonly StyledProperty<double> StepProperty = AvaloniaProperty.Register<Knob, double>(nameof(Step));
 
     /// <summary>The value arc's colour: the device's signal accent.</summary>
     public static readonly StyledProperty<Color> AccentProperty = AvaloniaProperty.Register<Knob, Color>(nameof(Accent), Palette.Accent);
@@ -65,6 +69,12 @@ public sealed class Knob : Control
         set => SetValue(DefaultValueProperty, value);
     }
 
+    public double Step
+    {
+        get => GetValue(StepProperty);
+        set => SetValue(StepProperty, value);
+    }
+
     public Color Accent
     {
         get => GetValue(AccentProperty);
@@ -77,6 +87,21 @@ public sealed class Knob : Control
 
     /// <summary>Sets the value from a fraction of the range, clamped; used by keys, the wheel, and tests.</summary>
     public void Nudge(double fraction) => Value = Math.Clamp(Value + (fraction * Range), Minimum, Maximum);
+
+    /// <summary>Moves the value one key press or wheel notch up (positive <paramref name="direction"/>) or down.</summary>
+    public void NudgeBy(int direction, bool fine)
+    {
+        if (Step > 0)
+        {
+            // A stepped parameter has nothing between its positions, so Shift moves a whole step too.
+            var steps = Math.Round((Value - Minimum) / Step) + Math.Sign(direction);
+            Value = Math.Clamp(Minimum + (steps * Step), Minimum, Maximum);
+        }
+        else
+        {
+            Nudge(Math.Sign(direction) * (fine ? 0.002 : 0.02));
+        }
+    }
 
     public override void Render(DrawingContext context)
     {
@@ -172,7 +197,7 @@ public sealed class Knob : Control
         base.OnPointerWheelChanged(e);
         if (e.Delta.Y != 0)
         {
-            Nudge(Math.Sign(e.Delta.Y) * (e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 0.002 : 0.02));
+            NudgeBy(Math.Sign(e.Delta.Y), e.KeyModifiers.HasFlag(KeyModifiers.Shift));
             e.Handled = true;
         }
     }
@@ -180,15 +205,15 @@ public sealed class Knob : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        var step = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 0.002 : 0.02;
+        var fine = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         switch (e.Key)
         {
             case Key.Up or Key.Right:
-                Nudge(step);
+                NudgeBy(1, fine);
                 e.Handled = true;
                 break;
             case Key.Down or Key.Left:
-                Nudge(-step);
+                NudgeBy(-1, fine);
                 e.Handled = true;
                 break;
             case Key.Home:

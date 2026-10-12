@@ -74,6 +74,45 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task AKnob_NudgesASteppedParameterOneStep_AndAContinuousOneFinely() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var vm = app.ViewModel.DeviceView!;
+        Knob KnobFor(int device, ParameterId id) => deviceView.GetVisualDescendants().OfType<Knob>().Single(k => k.DataContext == vm.Devices[device].Parameters.Single(p => p.Id == id));
+        double ValueOf(int device, ParameterId id) => vm.Devices[device].Parameters.Single(p => p.Id == id).Value;
+
+        // Arpeggiator Rate: 0 to 3 in three steps, default 2. The arrow keys and the wheel move one position, with or without Shift.
+        var rate = KnobFor(2, BuiltInDevices.ArpeggiatorRate);
+        rate.Focus();
+        app.Press(Key.Left);
+        app.Settle();
+        Assert.Equal(1, ValueOf(2, BuiltInDevices.ArpeggiatorRate));
+        app.Press(Key.Right, RawInputModifiers.Shift);
+        app.Settle();
+        Assert.Equal(2, ValueOf(2, BuiltInDevices.ArpeggiatorRate));
+        app.Window.MouseWheel(app.InWindow(rate, new Point(rate.Bounds.Width / 2, rate.Bounds.Height / 2)), new Vector(0, 1));
+        app.Settle();
+        Assert.Equal(3, ValueOf(2, BuiltInDevices.ArpeggiatorRate));
+
+        // Transpose: one semitone per press, not two.
+        var semitones = KnobFor(0, BuiltInDevices.TransposeSemitones);
+        semitones.Focus();
+        app.Press(Key.Right);
+        app.Settle();
+        Assert.Equal(1, ValueOf(0, BuiltInDevices.TransposeSemitones));
+
+        // Arpeggiator Gate is continuous: 2% of its range, or 0.2% with Shift.
+        var gate = KnobFor(2, BuiltInDevices.ArpeggiatorGate);
+        Assert.Equal(0, gate.Step);
+        var before = ValueOf(2, BuiltInDevices.ArpeggiatorGate);
+        gate.Focus();
+        app.Press(Key.Right, RawInputModifiers.Shift);
+        app.Settle();
+        Assert.InRange(ValueOf(2, BuiltInDevices.ArpeggiatorGate) - before, 0.0005, 0.005);
+    });
+
+    [Fact]
     public Task ABrowserItemDroppedOnTheChain_IsInsertedAtTheGapUnderThePointer() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);

@@ -734,6 +734,9 @@ public sealed partial class ParameterViewModel : ObservableObject
     /// <summary>The slider's step: one position for a stepped parameter, otherwise 1% of the range.</summary>
     public double Step => Descriptor.Steps > 0 ? (Descriptor.Maximum - Descriptor.Minimum) / Descriptor.Steps : (Descriptor.Maximum - Descriptor.Minimum) / 100;
 
+    /// <summary>A knob's step: one position for a stepped parameter, or 0 for a continuous one, which a knob nudges finely.</summary>
+    public double KnobStep => Descriptor.Steps > 0 ? Step : 0;
+
     [ObservableProperty]
     public partial double Value { get; set; }
 

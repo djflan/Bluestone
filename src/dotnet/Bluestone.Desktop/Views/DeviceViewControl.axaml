@@ -127,7 +127,7 @@
                               <DataTemplate x:DataType="vm:ParameterViewModel">
                                 <Panel>
                                   <StackPanel Classes="knobCell" ToolTip.Tip="{Binding Name}" IsVisible="{Binding !IsSwitch}">
-                                    <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}"
+                                    <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}" Step="{Binding KnobStep}"
                                                    Accent="{Binding $parent[ItemsControl].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue=#4C8DDB}"
                                                    AutomationProperties.Name="{Binding Name}" />
                                     <TextBlock Classes="knobLabel" Text="{Binding Name}" />
