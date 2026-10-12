@@ -880,7 +880,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnShortcutKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_viewModel is not { } vm)
+        // While Settings replaces the workspace, keys belong to Settings' controls: the hidden workspace must not change.
+        if (_viewModel is not { } vm || Settings.IsOpen)
         {
             return;
         }

@@ -5,7 +5,10 @@ using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Views;
 
-/// <summary>The Audio settings page. Its meters are read ten times a second while it is on screen.</summary>
+/// <summary>
+/// The Audio settings page. Its meters are read ten times a second while it is in the visual tree, which is only while
+/// Settings shows it (Settings drops its pages when closed).
+/// </summary>
 public partial class AudioSettingsPage : UserControl
 {
     private readonly DispatcherTimer _meters = new() { Interval = TimeSpan.FromMilliseconds(100) };

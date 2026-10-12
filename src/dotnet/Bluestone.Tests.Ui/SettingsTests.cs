@@ -139,6 +139,38 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
+    public Task WhileSettingsIsOpen_WorkspaceShortcutsDoNothing_AndItsPagesExistOnlyWhileShown() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        Assert.Empty(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>());
+
+        app.Press(Key.OemComma, AppUnderTest.Command);
+        await app.SettleTransitionsAsync();
+        Assert.Single(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>());
+        var inspector = app.ViewModel.IsInspectorVisible;
+        var browser = app.ViewModel.Workspace.Browser.IsDocked;
+        var muted = app.ViewModel.Tracks[0].IsMuted;
+
+        app.Press(Key.I);
+        app.Press(Key.B, RawInputModifiers.Shift);
+        app.Press(Key.M);
+
+        Assert.Equal(inspector, app.ViewModel.IsInspectorVisible);
+        Assert.Equal(browser, app.ViewModel.Workspace.Browser.IsDocked);
+        Assert.Equal(muted, app.ViewModel.Tracks[0].IsMuted);
+
+        app.Press(Key.Escape);
+        await app.SettleTransitionsAsync();
+        Assert.Empty(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>());
+        app.Press(Key.I);
+        Assert.NotEqual(inspector, app.ViewModel.IsInspectorVisible);
+    });
+
+    [Fact]
     public Task AnEmptyInstrumentsCategory_LeadsToThePluginSettings() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();

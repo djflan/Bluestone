@@ -311,7 +311,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             : "Drop an instrument or effect here";
         var node = Rack is { } shownRack ? SignalNode.Rack(shownRack) : Track is { } shownTrack ? SignalNode.Track(shownTrack) : (SignalNode?)null;
         InputText = node is not { } input ? string.Empty
-            : Rack is not null ? Count(project.ConnectionsTo(input).Count(), "source")
+            : Rack is not null ? Count(project.ConnectionsTo(input).Select(c => c.Source).Distinct().Count(), "source")
             : "Track";
         var destinations = node is { } output ? project.ConnectionsFrom(output).Select(c => TrackSound.NameOf(project, c.Destination)).Distinct().ToList() : [];
         OutputText = destinations.Count switch

@@ -34,7 +34,6 @@ public partial class MainWindow
     {
         Settings.Plugins = vm.Plugins;
         vm.Browser.PluginSettingsRequested += (_, _) => ShowPlugins();
-        SettingsHost.DataContext = Settings;
         Settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SettingsViewModel.IsOpen))
@@ -64,6 +63,9 @@ public partial class MainWindow
     {
         var open = Settings.IsOpen;
         SettingsButton.IsChecked = open;
+
+        // Closed, Settings has no content at all: its pages (and the audio page's meter timer) exist only while it is shown.
+        SettingsHost.DataContext = open ? Settings : null;
         if (open == SettingsHost.IsVisible)
         {
             return;
