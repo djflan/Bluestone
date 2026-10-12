@@ -8,7 +8,7 @@ Bluestone could play and route, but not record or edit notes. A sequencer needs 
 shape the design:
 
 - **Timing.** A recorded note must land where it was played, not where the UI happened to notice it.
-  The UI thread runs at about 30 Hz, and input arrives on adapter threads (CoreMIDI's high-priority
+  The UI thread runs at about 30 Hz, and input arrives on adapter threads (Core MIDI's high-priority
   thread on macOS). Notes played just before a loop wrap, or during a count-in, need a position too.
 - **Undo.** The edit history stores whole immutable projects (ADR 0009). An edit that creates one
   history entry per mouse move, or per recorded note, would make undo useless and the history large.
@@ -58,7 +58,7 @@ shape the design:
   their downbeats; swing delays every second grid line.
 
 ## Consequences
-- Recording works wherever an adapter implements `IMidiInput`: CoreMIDI today. WinMM and ALSA
+- Recording works wherever an adapter implements `IMidiInput`: Core MIDI today. WinMM and ALSA
   inputs still need implementing (and testing on their platforms) before recording works on
   Windows and Linux. The computer keyboard input works on every platform.
 - Record-path latency is not compensated. A measured offset per input can be added later as a

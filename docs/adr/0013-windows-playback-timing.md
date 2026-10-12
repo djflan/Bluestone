@@ -10,7 +10,7 @@ ADR 0012 left Windows scheduling to be measured. On Windows the playback thread'
 1 ms early wake-up and 1.5 ms spin window in `PlaybackThread` cannot absorb that, so
 immediate-delivery endpoints (the class WinMM will fall into) were served up to a whole tick late.
 
-**Machine:** Windows 11 ARM64 in a Parallels VM on an Apple Silicon Mac, .NET 10 SDK 10.0.401,
+**Machine:** Windows 11 ARM64 in a Parallels VM on an Apple silicon Mac, .NET 10 SDK 10.0.401,
 Release build. **These numbers are provisional:** a VM's timer and scheduler behaviour says little
 about native Windows. Re-measure on native hardware before relying on them.
 **Tool:** `src/Bluestone.Benchmarks -- --jitter 10 [--timer|--promote|--realtime]`, the same probe and

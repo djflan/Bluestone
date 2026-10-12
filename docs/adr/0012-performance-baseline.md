@@ -29,7 +29,7 @@ system clock: 16 tracks of sixteenth notes plus controller automation, about 385
 ### Real-time dispatch lateness (`--jitter`, immediate endpoints)
 
 Lateness means how much later than due a message was handed to the endpoint. Endpoints with
-scheduled delivery (CoreMIDI destinations) received every message ahead of time in all runs.
+scheduled delivery (Core MIDI destinations) received every message ahead of time in all runs.
 
 | Playback thread scheduling | Runs | p99 | Late (> 2 ms) per 3,888 msgs | Max |
 | -------------------------- | ---- | --: | ---------------------------: | --: |

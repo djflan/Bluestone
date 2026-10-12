@@ -30,7 +30,7 @@ and in the worst case within the buffer period; garbage-collection pauses during
 - The callback path does no allocation, locking, or logging: atomics, a conversion buffer allocated at open (for
   devices without `f32`), and the copy. Render time is measured natively around the call into .NET, so it includes
   entering the runtime and any wait for a collection to finish.
-- No input stream (recording audio is out of scope). Built and tested on macOS (CoreAudio). CI builds and tests the
+- No input stream (recording audio is out of scope). Built and tested on macOS (Core Audio). CI builds and tests the
   crate on Linux (ALSA; `libasound2-dev` is installed) and Windows (WASAPI); hosted runners have no audio device,
   so device tests there only check that a failed open reports a reason.
 
@@ -106,7 +106,7 @@ and in the worst case within the buffer period; garbage-collection pauses during
   jumps for drift.
 - Without an audio device nothing changes: MIDI-only playback, its tests, and the regression fixtures are untouched.
   Considered: making the device clock the engine's `IMonotonicClock`. Rejected because MIDI timestamps sent to
-  CoreMIDI, WinMM, and ALSA and those of recorded input are in system time; every MIDI edge would need a conversion,
+  Core MIDI, WinMM, and ALSA and those of recorded input are in system time; every MIDI edge would need a conversion,
   and a rate correction would still be needed somewhere.
 
 ### The measurement and the decision
@@ -117,7 +117,7 @@ default device at 48 kHz for 20 s per buffer size while other threads put the co
 (a 200 MB retained heap and about 50 MB/s of small allocations, a quarter kept a while: roughly an editing session),
 **churn** (two unthrottled allocation threads), **full** (churn plus forced, blocking, compacting gen2 collections of
 a changing 1-million-object graph every second). GC pauses come from the runtime's suspend and restart events.
-macOS 26 on Apple Silicon, a Jabra Evolve2 50 USB headset, Workstation concurrent GC unless stated; other agents'
+macOS 26 on Apple silicon, a Jabra Evolve2 50 USB headset, Workstation concurrent GC unless stated; other agents'
 builds and tests ran on the machine at the same time.
 
 Direct mode (the device callback calls .NET), late = native render time over the buffer period:
@@ -134,7 +134,7 @@ Each cell is for 64 / 128 / 256-frame buffers (1.33 / 2.67 / 5.33 ms).
 | churn | 9603 / 7326 / 3753 | 2962 / 301 / 0 | 2754 / 93 / 0 | 7.2 / 8.9 / 3.4 ms | 17.4 / 20 / 4.2 ms | 17.7 / 22.7 / 7.8 ms |
 | full | 11354 / 6502 / 3419 | 1656 / 473 / 70 | 1501 / 278 / 55 | over 20 ms | over 20 ms | 99 / 115 / 247 ms |
 
-"Late" counts callbacks whose native render time exceeded the buffer period; "xruns" are the overloads CoreAudio
+"Late" counts callbacks whose native render time exceeded the buffer period; "xruns" are the overloads Core Audio
 reported. Fewer callbacks than 20 s needs (15000 / 7500 / 3750) are callbacks the device skipped.
 
 The managed render itself took 0.02–0.2 ms per block at p50 and never missed its deadline *inside* the callback

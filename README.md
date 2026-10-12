@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/djflan/Bluestone/actions/workflows/ci.yml/badge.svg)](https://github.com/djflan/Bluestone/actions/workflows/ci.yml)
 
-Bluestone is an open-source, cross-platform DAW built around MIDI and real instruments. It sequences, records, and edits MIDI for hardware and software instruments, plays audio clips through a mixer, and hosts VST3 and CLAP plugins in separate processes, so a plugin that crashes cannot take the project down with it.
+Bluestone is an open-source, cross-platform DAW built around MIDI and real instruments. It sequences, records, and edits MIDI for hardware and software instruments, plays audio clips through a mixer, and hosts VST 3 and CLAP plugins in separate processes, so a plugin that crashes cannot take the project down with it.
 
 Bluestone started as a MIDI workstation for Yamaha XG instruments and the QY100, and that depth stays at its centre. It describes what an instrument understands independently from where MIDI is sent, so a track can use a device profile with physical hardware, a virtual MIDI port, a network destination, or a compatible software instrument.
 
 > [!NOTE]
-> Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. Yamaha, XG, QY100, and other product names and trademarks belong to their respective owners and are used solely to describe compatibility.
+> Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation or by the owner of any other product, format, or standard it names. Yamaha, XG, QY100, VST, and other product names and trademarks belong to their respective owners and are used only to identify products and describe compatibility; see [Third-party names and trademarks](#third-party-names-and-trademarks).
 
-![Bluestone main window: the inspector with track, routing, voice, and connection sections beside the arrangement, a Device View with an Arpeggiator and a VST3 instrument whose editor is open, and the Browser](docs/images/bluestone-main-window.png)
+![Bluestone main window: the inspector with track, routing, voice, and connection sections beside the arrangement, a Device View with an Arpeggiator and a VST 3 instrument whose editor is open, and the Browser](docs/images/bluestone-main-window.png)
 
 ## Status
 
@@ -20,9 +20,11 @@ Bluestone is under active development and has no stable release yet. How it is b
 **Sequencing and MIDI**
 
 - Standard MIDI File import and export that reports anything it could not carry over ([docs/midi-files.md](docs/midi-files.md)).
-- An arrangement of clips that can be moved, copied, trimmed, and split; a piano roll with velocity and controller lanes; an event list; automation lanes for controllers, pitch bend, and pressure.
+- An arrangement of clips that can be moved, copied, trimmed, split, and consolidated; a piano roll with velocity and controller lanes; an event list; automation lanes for controllers, pitch bend, and pressure.
+- An arranger loop whose range is kept while looping is off, drawn, moved, and resized in the ruler or typed exactly; and clip loops on note and audio clips, which play an optional pickup once and then repeat a region for as long as the clip lasts ([ADR 0039](docs/adr/0039-arranger-and-clip-loops.md)).
+- Zooming and scrolling time by dragging in the arranger's or piano roll's beat ruler, and Zoom to Fit, Zoom to Selection, and (in the macOS View menu) Zoom to Loop.
 - MIDI recording with count-in, metronome, punch in and out, cycle recording, and MIDI thru; the computer keyboard as a MIDI input.
-- MIDI output through CoreMIDI, WinMM, and the ALSA sequencer, with SysEx kept byte for byte, and a built-in MIDI monitor.
+- MIDI output through Core MIDI, WinMM, and the ALSA sequencer, with SysEx kept byte for byte, and a built-in MIDI monitor.
 - Device profiles for voices, controllers, initialization, and a parameter map that lets automation set an external instrument's parameters by controller, RPN, NRPN, or SysEx ([docs/profiles.md](docs/profiles.md), [ADR 0031](docs/adr/0031-hardware-parameter-automation.md)).
 - Projects saved safely, with older project formats migrated so they play the same MIDI ([docs/project-format.md](docs/project-format.md)).
 
@@ -30,7 +32,7 @@ Bluestone is under active development and has no stable release yet. How it is b
 
 - Track roles (instrument, audio, hybrid, effect, group) that convert without losing content ([ADR 0021](docs/adr/0021-track-roles.md)).
 - Group tracks that route their members, fold in the arrangement, and mute or solo everything in them ([ADR 0030](docs/adr/0030-group-tracks.md)).
-- Device chains on tracks and in shared racks: built-in Transpose, Event Filter, and Arpeggiator devices and plugins, with bypass, reordering, parameters, and chain presets ([ADR 0022](docs/adr/0022-device-chains.md)).
+- Device chains on tracks and in shared racks: built-in Transpose, Event Filter, and Arpeggiator devices and plugins, with bypass, reordering, replacement (drop a Browser item on a device), parameters, and chain presets ([ADR 0022](docs/adr/0022-device-chains.md)).
 - One routing model: connections from a track, or from after any device, to other tracks, racks, external instruments (by port and channel), mixer channels, and the master, with feedback loops refused ([ADR 0023](docs/adr/0023-signal-routing-model.md)).
 - Device parameter automation ([ADR 0024](docs/adr/0024-device-automation.md)).
 - Live input (MIDI thru, the computer keyboard, clicked piano keys) played through every device on the track's route, plugins included, without hanging notes when the route changes ([ADR 0035](docs/adr/0035-live-input-and-delay-compensation.md)).
@@ -45,7 +47,8 @@ Bluestone is under active development and has no stable release yet. How it is b
 
 **Plugins** ([docs/plugin-hosting.md](docs/plugin-hosting.md))
 
-- VST3 and CLAP instruments, MIDI effects, and audio effects, run in worker processes through a Rust plugin host, with parameters, state saved in the project, and editors in their own windows ([ADR 0025](docs/adr/0025-out-of-process-plugin-hosting.md), [ADR 0033](docs/adr/0033-third-party-plugin-hosting.md)).
+- VST 3 and CLAP instruments, MIDI effects, and audio effects, run in worker processes through a Rust plugin host, with parameters, state saved in the project, and editors in their own windows ([ADR 0025](docs/adr/0025-out-of-process-plugin-hosting.md), [ADR 0033](docs/adr/0033-third-party-plugin-hosting.md)).
+- Floating plugin editors that follow the selected track, with a pin to keep one open; on macOS and Windows (checked on macOS only) an editor can send its keys to Bluestone, so shortcuts and the computer keyboard keep working ([ADR 0040](docs/adr/0040-floating-plugin-editor-windows.md)).
 - Each plugin module is scanned in its own process; a module that crashes or hangs its scanner is quarantined until you retry it.
 - A worker that crashes or hangs leaves Bluestone running: its plugins report it and go silent, and restart from their last state when you choose (or automatically, if you turn that on).
 - Hosting modes choose which plugins share a worker: together, by manufacturer, by plugin (the default), or individually, with a choice per plugin ([ADR 0034](docs/adr/0034-plugin-hosting-modes.md)).
@@ -59,16 +62,16 @@ Bluestone is under active development and has no stable release yet. How it is b
 - Drawing device parameter automation in the arrangement (it plays from project files), and send or fader automation.
 - MIDI input on Windows and Linux (the computer keyboard works everywhere), Windows MIDI Services, and device hot-plug on Windows and Linux.
 - MIDI 2.0 and UMP, MPE, and per-note controllers.
-- Plugin editors verified on Windows and Linux, editors embedded in the main window, plugins built for another processor architecture (no Rosetta worker), and SysEx to VST3 and CLAP plugins.
+- Plugin editors verified on Windows and Linux, an editor's keys sent to Bluestone on Linux (X11 does not allow it reliably), editors embedded in the main window, plugins built for another processor architecture (no Rosetta worker), and SysEx to VST 3 and CLAP plugins.
 - A security sandbox for plugins: worker processes isolate crashes, not access ([SECURITY.md](SECURITY.md)).
 
 Suggested next steps are in [docs/roadmap.md](docs/roadmap.md).
 
 ### Platform support
 
-| Platform | MIDI output | MIDI input (recording, thru) | Audio output | VST3 and CLAP plugins |
+| Platform | MIDI output | MIDI input (recording, thru) | Audio output | VST 3 and CLAP plugins |
 | -------- | ----------- | ---------------------------- | ------------ | --------------------- |
-| macOS (Apple silicon) | CoreMIDI: hardware, IAC, network, and Bluestone's own virtual port | CoreMIDI, with adapter timestamps | CoreAudio: heard and measured | Installed plugins tested, editors included |
+| macOS (Apple silicon) | Core MIDI: hardware, IAC, network, and Bluestone's own virtual port | Core MIDI, with adapter timestamps | Core Audio: heard and measured | Installed plugins tested, editors included |
 | Windows (x64 in CI; ARM64 by hand) | WinMM: hardware ports and software synths, including SysEx, with measured timing | Computer keyboard only | WASAPI: built and tested in CI, not yet heard | Bluestone's test plugins in CI; editors not verified |
 | Linux (x64 in CI) | ALSA sequencer: hardware, software synths, and Bluestone's own virtual port, including SysEx; not yet tried on a Linux desktop | Computer keyboard only | ALSA: built and tested in CI, not yet heard | Bluestone's test plugins in CI; editors not verified |
 
@@ -118,7 +121,7 @@ In the same way, Bluestone models music, not a MIDI wire format. MIDI 1.0 is ful
 
 C# and .NET are the default for all of Bluestone: domain, sequencing, MIDI processing, routing, device chains, the audio render graph, persistence, plugin supervision, and the cross-platform UI. Platform adapters call operating-system MIDI services from C#.
 
-Rust is used for a component only when a measurement shows managed code cannot meet a real-time or throughput requirement after tuning (allocation on the real-time path, callback deadlines, garbage collection pauses), or when a native interface such as plugin binaries requires it. It replaces C and C++ for new Bluestone-owned native code; C and C++ appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Native components sit behind a small, versioned C ABI, and vendor knowledge and domain rules stay in managed code. The Rust components are the audio device layer, `src/native/crates/bluestone_audio` ([ADR 0032](docs/adr/0032-audio-engine.md)), and the plugin host that loads VST3 and CLAP plugins in worker processes, `src/native/crates/bluestone_plugin_host` ([ADR 0033](docs/adr/0033-third-party-plugin-hosting.md)). See [ADR 0026](docs/adr/0026-native-technology-policy.md).
+Rust is used for a component only when a measurement shows managed code cannot meet a real-time or throughput requirement after tuning (allocation on the real-time path, callback deadlines, garbage collection pauses), or when a native interface such as plugin binaries requires it. It replaces C and C++ for new Bluestone-owned native code; C and C++ appear only as third-party libraries, vendor SDK requirements, or thin ABI shims. Native components sit behind a small, versioned C ABI, and vendor knowledge and domain rules stay in managed code. The Rust components are the audio device layer, `src/native/crates/bluestone_audio` ([ADR 0032](docs/adr/0032-audio-engine.md)), and the plugin host that loads VST 3 and CLAP plugins in worker processes, `src/native/crates/bluestone_plugin_host` ([ADR 0033](docs/adr/0033-third-party-plugin-hosting.md)). See [ADR 0026](docs/adr/0026-native-technology-policy.md).
 
 ## Repository layout
 
@@ -129,11 +132,13 @@ Bluestone/
 ├── LICENSE
 ├── README.md
 ├── SECURITY.md
+├── TRADEMARKS.md
 ├── global.json
 ├── nuget.config
 ├── docs/
 │   ├── adr/                    Architecture decision records
 │   ├── images/                 Screenshots used by the documentation
+│   ├── worklogs/               Milestone records: plans, decisions, reviews, and deferred work
 │   ├── architecture.md         Layers, project map, tracks, devices, routing, audio, and MIDI/SysEx strategy
 │   ├── hardware-test-plan.md   Manual checks that need real instruments
 │   ├── midi-files.md           Standard MIDI File behavior and diagnostics
@@ -201,7 +206,10 @@ onto the window to open it. Hardware checks are listed in
 | Record (punch in and out while playing) / metronome | R / K |
 | Return to start / go to end | Home / End |
 | Previous / next bar | , / . |
-| Cycle four bars from the playhead | L, or drag in the ruler's top strip |
+| Loop on / off (the range is kept; four bars from the playhead if there is none) | L, or double-click the loop |
+| Loop the selected clips or notes | Ctrl/Cmd + L |
+| Draw, move, or resize the loop | Drag in the ruler's top strip, on the loop, or on its edge (Ctrl/Cmd: ignore the grid) |
+| Nudge the selected loop by the grid / a bar | ← → / Shift + ← → |
 | Panic (silence every output) | Ctrl/Cmd + . |
 | Select tracks | Click; Shift-click for a range; Ctrl/Cmd-click to add or remove; ↑ / ↓ (Shift to extend) |
 | Select all tracks | Ctrl/Cmd + A |
@@ -211,7 +219,8 @@ onto the window to open it. Hardware checks are listed in
 | Undo / Redo | Ctrl/Cmd + Z / Ctrl/Cmd + Shift + Z |
 | New, Open, Save, Save As | Ctrl/Cmd + N, O, S, Shift + S |
 | Import / Export MIDI | Ctrl/Cmd + I / E |
-| Zoom timeline | Ctrl/Cmd + scroll, trackpad pinch, scroll over the bar ruler, or Ctrl/Cmd + = / − |
+| Zoom and scroll time | Drag up or down / sideways in the beat ruler; Ctrl/Cmd + scroll, trackpad pinch, scroll over the ruler, or Ctrl/Cmd + = / − |
+| Zoom to fit the project / the selected clips | Ctrl/Cmd + 0 / Shift + Ctrl/Cmd + 0 (Zoom to Loop: the View menu on macOS) |
 | Show inspector / Browser / Device View / piano roll / event list | I / Shift + B / E / P / D |
 | Settings / back to the workspace | Ctrl/Cmd + , / Escape |
 | Computer keyboard as MIDI input on / off | ` (backquote), or the keyboard button in the transport bar |
@@ -227,6 +236,7 @@ music lives in clips; the piano roll edits one clip at a time and darkens the ti
 | Select clips | Click; Shift-click to add; Ctrl/Cmd-click to add or remove |
 | Move / copy | Drag, also to another track (snapped to bars, or beats when zoomed in); Alt/Option-drag copies |
 | Trim or extend | Drag a clip's left or right edge; trimmed notes are kept, just not played |
+| Loop a clip | Drag the lower half of its right edge to repeat it; drag the dashed line to change the loop's length; exact values, *Loop the clip*, and *Consolidate* are in the inspector's **Loop** section |
 | New clip | Double-click empty space for a clip filling that bar (up to any neighbouring clip), or add notes in the piano roll on a track with no clips |
 | Rename a clip | Double-click its name strip, or select it and press Return; clear the name to show the track's again |
 | Split at the playhead / duplicate / delete | B / Ctrl/Cmd + D / Delete, with the arrangement focused (otherwise these act on tracks) |
@@ -244,7 +254,7 @@ music lives in clips; the piano roll edits one clip at a time and darkens the ti
 | Controllers | Pick a lane (modulation, volume, pan, expression, sustain, pitch bend, pressure) and draw lines with the pencil; erase with the eraser |
 | Quantize | Q (Shift + Q also quantizes note ends), with grid, strength, and swing in the header |
 | Copy, cut, paste at the playhead, duplicate, delete | Ctrl/Cmd + C, X, V, D; Delete |
-| Zoom time / key height | Ctrl/Cmd + scroll / Alt/Option + scroll |
+| Zoom time / key height | Ctrl/Cmd + scroll, or drag up or down in the ruler (sideways scrolls) / Alt/Option + scroll |
 | Exact values | Type a position, length, pitch, velocity, or channel in the strip above the notes |
 | Hear a key | Click the keyboard; while recording, clicked keys play on the recording track and are recorded |
 
@@ -256,10 +266,10 @@ length, filtered by kind, and shares its selection with the piano roll. Every ed
 Arm a track with its red button (or record into the selected track), then press R. From a stop,
 Bluestone counts in (one or two bars) and starts recording; while playing, R punches in and out.
 Space stops and adds the take as one undo step. Takes merge with what is there, or replace it
-(**Recording ▸ Takes** in the inspector). With a cycle set, every pass is merged. MIDI thru plays
+(**Recording ▸ Takes** in the inspector). With looping on, every pass is merged. MIDI thru plays
 what you play through the armed or selected track's output, and the metronome clicks on that output
 (or one you choose) while recording, or always if *Click while playing* is on. Recording uses
-CoreMIDI input, so it works on macOS today.
+Core MIDI input, so it works on macOS today.
 
 ### Computer keyboard
 
@@ -314,10 +324,12 @@ the same chain share its devices; what is collapsed, selected, or scrolled is ea
 The **Browser** (Shift + B) lists devices, plugins, and project racks, with search and categories. Drag a device
 onto a Device View to insert it exactly where the marker shows (an empty chain lights up); double-click or Return
 inserts it into the last Device View you used, and the Browser's footer says where: "Into Bass, after Arpeggiator".
-With no Device View showing a chain, nothing is inserted. Suggested items fit the chain so far, but nothing is
-forbidden. Inserting an instrument or audio effect into a track whose sound goes nowhere sends it to the master.
-Hardware profiles are under **Hardware**: **Use on Track** gives the selected tracks the profile and opens their
-External MIDI settings.
+With no Device View showing a chain, nothing is inserted. Dropping a device on the middle of a device's panel
+replaces that device (the panel says "Replace" first) in one undo step; Device options ▸ *Replace with Browser
+Selection* does the same from the keyboard. Suggested items fit the chain so far, but nothing is forbidden.
+Inserting an instrument or audio effect into a track whose sound goes nowhere sends it to the master. Hardware
+profiles are under **Hardware**: **Use on Track** gives the selected tracks the profile and opens their External
+MIDI settings.
 
 The inspector and Browser dock at the sides and resize by their edge; their icons on the border rails open and
 collapse them. The layout, open views, detached windows, locks, collapsed devices, and Browser search are kept on
@@ -338,12 +350,16 @@ its sound went nowhere. **Audio to** in the inspector sends it to a mixer channe
 sends and connections from a device. Selecting an audio clip shows its gain and fades in the inspector. The **mixer console** (File ▸ Mixer…, or Window ▸ Mixer on macOS) shows every mixer
 channel with its sends, pan, fader, and meters.
 
-Plugins are scanned at launch from `<application data>/Bluestone/plugins` and the system's VST3 and
+Plugins are scanned at launch from `<application data>/Bluestone/plugins` and the system's VST 3 and
 CLAP folders (on macOS `~/Library/Audio/Plug-Ins/VST3` and `/Library/Audio/Plug-Ins/VST3`, and the
 same for `CLAP`; the Windows and Linux folders are listed in
 [docs/plugin-hosting.md](docs/plugin-hosting.md#the-plugin-library-and-the-plugins-view)). Scanned
 plugins appear in the Browser. A running plugin device has **Open editor**, which shows the plugin's
-own editor in a separate window, and says which worker process it runs in. If a worker crashes, every
+own editor in a separate window, and says which worker process it runs in. Editors follow the selected track: an
+unpinned editor is hidden (not closed) while its track is not selected and comes back when it is. The pin beside
+**Open editor** keeps one on screen; *Floating plugin windows follow the selected track* in **Settings ▸ Plugins**
+turns following off. The keyboard button beside it sends the editor's keys to Bluestone (macOS and Windows), so
+shortcuts and the computer keyboard work while the pointer is in the plugin. If a worker crashes, every
 device in it shows what happened and which devices went down with it, and **Restart** brings them back
 from their last state.
 
@@ -368,6 +384,10 @@ not yet been verified.
 Bluestone welcomes focused contributions to sequencing, MIDI interoperability, audio, plugin hosting, device profiles, platform adapters, accessibility, documentation, and testing. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
 Compatibility names must be used factually and must not imply vendor affiliation, certification, sponsorship, or endorsement.
+
+## Third-party names and trademarks
+
+Bluestone is independent and is not affiliated with, sponsored, endorsed, or authorized by the owners of the products, formats, and standards it names, among them Yamaha, Steinberg (VST), Apple, Microsoft, and Bitwig. Those names identify what Bluestone works with or was tested against, or, in engineering documents, which workflows informed a design; they belong to their respective owners. Attribution notices and how to report an inaccuracy are in [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Supporting Bluestone
 

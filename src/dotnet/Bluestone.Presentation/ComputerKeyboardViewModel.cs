@@ -6,7 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace Bluestone.Presentation;
 
 /// <summary>
-/// Plays notes from the computer keyboard, like Bitwig and Reason. The view maps physical keys to
+/// Plays notes from the computer keyboard, like Bitwig Studio and Reason. The view maps physical keys to
 /// semitone offsets from the current octave's C and calls <see cref="Press"/> and <see cref="Release"/>;
 /// this class sends the notes through <see cref="ComputerKeyboardProvider"/>, so they are recorded,
 /// echoed, and monitored like any other input.

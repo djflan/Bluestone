@@ -110,7 +110,7 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
   ticks), `length` (at least 1), and `enabled` (default false; the loop is kept while off). Content from `offset`
   plays up to the loop's end, then the loop's region repeats until the clip ends; content before `start` therefore
   plays once. `offset` is never wrapped into the loop. A note clip whose loop would play more than 262,144 events is
-  refused.
+  refused, as is a file whose looping clips would together play more than 1,048,576.
 - A track's `role` is `instrument`, `audio`, `hybrid`, `effect`, or `group` (ADR 0021). Roles are
   stored, and on reading a role that cannot show the track's content is widened (an instrument track
   with audio clips becomes hybrid). `group` (optional) is the ID of the group track it belongs to.

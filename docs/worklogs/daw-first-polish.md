@@ -13,7 +13,7 @@ and the final assessment. Screenshots are in [../images/daw-first-polish/](../im
   *Important follow-up*, *Optional refinement*, or *Rejected scope*. The implementation owner responds to each finding
   here; it does not grade its own work.
 - **Reliability investigation**: the macOS `CoreMidiProviderTests` failure is investigated in a third, separate context
-  confined to the CoreMIDI adapter, playback, and integration tests, and lands (if at all) in its own commit.
+  confined to the Core MIDI adapter, playback, and integration tests, and lands (if at all) in its own commit.
 
 ## Starting state
 
@@ -36,7 +36,7 @@ Skips are platform-specific (WinMM, ALSA) or need an enabled IAC bus.
 
 ### Baseline screenshots
 
-The checked-in `docs/images/bluestone-main-window.png` (a real session with a VST3 instrument) is the visual
+The checked-in `docs/images/bluestone-main-window.png` (a real session with a VST 3 instrument) is the visual
 reference. Reproducible headless frames of the same workspace were added as `WorkspaceShowcaseTests`, which renders
 fixed scenes (three tracks, a chain of Arpeggiator, a reference plugin instrument, and Transpose; a freshly added
 track; a multiple selection) at 1100×720, 1280×800, 1440×900, and 1920×1080. The baseline frames are kept as
@@ -163,8 +163,8 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
 - **Context**: the brief asks for two agents: an implementation owner and a read-only reviewer who never grades its own work.
 - **Alternatives**: two concurrent implementation-capable agents; one agent switching roles.
 - **Chosen**: the lead agent is the implementation owner; the reviewer is a separate agent context restricted to reading,
-  briefed with the vision and constraints and asked for classified findings at each checkpoint. The CoreMIDI
-  investigation ran in a third context confined to CoreMIDI, playback, and integration-test files.
+  briefed with the vision and constraints and asked for classified findings at each checkpoint. The Core MIDI
+  investigation ran in a third context confined to Core MIDI, playback, and integration-test files.
 - **Reasoning**: one writer avoids conflicting edits on one branch; separate contexts keep the review independent.
 - **Reviewer response**: accepted (it produced the gap matrix and checkpoint reviews without edits).
 
@@ -256,13 +256,13 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
   pixel-diff assertion (fonts and Skia versions differ between machines).
 - **Discovery**: frames saved during a full-suite run can show stale state; regenerate them with the showcase class alone.
 
-### D9. CoreMIDI integration test
+### D9. Core MIDI integration test
 
 - **Finding**: a test-observation problem. Loading a plan while stopped chases bank and program for live input (ADR 0006)
   and Play chases them again, so a run emits 36 messages; the test stopped reading after 34 and missed note 63's on/off
   pair. Nothing was dropped. **Fix** (`8985d10`): wait for the last note's release (one ordered virtual source) and assert
   the exact stream. Not weakened: the assertion is stricter than before. The reviewer confirmed the arithmetic.
-- **Separate observation**: launching many CoreMIDI test processes back to back occasionally makes `MIDIClientCreate`
+- **Separate observation**: launching many Core MIDI test processes back to back occasionally makes `MIDIClientCreate`
   return -304; unrelated, not addressed.
 
 ### D10. Imported MIDI files keep describing hardware playback
@@ -282,8 +282,8 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
 
 ### D12. Settings replaces the workspace grid while open and is host-agnostic
 
-- **Context**: audio and plugin settings were two dialogs; the brief asks for a Rider-like two-pane surface in the main
-  content region that restores the workspace and could later detach.
+- **Context**: audio and plugin settings were two dialogs; the brief asks for a two-pane surface like JetBrains Rider's settings in the
+  main content region that restores the workspace and could later detach.
 - **Alternatives**: a new `WorkspaceViewKind` docked in a region (rejected: Settings is not a tool beside the work, and
   it would add to the view-kind switches the reviewer flagged); a modal dialog (rejected by the brief).
 - **Chosen**: `SettingsViewModel` (Presentation) holds the categories, search, selection, and open state and knows
@@ -300,7 +300,7 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
 
 ### Checkpoint 1: DAW-first track model and inspector (phases 1–2)
 
-- **Commits**: `8985d10` (CoreMIDI test, separate), `b6349fe` (track model and status), `7ca71f7` (inspector), then
+- **Commits**: `8985d10` (Core MIDI test, separate), `b6349fe` (track model and status), `7ca71f7` (inspector), then
   `b4f9269` (review fixes).
 - **Tests**: unit 1486/1486, UI 73/73 after the review fixes (new: `TrackSetupTests` ×11, `TrackStatusTests` ×5,
   `DawFirstTrackTests` ×3, `WorkspaceShowcaseTests` ×7; updated `TrackInspectorTests`, `InspectorTests`,
@@ -358,7 +358,7 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
   state was verified by assertions); recorded so nobody trusts a full-suite frame over an isolated one.
 - **Composite expander headers** (title plus summary) broke two test helpers that compared `Header` to a string; the
   helpers now read the header's first text.
-- **CoreMIDI client creation**: rapid back-to-back test processes occasionally get OSStatus -304 from
+- **Core MIDI client creation**: rapid back-to-back test processes occasionally get OSStatus -304 from
   `MIDIClientCreate`. Unrelated to this milestone; noted for a separate look.
 - **Scope added**: a gear button and ⌘/Ctrl + , for Settings, and the Browser's link from empty plugin categories, to
   make Settings discoverable; a "Restart with these settings" button while audio runs, because settings apply on start.
@@ -407,13 +407,13 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
   | Build | `dotnet build src/dotnet/Bluestone.slnx` | 0 warnings, 0 errors |
 
   The 12 skips are WinMM/ALSA tests on macOS and the IAC-bus test (the bus is not enabled on this machine). The
-  baseline's failing CoreMIDI test passes (D9).
+  baseline's failing Core MIDI test passes (D9).
 - **Reviewer verdict**: "PASS — no Required-now findings. Bluestone now feels materially more polished and DAW-first
   without losing visual identity, information density, external-hardware depth, or professional power."
 - **Remaining limitations and deferred work**: declarative parameter grouping/priority for device panels (panels show
   the first 4/6/8 parameters); per-track mixer channels and faders; MIDI and recording pages in Settings; a detachable
   Settings window; flattening the remaining faint chrome gradients; the README hero screenshot predates this milestone
-  and should be retaken in a real session with a plugin (a headless frame cannot show a plugin editor); the CoreMIDI
+  and should be retaken in a real session with a plugin (a headless frame cannot show a plugin editor); the Core MIDI
   `MIDIClientCreate` -304 under rapid test-process launches.
 - **Dangerously large or coupled**: `MainViewModel.cs` (1590 lines, +10 in this milestone), `MainWindow.axaml.cs` (1171,
   −16), `DeviceViewViewModel.cs` (859), `WorkspaceViewModel.cs` (641), `Theme/Bluestone.axaml` (1313).

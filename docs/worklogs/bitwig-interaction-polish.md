@@ -7,8 +7,9 @@ examining later, the independent reviews and the responses to them, and the fina
 [../images/bitwig-interaction-polish/](../images/bitwig-interaction-polish/).
 
 The workflow references (Bitwig Studio for looping, zooming and device chains; JetBrains Rider for density and
-tool-window character; Studio One for visual refinement) describe qualities to aim for. Bluestone is an independent
-product and copies no third-party code, artwork, or text.
+tool-window character; PreSonus Studio One, whose product page now redirects to Fender Studio Pro, for visual
+refinement) describe qualities to aim for. Bluestone is an independent project, not affiliated with the makers of
+these products, and copies no third-party code, artwork, or text ([TRADEMARKS.md](../../TRADEMARKS.md)).
 
 ## Working arrangement
 
@@ -41,7 +42,7 @@ product and copies no third-party code, artwork, or text.
 | .NET | `dotnet test src/dotnet/Bluestone.slnx` | 1735 total, 1723 passed, 12 skipped, 0 failed |
 | Rust | `cargo test` in `src/native` | 22 passed, 0 failed |
 
-The 12 skips are platform-specific (WinMM, ALSA) or need an enabled IAC bus. The CoreMIDI failure recorded in the
+The 12 skips are platform-specific (WinMM, ALSA) or need an enabled IAC bus. The Core MIDI failure recorded in the
 previous milestone did not occur in this run.
 
 ### Baseline screenshots
@@ -329,6 +330,28 @@ no new card, pill, or gradient language. Responses (fixed in the commit that rec
 | 10 | Inactive loop and loop tab contrast | Optional refinement | Done: slightly stronger inactive fill/edge and corner tab |
 | 11 | Embedded editors, global hooks, Wayland | Rejected scope | Agreed |
 
+### Agent C: documentation and trademark pass
+
+In its own commit, after the implementation was stable. Ownership and attribution wording was checked against the
+owners' own published pages on 2026-10-12; nothing here is legal advice or approval.
+
+- **Added** `TRADEMARKS.md` (independence, identification-only use, the attribution notices that Steinberg's VST
+  usage guidelines and Apple's trademark guidelines ask for, a separation from software licences, and how to report
+  an inaccuracy) and a README section linking it. The README notice, the About window, the Generic XG profile, and the
+  hardware test plan now share one non-affiliation wording; ownership of XG and QY100 is no longer asserted where the
+  owner's own material was not found.
+- **Normalized** in prose (not in code identifiers, paths, crate names, or protocol strings): VST 3 (Steinberg's own
+  form; was VST3), Core MIDI and Core Audio (Apple's documentation; were CoreMIDI and CoreAudio), Apple silicon,
+  Bitwig Studio for the product, REAPER. Comparisons in ADRs 0034, 0036, and 0037 now read as workflow inspiration
+  rather than "in the manner of" or "work like".
+- **Brought up to date**: the README feature list, shortcuts, and workflows (loops, ruler navigation, replace,
+  floating editors); architecture.md (loops, navigation, replace, editors, decisions 0038 to 0040); roadmap.md
+  (status, decision 34, not verified, follow-ups); the hardware test plan (Browser insertion, editor follow and keys).
+- **Flagged for the owner**: the README screenshot shows a third-party plugin's editor artwork and logo and
+  third-party plugin names in the Browser, and predates this milestone (it still shows the zoom slider); whether
+  Steinberg's VST logo requirements apply to Bluestone; the "VST3" format label and "CoreMIDI" provider name shown in
+  the UI.
+
 ## Deviations and discoveries
 
 - **Audio transport, pre-existing**: the audio transport wraps an arranger loop at most once per block, so an arranger
@@ -350,7 +373,7 @@ no new card, pill, or gradient language. Responses (fixed in the commit that rec
 ## Deferred work
 
 - **Windows keyboard routing on non-US layouts**: carry the physical position (scan code) separately from the logical
-  key (Review 3 #4). Manual checks on Windows (VST3 and CLAP child focus, show without activation, modifiers) and Linux
+  key (Review 3 #4). Manual checks on Windows (VST 3 and CLAP child focus, show without activation, modifiers) and Linux
   (X11 hide/show) are still to be done; neither was run.
 - **Arranger loops shorter than one audio block**: the audio transport wraps once per block (pre-existing).
 - **A navigation view model** for the zoom commands now on `MainViewModel` (Review 3 #9).

@@ -1,11 +1,11 @@
 # 0025. Plugins run out of process; isolation is crash isolation, not a sandbox
 
-- Status: Accepted; amended by 0028 (plan compilation renders plugin MIDI effects in their worker), 0033 (VST3 and CLAP through a Rust host in the worker), and 0034 (the isolation policies became user-chosen hosting modes, "by plugin" by default in the app)
+- Status: Accepted; amended by 0028 (plan compilation renders plugin MIDI effects in their worker), 0033 (VST 3 and CLAP through a Rust host in the worker), and 0034 (the isolation policies became user-chosen hosting modes, "by plugin" by default in the app)
 - Date: 2026-10-10
 
 ## Context
 
-Third-party plugins (VST3 instruments and effects, MIDI plugins) are native code Bluestone did not write and
+Third-party plugins (VST 3 instruments and effects, MIDI plugins) are native code Bluestone did not write and
 cannot fix. Loaded into Bluestone's process, a plugin that crashes takes the application and the musician's
 unsaved work with it; one that hangs freezes it. Scanning a malformed plugin can crash a host before it has
 shown a window.
@@ -36,7 +36,7 @@ shown a window.
   and skipped until a rescan is asked for; results are cached by path, size, and modification time.
 - **Security.** Process isolation is crash isolation only. A worker runs with the same user permissions as
   Bluestone and can read and write the same files and use the network. Operating-system sandboxing is deferred.
-- **No VST3 support is claimed.** The worker hosts Bluestone's reference plugins behind `IHostedPlugin`, the seam
+- **No VST 3 support is claimed.** The worker hosts Bluestone's reference plugins behind `IHostedPlugin`, the seam
   where a native hosting layer will go (Rust, per ADR 0026, given the native-binary reason).
 
 ## Consequences
@@ -46,4 +46,4 @@ shown a window.
 - Out-of-process audio adds at least *(depth − 1)* blocks of latency plus scheduling jitter; no zero-latency
   claim is made. Measured real-time behaviour under an audio device awaits an audio engine.
 - Plugin editors, delay compensation across a graph, wake-up primitives, MIDI 2.0 on the data plane, and real
-  VST3 loading are deferred.
+  VST 3 loading are deferred.

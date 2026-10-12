@@ -1,6 +1,6 @@
 # Windows: playing into a VST synth through a MIDI loopback
 
-Bluestone hosts VST3 and CLAP plugins built for its own architecture ([plugin-hosting.md](plugin-hosting.md)).
+Bluestone hosts VST 3 and CLAP plugins built for its own architecture ([plugin-hosting.md](plugin-hosting.md)).
 This page is for synths it cannot host, such as VST 2 or 32-bit plugins: run the synth in a standalone
 host and connect Bluestone to it with a MIDI loopback port, as an external instrument. It records the
 setup that was verified and how.
@@ -9,7 +9,7 @@ setup that was verified and how.
 
 | Part | Used |
 | ---- | ---- |
-| Machine | Windows 11 ARM64 (build 26200) in Parallels Desktop on Apple Silicon |
+| Machine | Windows 11 ARM64 (build 26200) in Parallels Desktop on Apple silicon |
 | Loopback | Windows MIDI Services, MIDI 1.0 loopback endpoint (`Loopback1`) |
 | Host | SAVIHost 32-bit (x86), running under ARM64 emulation |
 | Synth | Yamaha S-YXG50 VSTi (`syxg50.dll`; it only loads in the 32-bit host) |

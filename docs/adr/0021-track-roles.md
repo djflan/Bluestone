@@ -8,7 +8,7 @@
 ADR 0020 made a track type-agnostic: it holds clips and automation lanes, and has no kind. A modern
 workflow still needs to know what a track is *for*: an instrument track, an audio track, an effect
 (return) track, a group, or a hybrid of notes and audio. That drives defaults (what a new track starts
-with, what the inspector shows) and what is safe to add. Bitwig converts roles as content is added;
+with, what the inspector shows) and what is safe to add. Bitwig Studio converts roles as content is added;
 musicians must never lose clips, devices, automation, or routing because a role changed.
 
 A role cannot always be derived. An empty track, an effect track, and a group track hold no clips, and

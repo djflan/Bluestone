@@ -14,7 +14,7 @@ namespace Bluestone.Application.Plugins;
 /// </summary>
 public sealed record PluginHostingSettings
 {
-    /// <summary>The global default: one worker per plugin module, as in Bitwig. ADR 0034 has the reasoning.</summary>
+    /// <summary>The global default: one worker per plugin module, as in Bitwig Studio. ADR 0034 has the reasoning.</summary>
     public const HostingMode DefaultMode = HostingMode.ByPlugin;
 
     /// <summary>The modes a user can choose, from most sharing to least. Hosting within Bluestone is never offered.</summary>

@@ -15,7 +15,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0008](0008-routing-and-rebinding.md) | Routing: profiles and endpoints bound independently, resolved at run time | Superseded by 0023 |
 | [0009](0009-project-persistence.md) | Project persistence: versioned JSON with atomic saves | Accepted; amended by 0027 |
 | [0010](0010-desktop-ui-framework.md) | Desktop UI framework: Avalonia | Accepted |
-| [0011](0011-coremidi-adapter.md) | macOS CoreMIDI adapter in managed code | Accepted |
+| [0011](0011-coremidi-adapter.md) | macOS Core MIDI adapter in managed code | Accepted |
 | [0012](0012-performance-baseline.md) | Performance baseline: managed scheduling with OS real-time policy, no native code | Accepted |
 | [0013](0013-windows-playback-timing.md) | Windows playback timing: 1 ms timer resolution and MMCSS | Accepted |
 | [0014](0014-winmm-adapter.md) | Windows WinMM output adapter in managed code | Accepted |
@@ -37,7 +37,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0030](0030-group-tracks.md) | Group tracks: mute and solo reach members, membership routes, folding is saved | Accepted; amends 0021 and roadmap decision 11 |
 | [0031](0031-hardware-parameter-automation.md) | Hardware parameter automation through profile parameter maps | Accepted; amends 0007 and 0024 |
 | [0032](0032-audio-engine.md) | Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport | Accepted; amended by 0035 |
-| [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
+| [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST 3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
 | [0034](0034-plugin-hosting-modes.md) | Plugin hosting modes: how plugins share worker processes | Accepted; amends 0025 |
 | [0035](0035-live-input-and-delay-compensation.md) | Live input through every device, a live render-ahead queue, and plugin delay compensation | Accepted; amends 0028 and 0032 |
 | [0036](0036-semantic-workspace-and-device-view.md) | A semantic workspace, Device Views as view instances, and local layout state | Accepted |

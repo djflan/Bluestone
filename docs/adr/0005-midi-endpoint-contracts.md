@@ -5,7 +5,7 @@
 
 ## Context
 
-Bluestone must send to CoreMIDI, Windows MIDI Services, ALSA, network sessions, and test doubles
+Bluestone must send to Core MIDI, Windows MIDI Services, ALSA, network sessions, and test doubles
 behind one contract, from a playback thread that must never block or allocate. Endpoints appear,
 disappear, and get renamed while a project is open. Device knowledge must never leak into endpoints.
 
@@ -14,7 +14,7 @@ disappear, and get renamed while a project is open. Device knowledge must never 
 - `IMidiEndpointProvider` owns discovery and capability reporting for one adapter family. It exposes
   `EndpointDescriptor`s and raises `EndpointsChanged` on hot-plug. Opening is asynchronous and
   cancellable; failures raise `EndpointUnavailableException`.
-- `EndpointId` is `(provider, opaque stable value)`, for example a CoreMIDI unique ID. It is never a
+- `EndpointId` is `(provider, opaque stable value)`, for example a Core MIDI unique ID. It is never a
   port index. Display name, manufacturer, and model are *hints* for rebinding, never profile identity.
 - `IMidiOutput.Send(ReadOnlySpan<byte>, MidiTimestamp)` takes exactly one complete MIDI 1.0 message
   and returns a `SendResult` rather than throwing. Adapters validate messages with `MidiWire.Classify`,

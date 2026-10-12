@@ -9,9 +9,10 @@ ADR 0025 runs every plugin in a worker process, so a plugin crash never takes Bl
 isolation policies (per instance, per module, shared by trusted instances). Only the plugin host API could choose
 one; the application always used one worker per instance and the user could not change it.
 
-The owner asked for Bitwig-style "sandboxing": crash isolation the user controls, not operating-system containment
-(plugins need the network and the file system for licences, presets, and samples). Bitwig offers "Within Bitwig",
-"Together", "By manufacturer", "By plug-in", and "Individually", and defaults to "By plug-in".
+The owner asked for "sandboxing" in the sense Bitwig Studio uses the word: crash isolation the user controls, not
+operating-system containment (plugins need the network and the file system for licences, presets, and samples).
+Bitwig Studio offers "Within Bitwig", "Together", "By manufacturer", "By plug-in", and "Individually", and defaults
+to "By plug-in".
 
 The choice trades the blast radius of a crash against processes. A worker is a .NET process: sampled with `ps` during
 the hosting tests on macOS arm64, about 50 MB resident with a reference plugin and about 75 MB with Bluestone's Rust
@@ -27,9 +28,9 @@ such processes under the old default.
   unless `PluginHostOptions.AllowWithinBluestone`, and `NotSupportedException` even then.
 - **Worker keys.** Instances share a worker exactly when their key (`WorkerKeys.For`) is equal:
   - Individually: the instance ID.
-  - By plugin: the plugin's **module** (format plus module ID: one VST3 bundle or one CLAP file), not the plugin ID.
+  - By plugin: the plugin's **module** (format plus module ID: one VST 3 bundle or one CLAP file), not the plugin ID.
     Plugins in one module share its code and usually its global state, so a crash in one is likely to hit the others;
-    one process per module also loads each binary once. A VST3 and a CLAP build of the same product are different
+    one process per module also loads each binary once. A VST 3 and a CLAP build of the same product are different
     modules and get different workers.
   - By manufacturer: the vendor the scan reported, trimmed and compared without case, across formats and modules. A
     plugin with no vendor is hosted by its module. Vendors that spell their name differently in different products
@@ -38,10 +39,10 @@ such processes under the old default.
   - Every shared key also names the worker's processor architecture: x64 and ARM64 plugin binaries cannot share a
     process. Today every hosted plugin runs on the worker's (native) architecture, because modules without it are
     `Unsupported` at scan time; the key keeps that true if a second-architecture worker is ever added.
-- **The application default is "By plugin", as in Bitwig.** It bounds processes by the number of distinct plugins, not
-  instances, while a crash takes down only copies of the plugin (and its module) that crashed, which are the ones most
-  likely to crash for the same reason. "Individually" stays the default of `PluginInstanceRequest` (the low-level API
-  keeps the safest choice) and is one click away for a plugin that crashes.
+- **The application default is "By plugin", as in Bitwig Studio.** It bounds processes by the number of distinct
+  plugins, not instances, while a crash takes down only copies of the plugin (and its module) that crashed, which are
+  the ones most likely to crash for the same reason. "Individually" stays the default of `PluginInstanceRequest` (the
+  low-level API keeps the safest choice) and is one click away for a plugin that crashes.
 - **Settings, per user, not per project.** `PluginHostingSettings` (in `plugin-hosting.json` beside the audio settings)
   holds the global mode, automatic restart (off by default; on, it uses the existing `RestartPolicy`: 3 restarts in
   5 minutes with back-off, then quarantine), and a mode per plugin keyed by device definition ID

@@ -10,7 +10,7 @@ application publish its own ports. PipeWire and JACK bridge to it.
 
 ## Decision
 - `Bluestone.Platform.Alsa` calls `libasound.so.2` through `LibraryImport`; no native shim, matching
-  CoreMIDI (ADR 0011) and WinMM (ADR 0014).
+  Core MIDI (ADR 0011) and WinMM (ADR 0014).
 - Messages are sent with `snd_seq_event_output_direct` (no ALSA queue), so endpoints are in the
   immediate delivery class and Bluestone's playback thread owns timing.
 - Bytes are converted to sequencer events by ALSA's `snd_midi_event_encode`, which handles system

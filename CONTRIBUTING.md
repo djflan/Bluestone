@@ -31,7 +31,7 @@ Warnings are treated as errors and code style is enforced during the build; `.ed
 
 Rust code lives in `src/native/crates/` and is used only where [ADR 0026](docs/adr/0026-native-technology-policy.md) allows it: when a measurement shows managed code cannot meet a real-time requirement, or when a native interface such as plugin binaries requires it. Everything else is C#. Rust dependencies must be MIT-compatible (MIT, Apache-2.0, BSD, ISC, Zlib); GPL crates such as `vst3-sys` are not used.
 
-Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugins`, built as a VST3 bundle and a CLAP module). Third-party plugins used for local testing are installed on your machine and never committed.
+Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugins`, built as a VST 3 bundle and a CLAP module). Third-party plugins used for local testing are installed on your machine and never committed.
 
 ## Pull requests
 
@@ -40,7 +40,7 @@ Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugi
 3. Include tests that do not require contributors to own specific hardware or software. Tests must skip cleanly, with a reason, when what they need is missing: a platform MIDI service, an audio output device (CI runners have none), or an installed third-party plugin.
 4. State which hardware behavior was physically verified and which was simulated (for example with a software synth or the MIDI monitor). See [docs/hardware-test-plan.md](docs/hardware-test-plan.md).
 5. Update documentation, and add or update an ADR when you change a consequential design decision.
-6. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the CoreMIDI tests, which are unreliable on hosted runners; if you change the CoreMIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally.
+6. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the Core MIDI tests, which are unreliable on hosted runners; if you change the Core MIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally.
 7. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
 
 ## Device profiles
@@ -53,7 +53,7 @@ Profiles are data, not code. Follow the rules in [profiles/README.md](profiles/R
 - Third-party plugins, including free and open-source ones; install them locally for testing.
 - MIDI files or other samples you do not have the right to redistribute.
 
-Compatibility names must be used factually and must not imply vendor affiliation, certification, sponsorship, or endorsement.
+Compatibility names must be used factually and must not imply vendor affiliation, certification, sponsorship, or endorsement. Describe other products as workflow or design references ("inspired by the workflow of …"), never as something Bluestone clones, ports, or is officially compatible with, and do not state who owns a name unless the owner's own published material says so. See [TRADEMARKS.md](TRADEMARKS.md).
 
 ## License
 

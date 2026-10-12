@@ -10,5 +10,5 @@ platform services; tests skip when what they need is missing), and `Bluestone.Te
 Avalonia). `Bluestone.Benchmarks` holds the benchmarks and real-time probes.
 
 The Rust crates are in [src/native/](../native/), built by `dotnet build` through `Native.targets`.
-`NativeTestPlugins.targets` packages the Rust test plugins as a VST3 bundle and a CLAP module for the
+`NativeTestPlugins.targets` packages the Rust test plugins as a VST 3 bundle and a CLAP module for the
 integration tests.

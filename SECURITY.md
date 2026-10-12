@@ -20,4 +20,4 @@ You should receive an acknowledgement within a week. Once a fix is available, th
 
 ## Third-party plugins
 
-Bluestone runs VST3 and CLAP plugins in separate worker processes. This isolates crashes, not access: a plugin runs as your user, with the same permissions as Bluestone, and can read and write anything you can and use the network. There is no operating-system sandbox. Install only plugins you trust. Details are in [Security limitations](docs/plugin-hosting.md#security-limitations).
+Bluestone runs VST 3 and CLAP plugins in separate worker processes. This isolates crashes, not access: a plugin runs as your user, with the same permissions as Bluestone, and can read and write anything you can and use the network. There is no operating-system sandbox. Install only plugins you trust. Details are in [Security limitations](docs/plugin-hosting.md#security-limitations).

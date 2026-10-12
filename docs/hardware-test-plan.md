@@ -1,12 +1,13 @@
 # Manual hardware test plan
 
 The automated suite covers everything that can be checked without instruments, speakers, or a
-person watching: virtual CoreMIDI ports, the built-in monitor, (when enabled) the IAC bus, audio through
+person watching: virtual Core MIDI ports, the built-in monitor, (when enabled) the IAC bus, audio through
 a test backend, and plugins through Bluestone's test plugins. This checklist covers what needs real
 hardware or a person. The MIDI target is a Yamaha QY100 or another XG module on a USB-MIDI interface.
 Record the date, operating system and version, interface, audio device, plugins, and results for each run.
 
-> Yamaha, XG, and QY100 are trademarks of Yamaha Corporation; Bluestone is not affiliated with Yamaha.
+> Bluestone is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. Yamaha, XG, and QY100
+> belong to their respective owners and are named only to describe what is tested; see [TRADEMARKS.md](../TRADEMARKS.md).
 
 ## Setup
 
@@ -52,7 +53,7 @@ These need an instrument whose MIDI OUT is connected to the interface's MIDI IN.
 
 ## Audio output
 
-Run these on each operating system: macOS (CoreAudio), Windows (WASAPI), and Linux (ALSA). Windows
+Run these on each operating system: macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). Windows
 and Linux output is built and tested in CI but has not been heard. Audio settings are in
 **Settings ▸ Audio** (⌘/Ctrl + ,; also **Window ▸ Audio Settings…** on macOS and **File ▸ Audio Settings…** on Windows and Linux).
 
@@ -67,15 +68,17 @@ and Linux output is built and tested in CI but has not been heard. Audio setting
 
 ## Plugins
 
-Install at least one VST3 and one CLAP instrument and effect in the default plugin folders (listed in
+Install at least one VST 3 and one CLAP instrument and effect in the default plugin folders (listed in
 **Plugins…**). The worker process is `Bluestone.PluginWorker`.
 
 | # | Step | Expected |
 | - | ---- | -------- |
 | 30 | Open **Plugins…** (Window menu on macOS, File menu elsewhere) | Installed plugins are listed with their kind, vendor, version, and module; modules that could not be read say why |
-| 31 | On a track, choose a VST3 instrument in **Add a device…**, press **Add**, play notes; repeat with CLAP | The instrument sounds through the master; the meters move |
+| 31 | Drag a VST 3 instrument from the Browser into a track's Device View (or select it and press Return), play notes; repeat with CLAP | The instrument sounds through the master; the meters move |
 | 32 | Add a plugin audio effect after the instrument and turn one of its parameters | The effect is heard; the change is heard within a block |
 | 33 | Press **Open editor**; edit a control, resize the window, close it, open it again | The window appears at the plugin's size; edits change the sound; resizing and reopening work. Check Windows and Linux in particular: editors there have never been opened |
+| 33a | Open editors on two tracks, then select one track and the other; pin one editor and repeat | The editor of the track that is not selected hides and comes back without restarting its plugin; the pinned one stays. On Linux, check that the window manager unmaps and maps it |
+| 33b | Turn on an editor's keyboard button, then, with the pointer over the editor, press Space and play computer-keyboard notes (macOS, Windows) | Bluestone's transport and notes respond; no key sticks after the button is turned off or the editor is hidden or closed. On Linux the button is disabled and says why. On Windows with a non-US layout, notes follow the logical key, not its position (known gap) |
 | 34 | While playing, end the worker process (Activity Monitor, Task Manager, or `kill`) | Bluestone keeps running; the device shows **Crashed** and names the devices that went down with it; plugins in other workers keep playing |
 | 35 | Press **Restart** | The plugin plays again with its last saved settings |
 | 36 | Save, quit, reopen the project | Plugin settings are restored |
