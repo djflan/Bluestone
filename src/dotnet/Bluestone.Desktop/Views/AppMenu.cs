@@ -130,7 +130,7 @@ internal static class AppMenu
                 Item("Zoom Out", vm.ZoomOutCommand, Cmd(Key.OemMinus)),
                 Item("Zoom to Fit", vm.ZoomToFitCommand, Cmd(Key.D0)),
                 Item("Zoom to Selection", vm.ZoomToSelectionCommand, Cmd(Key.D0, KeyModifiers.Shift)),
-                Item("Zoom to Loop", vm.ZoomToLoopCommand)),
+                Item("Zoom to Loop", vm.ZoomToLoopCommand, Cmd(Key.D0, KeyModifiers.Alt))),
             Submenu("Window",
                 Item("Minimize", () => window.WindowState = WindowState.Minimized, Cmd(Key.M)),
                 Item("Zoom", () => window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized),

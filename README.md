@@ -9,7 +9,7 @@ Bluestone started as a MIDI workstation for Yamaha XG instruments and the QY100,
 > [!NOTE]
 > Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation or by the owner of any other product, format, or standard it names. Yamaha, XG, QY100, VST, and other product names and trademarks belong to their respective owners and are used only to identify products and describe compatibility; see [Third-party names and trademarks](#third-party-names-and-trademarks).
 
-![Bluestone main window: the inspector with track, routing, voice, and connection sections beside the arrangement, a Device View with an Arpeggiator and a VST 3 instrument whose editor is open, and the Browser](docs/images/bluestone-main-window.png)
+![Bluestone's workspace: the inspector beside the arrangement, a Device View with an Arpeggiator, Bluestone's reference instrument, and Transpose, and the Browser](docs/images/bluestone-workspace.png)
 
 ## Status
 
@@ -22,7 +22,7 @@ Bluestone is under active development and has no stable release yet. How it is b
 - Standard MIDI File import and export that reports anything it could not carry over ([docs/midi-files.md](docs/midi-files.md)).
 - An arrangement of clips that can be moved, copied, trimmed, split, and consolidated; a piano roll with velocity and controller lanes; an event list; automation lanes for controllers, pitch bend, and pressure.
 - An arranger loop whose range is kept while looping is off, drawn, moved, and resized in the ruler or typed exactly; and clip loops on note and audio clips, which play an optional pickup once and then repeat a region for as long as the clip lasts ([ADR 0039](docs/adr/0039-arranger-and-clip-loops.md)).
-- Zooming and scrolling time by dragging in the arranger's or piano roll's beat ruler, and Zoom to Fit, Zoom to Selection, and (in the macOS View menu) Zoom to Loop.
+- Zooming and scrolling time by dragging in the arranger's or piano roll's beat ruler, and Zoom to Fit, Zoom to Selection, and Zoom to Loop.
 - MIDI recording with count-in, metronome, punch in and out, cycle recording, and MIDI thru; the computer keyboard as a MIDI input.
 - MIDI output through Core MIDI, WinMM, and the ALSA sequencer, with SysEx kept byte for byte, and a built-in MIDI monitor.
 - Device profiles for voices, controllers, initialization, and a parameter map that lets automation set an external instrument's parameters by controller, RPN, NRPN, or SysEx ([docs/profiles.md](docs/profiles.md), [ADR 0031](docs/adr/0031-hardware-parameter-automation.md)).
@@ -220,7 +220,7 @@ onto the window to open it. Hardware checks are listed in
 | New, Open, Save, Save As | Ctrl/Cmd + N, O, S, Shift + S |
 | Import / Export MIDI | Ctrl/Cmd + I / E |
 | Zoom and scroll time | Drag up or down / sideways in the beat ruler; Ctrl/Cmd + scroll, trackpad pinch, scroll over the ruler, or Ctrl/Cmd + = / − |
-| Zoom to fit the project / the selected clips | Ctrl/Cmd + 0 / Shift + Ctrl/Cmd + 0 (Zoom to Loop: the View menu on macOS) |
+| Zoom to fit the project / the selected clips / the loop | Ctrl/Cmd + 0 / Shift + Ctrl/Cmd + 0 / Alt + Ctrl/Cmd + 0 |
 | Show inspector / Browser / Device View / piano roll / event list | I / Shift + B / E / P / D |
 | Settings / back to the workspace | Ctrl/Cmd + , / Escape |
 | Computer keyboard as MIDI input on / off | ` (backquote), or the keyboard button in the transport bar |
@@ -375,9 +375,10 @@ On macOS the commands are in the standard menu bar (File, Edit, Track, MIDI, Tra
 Window, Help, and *About Bluestone* in the application menu). On Windows and Linux, the toolbar has a
 File menu, and most other commands are buttons, context menus, and key bindings in the window.
 
-Every control has a screen-reader name, status is always shown with an icon and a word as well as
-colour, and all transport and file actions have keyboard shortcuts. Linux screen-reader support has
-not yet been verified.
+Bluestone gives its primary controls screen-reader names, shows status with an icon and a word as well as
+colour, and provides keyboard access to transport and file workflows. Custom-drawn views (the arrangement,
+rulers, piano roll) describe their gestures as a whole rather than exposing each element. Accessibility
+verification on each platform is ongoing; Linux screen-reader support has not yet been verified.
 
 ## Contributing
 

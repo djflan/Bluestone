@@ -622,6 +622,7 @@ public partial class MainWindow : Window
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
         Bind(Key.D0, command, vm.ZoomToFitCommand);
+        Bind(Key.D0, command | KeyModifiers.Alt, vm.ZoomToLoopCommand);
         Bind(Key.D0, command | KeyModifiers.Shift, vm.ZoomToSelectionCommand);
         Bind(Key.OemComma, command, new CommunityToolkit.Mvvm.Input.RelayCommand(() => ShowSettings()));
     }

@@ -352,6 +352,22 @@ owners' own published pages on 2026-10-12; nothing here is legal advice or appro
   Steinberg's VST logo requirements apply to Bluestone; the "VST3" format label and "CoreMIDI" provider name shown in
   the UI.
 
+### Review 4: final review (Agent B)
+
+After the documentation pass (`2bfaf54`, `d32c9a4`). Verdict: ready to merge once the Required-now items are done.
+Responses (all in the commit that records this review):
+
+| # | Finding | Class | Response |
+| - | ------- | ----- | -------- |
+| 1 | The README screenshot showed third-party plugin artwork and conflicted with `TRADEMARKS.md` ("no third-party artwork") | Required now | Fixed: README now uses `docs/images/bluestone-workspace.png` (this milestone's normal-width frame, built-in devices only); `docs/images/bluestone-main-window.png` removed; its historical mention in `daw-first-polish.md` notes the removal |
+| 2 | The README accessibility claim ("every control has a screen-reader name") was too broad | Required now | Fixed: primary controls are named, custom-drawn views describe their gestures as a whole, platform verification is ongoing |
+| 3 | A clean final full run and a clean working tree | Required now | Done (below) |
+| 4 | The About subtitle differed from the README's description | Important follow-up | Fixed: "A hardware-oriented DAW built around MIDI and real instruments." |
+| 5 | Zoom to Loop could be reached only from the macOS menu | Important follow-up | Fixed: Alt+Ctrl/Cmd+0 on every platform, shown in the menu, the zoom-to-fit tooltip, the shortcut sheet, and the README |
+| 6 | Hands-on verification on Windows and Linux | Important follow-up | Agreed; not possible on this machine (deferred work, final report) |
+| 7 | Keep the recorded runtime test debt visible | Important follow-up | Kept in Deferred work |
+| 8 | `MainViewModel` should stop growing | Important follow-up | Agreed; the navigation view model stays deferred |
+
 ## Deviations and discoveries
 
 - **Audio transport, pre-existing**: the audio transport wraps an arranger loop at most once per block, so an arranger
@@ -388,3 +404,66 @@ owners' own published pages on 2026-10-12; nothing here is legal advice or appro
 - **Remembered editor geometry** across sessions; editors are not embedded (rejected scope).
 - **Audio clip import** (audio clips still come only from project files), so audio clip loops are reachable only in
   projects that already hold audio clips.
+
+## Final verification
+
+Run on macOS (Apple silicon), .NET SDK 10.0.300, Rust 1.99, from a clean build of the final tree.
+
+| Command | Result |
+| ------- | ------ |
+| `dotnet test src/dotnet/Bluestone.slnx` | 1856 total, 1844 passed, 12 skipped, 0 failed (Unit, Ui, Integration all passed); baseline was 1735 / 1723 / 12 / 0 |
+| `dotnet format src/dotnet/Bluestone.slnx --verify-no-changes` | clean |
+| `cargo test` (in `src/native`) | 25 passed (19 + 6), 0 failed; baseline 22 |
+| `cargo fmt --check` | clean |
+| `cargo clippy --locked --all-targets -- -D warnings` | clean (macOS target) |
+| `cargo clippy --locked -p bluestone_plugin_host --all-targets --target {x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu} -- -D warnings` | clean (isolated toolchain, after `c58349b`; compile and lint only, nothing executed) |
+
+The 12 skipped tests are the same hardware- and plugin-dependent tests skipped at baseline. The integration editor
+tests (`PluginEditorTests`, `PluginEditorWindowUiTests`) ran against a locally installed VST 3 and CLAP plugin.
+
+## Screenshots
+
+All in `docs/images/bitwig-interaction-polish/`, each inspected:
+
+- Before: `before-normal-chain.png`, `before-narrow-chain.png`.
+- Layout: `after-narrow-chain.png` (1100 px), `after-laptop-chain.png` (1280 px), `after-normal-chain.png` (1440 px),
+  `after-wide-chain.png`.
+- Arranger loop: `after-loop-active.png`, `after-loop-inactive.png`, `after-loop-moving.png`, `after-loop-resizing.png`.
+- Clip loops: `after-clip-loop-close.png`, `after-clip-loop-far.png`.
+- Navigation: `after-zoom-close.png`, `after-zoom-far.png`.
+- Replace: `after-replace-overlay.png`, `after-insert-marker.png`.
+- Editors: `after-editor-panel-footer.png` (cropped so no third-party plugin name shows).
+
+## Sources consulted by Agent C
+
+Owners' own pages only: Steinberg's VST usage guidelines; Apple's trademark list and guidelines; Microsoft's trademark
+page; Bitwig's imprint; JetBrains' terms; presonus.com (which redirects to fender.com for Studio One / Studio Pro);
+yamaha.com; roland.com; cleveraudio.org and the free-audio CLAP repository; midi.org; the Rust Foundation's trademark
+policy; GitHub's brand pages; reaper.fm.
+
+## For legal or owner review
+
+Not legal advice; these were checked as far as public pages allow and are left for a person to decide:
+
+- Whether Steinberg's VST logo requirements (and the ® form) apply to a host that does not ship the logo.
+- Ownership of XG, QY100, and GS: no first-party page was found, so ownership is no longer asserted.
+- Studio One → Fender Studio Pro rests on a redirect only.
+- UI strings left unchanged: the "VST3" format label and the "CoreMIDI" provider name.
+- Apple's attribution notice appears only in `TRADEMARKS.md`, not in the About window.
+- File, branch, and worklog names contain "bitwig" (internal only; not shipped in the app).
+
+## Final assessment
+
+| Goal | State |
+| ---- | ----- |
+| Arranger loop: range kept while off, drawn/moved/resized in the ruler, typed exactly, loop selection, nudging | Done; unit and UI tested; format 5 with migration |
+| Clip loops on note and audio clips with pickup, repeats, chase, budgets, consolidation | Done; unit and integration tested; audio loop wraps have no crossfade |
+| Ruler zoom/pan replacing the slider; Zoom to Fit / Selection / Loop | Done in arranger and piano roll; UI tested |
+| Drag-to-replace devices, staged, one undo step, keyboard path | Done; unit and UI tested |
+| Floating editors follow selection, can be pinned, can send keys to Bluestone | Done on macOS and tested with real plugins; Windows compiled and linted only; Linux key routing unsupported, X11 placement left to the window manager, Wayland unsupported |
+| Documentation, terminology, and trademark pass | Done by Agent C in its own commit; owner/legal items listed above |
+| Independent reviews | Four Agent B reviews; every Required-now item fixed; final verdict ready to merge |
+
+Hands-on musical evaluation is still needed for: clip-loop chase and truncation feel at the loop boundary, clicks at
+audio loop wraps without crossfades, ruler zoom sensitivity, editor follow behaviour during fast selection changes,
+and how screen readers announce the mixed clip-loop state.

@@ -61,7 +61,7 @@ internal static class Shortcuts
         ("View", "Zoom in / out", "⌘ =  /  ⌘ −"),
         ("View", "Zoom and scroll in time", "Drag up or down / sideways in the beat ruler"),
         ("View", "Zoom with the pointer", "⌘-scroll, pinch, or scroll over the ruler"),
-        ("View", "Zoom to fit the project / the selected clips", "⌘ 0  /  ⇧ ⌘ 0"),
+        ("View", "Zoom to fit the project / the selected clips / the loop", "⌘ 0  /  ⇧ ⌘ 0  /  ⌥ ⌘ 0"),
         ("View", "Settings / back to the workspace", "⌘ ,  /  Esc"),
         ("Input", "Computer keyboard as MIDI input on / off", "`"),
         ("File", "New / open project", "⌘ N  /  ⌘ O"),

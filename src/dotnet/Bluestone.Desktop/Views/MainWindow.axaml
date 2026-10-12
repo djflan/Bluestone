@@ -275,7 +275,7 @@
                 <Button Classes="tool" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (Ctrl/Cmd+=). Or drag up in the beat ruler" AutomationProperties.Name="Zoom in">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.ZoomIn}" Width="13" Height="13" />
                 </Button>
-                <Button Classes="tool" Command="{Binding ZoomToFitCommand}" ToolTip.Tip="Zoom to fit the project (Ctrl/Cmd+0)" AutomationProperties.Name="Zoom to fit">
+                <Button Classes="tool" Command="{Binding ZoomToFitCommand}" ToolTip.Tip="Zoom to fit the project (Ctrl/Cmd+0). Selected clips: Shift+Ctrl/Cmd+0; the loop: Alt+Ctrl/Cmd+0" AutomationProperties.Name="Zoom to fit">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.ZoomFit}" Width="13" Height="13" />
                 </Button>
               </StackPanel>

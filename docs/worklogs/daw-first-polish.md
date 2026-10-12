@@ -36,7 +36,7 @@ Skips are platform-specific (WinMM, ALSA) or need an enabled IAC bus.
 
 ### Baseline screenshots
 
-The checked-in `docs/images/bluestone-main-window.png` (a real session with a VST 3 instrument) is the visual
+The checked-in `docs/images/bluestone-main-window.png` (a real session with a VST 3 instrument; removed in the interaction-polish milestone because it showed a third-party plugin's editor artwork) was the visual
 reference. Reproducible headless frames of the same workspace were added as `WorkspaceShowcaseTests`, which renders
 fixed scenes (three tracks, a chain of Arpeggiator, a reference plugin instrument, and Transpose; a freshly added
 track; a multiple selection) at 1100×720, 1280×800, 1440×900, and 1920×1080. The baseline frames are kept as

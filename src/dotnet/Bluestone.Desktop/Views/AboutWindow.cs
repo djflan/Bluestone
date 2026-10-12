@@ -35,7 +35,7 @@ internal sealed class AboutWindow : Window
             {
                 new TextBlock { Text = "Bluestone", FontSize = 22, FontWeight = FontWeight.SemiBold },
                 new TextBlock { Text = $"Version {version.Split('+')[0]}", Classes = { "secondary" } },
-                new TextBlock { Text = "A hardware-oriented MIDI workstation. MIT licensed.", Classes = { "secondary" }, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = "A hardware-oriented DAW built around MIDI and real instruments. MIT licensed.", Classes = { "secondary" }, TextWrapping = TextWrapping.Wrap },
                 new TextBlock { Text = NonAffiliationNotice, Classes = { "muted" }, TextWrapping = TextWrapping.Wrap },
                 close,
             },
