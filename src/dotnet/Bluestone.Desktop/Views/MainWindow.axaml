@@ -50,7 +50,7 @@
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
           </ToggleButton>
           <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
-                        ToolTip.Tip="Show or hide the Browser (B)" AutomationProperties.Name="Browser">
+                        ToolTip.Tip="Show or hide the Browser (Shift+B)" AutomationProperties.Name="Browser">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
           </ToggleButton>
           <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the detail region: devices and editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
@@ -888,7 +888,7 @@
                 <Button Grid.Column="1" Classes="tool small" Command="{Binding Workspace.Browser.DetachCommand}" ToolTip.Tip="Detach to its own window" AutomationProperties.Name="Detach Browser">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.Detach}" />
                 </Button>
-                <Button Grid.Column="2" Classes="tool small" Command="{Binding Workspace.Browser.CollapseCommand}" ToolTip.Tip="Collapse to the rail (B)" AutomationProperties.Name="Collapse Browser">
+                <Button Grid.Column="2" Classes="tool small" Command="{Binding Workspace.Browser.CollapseCommand}" ToolTip.Tip="Collapse to the rail (Shift+B)" AutomationProperties.Name="Collapse Browser">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronRight}" />
                 </Button>
               </Grid>

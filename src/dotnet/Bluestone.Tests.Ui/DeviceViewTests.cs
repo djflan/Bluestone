@@ -278,6 +278,29 @@ public sealed class DeviceViewTests
         Assert.Equal(docked, Subscribers());
     });
 
+    [Fact]
+    public Task ShorteningTheWindow_ClampsTheDetailRow_AndGrowingItBackRestoresTheSavedExtent() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 1400);
+        var mainArea = app.Find<Grid>("MainArea");
+        var detailRow = mainArea.RowDefinitions[3];
+        app.ViewModel.Workspace.DetailExtent = 1000;
+        app.Settle();
+        Assert.Equal(1000, detailRow.Height.Value);
+
+        app.Window.Height = 800;
+        app.Settle();
+
+        // The arranger and the rows above the detail region keep their 200 pixels.
+        Assert.True(detailRow.Height.Value <= mainArea.Bounds.Height - 200, $"The detail row is {detailRow.Height.Value} high in a {mainArea.Bounds.Height} main area.");
+        Assert.Equal(mainArea.Bounds.Height - 200, detailRow.ActualHeight, 0.5);
+        Assert.Equal(1000, app.ViewModel.Workspace.DetailExtent);
+
+        app.Window.Height = 1400;
+        app.Settle();
+        Assert.Equal(1000, detailRow.Height.Value);
+    });
+
     [Theory]
     [InlineData(1280, 800, "laptop")]
     [InlineData(1920, 1080, "desktop")]

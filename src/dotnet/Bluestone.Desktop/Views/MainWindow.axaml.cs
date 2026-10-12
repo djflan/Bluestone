@@ -153,7 +153,13 @@ public partial class MainWindow : Window
             }
         };
         vm.Workspace.LayoutChanged += (_, _) => SyncDetachedWindows();
-        MainArea.SizeChanged += (_, _) => DetailHandle.MaximumExtent = Math.Max(WorkspaceViewModel.MinimumDetailExtent, MainArea.Bounds.Height - 200);
+        MainArea.SizeChanged += (_, _) =>
+        {
+            DetailHandle.MaximumExtent = Math.Max(WorkspaceViewModel.MinimumDetailExtent, MainArea.Bounds.Height - 200);
+
+            // The row shows the saved extent clamped to the new height; the saved extent itself is kept for a taller window.
+            ApplyEditorVisibility();
+        };
         vm.RestoreLayout();
         RestoreBounds(vm.Workspace);
         SyncDetachedWindows();
