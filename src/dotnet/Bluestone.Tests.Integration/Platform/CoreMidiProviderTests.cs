@@ -139,13 +139,16 @@ public sealed class CoreMidiProviderTests
         using (new PlaybackThread(engine))
         {
             engine.Play(Tick.Zero);
-            await EventuallyAsync(() => received.Count >= 34 ? received : null, "all notes");
+
+            // A single virtual source delivers in send order, so the last note's release arriving means everything has.
+            await EventuallyAsync(() => received.Any(m => m is [0x80, 63, _]) ? received : null, "the last note's release");
             engine.Stop();
         }
 
-        var messages = received.ToList();
-        Assert.Equal(["B00000", "C005"], messages.Take(2).Select(Convert.ToHexString));
-        Assert.Equal(Enumerable.Range(48, 16), messages.Where(m => m[0] == 0x90).Select(m => (int)m[1]));
+        // Loading while stopped chases bank and program for live input (ADR 0006); Play chases them again.
+        string[] chase = ["B00000", "C005"];
+        var notes = Enumerable.Range(48, 16).SelectMany(n => new[] { $"90{n:X2}7F", $"80{n:X2}40" });
+        Assert.Equal([.. chase, .. chase, .. notes], received.Select(Convert.ToHexString));
         Assert.Equal(0, engine.Statistics.Snapshot().Dropped);
     }
 
