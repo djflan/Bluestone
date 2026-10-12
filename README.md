@@ -213,6 +213,7 @@ onto the window to open it. Hardware checks are listed in
 | Import / Export MIDI | Ctrl/Cmd + I / E |
 | Zoom timeline | Ctrl/Cmd + scroll, trackpad pinch, scroll over the bar ruler, or Ctrl/Cmd + = / − |
 | Show inspector / Browser / Device View / piano roll / event list | I / Shift + B / E / P / D |
+| Settings / back to the workspace | Ctrl/Cmd + , / Escape |
 | Computer keyboard as MIDI input on / off | ` (backquote), or the keyboard button in the transport bar |
 | Keyboard shortcut reference | Ctrl/Cmd + / |
 
@@ -276,21 +277,32 @@ what you play through thru uses the track's instrument without pressing play fir
 
 ### Tracks, devices, and routing
 
-The inspector (I) edits the selected tracks. With several selected, a change applies to all of them
-at once (one undo step), and values that differ show *Mixed*.
+**New Track** (⌘/Ctrl + T) makes a hybrid track, which holds notes and audio, whose sound already goes to the
+master: add an instrument and play. There is no type to choose and no routing to set up first. The track header
+names what plays the track (its instrument, its hardware output, or "No instrument" while it is empty) and
+warns only about real problems, such as notes that nothing plays or a plugin that crashed.
 
-- **Track**: the role. Changing it never removes clips, devices, automation, or routing; Bluestone asks or refuses when it would.
-- **Routing** and **Voice**: the MIDI output, the instrument profile, the channel, transposition, and the bank and program. **Initialize Instrument…** sends the profile's setup messages and asks before anything that resets the instrument.
+The inspector (I) edits the selected tracks. With several selected, a change applies to all of them
+at once (one undo step), and values that differ show *Mixed*. Closed sections sum themselves up in their header.
+
+- **Track**: the instrument (click it to show it in the Device View, or **Add an instrument…** to pick one in the
+  Browser), the devices, and **Audio to**: the master, a mixer channel, or nowhere. A track that is not hybrid also
+  shows its **Type**; every track's type is in its context menu (**Track Type**). Changing it never removes clips,
+  devices, automation, or routing; Bluestone asks or refuses when it would.
+- **External MIDI**: the MIDI output, the instrument profile, the channel, transposition, and the bank and program,
+  for hardware and other apps. It opens by itself for a track that uses hardware. **Initialize…** sends the
+  profile's setup messages and asks before anything that resets the instrument.
 - **Connections**: what the track sends to and receives from, and new connections from the track or one of its devices to a track, a rack, an external instrument, a mixer channel, or the master.
 - **Racks**: device chains several tracks can feed, such as one shared instrument. **Edit** shows a rack's devices in the Device View, locked to the rack.
 - **Mixer**: mixer channels, their gain, pan, mute, solo, and output, and the master gain.
+- **Recording**: the MIDI input, takes, count-in, metronome output, and MIDI thru.
 
 Group tracks show their members under them; the arrow on a group folds it.
 
 ### Device View and Browser
 
 A track's devices are edited in the **Device View** (E), a tab below the arrangement. Devices run left to right
-between the chain's input and output, each as a panel with its controls: knobs (drag up and down, Shift for fine,
+between the chain's input and output (which says where the chain's sound goes), each as a panel with its controls: knobs (drag up and down, Shift for fine,
 double-click to reset), on/off switches, bypass, and for plugins the editor and restart. Collapse a panel to a
 narrow strip with its chevron; drag a device by its name to move it; the chain scrolls sideways when it is long.
 
@@ -299,10 +311,13 @@ you select others. **+** beside the tabs opens another Device View, so two chain
 view can be docked as a tab, collapsed to an icon on the border rail, or detached to its own window. Views showing
 the same chain share its devices; what is collapsed, selected, or scrolled is each view's own.
 
-The **Browser** (Shift + B) lists devices, plugins, project racks, and hardware profiles, with search and
-categories. Drag a device onto a Device View to insert it exactly where the marker shows; double-click or Return
-inserts it into the last Device View you used, after its selected device. With no Device View showing a chain,
-nothing is inserted. Suggested items fit the chain so far, but nothing is forbidden.
+The **Browser** (Shift + B) lists devices, plugins, and project racks, with search and categories. Drag a device
+onto a Device View to insert it exactly where the marker shows (an empty chain lights up); double-click or Return
+inserts it into the last Device View you used, and the Browser's footer says where: "Into Bass, after Arpeggiator".
+With no Device View showing a chain, nothing is inserted. Suggested items fit the chain so far, but nothing is
+forbidden. Inserting an instrument or audio effect into a track whose sound goes nowhere sends it to the master.
+Hardware profiles are under **Hardware**: **Use on Track** gives the selected tracks the profile and opens their
+External MIDI settings.
 
 The inspector and Browser dock at the sides and resize by their edge; their icons on the border rails open and
 collapse them. The layout, open views, detached windows, locks, collapsed devices, and Browser search are kept on
@@ -311,26 +326,28 @@ window whose monitor is missing comes back as a rail icon and returns to that mo
 
 ### Audio and plugins
 
-Audio is off until you start it. Open **Audio Settings…** (Window menu on macOS, the toolbar's File menu on
-Windows and Linux), choose the output device, sample rate, buffer,
-and render-ahead sizes, and press **Start audio** (*Test tone* checks the output). Bluestone saves the
-settings and starts audio at launch if it was on when you last used it.
+**Settings** (⌘/Ctrl + ,, the gear at the right of the control bar, or Bluestone ▸ Settings… on macOS) replaces
+the workspace with a list of categories and the chosen page; **Done** or Escape puts the workspace back as it was.
+Audio is off until you start it. In **Settings ▸ Audio** (also **Audio Settings…** in the Window menu on macOS and
+the toolbar's File menu elsewhere), choose the output device, sample rate, buffer, and render-ahead sizes, and press
+**Start audio** (*Test tone* checks the output). Bluestone saves the settings and starts audio at launch if it was on
+when you last used it.
 
-To hear a track's audio clips or a plugin instrument, connect the track (or the device) to the
-**Master** or to a mixer channel in **Connections**. Selecting an audio clip shows its gain and fades in
-the inspector. The **mixer console** (File ▸ Mixer…, or Window ▸ Mixer on macOS) shows every mixer
+A new track's sound goes to the master, and so does a track's sound when an instrument is inserted into it while
+its sound went nowhere. **Audio to** in the inspector sends it to a mixer channel instead, and **Connections** adds
+sends and connections from a device. Selecting an audio clip shows its gain and fades in the inspector. The **mixer console** (File ▸ Mixer…, or Window ▸ Mixer on macOS) shows every mixer
 channel with its sends, pan, fader, and meters.
 
 Plugins are scanned at launch from `<application data>/Bluestone/plugins` and the system's VST3 and
 CLAP folders (on macOS `~/Library/Audio/Plug-Ins/VST3` and `/Library/Audio/Plug-Ins/VST3`, and the
 same for `CLAP`; the Windows and Linux folders are listed in
 [docs/plugin-hosting.md](docs/plugin-hosting.md#the-plugin-library-and-the-plugins-view)). Scanned
-plugins appear in *Add a device…*. A running plugin device has **Open editor**, which shows the plugin's
+plugins appear in the Browser. A running plugin device has **Open editor**, which shows the plugin's
 own editor in a separate window, and says which worker process it runs in. If a worker crashes, every
 device in it shows what happened and which devices went down with it, and **Restart** brings them back
 from their last state.
 
-The **Plugins** view (File ▸ Plugins…, or Window ▸ Plugins… on macOS) lists the scan folders, the
+**Settings ▸ Plugins** (also File ▸ Plugins…, or Window ▸ Plugins… on macOS) lists the scan folders, the
 plugins found, modules that could not be read, and quarantined modules with **Retry**. **Rescan all**
 finds new and changed plugins without restarting. Its Hosting section sets how plugins share worker
 processes, per plugin or for all, and whether crashed plugins restart automatically. Plugins run with

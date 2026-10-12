@@ -417,8 +417,8 @@ scans through `IPluginScanner`, which `PluginScanner` implements (view-model tes
   found, and recompiles. A newly found plugin appears in the device strip without a restart; a device whose plugin is
   gone stops and shows "Not installed".
 
-The **Plugins view** (`PluginsViewModel`, `PluginsWindow`; Window ▸ Plugins… in the macOS menu bar, File ▸ Plugins…
-elsewhere) shows the hosting settings, the scan folders, the available plugins with kind, vendor, version, and
+The **Plugins view** (`PluginsViewModel`, shown as **Settings ▸ Plugins** by `PluginSettingsPage`; also Window ▸
+Plugins… in the macOS menu bar, File ▸ Plugins… elsewhere; ADR 0038) shows the hosting settings, the scan folders, the available plugins with kind, vendor, version, and
 module, the modules that could not be read and why, and the quarantined modules, each with **Retry**. **Rescan all**
 shows a progress bar and the module being scanned; one operation runs at a time and the buttons are disabled
 meanwhile. The result is a line such as "Rescanned. 3 plugins available from 4 modules. 1 module quarantined."

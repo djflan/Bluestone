@@ -105,10 +105,11 @@ files, operating-system MIDI, plugin worker and scanner processes, and the Rust 
 views, bindings, and UI thread, with no display.
 
 The UI tests send mouse and keyboard input through the headless platform and check the project and view
-models afterwards. They cover the inspector's sections (track, routing and voice, devices, connections
+models afterwards. They cover the inspector's sections (track, external MIDI and voice, connections
 including a refused one and its message, racks, the add-lane menu with instrument parameters), clips
 (dragging, resizing, renaming), the piano roll (drawing, selecting, moving notes), grouping, folding, and
-muting a group, the keyboard shortcuts, the Plugins view and hosting settings, a plugin MIDI effect whose
+muting a group, the keyboard shortcuts, Settings (audio, plugins and hosting), the DAW-first track path (new track,
+instrument, audio path), a plugin MIDI effect whose
 worker dies and restarts, and the mixer console (a fader dragged and undone, a send added, meters fed from
 a meter source). Frames are saved to `bin/.../frames/` for looking at. `Avalonia.Headless.XUnit` targets
 an older xUnit than the repository's, so the tests drive `HeadlessUnitTestSession` directly. The headless
@@ -362,9 +363,11 @@ track's output (the end of its chain), a rack's output, or a tap after one devic
 or rack, a part of an external instrument (port plus channel), a mixer channel, or the master. A
 connection's `ChannelMapping` filters, forces, or remaps channels; clips are never changed to reach a
 different part. Validation rejects connections that cannot work and every feedback loop. The track
-inspector's Output, Instrument, Channel, Transpose, and Voice fields are a view of this model
-(`TrackOutputs`), so the inspector, the device strip's routing indicators, and the routing inspector
-always agree.
+inspector's External MIDI fields (Output, Profile, Channel, Transpose, Voice) are a view of this model
+(`TrackOutputs`), and so is its **Audio to** (a track's primary audio output, ADR 0038), so the inspector,
+the Device View's routing indicators, and the routing inspector always agree. A new track, and a track that
+gets an instrument while its sound goes nowhere, is given an explicit audio connection to the master
+(`TrackSetup`, ADR 0038).
 
 ```text
 Piano ───┐                                           ┌──► MU2000 port A, ch 1..16
@@ -374,8 +377,8 @@ Lead ──► [Arpeggiator → Transpose] ──► MU2000 port B, ch 4
                  └── tap ──► track "Harmony"
 ```
 
-In the app, the inspector's Devices strip edits the selected track's chain, or a rack's chain after
-"Edit" in the Racks section; Connections follows whichever chain the strip shows. Every edit is a
+In the app, the Device View (ADR 0036) edits the selected track's chain, or a rack's chain after
+"Edit" in the Racks section; Connections follows whichever chain the active Device View shows. Every edit is a
 command, and one that would add a routing error is refused with a message. Consecutive edits with the
 same merge key within a second (a slider drag) are one undo step.
 
