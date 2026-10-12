@@ -101,15 +101,35 @@ public sealed class SignalRoutingValidatorTests
     }
 
     [Fact]
-    public void EventsAfterAnInstrumentThatTookEverything_HaveNothingToCarry()
+    public void EventsAfterAnInstrument_StillCarryTheNotesItPassesOn()
     {
+        // ADR 0037: an instrument plays what it handles and passes it on (ChainRunner does), so even an instrument that
+        // handles every class leaves events to send from its tap and from the track's output.
         var takesAll = TestDevices.Synth with { Id = new DeviceDefinitionId("test.takes-all"), Handles = EventClass.Transmitted };
         var piano = NoteTrack("Piano");
         var project = Empty().WithTrackChain(piano).WithInstrument(out var mu);
         project = project.WithChain(project.ChainOf(piano.Id)! with { Devices = [DeviceInstance.Create(takesAll.ToReference())] });
         var afterSynth = SignalNode.Device(project.ChainOf(piano.Id)!.Devices[0].Id);
+        DeviceDefinitionLookup definitions = id => id == takesAll.Id ? takesAll : null;
 
-        var error = Assert.Single(project.Connect(SignalKind.Events, afterSynth, SignalNode.ExternalPart(mu.Id)).Validate(definitions: id => id == takesAll.Id ? takesAll : null));
+        Assert.Empty(project.Connect(SignalKind.Events, afterSynth, SignalNode.ExternalPart(mu.Id)).Validate(definitions: definitions));
+        Assert.Empty(project.Connect(SignalKind.Events, SignalNode.Track(piano.Id), SignalNode.ExternalPart(mu.Id)).Validate(definitions: definitions));
+    }
+
+    [Fact]
+    public void EventsAfterAnInstrumentThatEndsTheNotePath_HaveNothingToCarry()
+    {
+        // A specialized instrument with EventThru = None takes everything it handles out of the chain.
+        var sink = TestDevices.Synth with { Id = new DeviceDefinitionId("test.sink"), Handles = EventClass.Transmitted, EventThru = EventClass.None };
+        var piano = NoteTrack("Piano");
+        var project = Empty().WithTrackChain(piano).WithInstrument(out var mu);
+        project = project.WithChain(project.ChainOf(piano.Id)! with { Devices = [DeviceInstance.Create(sink.ToReference())] });
+        var afterSynth = SignalNode.Device(project.ChainOf(piano.Id)!.Devices[0].Id);
+        DeviceDefinitionLookup definitions = id => id == sink.Id ? sink : null;
+
+        var error = Assert.Single(project.Connect(SignalKind.Events, afterSynth, SignalNode.ExternalPart(mu.Id)).Validate(definitions: definitions));
+        Assert.Equal(RoutingIssueCode.NothingToCarry, error.Code);
+        error = Assert.Single(project.Connect(SignalKind.Events, SignalNode.Track(piano.Id), SignalNode.ExternalPart(mu.Id)).Validate(definitions: definitions));
         Assert.Equal(RoutingIssueCode.NothingToCarry, error.Code);
     }
 

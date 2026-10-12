@@ -1,6 +1,6 @@
 # 0037. A device chain carries a parallel signal bundle
 
-- Status: Accepted; amends 0022
+- Status: Accepted; amends 0022 and 0023
 - Date: 2026-10-11
 
 ## Context
@@ -31,6 +31,11 @@ output, and a note effect leaves audio alone. Only the event side was exclusive.
 - `ChainRunner` sends the passed-through classes around the device and merges them back in canonical order, exactly
   as for unhandled classes, with no new allocation once its buffers have grown. `SignalGraph` no longer reports
   notes that an instrument played and passed on as going nowhere; only classes no instrument handled are unheard.
+- Routing validation follows the same rule. `SignalPresence.Through` (used by `SignalRoutingValidator` and when a
+  track joins a group) removes after a device only the handled classes it does not pass through, read from the same
+  `DeviceDefinition.PassesThrough`. An event connection from an instrument's device tap or from its track's output
+  therefore carries the notes the instrument passes on; ADR 0023's "an event tap after an instrument that consumed
+  everything carries nothing" now holds only for an instrument whose `EventThru` ends the note path.
 - The internal note model stays independent of raw MIDI; MIDI 1.0, MPE, MIDI 2.0, and plugin formats remain
   boundary concerns (ADR 0018). Nothing here ties the bundle to stereo or to MIDI channel semantics.
 
@@ -43,7 +48,8 @@ conversion point.
 - Chains that put an instrument before note effects now send notes on to those effects; previously they received
   nothing. There is one user and no compatibility requirement, so existing projects simply change behaviour.
 - `ChainRunnerTests` and `SignalGraphTests` cover pass-through, layering, note effects after instruments, explicit
-  thru, and the diagnostic change.
+  thru, and the diagnostic change; `SignalRoutingValidatorTests` cover routing from after an instrument, with the
+  default thru and with `EventThru = None`.
 - **Live input still ends at the first plugin instrument.** `LiveRoutePlan` (ADR 0035) stops its route at the first
   instrument that takes the notes, so playing live sounds the first instrument of a layered chain only. Extending
   the live route to fan out to every instrument on the chain is follow-up work.

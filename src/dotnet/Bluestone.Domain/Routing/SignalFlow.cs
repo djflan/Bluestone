@@ -29,9 +29,10 @@ public readonly record struct SignalPresence(EventClass Events, bool Audio, bool
     public bool Carries(SignalKind kind) => Uncertain || (kind == SignalKind.Events ? Events != EventClass.None : Audio);
 
     /// <summary>
-    /// The presence after <paramref name="device"/>. A bypassed device changes nothing. A device takes
-    /// out the event classes it handles only when it does not send events on (an instrument), and an
-    /// effect that sends events on leaves what was there. Audio appears after anything that makes it.
+    /// The presence after <paramref name="device"/>. A bypassed device changes nothing. A device that does
+    /// not send events on (an instrument) takes out only the handled classes it does not pass through
+    /// (<see cref="DeviceDefinition.PassesThrough"/>, as <c>ChainRunner</c> does; ADR 0037), and an effect
+    /// that sends events on leaves what was there. Audio appears after anything that makes it.
     /// </summary>
     public SignalPresence Through(DeviceInstance device, DeviceDefinitionLookup definitions)
     {
@@ -50,7 +51,7 @@ public readonly record struct SignalPresence(EventClass Events, bool Audio, bool
         var events = Events;
         if (definition.Consumes.HasFlag(SignalKinds.Events) && !definition.Produces.HasFlag(SignalKinds.Events))
         {
-            events &= ~definition.Handles;
+            events &= ~(definition.Handles & ~definition.PassesThrough);
         }
 
         var audio = Audio || (definition.Produces.HasFlag(SignalKinds.Audio) && !definition.Consumes.HasFlag(SignalKinds.Audio));
