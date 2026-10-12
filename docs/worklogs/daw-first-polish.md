@@ -381,3 +381,42 @@ headers; IN/OUT boundary nodes; signal-role colours; hairline separators; the de
   | 6 | Multiple-selection frame predated the guidance change | Optional | Regenerated (`after-normal-multiple.png`) |
 
 ## Final assessment
+
+- **Branch**: `feature/daw-first-polish` (from `main` at `dc61bda`); not merged or pushed. The final commit is the one
+  that adds this section.
+- **Completed workflows**:
+  1. New Track → a hybrid track heard at the master, neutral "No instrument" status, no role or routing to choose.
+  2. Inspector "Add an instrument…" / Device View "Browse Instruments" → Browser on instruments aimed at the track
+     (a detached Browser comes forward) → insert → the header and inspector name the instrument; one undo removes it.
+  3. Audio destination chosen in the inspector (master, mixer channel, none), with sends kept and never duplicated.
+  4. External MIDI as a contextual section: opens for hardware tracks, summarised when closed; hardware profiles used
+     on tracks from the Browser's Hardware category.
+  5. Device View: one composition from IN through an empty slot or the panels to OUT, captioned with where the signal
+     comes from and goes; drop feedback on an empty chain.
+  6. Settings (⌘/Ctrl + ,, gear, menus) with working Audio and Plugins pages, search, Escape and focus behaviour, and
+     exact workspace restoration.
+- **Before/after screenshots**: `docs/images/daw-first-polish/before-*.png` and `after-*.png` (same scenes at
+  1100×720, 1280×800, 1440×900, 1920×1080; plus `after-settings-audio.png` and `after-empty-chain-drop.png`).
+- **Exact test results (final run)**:
+
+  | Suite | Command | Result |
+  | ----- | ------- | ------ |
+  | .NET | `dotnet test src/dotnet/Bluestone.slnx` | 1724 total, 1712 passed, 12 skipped, 0 failed (unit 1490, UI 81, integration 153) |
+  | Rust | `cargo test --workspace` in `src/native` | 22 passed, 0 failed |
+  | Format | `dotnet format src/dotnet/Bluestone.slnx --verify-no-changes`; `cargo fmt --check` | clean |
+  | Build | `dotnet build src/dotnet/Bluestone.slnx` | 0 warnings, 0 errors |
+
+  The 12 skips are WinMM/ALSA tests on macOS and the IAC-bus test (the bus is not enabled on this machine). The
+  baseline's failing CoreMIDI test passes (D9).
+- **Reviewer verdict**: "PASS — no Required-now findings. Bluestone now feels materially more polished and DAW-first
+  without losing visual identity, information density, external-hardware depth, or professional power."
+- **Remaining limitations and deferred work**: declarative parameter grouping/priority for device panels (panels show
+  the first 4/6/8 parameters); per-track mixer channels and faders; MIDI and recording pages in Settings; a detachable
+  Settings window; flattening the remaining faint chrome gradients; the README hero screenshot predates this milestone
+  and should be retaken in a real session with a plugin (a headless frame cannot show a plugin editor); the CoreMIDI
+  `MIDIClientCreate` -304 under rapid test-process launches.
+- **Dangerously large or coupled**: `MainViewModel.cs` (1590 lines, +10 in this milestone), `MainWindow.axaml.cs` (1171,
+  −16), `DeviceViewViewModel.cs` (859), `WorkspaceViewModel.cs` (641), `Theme/Bluestone.axaml` (1313).
+- **Recommended next milestone**: device panels from declarative parameter groups and priorities (built-ins and plugins
+  alike), with track-owned mixer channels so every track has a fader in the inspector and mixer; retake the hero
+  screenshot then.
