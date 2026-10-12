@@ -170,7 +170,12 @@ public sealed class ChainRunner
                 _produced.Clear();
                 if (stage.Kind == StageKind.OutOfProcess)
                 {
-                    RunOutOfProcess(stage, block, changes);
+                    if (!RunOutOfProcess(stage, block, changes))
+                    {
+                        // A failed device passes its input on exactly once; merging would repeat its thru classes.
+                        observer?.AfterDevice(stage.Device.Id, _current.Events);
+                        continue;
+                    }
                 }
                 else
                 {
@@ -222,8 +227,9 @@ public sealed class ChainRunner
         return reports.ToImmutable();
     }
 
-    // The renderer gets this device's changes and its handled events; on failure they pass through unchanged.
-    private void RunOutOfProcess(Stage stage, in SignalBlock block, ReadOnlySpan<ParameterChange> changes)
+    // The renderer gets this device's changes and its handled events. Returns false if it failed, in which case
+    // nothing is produced and the caller passes the stage's input on unchanged.
+    private bool RunOutOfProcess(Stage stage, in SignalBlock block, ReadOnlySpan<ParameterChange> changes)
     {
         var own = new List<ParameterChange>();
         foreach (var change in changes)
@@ -251,16 +257,14 @@ public sealed class ChainRunner
         {
             _produced.AddRange(events.AsSpan());
         }
-        else
-        {
-            _produced.AddRange(_handled.Events);
-        }
 
         foreach (var message in result.Messages)
         {
             var text = result.Events is null ? $"{stage.Device.DisplayName}: {message} Events pass through it unchanged." : $"{stage.Device.DisplayName}: {message}";
             _outOfProcessReports.Add(new SignalDiagnostic(result.Events is null ? SignalDiagnosticCode.NotProcessedHere : SignalDiagnosticCode.DeviceReport, text) { Device = stage.Device.Id });
         }
+
+        return result.Events is not null;
     }
 
     // Splits the block at each change for this device, so a change applies from its own tick onwards.

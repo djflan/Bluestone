@@ -139,6 +139,16 @@ public sealed class ChainRunnerTests
     }
 
     [Fact]
+    public void AnOutOfProcessDeviceWithThru_ThatFails_PassesItsInputThroughExactlyOnce()
+    {
+        var thru = PluginArp with { EventThru = EventClass.Notes };
+        var catalog = Catalog.With(thru).WithRenderer(new ShiftingRenderer(0) { Fail = "is not running." });
+        var events = Keyed(0, XgOn(), Note(0, 60), Note(240, 64));
+
+        Assert.Equal(events, Run(Chain(Instance(thru)), events, catalog));
+    }
+
+    [Fact]
     public void ABypassedOutOfProcessDevice_IsNotRendered()
     {
         var plugin = Instance(PluginArp) with { IsBypassed = true };
