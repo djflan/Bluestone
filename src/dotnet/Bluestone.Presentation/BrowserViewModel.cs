@@ -93,6 +93,7 @@ public sealed partial class BrowserViewModel : ObservableObject
 {
     private readonly MainViewModel _owner;
     private readonly List<BrowserItem> _all = [];
+    private bool _dragging;
 
     internal BrowserViewModel(MainViewModel owner)
     {
@@ -195,8 +196,25 @@ public sealed partial class BrowserViewModel : ObservableObject
             };
         }
 
-        Filter();
+        if (!_dragging)
+        {
+            Filter();
+        }
+
         InsertCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Keeps the list as it is while one of its items is being dragged: a drop that changes the chain re-ranks the items, and
+    /// rebuilding the list would remove the drag's source mid-session (on macOS that ends the app).
+    /// </summary>
+    public void BeginDrag() => _dragging = true;
+
+    /// <summary>Ends <see cref="BeginDrag"/> and applies any re-ranking the drag held back.</summary>
+    public void EndDrag()
+    {
+        _dragging = false;
+        Filter();
     }
 
     /// <summary>Inserts <paramref name="item"/> into the last Device View used, after its selected device. Never guesses a target.</summary>

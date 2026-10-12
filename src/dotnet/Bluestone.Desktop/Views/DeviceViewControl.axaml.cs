@@ -176,7 +176,10 @@ public partial class DeviceViewControl : UserControl
 
         e.Handled = true;
         var (gap, _) = GapAt(e.GetPosition(ChainArea).X);
-        Drop(vm, drag, gap);
+
+        // Change the chain after the platform's drop callback returns, not inside the native drag session: the change rebuilds
+        // panels (and can start a plugin), which must not happen while the session still holds the drag source and target.
+        Dispatcher.UIThread.Post(() => Drop(vm, drag, gap));
     }
 
     /// <summary>Applies a drop at <paramref name="gap"/>: inserts a definition, or moves a device (between views of the same chain too).</summary>

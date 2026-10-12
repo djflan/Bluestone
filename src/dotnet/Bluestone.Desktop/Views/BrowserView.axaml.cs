@@ -100,6 +100,15 @@ public partial class BrowserView : UserControl
         }
 
         _press = null;
-        await DragDrop.DoDragDropAsync(press, ChainDrag.Insert(definition).ToTransfer(), DragDropEffects.Copy);
+        var vm = ViewModel;
+        vm?.BeginDrag();
+        try
+        {
+            await DragDrop.DoDragDropAsync(press, ChainDrag.Insert(definition).ToTransfer(), DragDropEffects.Copy);
+        }
+        finally
+        {
+            vm?.EndDrag();
+        }
     }
 }

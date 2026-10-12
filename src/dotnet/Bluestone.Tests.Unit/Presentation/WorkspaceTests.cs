@@ -26,13 +26,14 @@ public sealed class WorkspaceTests : IAsyncLifetime
     private readonly EndpointDirectory _endpoints;
     private readonly ProjectSession _session = new();
     private readonly MainViewModel _vm;
+    private readonly PlaybackController _playback;
 
     public WorkspaceTests()
     {
         _provider = new LoopbackMidiProvider(_clock);
         _endpoints = new EndpointDirectory([_provider]);
-        var playback = new PlaybackController(_session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
-        _vm = new MainViewModel(_session, playback, _endpoints, new NoUi(), new ImmediateDispatcher())
+        _playback = new PlaybackController(_session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
+        _vm = new MainViewModel(_session, _playback, _endpoints, new NoUi(), new ImmediateDispatcher())
         {
             LayoutStore = new WorkspaceStore(Path.Combine(_directory, "settings")),
         };
@@ -240,6 +241,30 @@ public sealed class WorkspaceTests : IAsyncLifetime
         Assert.True(_vm.Browser.IsEmpty);
         Assert.False(string.IsNullOrEmpty(_vm.Browser.EmptyText));
         await Settle();
+    }
+
+    [Fact]
+    public async Task DroppingAnInstrumentFromTheBrowser_LeavesTheBrowsersListAlone_UntilTheDragEnds()
+    {
+        // Inserting an instrument re-ranks the Browser (effects come first after it). Rebuilding the list mid-drag removes the
+        // drag's source item while the platform's drag session still holds it, which crashed the app on macOS.
+        _playback.UseDevices(DeviceCatalog.BuiltIn.With(TestDevices.Synth));
+        _vm.Select(Bass);
+        await Settle();
+        _vm.Select(Keys);
+        await Settle();
+        var before = _vm.Browser.Items.ToList();
+        var items = new List<BrowserItem>(before);
+
+        _vm.Browser.BeginDrag();
+        Assert.True(First.InsertAt(0, TestDevices.Synth));
+        await Settle();
+
+        Assert.Equal("Synth", First.Devices.Single().Name);
+        Assert.Equal(before, _vm.Browser.Items);
+        _vm.Browser.EndDrag();
+        Assert.NotEqual(items, _vm.Browser.Items);
+        Assert.False(Item("Synth").IsRecommended);
     }
 
     [Fact]
