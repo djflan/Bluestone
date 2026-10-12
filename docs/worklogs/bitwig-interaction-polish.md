@@ -232,6 +232,18 @@ Decisions are numbered for reference from reviews and commits.
   went from 6 to 2 pixels per quarter so long projects fit. Arranger navigation moved out of `MainWindow.axaml.cs` into
   `MainWindow.Navigation.cs`. Cursor: four-way arrows over the beat rulers, with a tooltip saying what clicking and
   dragging do (Avalonia has no standard magnifier cursor; a custom bitmap cursor was not worth the platform risk).
+- **D13 Drag to replace a device.** A Browser device dropped over the middle half of a device panel replaces that
+  device; the outer quarters of each panel and the spaces between panels stay insertion zones (so boundaries are never
+  ambiguous), and moving a chain device never replaces (`DeviceViewViewModel.DropTargetAt`). The target panel is covered
+  by a focus-coloured outline with "Replace" and "*Old* with *New*" (the insertion marker hides); insertion keeps the
+  gap marker. `DeviceCommands.ReplaceDevice` is one undo step, under the routing guard: same chain position; a new
+  `DeviceId` (identity is never reused); automation lanes follow only when the replacement is the same built-in or
+  plugin, and otherwise keep targeting the old device and stay in the project (Review 1 #11); the old device's taps move
+  to the replacement when it produces their kind of signal and are removed otherwise; a silent track gets its audio path
+  when the replacement makes sound, as an insertion does. A plugin replacement is first started in its own worker
+  (`PluginDeviceHost.StageAsync`, adopted by the next sync); if it does not run, the project is not touched and a message
+  says why (Review 1 #10). Click-to-insert from the Browser is unchanged. Modifier-drag to build containers was not
+  added (no container infrastructure exists).
 
 ## Reviews and responses
 

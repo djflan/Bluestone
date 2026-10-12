@@ -64,6 +64,9 @@ public sealed class PluginDeviceHost : IAsyncDisposable
     // edits are on their way to RecordEdit.
     private readonly ConcurrentDictionary<(DeviceId Device, uint Parameter), double> _hostValues = new();
     private readonly SemaphoreSlim _syncing = new(1, 1);
+
+    // Devices started ahead of the edit that adds them (StageAsync): a sync must not destroy them before that edit lands.
+    private readonly ConcurrentDictionary<DeviceId, byte> _staged = new();
     private double _sampleRate;
     private readonly int _maxBlockFrames;
     private volatile PluginHostingSettings _hosting;
@@ -180,6 +183,9 @@ public sealed class PluginDeviceHost : IAsyncDisposable
             _session.Execute(DeviceCommands.SetParameter(edit.Device, new ParameterId(edit.ParameterId), value));
         }
     }
+
+    /// <summary>Whether devices of <paramref name="definition"/> are plugins this host runs.</summary>
+    public bool Hosts(DeviceDefinitionId definition) => _plugins.ContainsKey(definition);
 
     /// <summary>Whether the device's plugin is running with its editor window open.</summary>
     public bool IsEditorOpen(DeviceId device) => _instances.TryGetValue(device, out var instance) && instance.IsEditorOpen;
@@ -411,9 +417,14 @@ public sealed class PluginDeviceHost : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(project);
         var available = _plugins;
         var wanted = project.Chains.SelectMany(c => c.Devices).Where(d => available.ContainsKey(d.Definition.Id)).ToDictionary(d => d.Id);
+        foreach (var id in wanted.Keys)
+        {
+            _staged.TryRemove(id, out _);
+        }
+
         foreach (var (id, instance) in _instances.ToList())
         {
-            if (!wanted.ContainsKey(id) && _instances.TryRemove(id, out _))
+            if (!wanted.ContainsKey(id) && !_staged.ContainsKey(id) && _instances.TryRemove(id, out _))
             {
                 ForgetHostValues(id);
                 instance.StatusChanged -= Handler(id);
@@ -453,52 +464,127 @@ public sealed class PluginDeviceHost : IAsyncDisposable
 
         foreach (var device in wanted.Values.Where(d => !_instances.ContainsKey(d.Id)))
         {
-            var plugin = available[device.Definition.Id];
-            var parameters = device.Parameters.Select(p => new WorkerParameterValue(p.Id.Value, p.Value.ToFraction())).ToImmutableArray();
-            var captured = restore?.GetValueOrDefault(device.Id);
-            var hosting = _hosting;
-            var request = new PluginInstanceRequest(plugin, _sampleRate, _maxBlockFrames, plugin.Kind == PluginKind.AudioEffect ? 2 : 0, plugin.Kind == PluginKind.MidiEffect ? 0 : 2)
+            await StartAsync(device, available[device.Definition.Id], restore?.GetValueOrDefault(device.Id), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Starts <paramref name="device"/>'s plugin in a worker before the device is in the project, so a replacement can
+    /// be checked before the project changes. Returns null when it runs (the instance is then kept for the device and
+    /// adopted when the project has it), or why it could not start (nothing is kept). Never loads a plugin in
+    /// Bluestone's process. <see cref="UnstageAsync"/> drops an instance whose edit did not happen.
+    /// </summary>
+    public async Task<string?> StageAsync(DeviceInstance device, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        if (!_plugins.TryGetValue(device.Definition.Id, out var plugin))
+        {
+            return $"{device.Definition.DisplayName ?? "The plugin"} is not installed here.";
+        }
+
+        await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _staged[device.Id] = 0;
+            var instance = await StartAsync(device, plugin, null, cancellationToken).ConfigureAwait(false);
+            if (instance.Status.State == PluginInstanceState.Running)
             {
-                Hosting = hosting.ModeFor(plugin),
-                RestartPolicy = hosting.RestartPolicy,
-                ModulePath = _modulePaths.GetValueOrDefault(plugin),
-                RestoreFrom = captured ?? (device.State is { } saved
-                    ? new PluginStateSnapshot(plugin, new PluginStateData(saved.Format, [.. saved.Data.Span]), parameters, DateTimeOffset.UnixEpoch)
-                    : null),
-            };
-            var instance = await _manager.CreateInstanceAsync(request, cancellationToken).ConfigureAwait(false);
-            _instances[device.Id] = instance;
-            if (!instance.Parameters.IsEmpty)
-            {
-                _parameters[device.Definition.Id] = instance.Parameters;
+                return null;
             }
 
-            instance.StatusChanged += Handler(device.Id);
-            instance.ParameterEdited += EditHandler(device.Id);
-            instance.Changed += ChangeHandler(device.Id);
-            if (device.State is null && captured is null && instance.Status.State == PluginInstanceState.Running)
-            {
-                // No saved state: the stored parameter values are the configuration to restore. Only values that differ
-                // from the plugin's own are sent (a plugin may have thousands of parameters).
-                var known = instance.GetCachedParameterValues().ToDictionary(v => v.Id, v => v.Value);
-                foreach (var parameter in parameters)
-                {
-                    if (known.TryGetValue(parameter.Id, out var current) && Math.Abs(current - parameter.Value) > ParameterTolerance)
-                    {
-                        await instance.SetParameterAsync(parameter.Id, parameter.Value, cancellationToken).ConfigureAwait(false);
-                    }
-                }
-            }
+            var reason = instance.Status.Message ?? $"{plugin.DisplayName} did not start.";
+            await DropAsync(device.Id, cancellationToken).ConfigureAwait(false);
+            return reason;
+        }
+        catch
+        {
+            await DropAsync(device.Id, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            _syncing.Release();
+        }
+    }
 
-            // The instance starts from the project's values (its stored state is restored with them).
-            ForgetHostValues(device.Id);
+    /// <summary>Destroys an instance started by <see cref="StageAsync"/> whose device never reached the project.</summary>
+    public async Task UnstageAsync(DeviceId device, CancellationToken cancellationToken = default)
+    {
+        await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_staged.ContainsKey(device))
+            {
+                await DropAsync(device, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _syncing.Release();
+        }
+    }
+
+    private async Task DropAsync(DeviceId id, CancellationToken cancellationToken)
+    {
+        _staged.TryRemove(id, out _);
+        if (_instances.TryRemove(id, out var instance))
+        {
+            ForgetHostValues(id);
+            instance.StatusChanged -= Handler(id);
+            instance.ParameterEdited -= EditHandler(id);
+            instance.Changed -= ChangeHandler(id);
+            await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
+            StatusChanged?.Invoke(this, id);
+        }
+    }
+
+    // Starts the device's plugin from its saved state (or `captured`) and parameters, and keeps the instance for it.
+    private async Task<PluginInstance> StartAsync(DeviceInstance device, PluginIdentity plugin, PluginStateSnapshot? captured, CancellationToken cancellationToken)
+    {
+        var parameters = device.Parameters.Select(p => new WorkerParameterValue(p.Id.Value, p.Value.ToFraction())).ToImmutableArray();
+        var hosting = _hosting;
+        var request = new PluginInstanceRequest(plugin, _sampleRate, _maxBlockFrames, plugin.Kind == PluginKind.AudioEffect ? 2 : 0, plugin.Kind == PluginKind.MidiEffect ? 0 : 2)
+        {
+            Hosting = hosting.ModeFor(plugin),
+            RestartPolicy = hosting.RestartPolicy,
+            ModulePath = _modulePaths.GetValueOrDefault(plugin),
+            RestoreFrom = captured ?? (device.State is { } saved
+                ? new PluginStateSnapshot(plugin, new PluginStateData(saved.Format, [.. saved.Data.Span]), parameters, DateTimeOffset.UnixEpoch)
+                : null),
+        };
+        var instance = await _manager.CreateInstanceAsync(request, cancellationToken).ConfigureAwait(false);
+        _instances[device.Id] = instance;
+        if (!instance.Parameters.IsEmpty)
+        {
+            _parameters[device.Definition.Id] = instance.Parameters;
+        }
+
+        instance.StatusChanged += Handler(device.Id);
+        instance.ParameterEdited += EditHandler(device.Id);
+        instance.Changed += ChangeHandler(device.Id);
+        if (device.State is null && captured is null && instance.Status.State == PluginInstanceState.Running)
+        {
+            // No saved state: the stored parameter values are the configuration to restore. Only values that differ
+            // from the plugin's own are sent (a plugin may have thousands of parameters).
+            var known = instance.GetCachedParameterValues().ToDictionary(v => v.Id, v => v.Value);
             foreach (var parameter in parameters)
             {
-                _hostValues[(device.Id, parameter.Id)] = parameter.Value;
+                if (known.TryGetValue(parameter.Id, out var current) && Math.Abs(current - parameter.Value) > ParameterTolerance)
+                {
+                    await instance.SetParameterAsync(parameter.Id, parameter.Value, cancellationToken).ConfigureAwait(false);
+                }
             }
-
-            StatusChanged?.Invoke(this, device.Id);
         }
+
+        // The instance starts from the project's values (its stored state is restored with them).
+        ForgetHostValues(device.Id);
+        foreach (var parameter in parameters)
+        {
+            _hostValues[(device.Id, parameter.Id)] = parameter.Value;
+        }
+
+        StatusChanged?.Invoke(this, device.Id);
+        return instance;
     }
 
     /// <summary>

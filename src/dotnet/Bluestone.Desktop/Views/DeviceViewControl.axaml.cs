@@ -177,18 +177,65 @@ public partial class DeviceViewControl : UserControl
             return;
         }
 
-        var (_, markerX) = GapAt(e.GetPosition(ChainArea).X);
         var top = ChainRow.TranslatePoint(new Point(0, ChainRow.Margin.Top), ChainArea)?.Y ?? 0;
-        Canvas.SetLeft(InsertionMarker, markerX - (InsertionMarker.Width / 2));
+        var target = TargetAt(e.GetPosition(ChainArea).X, drag);
+        if (target.Replace is { } replaced)
+        {
+            // Over the middle of a panel: the whole panel is the target, and says what will happen.
+            InsertionMarker.IsVisible = false;
+            ReplaceDetail.Text = $"{replaced.Name} with {drag.Definition!.Name}";
+            ReplaceOverlay.Width = Math.Max(40, target.Right - target.Left);
+            Canvas.SetLeft(ReplaceOverlay, target.Left);
+            Canvas.SetTop(ReplaceOverlay, Math.Max(0, target.Top));
+            ReplaceOverlay.IsVisible = true;
+            e.DragEffects = DragDropEffects.Copy;
+            e.Handled = true;
+            return;
+        }
+
+        ReplaceOverlay.IsVisible = false;
+        Canvas.SetLeft(InsertionMarker, target.MarkerX - (InsertionMarker.Width / 2));
         Canvas.SetTop(InsertionMarker, Math.Max(0, top - ChainRow.Margin.Top));
         InsertionMarker.IsVisible = true;
         e.DragEffects = effect;
         e.Handled = true;
     }
 
+    /// <summary>
+    /// What a drop at <paramref name="x"/> does: replace a device (a Browser item over the middle half of a panel) or go
+    /// into a gap (anything else, and every move of a chain device, which never replaces).
+    /// </summary>
+    internal (DevicePanelViewModel? Replace, double Left, double Right, double Top, int Gap, double MarkerX) TargetAt(double x, ChainDrag drag)
+    {
+        var (gap, markerX) = GapAt(x);
+        if (drag.Definition is null || ViewModel is not { } vm)
+        {
+            return (null, 0, 0, 0, gap, markerX);
+        }
+
+        var panels = new List<(double Left, double Right)>();
+        var tops = new List<double>();
+        for (var i = 0; i < vm.Devices.Count; i++)
+        {
+            if (Chain.ContainerFromIndex(i) is not Control container || container.TranslatePoint(default, ChainArea) is not { } origin)
+            {
+                return (null, 0, 0, 0, gap, markerX);
+            }
+
+            var panel = container.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("devicePanel"));
+            var corner = panel?.TranslatePoint(default, ChainArea) ?? origin;
+            panels.Add((corner.X, corner.X + (panel?.Bounds.Width ?? container.Bounds.Width)));
+            tops.Add(corner.Y);
+        }
+
+        var (replace, index) = DeviceViewViewModel.DropTargetAt(panels, x, canReplace: true);
+        return replace ? (vm.Devices[index], panels[index].Left, panels[index].Right, tops[index], gap, markerX) : (null, 0, 0, 0, gap, markerX);
+    }
+
     private void HideDropFeedback()
     {
         InsertionMarker.IsVisible = false;
+        ReplaceOverlay.IsVisible = false;
         EmptySlot.Classes.Set("dropTarget", false);
     }
 
@@ -207,11 +254,17 @@ public partial class DeviceViewControl : UserControl
             return;
         }
 
-        var (gap, _) = GapAt(e.GetPosition(ChainArea).X);
+        var target = TargetAt(e.GetPosition(ChainArea).X, drag);
 
         // Change the chain after the platform's drop callback returns, not inside the native drag session: the change rebuilds
         // panels (and can start a plugin), which must not happen while the session still holds the drag source and target.
-        Dispatcher.UIThread.Post(() => Drop(vm, drag, gap));
+        if (target.Replace is { } replaced && drag.Definition is { } definition)
+        {
+            Dispatcher.UIThread.Post(async () => await vm.ReplaceAsync(replaced.Id, definition));
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() => Drop(vm, drag, target.Gap));
     }
 
     /// <summary>

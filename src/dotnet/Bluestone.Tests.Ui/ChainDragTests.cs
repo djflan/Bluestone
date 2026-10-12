@@ -308,6 +308,83 @@ public sealed class ChainDragTests
         }
     }
 
+    [Fact]
+    public Task ABrowserPluginDroppedOverAPanelsMiddle_ShowsTheReplaceOverlay_ReplacesItInPlace_AndUndoes() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenWithChainAsync(plugins);
+        using var source = RecordingDragSource.Install();
+        var docked = Docked(app);
+        var ids = ChainIds(app);
+        var sine = app.ViewModel.Browser.Items.Single(i => i.Name == Sine.DisplayName);
+
+        var released = StartBrowserDrag(app, sine);
+        var drag = Assert.Single(source.Drags);
+        var middle = PanelMiddle(app.Window, docked, 1);
+        app.Window.DragDrop(middle, RawDragEventType.DragEnter, drag.Transfer, drag.Allowed);
+        app.Window.DragDrop(middle, RawDragEventType.DragOver, drag.Transfer, drag.Allowed);
+        var overlay = AppUnderTest.Within<Border>(docked, b => b.Name == "ReplaceOverlay");
+        Assert.True(overlay.IsVisible);
+        Assert.False(AppUnderTest.Within<Border>(docked, b => b.Name == "InsertionMarker").IsVisible);
+        Assert.Equal($"Event Filter with {Sine.DisplayName}", AppUnderTest.Within<TextBlock>(docked, t => t.Name == "ReplaceDetail").Text);
+        app.SaveFrame("replace-overlay");
+
+        var effect = source.DropAt(drag, app.Window, middle);
+        RecordingDragSource.Finish(drag, effect);
+        FinishGesture(app.Window, released);
+        await AppUnderTest.WaitUntilAsync(() => ChainNames(app).Contains(Sine.DisplayName), "the replacement");
+
+        Assert.Equal(["Transpose", Sine.DisplayName, "Arpeggiator"], ChainNames(app));
+        Assert.Equal(ids[0], ChainIds(app)[0]);
+        Assert.NotEqual(ids[1], ChainIds(app)[1]);
+        Assert.Equal("Replace Device", app.Session.History.UndoLabel);
+        Assert.False(overlay.IsVisible);
+
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(ids, ChainIds(app));
+    });
+
+    [Fact]
+    public Task ReplacingBetweenBuiltInsAndPlugins_KeepsThePosition_AndAFailedPluginChangesNothing() => HeadlessApp.RunAsync(async () =>
+    {
+        var broken = new PluginIdentity("bluestone-reference", "bluestone.reference", "reference.missing", "Missing Synth", "Bluestone", PluginKind.Instrument, "1.0.0");
+        await using var plugins = Plugins();
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [Sine, Gain, broken]));
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Transpose"));
+        view.InsertAt(1, BuiltIn("Arpeggiator"));
+        app.Settle();
+
+        // Built-in to plugin, then plugin to plugin (the same plugin: a fresh instance), then plugin to built-in.
+        Assert.True(await view.ReplaceAsync(view.Devices[1].Id, PluginDeviceHost.DefinitionOf(Sine)));
+        app.Settle();
+        Assert.Equal(["Transpose", Sine.DisplayName], ChainNames(app));
+        var first = ChainIds(app)[1];
+        Assert.True(await view.ReplaceAsync(first, PluginDeviceHost.DefinitionOf(Sine)));
+        app.Settle();
+        Assert.NotEqual(first, ChainIds(app)[1]);
+        Assert.True(await view.ReplaceAsync(ChainIds(app)[1], BuiltIn("Arpeggiator")));
+        app.Settle();
+        Assert.Equal(["Transpose", "Arpeggiator"], ChainNames(app));
+
+        // A plugin that cannot start leaves the chain exactly as it was, and says so.
+        var before = app.Session.Project;
+        Assert.False(await view.ReplaceAsync(ChainIds(app)[1], PluginDeviceHost.DefinitionOf(broken)));
+        app.Settle();
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not replaced", StringComparison.Ordinal));
+    });
+
+    private static Point PanelMiddle(TopLevel window, DeviceViewControl control, int index)
+    {
+        var chain = AppUnderTest.Within<ItemsControl>(control, c => c.Name == "Chain");
+        var panel = ((Control)chain.ContainerFromIndex(index)!).GetVisualDescendants().OfType<Border>().First(b => b.Classes.Contains("devicePanel"));
+        return panel.TranslatePoint(new Point(panel.Bounds.Width / 2, 60), window)!.Value;
+    }
+
     private static ProjectSession TwoTracks()
     {
         var session = new ProjectSession();

@@ -373,6 +373,56 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Replaces <paramref name="target"/> with a new device of <paramref name="definition"/> at the same place, in one
+    /// undo step (see <see cref="DeviceCommands.ReplaceDevice"/>). A plugin is started in its worker first: if it cannot
+    /// run, the chain is left exactly as it was and a message says why.
+    /// </summary>
+    public async Task<bool> ReplaceAsync(DeviceId target, DeviceDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (!HasChain || Devices.FirstOrDefault(d => d.Id == target) is not { } old)
+        {
+            return false;
+        }
+
+        var replacement = DeviceInstance.Create(definition.ToReference());
+        var host = _owner.PluginHost;
+        var staged = host?.Hosts(definition.Id) == true;
+        if (staged)
+        {
+            string? reason;
+            try
+            {
+                reason = await host!.StageAsync(replacement);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                reason = ex.Message;
+            }
+
+            if (reason is not null)
+            {
+                _owner.AddMessage(MessageSeverity.Warning, "Replace Device", $"{old.Name} was not replaced: {reason}");
+                return false;
+            }
+        }
+
+        if (!_owner.Execute(DeviceCommands.ReplaceDevice(target, replacement, Definitions)))
+        {
+            if (staged)
+            {
+                await host!.UnstageAsync(replacement.Id);
+            }
+
+            return false;
+        }
+
+        Activate();
+        SelectedDevice = Devices.FirstOrDefault(d => d.Id == replacement.Id);
+        return true;
+    }
+
     /// <summary>Inserts after the selected device, or at the end: where Enter or a double-click in the Browser puts a device.</summary>
     public bool Insert(DeviceDefinition definition) =>
         InsertAt(SelectedDevice is { } after ? after.Index + 1 : Devices.Count, definition);
@@ -397,6 +447,33 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     /// The gap a drop at <paramref name="x"/> lands in, given the horizontal centres of the panels in order: before the first panel
     /// whose centre is right of the pointer, or after the last.
     /// </summary>
+    /// <summary>
+    /// Where a drop at <paramref name="x"/> goes: onto device <c>Index</c> to replace it when <paramref name="canReplace"/>
+    /// and the pointer is over the middle half of that device's panel; otherwise into the gap <c>Index</c> (see
+    /// <see cref="GapAt"/>). The outer quarters of each panel stay insertion zones, so the edges are never ambiguous.
+    /// </summary>
+    /// <param name="panels">Each device panel's left and right edges, in chain order.</param>
+    /// <param name="x">The pointer, in the same coordinates.</param>
+    /// <param name="canReplace">Whether the dragged item may replace a device (a Browser item, not a chain device being moved).</param>
+    public static (bool Replace, int Index) DropTargetAt(IReadOnlyList<(double Left, double Right)> panels, double x, bool canReplace)
+    {
+        ArgumentNullException.ThrowIfNull(panels);
+        if (canReplace)
+        {
+            for (var i = 0; i < panels.Count; i++)
+            {
+                var (left, right) = panels[i];
+                var quarter = (right - left) / 4;
+                if (x >= left + quarter && x <= right - quarter)
+                {
+                    return (true, i);
+                }
+            }
+        }
+
+        return (false, GapAt([.. panels.Select(p => (p.Left + p.Right) / 2)], x));
+    }
+
     public static int GapAt(IReadOnlyList<double> centers, double x)
     {
         ArgumentNullException.ThrowIfNull(centers);

@@ -239,6 +239,12 @@
       <!-- Where a dragged device will land. -->
       <Canvas IsHitTestVisible="False">
         <Border x:Name="InsertionMarker" Classes="insertionMarker" IsVisible="False" />
+        <Border x:Name="ReplaceOverlay" Classes="replaceOverlay" IsVisible="False">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="2">
+            <TextBlock x:Name="ReplaceTitle" Classes="replaceTitle" Text="Replace" HorizontalAlignment="Center" />
+            <TextBlock x:Name="ReplaceDetail" Classes="replaceDetail" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
       </Canvas>
 
       <!-- No chain to show: nothing selected, or the locked track or rack is gone. -->

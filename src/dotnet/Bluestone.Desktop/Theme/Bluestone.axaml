@@ -1024,6 +1024,28 @@
     <Setter Property="BoxShadow" Value="{StaticResource Shadow.Focus}" />
   </Style>
 
+  <!-- A device dropped over a panel replaces it: the whole panel is outlined and says so, plainly. -->
+  <Style Selector="Border.replaceOverlay">
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="Background" Value="{StaticResource Overlay.Replace}" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.Focus}" />
+  </Style>
+  <Style Selector="TextBlock.replaceTitle">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource State.Focus}" />
+  </Style>
+  <Style Selector="TextBlock.replaceDetail">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="Margin" Value="8,0" />
+  </Style>
+
   <Style Selector="Border.devicePanel">
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="Background" Value="{StaticResource Surface.Panel}" />

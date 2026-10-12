@@ -211,6 +211,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The selected clips' loop, for the inspector and the arranger's loop gestures.</summary>
     public ClipLoopViewModel ClipLoop { get; }
 
+    /// <summary>The plugin host, when plugins are hosted.</summary>
+    internal PluginDeviceHost? PluginHost => _plugins;
+
     /// <summary>The project file's folder, or null while the project is unsaved.</summary>
     internal string? ProjectDirectory => _session.FilePath is { } path ? Path.GetDirectoryName(path) : null;
 

@@ -135,6 +135,7 @@
   <Color x:Key="TrackRow.HoverColor">#2C2C2F</Color>
   <Color x:Key="TrackRow.SelectedColor">#35373D</Color>
   <Color x:Key="Overlay.ScrimColor">#CC1C1E22</Color>
+  <Color x:Key="Overlay.ReplaceColor">#F01C1E22</Color>
   <SolidColorBrush x:Key="Transport.Cycle" Color="{StaticResource Transport.CycleColor}" />
   <SolidColorBrush x:Key="Track.Mute" Color="{StaticResource Track.MuteColor}" />
   <SolidColorBrush x:Key="Track.Solo" Color="{StaticResource Track.SoloColor}" />
@@ -181,6 +182,7 @@
   <SolidColorBrush x:Key="TrackRow.Hover" Color="{StaticResource TrackRow.HoverColor}" />
   <SolidColorBrush x:Key="TrackRow.Selected" Color="{StaticResource TrackRow.SelectedColor}" />
   <SolidColorBrush x:Key="Overlay.Scrim" Color="{StaticResource Overlay.ScrimColor}" />
+  <SolidColorBrush x:Key="Overlay.Replace" Color="{StaticResource Overlay.ReplaceColor}" />
 
   <!-- The control bar and pane headers have a faint top-lit gradient, like hardware panels. -->
   <LinearGradientBrush x:Key="Gradient.Bar" StartPoint="0%,0%" EndPoint="0%,100%">
