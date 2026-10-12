@@ -287,6 +287,15 @@ public sealed partial class EditorViewModel : ObservableObject
 
     public IReadOnlyList<NoteEvent> SelectedNotes => [.. Selection.OfType<NoteEvent>()];
 
+    /// <summary>The timeline span from the first selected event to the latest end, or null with no selection.</summary>
+    public (Tick Start, Tick End)? SelectedNotesSpan()
+    {
+        var selection = Selection;
+        return selection.Count == 0
+            ? null
+            : (new Tick(selection.Min(e => e.Position.Value)), new Tick(selection.Max(e => Math.Max(e.EndPosition.Value, e.Position.Value + 1))));
+    }
+
     // Event inspector fields for the selection: a value when shared, empty when mixed.
     [ObservableProperty]
     public partial string InfoPosition { get; set; } = string.Empty;

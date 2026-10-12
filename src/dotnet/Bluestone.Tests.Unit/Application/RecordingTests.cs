@@ -272,7 +272,7 @@ public sealed class RecordingTests : IAsyncDisposable
     public async Task CycleRecording_MergesPassesAndEndsWrappedNotesAtTheLoopEnd()
     {
         var track = AddTrack(_synth);
-        _session.Execute(ProjectCommands.SetLoop(new TickRange(Tick.Zero, new Tick(3840))));
+        _session.Execute(LoopCommands.SetRange(new TickRange(Tick.Zero, new Tick(3840)), enable: true));
         await _controller.RecordAsync(track.Id, new RecordOptions(CountInBars: 0), Ct);
         _controller.Engine.Pump();
 
@@ -292,10 +292,33 @@ public sealed class RecordingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ALoopThatIsTurnedOff_NeitherWrapsPlaybackNorCyclesTheTake()
+    {
+        var track = AddTrack(_synth);
+        _session.Execute(LoopCommands.SetRange(new TickRange(Tick.Zero, new Tick(3840)), enable: true));
+        _session.Execute(LoopCommands.SetEnabled(false, Tick.Zero));
+        await _controller.RecordAsync(track.Id, new RecordOptions(CountInBars: 0), Ct);
+        _controller.Engine.Pump();
+
+        RunTo(1900);
+        Play(60);
+        RunTo(2100);
+        Release(60);
+        RunTo(3000);
+        _controller.Stop();
+
+        Assert.Equal(0, _controller.Engine.LoopWraps);
+        var note = Assert.Single(Recorded(track).ArrangedEvents.Cast<NoteEvent>());
+        // With the loop on, this note would be cut at the loop's end (3840); here it simply plays on past it.
+        Assert.Equal(3648, note.Position.Value);
+        Assert.True(note.EndPosition.Value > 3840, $"The note should run past the inactive loop's end: {note.EndPosition}");
+    }
+
+    [Fact]
     public async Task CycleRecording_PairsReleasesWithTheNoteTheyBelongTo()
     {
         var track = AddTrack(_synth);
-        _session.Execute(ProjectCommands.SetLoop(new TickRange(Tick.Zero, new Tick(3840))));
+        _session.Execute(LoopCommands.SetRange(new TickRange(Tick.Zero, new Tick(3840)), enable: true));
         await _controller.RecordAsync(track.Id, new RecordOptions(CountInBars: 0), Ct);
         _controller.Engine.Pump();
 
@@ -321,7 +344,7 @@ public sealed class RecordingTests : IAsyncDisposable
         var early = new NoteEvent(new Tick(200), new TickSpan(10), MidiChannel.FromIndex(0), new NoteNumber(40), Velocity.Max);
         var later = new NoteEvent(new Tick(31000), new TickSpan(10), MidiChannel.FromIndex(0), new NoteNumber(41), Velocity.Max);
         var track = AddTrack(_synth, early, later);
-        _session.Execute(ProjectCommands.SetLoop(new TickRange(new Tick(30720), new Tick(46080))));
+        _session.Execute(LoopCommands.SetRange(new TickRange(new Tick(30720), new Tick(46080)), enable: true));
         await _controller.RecordAsync(track.Id, new RecordOptions(CountInBars: 0, Replace: true), Ct);
         _controller.Engine.Pump();
         RunTo(500);

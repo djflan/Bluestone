@@ -33,14 +33,14 @@ public sealed class InstrumentAutomationFormatTests
     private static JsonObject TargetOf(JsonObject json) => json["project"]!["sequence"]!["tracks"]![0]!["automation"]![0]!["target"]!.AsObject();
 
     [Fact]
-    public void InstrumentTarget_IsWrittenAsFormat4_AndReadBack()
+    public void InstrumentTarget_IsWrittenInTheCurrentFormat_AndReadBack()
     {
         var project = Sample(out var instrument, out var lane);
 
         var json = ToJson(project);
         var restored = FromJson(json).Project.Sequence.Tracks.Single().Automation.Single();
 
-        Assert.Equal(4, (int)json["formatVersion"]!);
+        Assert.Equal(ProjectSerializer.CurrentFormatVersion, (int)json["formatVersion"]!);
         Assert.Equal(
             $$"""{"type":"instrument","instrument":"{{instrument.Id.Value:D}}","port":"A","channel":3,"parameter":"filter-cutoff"}""",
             TargetOf(json).ToJsonString());

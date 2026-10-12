@@ -111,7 +111,7 @@
           </Border>
           <Border Classes="transport">
             <StackPanel Orientation="Horizontal" Spacing="1">
-              <ToggleButton Classes="cycle" IsChecked="{Binding IsLoopEnabled, Mode=OneWay}" Command="{Binding ToggleLoopCommand}" ToolTip.Tip="Cycle: loop four bars from the playhead (L), or drag in the ruler" AutomationProperties.Name="Cycle">
+              <ToggleButton x:Name="LoopButton" Classes="cycle" IsChecked="{Binding Loop.IsEnabled, Mode=OneWay}" Command="{Binding Loop.ToggleCommand}" ToolTip.Tip="{Binding Loop.ToggleTip}" AutomationProperties.Name="Loop">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Cycle}" Width="15" Height="15" />
               </ToggleButton>
             </StackPanel>
@@ -138,6 +138,19 @@
                 <TextBox x:Name="MeterBox" Classes="lcd" Text="{Binding MeterText, Mode=OneWay}" FontSize="15" Width="40" Margin="0,1,0,1"
                          ToolTip.Tip="Time signature. Click to type, e.g. 3/4." AutomationProperties.Name="Time signature" />
                 <TextBlock Text="SIGNATURE" Classes="lcdLabel" />
+              </StackPanel>
+              <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
+              <StackPanel x:Name="LoopFields" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Classes.loopOff="{Binding !Loop.IsEnabled}">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBox x:Name="LoopStartBox" Classes="lcd" Text="{Binding Loop.StartText, Mode=OneWay}" FontSize="13" Width="62" Margin="0,3,0,2" PlaceholderText="–"
+                           ToolTip.Tip="Loop start as bar.beat.tick. Type a position; the length stays." AutomationProperties.Name="Loop start" />
+                  <TextBlock Text="LOOP START" Classes="lcdLabel" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBox x:Name="LoopLengthBox" Classes="lcd" Text="{Binding Loop.LengthText, Mode=OneWay}" FontSize="13" Width="62" Margin="0,3,0,2" PlaceholderText="–"
+                           ToolTip.Tip="Loop length as bars.beats.ticks (or ticks with a t suffix). The start stays." AutomationProperties.Name="Loop length" />
+                  <TextBlock Text="LENGTH" Classes="lcdLabel" />
+                </StackPanel>
               </StackPanel>
               <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
               <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">

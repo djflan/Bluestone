@@ -312,7 +312,7 @@ public sealed class TimelineView : Control
         }
 
         TimeGrid.DrawLines(context, sequence, PixelsPerQuarter, 0, new Rect(left, 0, right - left, Bounds.Height));
-        TimeGrid.ShadeCycle(context, sequence, project.Loop, PixelsPerQuarter, 0, new Rect(left, 0, right - left, Bounds.Height));
+        TimeGrid.ShadeCycle(context, sequence, project.Loop.Active, PixelsPerQuarter, 0, new Rect(left, 0, right - left, Bounds.Height));
 
         _moving.Clear();
         for (var lane = 0; lane < lanes; lane++)
@@ -635,19 +635,7 @@ public sealed class TimelineView : Control
     }
 
     /// <summary>Clips snap to beats when beats are wide enough to aim at, otherwise to bars.</summary>
-    private long SnapClip(Sequence sequence, long tick)
-    {
-        var meter = sequence.MeterMap;
-        var bar = meter.BarStart(new Tick(Math.Max(0, tick)));
-        var beat = meter.SignatureAt(bar).TryGetTicksPerBeat(sequence.Ppqn, out var span) ? span.Value : sequence.Ppqn.TicksPerQuarterNote;
-        if (TickToX(beat) >= 24)
-        {
-            return bar.Value + ((long)Math.Round((tick - bar.Value) / (double)beat) * beat);
-        }
-
-        var next = meter.NextBarStart(bar);
-        return tick - bar.Value < next.Value - tick ? bar.Value : next.Value;
-    }
+    private long SnapClip(Sequence sequence, long tick) => TimeGrid.SnapAdaptive(tick, sequence, PixelsPerQuarter);
 
     private void PressAutomation(Sequence sequence, Row row, Point position, PointerPressedEventArgs e, (AutomationLaneId Lane, Tick Position)? justAdded)
     {

@@ -426,6 +426,10 @@
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="CaretBrush" Value="{StaticResource Lcd.Text}" />
   </Style>
+  <!-- The loop's fields stay readable but step back while looping is off. -->
+  <Style Selector="StackPanel.loopOff">
+    <Setter Property="Opacity" Value="0.55" />
+  </Style>
   <Style Selector="TextBox.lcd:pointerover /template/ Border#PART_BorderElement, TextBox.lcd:focus /template/ Border#PART_BorderElement">
     <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
     <Setter Property="BorderThickness" Value="0" />

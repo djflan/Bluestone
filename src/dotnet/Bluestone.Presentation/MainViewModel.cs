@@ -97,6 +97,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Mixer = new MixerViewModel(this);
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
+        Loop = new ArrangerLoopViewModel(this);
+        Arrangement.Changed += (_, _) => Loop.SelectionChanged();
+        Editor.Changed += (_, _) => Loop.SelectionChanged();
         AudioClip = new AudioClipViewModel(this);
         Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         Groups = new GroupsViewModel(this);
@@ -186,6 +189,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>The clip selection and clip edits in the arrangement.</summary>
     public ArrangementViewModel Arrangement { get; }
+
+    /// <summary>The arranger loop: its range, whether it loops, and the commands that change it.</summary>
+    public ArrangerLoopViewModel Loop { get; }
 
     /// <summary>Gain and fades of the selected audio clip.</summary>
     public AudioClipViewModel AudioClip { get; }
@@ -386,9 +392,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     public partial string MeterText { get; private set; } = "4/4";
-
-    [ObservableProperty]
-    public partial bool IsLoopEnabled { get; private set; }
 
     [ObservableProperty]
     public partial string TimingText { get; private set; } = "Idle";
@@ -687,7 +690,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (IsRecording && _playback.Recorder.RecordingTrack is { } recording)
         {
             RecordingLane = Tracks.IndexOf(Tracks.FirstOrDefault(t => t.Id == recording)!);
-            RecordingPreview = _playback.Recorder.Preview(tick, Project.Loop);
+            RecordingPreview = _playback.Recorder.Preview(tick, Project.Loop.Active);
         }
         else if (RecordingLane >= 0 || RecordingPreview.Count > 0)
         {
@@ -1100,26 +1103,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         AddMessage(MessageSeverity.Info, "Panic", "Sent All Notes Off, All Sound Off, and sustain off on every channel of every output.");
     }
 
-    /// <summary>Sets the loop (cycle) range, or turns it off with null, e.g. from the ruler.</summary>
-    public void SetLoop(TickRange? loop) => Execute(ProjectCommands.SetLoop(loop));
-
-    /// <summary>Turns the loop off, or loops four bars starting at the bar containing the playhead.</summary>
-    [RelayCommand]
-    private void ToggleLoop()
-    {
-        if (Project.Loop is not null)
-        {
-            Execute(ProjectCommands.SetLoop(null));
-            return;
-        }
-
-        var meter = Project.Sequence.MeterMap;
-        var start = meter.BarStart(new Tick(PlayheadTick));
-        var bar = meter.ToBarBeatTick(start).Bar;
-        var end = meter.TryGetTick(new BarBeatTick(bar + 4, 1, 0), out var e) ? e : start + new TickSpan(16L * Project.Sequence.Ppqn.TicksPerQuarterNote);
-        Execute(ProjectCommands.SetLoop(new TickRange(start, end)));
-    }
-
     /// <summary>What <paramref name="track"/> sounds through, with its instrument's runtime status.</summary>
     internal TrackSound SoundOf(TrackId track)
     {
@@ -1279,7 +1262,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         SwitchWorkspace();
         ProjectName = Project.Name;
         IsDirty = _session.IsDirty;
-        IsLoopEnabled = Project.Loop is not null;
+        Loop.Sync();
         SyncTracks();
         SyncEditor();
         Arrangement.Sync();

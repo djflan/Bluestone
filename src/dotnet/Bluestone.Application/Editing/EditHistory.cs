@@ -61,6 +61,9 @@ public sealed class EditHistory
 
     public string? UndoLabel => _undo.Last?.Value.Label;
 
+    /// <summary>How many steps can be undone.</summary>
+    public int UndoCount => _undo.Count;
+
     public string? RedoLabel => _redo.TryPeek(out var top) ? top.Label : null;
 
     /// <summary>Raised after every change to <see cref="Current"/>.</summary>

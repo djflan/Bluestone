@@ -260,7 +260,7 @@ public sealed class PianoRollView : Control
             {
                 var local = new Rect(0, grid.Top, grid.Width, grid.Height);
                 TimeGrid.DrawLines(context, sequence, Zoom, _scrollX, local, _editor.Snap.Division);
-                TimeGrid.ShadeCycle(context, sequence, project.Loop, Zoom, _scrollX, local);
+                TimeGrid.ShadeCycle(context, sequence, project.Loop.Active, Zoom, _scrollX, local);
                 ShadeOutsideClip(context, sequence, local);
                 DrawNotes(context, sequence, track, color, local);
                 DrawRecording(context, sequence, local);
@@ -291,7 +291,7 @@ public sealed class PianoRollView : Control
         using (context.PushClip(new Rect(KeyboardWidth, 0, GridWidth, RulerHeight)))
         using (context.PushTransform(Matrix.CreateTranslation(KeyboardWidth, 0)))
         {
-            TimeGrid.DrawRuler(context, sequence, project.Loop, Zoom, _scrollX, new Rect(0, 0, GridWidth, RulerHeight), PlayheadTick, IsRecording);
+            TimeGrid.DrawRuler(context, sequence, LoopStripVisual.Of(project.Loop), Zoom, _scrollX, new Rect(0, 0, GridWidth, RulerHeight), PlayheadTick, IsRecording);
         }
 
         context.FillRectangle(Corner, new Rect(0, 0, KeyboardWidth, RulerHeight));

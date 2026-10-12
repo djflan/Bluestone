@@ -34,7 +34,7 @@ public sealed class ProjectSerializerTests
         var text = Encoding.UTF8.GetString(first);
 
         Assert.Equal(first, Serializer.Serialize(document));
-        Assert.StartsWith("{\n  \"format\": \"bluestone-project\",\n  \"formatVersion\": 4,", text, StringComparison.Ordinal);
+        Assert.StartsWith("{\n  \"format\": \"bluestone-project\",\n  \"formatVersion\": 5,", text, StringComparison.Ordinal);
         Assert.Contains("\"bytes\": \"F0 43 10 4C 00 00 7E 00 F7\"", text, StringComparison.Ordinal);
         Assert.Contains("\"channel\": 2", text, StringComparison.Ordinal);
         Assert.EndsWith("}\n", text, StringComparison.Ordinal);

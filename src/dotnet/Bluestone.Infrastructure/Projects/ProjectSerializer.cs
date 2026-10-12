@@ -21,7 +21,7 @@ namespace Bluestone.Infrastructure.Projects;
 public sealed class ProjectSerializer
 {
     public const string FormatName = "bluestone-project";
-    public const int CurrentFormatVersion = 4;
+    public const int CurrentFormatVersion = 5;
     public const int MaxBytes = 256 * 1024 * 1024;
 
     private const int MaxTracks = 4096;
@@ -37,7 +37,7 @@ public sealed class ProjectSerializer
     private readonly Dictionary<int, IProjectMigration> _migrations;
 
     public ProjectSerializer()
-        : this(CurrentFormatVersion, [new Format2To3Migration(), new Format3To4Migration()])
+        : this(CurrentFormatVersion, [new Format2To3Migration(), new Format3To4Migration(), new Format4To5Migration()])
     {
     }
 
@@ -62,11 +62,12 @@ public sealed class ProjectSerializer
             writer.WriteStartObject("project");
             writer.WriteString("id", project.Id.Value.ToString("D"));
             writer.WriteString("name", project.Name);
-            if (project.Loop is { } loop)
+            if (project.Loop.Range is { } loop)
             {
                 writer.WriteStartObject("loop");
                 writer.WriteNumber("start", loop.Start.Value);
                 writer.WriteNumber("end", loop.End.Value);
+                writer.WriteBoolean("enabled", project.Loop.IsEnabled);
                 writer.WriteEndObject();
             }
 
@@ -727,12 +728,13 @@ public sealed class ProjectSerializer
     {
         const string path = "$.project";
         var sequence = ReadSequence(Object(json, "sequence", path));
-        TickRange? loop = null;
+        var loop = ArrangerLoop.None;
         if (OptionalObject(json, "loop", path) is { } loopJson)
         {
             var start = Long(loopJson, "start", $"{path}.loop", 0, long.MaxValue);
             var end = Long(loopJson, "end", $"{path}.loop", 0, long.MaxValue);
-            loop = end > start ? new TickRange(new Tick(start), new Tick(end)) : throw new ProjectFormatException($"{path}.loop", "must end after it starts.");
+            var range = end > start ? new TickRange(new Tick(start), new Tick(end)) : throw new ProjectFormatException($"{path}.loop", "must end after it starts.");
+            loop = new ArrangerLoop(range, Bool(loopJson, "enabled", $"{path}.loop", false));
         }
 
         var instruments = Array(json, "instruments", path, MaxInstruments).Select((node, i) => ReadInstrument(Object(node, $"{path}.instruments[{i}]"), $"{path}.instruments[{i}]")).ToList();

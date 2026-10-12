@@ -147,9 +147,6 @@ public static class ProjectCommands
     public static IProjectCommand SetTrackOutput(TrackId track, TrackOutput output, DeviceDefinitionLookup? definitions = null) =>
         RoutingGuard.Command("Change Routing", definitions ?? BuiltInDevices.Find, p => Equals(TrackOutputs.Read(p, track), output) ? p : TrackOutputs.Write(p, track, output));
 
-    public static IProjectCommand SetLoop(TickRange? loop) =>
-        new ProjectCommand(loop is null ? "Clear Loop" : "Set Loop", p => Equals(p.Loop, loop) ? p : p with { Loop = loop });
-
     /// <summary>Sets the tempo in effect from <paramref name="position"/> onward.</summary>
     public static IProjectCommand SetTempo(Tick position, Tempo tempo) =>
         new ProjectCommand("Change Tempo", p => p.Sequence.TempoMap.TempoAt(position) == tempo && p.Sequence.TempoMap.Changes.Any(c => c.Position == position)

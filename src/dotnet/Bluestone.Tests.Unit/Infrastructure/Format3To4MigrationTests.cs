@@ -90,7 +90,7 @@ public sealed class Format3To4MigrationTests
     {
         var original = RoutingFull();
         var saved = ProjectSerializer.Default.Serialize(new ProjectDocument(original));
-        Assert.Equal(4, (int)JsonNode.Parse(saved)!["formatVersion"]!);
+        Assert.Equal(ProjectSerializer.CurrentFormatVersion, (int)JsonNode.Parse(saved)!["formatVersion"]!);
         Assert.Null(JsonNode.Parse(saved)!["project"]!["routing"]);
 
         var reopened = ProjectSerializer.Default.Deserialize(saved).Project;

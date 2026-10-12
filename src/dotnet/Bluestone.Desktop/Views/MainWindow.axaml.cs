@@ -44,7 +44,9 @@ public partial class MainWindow : Window
         InspectorContent.Attach(viewModel);
         AttachSettings(viewModel);
         Ruler.SeekRequested += (_, tick) => viewModel.SeekTo(tick);
-        Ruler.LoopRequested += (_, loop) => viewModel.SetLoop(loop);
+        Ruler.LoopRangeRequested += (_, request) => viewModel.Loop.SetRange(request.Range, request.Enable, request.Label);
+        Ruler.LoopToggleRequested += (_, _) => viewModel.Loop.ToggleCommand.Execute(null);
+        Ruler.LoopNudgeRequested += (_, ticks) => viewModel.Loop.Nudge(ticks);
         Timeline.LaneClicked += (_, click) =>
         {
             viewModel.Arrangement.ClearSelection();
@@ -115,6 +117,8 @@ public partial class MainWindow : Window
 
         TempoBox.LostFocus += (_, _) => viewModel.CommitTempo(TempoBox.Text ?? string.Empty);
         MeterBox.LostFocus += (_, _) => viewModel.CommitMeter(MeterBox.Text ?? string.Empty);
+        LoopStartBox.LostFocus += (_, _) => CommitLoopField(LoopStartBox, viewModel.Loop.StartText, viewModel.Loop.CommitStart);
+        LoopLengthBox.LostFocus += (_, _) => CommitLoopField(LoopLengthBox, viewModel.Loop.LengthText, viewModel.Loop.CommitLength);
 
         var command = CommandModifier;
         var nativeMenuBar = UseNativeMenuBar;
@@ -570,6 +574,22 @@ public partial class MainWindow : Window
         TimelineScroller.Offset = new Vector(Math.Max(0, x), TimelineScroller.Offset.Y);
     }
 
+    // Commits a loop field when its text changed; a field left as it was (or emptied) changes nothing.
+    private static void CommitLoopField(TextBox box, string shown, Func<string, bool> commit)
+    {
+        var text = box.Text?.Trim() ?? string.Empty;
+        if (text.Length == 0 || text == shown)
+        {
+            box.Text = shown;
+            return;
+        }
+
+        if (!commit(text))
+        {
+            box.Text = shown;
+        }
+    }
+
     private void OnFrame()
     {
         if (_viewModel is not { } vm)
@@ -636,6 +656,7 @@ public partial class MainWindow : Window
         Bind(Key.E, command, vm.ExportMidiCommand);
         Bind(Key.T, command, vm.AddTrackCommand);
         Bind(Key.G, command, vm.Groups.GroupSelectedCommand);
+        Bind(Key.L, command, vm.Loop.LoopSelectionCommand);
         Bind(Key.OemPlus, command, vm.ZoomInCommand);
         Bind(Key.OemMinus, command, vm.ZoomOutCommand);
         Bind(Key.OemComma, command, new CommunityToolkit.Mvvm.Input.RelayCommand(() => ShowSettings()));
@@ -937,7 +958,7 @@ public partial class MainWindow : Window
             (Key.End, KeyModifiers.None) => vm.GoToEndCommand,
             (Key.OemComma, KeyModifiers.None) => vm.PreviousBarCommand,
             (Key.OemPeriod, KeyModifiers.None) => vm.NextBarCommand,
-            (Key.L, KeyModifiers.None) => vm.ToggleLoopCommand,
+            (Key.L, KeyModifiers.None) => vm.Loop.ToggleCommand,
             (Key.M, KeyModifiers.None) => vm.ToggleMuteCommand,
             (Key.S, KeyModifiers.None) => vm.ToggleSoloCommand,
             (Key.I, KeyModifiers.None) => vm.ToggleInspectorCommand,
@@ -1124,11 +1145,14 @@ public partial class MainWindow : Window
                 track.Name = editing.Text.Trim();
             }
         }
-        else if (editing == TempoBox || editing == MeterBox)
+        else if (editing == TempoBox || editing == MeterBox || editing == LoopStartBox || editing == LoopLengthBox)
         {
             if (e.Key == Key.Escape)
             {
-                editing.Text = editing == TempoBox ? vm.TempoText : vm.MeterText;
+                editing.Text = editing == TempoBox ? vm.TempoText
+                    : editing == MeterBox ? vm.MeterText
+                    : editing == LoopStartBox ? vm.Loop.StartText
+                    : vm.Loop.LengthText;
             }
         }
         else if (editing.Classes.Contains("commit") && e.Key == Key.Escape)
