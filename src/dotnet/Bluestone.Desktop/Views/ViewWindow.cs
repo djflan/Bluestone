@@ -26,13 +26,7 @@ public sealed class ViewWindow : Window
         Background = Brush("Surface.Base");
         ShowInTaskbar = false;
         Content = content;
-        view.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(WorkspaceView.Title))
-            {
-                Title = $"{view.Title} — Bluestone";
-            }
-        };
+        view.PropertyChanged += OnViewPropertyChanged;
     }
 
     public WorkspaceView View { get; }
@@ -51,6 +45,22 @@ public sealed class ViewWindow : Window
         {
             // Closing a detached window puts the view back where it lives in the main window.
             View.DockCommand.Execute(null);
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+
+        // The view outlives its window: a view detached and docked again and again must not keep every closed window alive.
+        View.PropertyChanged -= OnViewPropertyChanged;
+    }
+
+    private void OnViewPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WorkspaceView.Title))
+        {
+            Title = $"{View.Title} — Bluestone";
         }
     }
 

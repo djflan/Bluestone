@@ -208,6 +208,30 @@ public sealed class DeviceViewTests
         Assert.True(second.IsDocked);
     });
 
+    [Fact]
+    public Task DetachingAndDockingAViewRepeatedly_LeavesNoClosedWindowSubscribedToIt() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.Workspace.NewDeviceView();
+        app.Settle();
+        var handlers = typeof(CommunityToolkit.Mvvm.ComponentModel.ObservableObject)
+            .GetField(nameof(view.PropertyChanged), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        int Subscribers() => (handlers.GetValue(view) as Delegate)?.GetInvocationList().Length ?? 0;
+        var docked = Subscribers();
+
+        for (var i = 0; i < 3; i++)
+        {
+            view.DetachCommand.Execute(null);
+            app.Settle();
+            Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+            view.DockCommand.Execute(null);
+            app.Settle();
+            Assert.Empty(app.Window.OwnedWindows.OfType<ViewWindow>());
+        }
+
+        Assert.Equal(docked, Subscribers());
+    });
+
     [Theory]
     [InlineData(1280, 800, "laptop")]
     [InlineData(1920, 1080, "desktop")]

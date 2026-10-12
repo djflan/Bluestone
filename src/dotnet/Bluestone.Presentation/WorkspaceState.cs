@@ -270,13 +270,38 @@ public sealed class WorkspaceStore
         try
         {
             var state = JsonSerializer.Deserialize<WorkspaceState>(json, Json);
-            return state is { Version: WorkspaceState.CurrentVersion } ? state : null;
+            return state is { Version: WorkspaceState.CurrentVersion } && IsWellFormed(state) ? state : null;
         }
         catch (JsonException)
         {
             return null;
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="state"/> has everything applying it relies on: JSON can null out or omit what the records
+    /// default, and name enum values that do not exist, so a hand-edited or damaged file is caught here rather than when applied.
+    /// </summary>
+    private static bool IsWellFormed(WorkspaceState state) =>
+        state.Browser is { Search: not null } browser && Enum.IsDefined(browser.Category)
+        && Enum.IsDefined(state.DetailPane)
+        && double.IsFinite(state.LeftExtent) && double.IsFinite(state.RightExtent) && double.IsFinite(state.DetailExtent)
+        && AreWellFormed(state.MainWindow)
+        && !state.Views.IsDefault
+        && state.Views.All(IsWellFormed)
+        && state.Views.Select(v => v.Id).Distinct(StringComparer.Ordinal).Count() == state.Views.Length;
+
+    private static bool IsWellFormed(ViewState? view) =>
+        view is not null
+        && !string.IsNullOrEmpty(view.Id)
+        && Enum.IsDefined(view.Kind)
+        && Enum.IsDefined(view.Placement)
+        && AreWellFormed(view.DetachedBounds)
+        && (view.Device is null || (!view.Device.Collapsed.IsDefault && double.IsFinite(view.Device.ScrollOffset)));
+
+    private static bool AreWellFormed(ImmutableDictionary<string, WindowBounds>? bounds) =>
+        bounds is not null
+        && bounds.Values.All(b => double.IsFinite(b.X) && double.IsFinite(b.Y) && double.IsFinite(b.Width) && double.IsFinite(b.Height) && b.Width > 0 && b.Height > 0);
 
     private static WorkspaceState? Read(string path)
     {

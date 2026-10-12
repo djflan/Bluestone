@@ -405,6 +405,34 @@ public sealed class WorkspaceTests : IAsyncLifetime
         Assert.Null(WorkspaceStore.Deserialize("""{ "version": 99 }"""));
     }
 
+    [Theory]
+    [InlineData("""{ "version": 1, "browser": null }""")]
+    [InlineData("""{ "version": 1, "views": null }""")]
+    [InlineData("""{ "version": 1, "views": [null] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": null, "kind": "DeviceView", "placement": "Docked" }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "", "kind": "DeviceView", "placement": "Docked" }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "device-view-1", "kind": 7, "placement": "Docked" }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "device-view-1", "kind": "DeviceView", "placement": 9 }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "device-view-1", "kind": "DeviceView", "placement": "Docked", "detachedBounds": null }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "device-view-1", "kind": "DeviceView", "placement": "Docked", "detachedBounds": { "a": null } }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "device-view-1", "kind": "DeviceView", "placement": "Docked", "device": { "collapsed": null } }] }""")]
+    [InlineData("""{ "version": 1, "views": [{ "id": "device-view-1", "kind": "DeviceView", "placement": "Docked" }, { "id": "device-view-1", "kind": "DeviceView", "placement": "Docked" }] }""")]
+    [InlineData("""{ "version": 1, "mainWindow": null }""")]
+    [InlineData("""{ "version": 1, "mainWindow": { "a": { "x": 0, "y": 0, "width": -5, "height": 600 } } }""")]
+    [InlineData("""{ "version": 1, "browser": { "search": null } }""")]
+    [InlineData("""{ "version": 1, "browser": { "category": 42 } }""")]
+    [InlineData("""{ "version": 1, "detailPane": 42 }""")]
+    public async Task ACorruptStateFile_IsIgnored_RatherThanFailingWhenApplied(string json)
+    {
+        Assert.Null(WorkspaceStore.Deserialize(json));
+
+        var defaults = _vm.LayoutStore!.DefaultsPath;
+        Directory.CreateDirectory(Path.GetDirectoryName(defaults)!);
+        await File.WriteAllTextAsync(defaults, json, TestContext.Current.CancellationToken);
+        _vm.RestoreLayout();
+        Assert.NotEmpty(_vm.Workspace.DeviceViews);
+    }
+
     [Fact]
     public void LayoutRecovery_NeverRestoresOffScreen_AndPrefersTheLayoutForThisDisplaySetup()
     {
