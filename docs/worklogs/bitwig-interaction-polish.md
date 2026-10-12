@@ -322,6 +322,9 @@ After commits `404f59f` and `97ae6cd`. Fixed in the clip-loop UI commit unless n
   checked with an isolated toolchain under `/tmp` (`cargo clippy --locked -p bluestone_plugin_host --all-targets
   --target x86_64-pc-windows-msvc` and `x86_64-unknown-linux-gnu`, `-D warnings`), which caught one Linux-only
   dead-code warning. Nothing was run on Windows or Linux.
+- **Narrow transport**: the loop start and length fields first pushed the undo button (1100 px) and the File menu and
+  redo (1280 px) out of the top bar, caught while inspecting the frames. The fields now show from 1400 px; narrower,
+  the loop button's tooltip and the ruler's readout give the range (`MainWindow.NarrowTransportWidth`).
 - **Tick resolution**: new projects use 960 PPQN; some older tests assume 480. New tests derive bar lengths from the
   project.
 

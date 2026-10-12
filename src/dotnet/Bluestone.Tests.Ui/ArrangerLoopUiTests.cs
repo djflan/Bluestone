@@ -212,5 +212,19 @@ public sealed class ArrangerLoopUiTests
         Assert.True(File.Exists(app.SaveFrame("loop-moving")));
         app.Window.MouseUp(to, MouseButton.Left);
         app.Settle();
+
+        // Hold a resize of the start edge, with the edge's grip and the readout.
+        var range = app.Session.Project.Loop.Range!;
+        var edge = app.InWindow(ruler, new Point(X(app, ruler, range.Start.Value), StripY));
+        var further = app.InWindow(ruler, new Point(X(app, ruler, range.Start.Value - bar), StripY));
+        app.Window.MouseMove(edge);
+        app.Window.MouseDown(edge, MouseButton.Left);
+        app.Window.MouseMove(further, RawInputModifiers.LeftMouseButton);
+        app.Settle();
+        Assert.True(File.Exists(app.SaveFrame("loop-resizing")));
+        app.Window.MouseUp(further, MouseButton.Left);
+        app.Settle();
+        Assert.Equal(range.End, app.Session.Project.Loop.Range!.End);
+        Assert.True(app.Session.Project.Loop.Range!.Start < range.Start, "The start edge moved earlier.");
     });
 }

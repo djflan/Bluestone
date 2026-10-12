@@ -329,6 +329,13 @@ public sealed class ChainDragTests
         Assert.Equal($"Event Filter with {Sine.DisplayName}", AppUnderTest.Within<TextBlock>(docked, t => t.Name == "ReplaceDetail").Text);
         app.SaveFrame("replace-overlay");
 
+        // Near a panel's edge the same drag inserts instead: the gap marker shows and the overlay goes.
+        var nearEdge = AfterLastPanel(app, docked);
+        app.Window.DragDrop(nearEdge, RawDragEventType.DragOver, drag.Transfer, drag.Allowed);
+        Assert.False(overlay.IsVisible);
+        Assert.True(AppUnderTest.Within<Border>(docked, b => b.Name == "InsertionMarker").IsVisible);
+        app.SaveFrame("insert-marker");
+
         var effect = source.DropAt(drag, app.Window, middle);
         RecordingDragSource.Finish(drag, effect);
         FinishGesture(app.Window, released);

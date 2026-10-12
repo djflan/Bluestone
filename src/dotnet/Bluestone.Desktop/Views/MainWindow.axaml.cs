@@ -20,6 +20,9 @@ public partial class MainWindow : Window
     private bool _keyboardToggleHeld;
     private ClipId? _renamingClip;
     private bool _closeConfirmed;
+
+    // Below this window width the transport display drops the loop's start and length fields.
+    private const double NarrowTransportWidth = 1400;
     private bool _syncingScroll;
     private readonly Dictionary<WorkspaceView, ViewWindow> _detached = [];
 
@@ -118,6 +121,8 @@ public partial class MainWindow : Window
 
         TempoBox.LostFocus += (_, _) => viewModel.CommitTempo(TempoBox.Text ?? string.Empty);
         MeterBox.LostFocus += (_, _) => viewModel.CommitMeter(MeterBox.Text ?? string.Empty);
+        // The transport's loop fields need room; in a narrow window the loop button's tooltip and the ruler give the range.
+        SizeChanged += (_, e) => LoopFields.IsVisible = e.NewSize.Width >= NarrowTransportWidth;
         LoopStartBox.LostFocus += (_, _) => CommitLoopField(LoopStartBox, viewModel.Loop.StartText, viewModel.Loop.CommitStart);
         LoopLengthBox.LostFocus += (_, _) => CommitLoopField(LoopLengthBox, viewModel.Loop.LengthText, viewModel.Loop.CommitLength);
 

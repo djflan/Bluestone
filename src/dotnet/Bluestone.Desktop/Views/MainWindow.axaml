@@ -152,7 +152,7 @@
                   <TextBlock Text="LENGTH" Classes="lcdLabel" />
                 </StackPanel>
               </StackPanel>
-              <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
+              <Border x:Name="LoopFieldsRule" Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" IsVisible="{Binding #LoopFields.IsVisible}" />
               <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
                 <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputIdle}" IsVisible="{Binding !HasInputActivity}" />
                 <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputActive}" IsVisible="{Binding HasInputActivity}" />
