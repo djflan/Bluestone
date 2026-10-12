@@ -88,7 +88,17 @@ public partial class MainWindow
     /// <paramref name="command"/>, closing Settings first when it is open: a shortcut or menu item that edits the project or
     /// changes the workspace brings the workspace back, so nothing changes behind Settings unseen.
     /// </summary>
-    internal ICommand InWorkspace(ICommand command) => new ReturningCommand(command, Settings);
+    internal ICommand InWorkspace(ICommand command) => new ReturningCommand(command, () => Settings.IsOpen, Settings.Close);
+
+    /// <summary>
+    /// <paramref name="command"/> (cut, copy, paste, select all), which edits text in a Settings field where it is, and otherwise
+    /// brings the workspace back before it acts on tracks, clips, or notes.
+    /// </summary>
+    internal ICommand InWorkspaceUnlessEditingText(ICommand command) =>
+        new ReturningCommand(
+            command,
+            () => Settings.IsOpen && !(FocusManager?.GetFocusedElement() is TextBox field && field.GetVisualAncestors().Contains(SettingsHost)),
+            Settings.Close);
 
     private void OnAudioSettingsClick(object? sender, RoutedEventArgs e) => ShowAudioSettings();
 
@@ -109,8 +119,8 @@ public partial class MainWindow
     }
 }
 
-/// <summary>A command that closes Settings before running another.</summary>
-internal sealed class ReturningCommand(ICommand inner, SettingsViewModel settings) : ICommand
+/// <summary>A command that runs <paramref name="leave"/> (closing Settings) before another, when <paramref name="shouldLeave"/> says so.</summary>
+internal sealed class ReturningCommand(ICommand inner, Func<bool> shouldLeave, Action leave) : ICommand
 {
     public event EventHandler? CanExecuteChanged
     {
@@ -122,7 +132,11 @@ internal sealed class ReturningCommand(ICommand inner, SettingsViewModel setting
 
     public void Execute(object? parameter)
     {
-        settings.Close();
+        if (shouldLeave())
+        {
+            leave();
+        }
+
         inner.Execute(parameter);
     }
 }

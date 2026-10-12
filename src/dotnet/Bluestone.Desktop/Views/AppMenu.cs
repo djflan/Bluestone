@@ -148,7 +148,10 @@ internal static class AppMenu
 
     /// <summary>Items that act within Settings or the window itself, so they leave Settings open.</summary>
     private static readonly HashSet<string> SettingsSafe =
-        ["Close Window", "Cut", "Copy", "Paste", "Select All", "Minimize", "Zoom", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
+        ["Close Window", "Minimize", "Zoom", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
+
+    /// <summary>Items that edit a focused Settings field where it is, and otherwise act on the workspace.</summary>
+    private static readonly HashSet<string> TextEditing = ["Cut", "Copy", "Paste", "Select All"];
 
     /// <summary>
     /// Makes every workspace and project item close Settings as it runs, so nothing changes behind it unseen (the window's own
@@ -169,7 +172,7 @@ internal static class AppMenu
         // Every leaf item carries a command (Item and Check make one), so Settings closes before it runs.
         if (item.Command is { } command)
         {
-            item.Command = window.InWorkspace(command);
+            item.Command = TextEditing.Contains(header) ? window.InWorkspaceUnlessEditingText(command) : window.InWorkspace(command);
         }
     }
 

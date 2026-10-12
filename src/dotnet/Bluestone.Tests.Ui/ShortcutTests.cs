@@ -149,7 +149,7 @@ public sealed class ShortcutTests
         Assert.IsType<ReturningCommand>(Item("Edit", "Undo").Command);
         Assert.IsType<ReturningCommand>(Item("Edit", "Rename Clip    Return").Command);
         Assert.IsType<ReturningCommand>(Item("View", "Inspector    I").Command);
-        Assert.IsNotType<ReturningCommand>(Item("Edit", "Copy").Command);
+        Assert.IsNotType<ReturningCommand>(Item("Window", "Minimize").Command);
 
         // A project command run while Settings is open brings the workspace back first.
         app.Window.ShowSettings();

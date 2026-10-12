@@ -276,6 +276,7 @@ public sealed class TrackSetupTests
         history.Execute(DeviceCommands.InsertDevice(bass.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
 
         Assert.Equal(SignalNode.Track(group), Assert.Single(AudioFrom(history.Current, bass.Id)).Destination);
+        Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, group)).Destination);
         Assert.Contains(history.Current.ParkedConnections, c => c.Kind == SignalKind.Audio && c.Source == SignalNode.Track(bass.Id) && c.Destination == SignalNode.Master);
 
         history.Execute(GroupCommands.SetGroup(bass.Id, null, Definitions));

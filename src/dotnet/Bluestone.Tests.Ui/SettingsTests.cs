@@ -176,6 +176,28 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
+    public Task SelectAll_EditsTheFocusedSettingsField_ButOtherwiseReturnsToTheWorkspaceFirst() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync(nativeMenuBar: true);
+        var menu = NativeMenu.GetMenu(app.Window)!;
+        var selectAll = menu.Items.OfType<NativeMenuItem>().Single(i => i.Header == "Edit").Menu!.Items.OfType<NativeMenuItem>().Single(i => i.Header == "Select All");
+        app.Window.ShowSettings();
+        await app.SettleTransitionsAsync();
+        var search = AppUnderTest.Within<TextBox>(app.Find<SettingsView>("SettingsHost"), t => t.Name == "SearchBox");
+
+        search.Focus();
+        app.Settle();
+        selectAll.Command!.Execute(null);
+        Assert.True(app.Window.Settings.IsOpen);
+
+        var done = AppUnderTest.Within<Button>(app.Find<SettingsView>("SettingsHost"), b => b.Name == "CloseSettingsButton");
+        Assert.True(done.Focus());
+        app.Settle();
+        selectAll.Command!.Execute(null);
+        Assert.False(app.Window.Settings.IsOpen);
+    });
+
+    [Fact]
     public Task AnEmptyInstrumentsCategory_LeadsToThePluginSettings() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();

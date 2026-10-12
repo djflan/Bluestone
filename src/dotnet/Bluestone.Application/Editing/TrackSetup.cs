@@ -69,7 +69,10 @@ public static class TrackSetup
             parked = parked.Add(SignalConnection.Create(SignalKind.Audio, output, SignalNode.Master));
         }
 
-        return project with { Sequence = sequence, Connections = project.Connections.Add(connection), ParkedConnections = parked };
+        var result = project with { Sequence = sequence, Connections = project.Connections.Add(connection), ParkedConnections = parked };
+
+        // A group made from silent tracks has no audio output of its own: give it one too, so the member is heard.
+        return destination.Kind == SignalNodeKind.Track ? WithAudioPath(result, destination.AsTrack()) : result;
     }
 
     /// <summary>
