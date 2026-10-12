@@ -41,7 +41,11 @@ public sealed class ViewWindow : Window
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);
-        if (!_closingFromLayout && !e.Cancel && View.IsDetached)
+
+        // Only closing this window itself docks the view. When the main window (its owner) closes, or the app quits (⌘Q, the
+        // app menu's Quit, logging out), the window is asked too, first; the view must stay detached so the layout saved
+        // when the main window has closed keeps it, and so a quit cancelled at the unsaved-changes prompt changes nothing.
+        if (!_closingFromLayout && !e.Cancel && View.IsDetached && e.CloseReason == WindowCloseReason.WindowClosing)
         {
             // Closing a detached window puts the view back where it lives in the main window.
             View.DockCommand.Execute(null);
