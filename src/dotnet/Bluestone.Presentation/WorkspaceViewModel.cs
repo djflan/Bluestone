@@ -379,6 +379,7 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(screens);
+        state = state.Upgrade(screens);
         foreach (var view in Views.Where(v => v.CanClose).ToList())
         {
             Views.Remove(view);
@@ -424,6 +425,19 @@ public sealed partial class WorkspaceViewModel : ObservableObject
         _owner.SyncDeviceViews();
         _owner.LowerPane = state.DetailPane;
         _owner.IsEditorVisible = state.IsDetailVisible;
+    }
+
+    /// <summary>
+    /// Re-checks the views waiting for a missing display after the attached displays changed: a view whose saved window lands on
+    /// one of <paramref name="screens"/> again is detached once more, back where it was.
+    /// </summary>
+    public void ReattachAwaitingViews(IReadOnlyList<ScreenArea> screens)
+    {
+        ArgumentNullException.ThrowIfNull(screens);
+        foreach (var view in Views.Where(v => v.IsAwaitingDisplay && LayoutRecovery.Restore(v.DetachedBounds, screens) is not null).ToList())
+        {
+            Place(view, ViewPlacement.Detached);
+        }
     }
 
     /// <summary>Called when the inspector is shown or hidden by its own toggle, so the rail matches.</summary>

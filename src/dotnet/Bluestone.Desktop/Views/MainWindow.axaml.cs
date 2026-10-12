@@ -157,11 +157,30 @@ public partial class MainWindow : Window
         vm.RestoreLayout();
         RestoreBounds(vm.Workspace);
         SyncDetachedWindows();
+        if (Screens is { } screens)
+        {
+            // A monitor plugged back in brings back the detached windows that were waiting for it.
+            screens.Changed += OnScreensChanged;
+            Closed += (_, _) => screens.Changed -= OnScreensChanged;
+        }
     }
+
+    private void OnScreensChanged(object? sender, EventArgs e) => _viewModel?.Workspace.ReattachAwaitingViews(CurrentScreens());
 
     /// <summary>The working areas of the attached displays, in the units windows are positioned in.</summary>
     private List<ScreenArea> CurrentScreens() =>
-        Screens?.All.Select(s => new ScreenArea(s.WorkingArea.X, s.WorkingArea.Y, s.WorkingArea.Width, s.WorkingArea.Height)).ToList() ?? [];
+        Screens?.All.Select(s => new ScreenArea(s.WorkingArea.X, s.WorkingArea.Y, s.WorkingArea.Width, s.WorkingArea.Height, DesktopScalingOf(s))).ToList() ?? [];
+
+    /// <summary>
+    /// Desktop units (what window positions and display areas are in) per device-independent pixel on <paramref name="screen"/>.
+    /// Windows and Linux position windows in physical pixels, so it is the display's scaling; macOS positions them in points,
+    /// the same as device-independent pixels, on every display (Avalonia.Native's desktop scaling is always 1).
+    /// </summary>
+    private static double DesktopScalingOf(Avalonia.Platform.Screen screen) => OperatingSystem.IsMacOS() ? 1 : screen.Scaling;
+
+    /// <summary>A window's bounds in desktop units, its size included, as they are saved.</summary>
+    private static WindowBounds BoundsOf(Window window) =>
+        LayoutRecovery.Capture(window.Position.X, window.Position.Y, window.Bounds.Width, window.Bounds.Height, window.DesktopScaling);
 
     /// <summary>Puts the main window where it was on this display setup, if that is still on a display; never off-screen.</summary>
     private void RestoreBounds(WorkspaceViewModel workspace)
@@ -172,10 +191,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        var (width, height) = LayoutRecovery.WindowSize(bounds, screens);
         WindowStartupLocation = WindowStartupLocation.Manual;
         Position = new PixelPoint((int)bounds.X, (int)bounds.Y);
-        Width = Math.Max(MinWidth, bounds.Width);
-        Height = Math.Max(MinHeight, bounds.Height);
+        Width = Math.Max(MinWidth, width);
+        Height = Math.Max(MinHeight, height);
     }
 
     /// <summary>Records the main window's and detached windows' bounds under the current display setup.</summary>
@@ -190,12 +210,12 @@ public partial class MainWindow : Window
         var signature = DisplayConfiguration.Signature(screens);
         if (WindowState == WindowState.Normal)
         {
-            workspace.MainWindowBounds = workspace.MainWindowBounds.SetItem(signature, new WindowBounds(Position.X, Position.Y, Bounds.Width, Bounds.Height));
+            workspace.MainWindowBounds = workspace.MainWindowBounds.SetItem(signature, BoundsOf(this));
         }
 
         foreach (var (view, window) in _detached)
         {
-            view.RememberBounds(signature, new WindowBounds(window.Position.X, window.Position.Y, window.Bounds.Width, window.Bounds.Height));
+            view.RememberBounds(signature, BoundsOf(window));
         }
     }
 
@@ -232,10 +252,11 @@ public partial class MainWindow : Window
             var window = new ViewWindow(view, ViewWindow.Frame(view, body));
             if (screens.Count > 0 && LayoutRecovery.Restore(view.DetachedBounds, screens) is { } bounds)
             {
+                var (width, height) = LayoutRecovery.WindowSize(bounds, screens);
                 window.WindowStartupLocation = WindowStartupLocation.Manual;
                 window.Position = new PixelPoint((int)bounds.X, (int)bounds.Y);
-                window.Width = bounds.Width;
-                window.Height = bounds.Height;
+                window.Width = width;
+                window.Height = height;
             }
             else
             {
@@ -246,7 +267,7 @@ public partial class MainWindow : Window
             {
                 if (CurrentScreens() is { Count: > 0 } now)
                 {
-                    view.RememberBounds(DisplayConfiguration.Signature(now), new WindowBounds(window.Position.X, window.Position.Y, window.Bounds.Width, window.Bounds.Height));
+                    view.RememberBounds(DisplayConfiguration.Signature(now), BoundsOf(window));
                 }
             };
             _detached[view] = window;

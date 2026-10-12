@@ -7,7 +7,11 @@ using System.Text.Json.Serialization;
 
 namespace Bluestone.Presentation;
 
-/// <summary>A window's position and size in screen pixels, as the platform reports them.</summary>
+/// <summary>
+/// A window's position and size in the platform's desktop units, the ones it positions windows and reports display areas in:
+/// physical pixels on Windows and Linux, points on macOS. The size is in the same units as the position (not the window's
+/// device-independent size), so it can be compared with and fitted to a <see cref="ScreenArea"/>.
+/// </summary>
 public readonly record struct WindowBounds(double X, double Y, double Width, double Height)
 {
     [JsonIgnore]
@@ -17,8 +21,11 @@ public readonly record struct WindowBounds(double X, double Y, double Width, dou
     public double Bottom => Y + Height;
 }
 
-/// <summary>A display's working area (excluding task bars and menu bars) in screen pixels.</summary>
-public readonly record struct ScreenArea(double X, double Y, double Width, double Height)
+/// <summary>
+/// A display's working area (excluding task bars and menu bars) in desktop units, and how many desktop units a window's
+/// device-independent pixel takes there (<paramref name="Scaling"/>). Only the area identifies the display setup.
+/// </summary>
+public readonly record struct ScreenArea(double X, double Y, double Width, double Height, double Scaling = 1)
 {
     [JsonIgnore]
     public double Right => X + Width;
@@ -76,7 +83,11 @@ public sealed record BrowserState
 /// </summary>
 public sealed record WorkspaceState
 {
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// 2: window sizes are in desktop units, like positions. Version 1 saved them in device-independent pixels; such a file is
+    /// still read, and <see cref="Upgrade"/> converts it when it is applied on the displays attached then.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     public int Version { get; init; } = CurrentVersion;
 
@@ -107,6 +118,33 @@ public sealed record WorkspaceState
     {
         Views = [.. Views.Select(v => v.Device is null ? v : v with { Device = new DeviceViewState() })],
     };
+
+    /// <summary>
+    /// This state in the current version. A version 1 state's window sizes become desktop units at the scaling of the display each
+    /// window's corner is on; a window whose display is missing keeps its size, which <see cref="LayoutRecovery"/> fits anyway.
+    /// </summary>
+    public WorkspaceState Upgrade(IReadOnlyList<ScreenArea> screens)
+    {
+        ArgumentNullException.ThrowIfNull(screens);
+        if (Version >= CurrentVersion)
+        {
+            return this;
+        }
+
+        ImmutableDictionary<string, WindowBounds> Scale(ImmutableDictionary<string, WindowBounds> saved) =>
+            saved.ToImmutableDictionary(p => p.Key, p =>
+            {
+                var scaling = LayoutRecovery.ScalingAt(p.Value.X, p.Value.Y, screens);
+                return p.Value with { Width = p.Value.Width * scaling, Height = p.Value.Height * scaling };
+            });
+
+        return this with
+        {
+            Version = CurrentVersion,
+            MainWindow = Scale(MainWindow),
+            Views = [.. Views.Select(v => v with { DetachedBounds = Scale(v.DetachedBounds) })],
+        };
+    }
 }
 
 /// <summary>Identifies the set of displays attached, so a layout made for two monitors is not lost while working on one.</summary>
@@ -198,6 +236,36 @@ public static class LayoutRecovery
         return new WindowBounds(x, y, width, height);
     }
 
+    /// <summary>
+    /// The bounds of a window at <paramref name="x"/>, <paramref name="y"/> (desktop units) whose size is <paramref name="width"/> by
+    /// <paramref name="height"/> device-independent pixels, with <paramref name="desktopScaling"/> desktop units per pixel: all in
+    /// desktop units, as saved.
+    /// </summary>
+    public static WindowBounds Capture(double x, double y, double width, double height, double desktopScaling) =>
+        new(x, y, width * desktopScaling, height * desktopScaling);
+
+    /// <summary>The device-independent size to give a window placed at <paramref name="bounds"/>, on the display at its corner.</summary>
+    public static (double Width, double Height) WindowSize(WindowBounds bounds, IReadOnlyList<ScreenArea> screens)
+    {
+        var scaling = ScalingAt(bounds.X, bounds.Y, screens);
+        return (bounds.Width / scaling, bounds.Height / scaling);
+    }
+
+    /// <summary>The <see cref="ScreenArea.Scaling"/> of the display holding the point, or 1 when none does.</summary>
+    public static double ScalingAt(double x, double y, IReadOnlyList<ScreenArea> screens)
+    {
+        ArgumentNullException.ThrowIfNull(screens);
+        foreach (var screen in screens)
+        {
+            if (screen.Contains(x, y) && screen.Scaling > 0 && double.IsFinite(screen.Scaling))
+            {
+                return screen.Scaling;
+            }
+        }
+
+        return 1;
+    }
+
     /// <summary>A sensible window of <paramref name="width"/> by <paramref name="height"/> centred on the first display.</summary>
     public static WindowBounds Centered(double width, double height, IReadOnlyList<ScreenArea> screens)
     {
@@ -264,13 +332,16 @@ public sealed class WorkspaceStore
 
     public static string Serialize(WorkspaceState state) => JsonSerializer.Serialize(state, Json);
 
-    /// <summary>The state in <paramref name="json"/>, or null if it is not a workspace this version understands.</summary>
+    /// <summary>
+    /// The state in <paramref name="json"/>, or null if it is not a workspace this version understands. A version 1 state is
+    /// returned as it was saved; applying it upgrades it (<see cref="WorkspaceState.Upgrade"/>).
+    /// </summary>
     public static WorkspaceState? Deserialize(string json)
     {
         try
         {
             var state = JsonSerializer.Deserialize<WorkspaceState>(json, Json);
-            return state is { Version: WorkspaceState.CurrentVersion } && IsWellFormed(state) ? state : null;
+            return state is { Version: 1 or WorkspaceState.CurrentVersion } && IsWellFormed(state) ? state : null;
         }
         catch (JsonException)
         {

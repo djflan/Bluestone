@@ -89,8 +89,12 @@ Window bounds are stored per display configuration (`DisplayConfiguration.Signat
 areas). On restore, `LayoutRecovery` uses the bounds saved for the current configuration, otherwise any saved bounds
 still reachable on an attached display, fitted to it. A window is never placed off-screen. A detached view whose
 display is missing is shown as a rail icon (`IsAwaitingDisplay`) but is still saved as detached with its original
-bounds, so working on one display for a while does not destroy the multi-monitor layout. An unknown or unreadable
-state file is ignored.
+bounds, so working on one display for a while does not destroy the multi-monitor layout; when the displays change and
+its saved window lands on one again, it is detached again. Positions, sizes, and display areas are all kept in the
+platform's desktop units (physical pixels on Windows and Linux, points on macOS), so they compare and fit in one
+coordinate system; version 1 files, which kept sizes in device-independent pixels, are still read and converted when
+applied. An unknown, unreadable, or malformed state file (a missing or null view, ID, bounds, or Browser state) is
+ignored.
 
 ## Consequences
 

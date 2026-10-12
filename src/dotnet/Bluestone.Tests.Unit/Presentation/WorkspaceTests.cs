@@ -356,6 +356,86 @@ public sealed class WorkspaceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AViewWaitingForItsMonitor_IsDetachedAgain_WhenTheMonitorIsAttached()
+    {
+        var dual = DisplayConfiguration.Signature([Laptop, SideMonitor]);
+        var view = _vm.Workspace.NewDeviceView();
+        view.RememberBounds(dual, new WindowBounds(1600, 100, 900, 320));
+        view.DetachCommand.Execute(null);
+        await Settle();
+        var state = _vm.CaptureLayout();
+
+        await using var laptopOnly = NewViewModel();
+        await laptopOnly.InitializeAsync();
+        laptopOnly.Screens = () => [Laptop];
+        laptopOnly.ApplyLayout(state);
+        var recovered = laptopOnly.Workspace.Views.Single(v => v.Id == view.Id);
+        var changes = 0;
+        laptopOnly.Workspace.LayoutChanged += (_, _) => changes++;
+
+        // Another change that still leaves the monitor missing keeps it waiting.
+        laptopOnly.Workspace.ReattachAwaitingViews([Laptop with { Height = 880 }]);
+        Assert.True(recovered.IsAwaitingDisplay);
+        Assert.Equal(0, changes);
+
+        laptopOnly.Workspace.ReattachAwaitingViews([Laptop, SideMonitor]);
+
+        Assert.True(recovered.IsDetached);
+        Assert.False(recovered.IsAwaitingDisplay);
+        Assert.True(changes > 0);
+        Assert.Equal(new WindowBounds(1600, 100, 900, 320), LayoutRecovery.Restore(recovered.DetachedBounds, [Laptop, SideMonitor]));
+    }
+
+    [Fact]
+    public void WindowBounds_AreSavedAndFittedInDesktopUnits_SoAScaledWindowNeverOutgrowsItsDisplay()
+    {
+        // A 1.5x laptop: 2880 by 1800 pixels of working area, 1920 by 1200 device-independent pixels.
+        var scaled = new ScreenArea(0, 0, 2880, 1800, Scaling: 1.5);
+        var fits = LayoutRecovery.Capture(100, 50, 1280, 800, desktopScaling: 1.5);
+        Assert.Equal(new WindowBounds(100, 50, 1920, 1200), fits);
+        Assert.Equal((1280.0, 800.0), LayoutRecovery.WindowSize(LayoutRecovery.Fit(fits, [scaled]), [scaled]));
+
+        // A window as large as the display was: fitted in pixels, then sized in device-independent pixels, it still fits.
+        var large = LayoutRecovery.Capture(300, 200, 2000, 1300, desktopScaling: 1.5);
+        var fitted = LayoutRecovery.Fit(large, [scaled]);
+        Assert.Equal(new WindowBounds(0, 0, 2880, 1800), fitted);
+        Assert.Equal((1920.0, 1200.0), LayoutRecovery.WindowSize(fitted, [scaled]));
+    }
+
+    [Fact]
+    public async Task AVersion1StateFile_StillLoads_AndItsWindowSizesBecomeDesktopUnits()
+    {
+        var scaled = new ScreenArea(0, 0, 2880, 1800, Scaling: 1.5);
+        var single = DisplayConfiguration.Signature([scaled]);
+        var json = $$"""
+            {
+              "version": 1,
+              "views": [
+                { "id": "browser", "kind": "Browser", "placement": "Detached", "detachedBounds": { "{{single}}": { "x": 2000, "y": 100, "width": 300, "height": 600 } } },
+                { "id": "device-view-1", "kind": "DeviceView", "placement": "Docked" }
+              ],
+              "mainWindow": { "{{single}}": { "x": 10, "y": 20, "width": 1280, "height": 800 }, "elsewhere": { "x": 9000, "y": 0, "width": 1000, "height": 700 } }
+            }
+            """;
+
+        var state = WorkspaceStore.Deserialize(json)!;
+        Assert.Equal(1, state.Version);
+
+        await using var restored = NewViewModel();
+        await restored.InitializeAsync();
+        restored.Screens = () => [scaled];
+        restored.ApplyLayout(state);
+
+        Assert.Equal(new WindowBounds(10, 20, 1920, 1200), restored.Workspace.MainWindowBounds[single]);
+        Assert.Equal(new WindowBounds(9000, 0, 1000, 700), restored.Workspace.MainWindowBounds["elsewhere"]);
+        Assert.Equal(new WindowBounds(2000, 100, 450, 900), restored.Workspace.Browser.DetachedBounds[single]);
+        Assert.True(restored.Workspace.Browser.IsDetached);
+        var saved = restored.CaptureLayout();
+        Assert.Equal(WorkspaceState.CurrentVersion, saved.Version);
+        Assert.Same(saved, saved.Upgrade([scaled]));
+    }
+
+    [Fact]
     public async Task SavingTheLayout_DoesNotEditTheProject()
     {
         var before = _session.Project;
