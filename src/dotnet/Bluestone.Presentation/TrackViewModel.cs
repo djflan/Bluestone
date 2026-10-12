@@ -269,7 +269,7 @@ public sealed partial class TrackViewModel : ObservableObject
             // Notes with no instrument at all are a problem; an instrument the musician bypassed is a choice, shown as such.
             var unplayedNotes = !UsesHardware && sound.HoldsNotes && sound.Instrument is null && sound.NoteDestination is null && sound.MissingDevice is null
                 && resolved?.Live is null && !problems.Contains(RouteResolver.NoOutputProblem);
-            IReadOnlyList<string> extra = sound.MissingDevice is { } missing && !UsesHardware
+            IReadOnlyList<string> extra = sound.MissingDevice is { } missing
                 ? [MissingDeviceProblem(missing)]
                 : unplayedNotes ? [NoInstrumentProblem] : [];
             Problems = [.. problems, .. extra];
@@ -279,7 +279,7 @@ public sealed partial class TrackViewModel : ObservableObject
                 _ when UsesHardware => resolved switch
                 {
                     { CanPlay: false, Live: null } => RouteHealth.Offline,
-                    { Problems.Length: > 0 } => RouteHealth.Attention,
+                    _ when Problems.Count > 0 || sound.IsInstrumentUnavailable => RouteHealth.Attention,
                     _ => RouteHealth.Ready,
                 },
                 _ when problems.Contains(RouteResolver.NoOutputProblem) => RouteHealth.Offline,

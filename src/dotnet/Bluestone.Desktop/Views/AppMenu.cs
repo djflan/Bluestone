@@ -40,7 +40,7 @@ internal static class AppMenu
         }
 
         var editor = vm.Editor;
-        NativeMenu.SetMenu(window,
+        NativeMenuItem[] menus =
         [
             Submenu("File",
                 Item("New Project", vm.NewProjectCommand, Cmd(Key.N)),
@@ -137,7 +137,43 @@ internal static class AppMenu
             Submenu("Help",
                 Item("Keyboard Shortcuts", window.ShowShortcuts, Cmd(Key.OemQuestion)),
                 Item("Bluestone Help", () => _ = window.Launcher.LaunchUriAsync(new Uri(HelpUrl)))),
-        ]);
+        ];
+        foreach (var menu in menus)
+        {
+            ReturnToWorkspace(menu, window);
+        }
+
+        NativeMenu.SetMenu(window, [.. menus]);
+    }
+
+    /// <summary>Items that act within Settings or the window itself, so they leave Settings open.</summary>
+    private static readonly HashSet<string> SettingsSafe =
+        ["Close Window", "Cut", "Copy", "Paste", "Select All", "Minimize", "Zoom", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
+
+    /// <summary>
+    /// Makes every workspace and project item close Settings as it runs, so nothing changes behind it unseen (the window's own
+    /// key bindings do the same through <see cref="MainWindow.InWorkspace"/>).
+    /// </summary>
+    private static void ReturnToWorkspace(NativeMenuItem item, MainWindow window)
+    {
+        foreach (var child in item.Menu?.Items.OfType<NativeMenuItem>() ?? [])
+        {
+            ReturnToWorkspace(child, window);
+        }
+
+        if (item.Menu is not null || item.Header is not { } header || SettingsSafe.Contains(header))
+        {
+            return;
+        }
+
+        if (item.Command is { } command)
+        {
+            item.Command = window.InWorkspace(command);
+        }
+        else
+        {
+            item.Click += (_, _) => window.Settings.Close();
+        }
     }
 
     private static NativeMenuItem Submenu(string header, params NativeMenuItemBase[] items)

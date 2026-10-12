@@ -29,11 +29,12 @@ public sealed class TrackStatusTests : IAsyncLifetime
     private readonly EndpointDirectory _endpoints;
     private readonly ProjectSession _session = new();
     private readonly MainViewModel _vm;
+    private readonly LoopbackPort _synth;
 
     public TrackStatusTests()
     {
         _provider = new LoopbackMidiProvider(_clock);
-        _provider.CreatePort("Synth", "synth");
+        _synth = _provider.CreatePort("Synth", "synth");
         _endpoints = new EndpointDirectory([_provider]);
         var playback = new PlaybackController(_session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
         _vm = new MainViewModel(_session, playback, _endpoints, new NoUi(), new ImmediateDispatcher());
@@ -128,6 +129,26 @@ public sealed class TrackStatusTests : IAsyncLifetime
         Assert.True(row.NeedsAttention);
         Assert.Equal("Vital · Not installed", row.StatusLine);
         Assert.Equal([TrackViewModel.MissingDeviceProblem("Vital")], row.Problems);
+    }
+
+    [Fact]
+    public async Task AHardwareTrack_IsFlaggedToo_WhenADeviceInItsChainIsMissing()
+    {
+        var track = Track.FromEvents(TrackId.New(), "Keys", [new NoteEvent(Tick.Zero, new TickSpan(240), MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max)]);
+        _session.Execute(Bluestone.Application.Editing.ProjectCommands.AddTrack(track));
+        _session.Execute(Bluestone.Application.Editing.ProjectCommands.SetTrackOutput(track.Id, new TrackOutput { Endpoint = new EndpointReference(LoopbackMidiProvider.ProviderId, _synth.OutputId.Value, "Synth") }));
+        await Settle();
+        var row = Assert.Single(_vm.Tracks);
+        Assert.True(row.IsReady);
+        Assert.Equal("Synth", row.StatusLine);
+
+        var missing = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("plugin:vst3:gone/fx"), "Echo"));
+        _session.Execute(new Bluestone.Application.Editing.ProjectCommand("Add a missing device", p => p.WithChain(DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [missing] })));
+        await Settle();
+
+        Assert.True(row.NeedsAttention);
+        Assert.Equal("Synth · Check", row.StatusLine);
+        Assert.Contains(TrackViewModel.MissingDeviceProblem("Echo"), row.Problems);
     }
 
     [Fact]

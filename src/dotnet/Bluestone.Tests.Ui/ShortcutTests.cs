@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Controls;
+using Bluestone.Desktop.Views;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
@@ -145,9 +146,13 @@ public sealed class ShortcutTests
         Assert.Equal(new KeyGesture(Key.Z, command), Item("Edit", "Undo").Gesture);
         Assert.Equal(new KeyGesture(Key.Z, command | KeyModifiers.Shift), Item("Edit", "Redo").Gesture);
         Assert.Equal(new KeyGesture(Key.T, command), Item("Track", "New Track").Gesture);
-        Assert.Same(app.ViewModel.UndoCommand, Item("Edit", "Undo").Command);
+        Assert.IsType<ReturningCommand>(Item("Edit", "Undo").Command);
 
+        // A project command run while Settings is open brings the workspace back first.
+        app.Window.ShowSettings();
+        app.Settle();
         Item("Track", "New Track").Command!.Execute(null);
+        Assert.False(app.Window.Settings.IsOpen);
         Assert.Equal(3, TrackNames(app).Length);
         Item("Edit", "Undo").Command!.Execute(null);
         Assert.Equal(["Lead", "Bass"], TrackNames(app));

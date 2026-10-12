@@ -163,7 +163,12 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(browser, app.ViewModel.Workspace.Browser.IsDocked);
         Assert.Equal(muted, app.ViewModel.Tracks[0].IsMuted);
 
-        app.Press(Key.Escape);
+        // A command shortcut that edits the project brings the workspace back first, so the edit is seen.
+        app.Press(Key.T, AppUnderTest.Command);
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
+        Assert.Equal(2, app.ViewModel.Tracks.Count);
+
         await app.SettleTransitionsAsync();
         Assert.Empty(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>());
         app.Press(Key.I);

@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -83,6 +84,12 @@ public partial class MainWindow
         Dispatcher.UIThread.Post(() => (open ? SettingsHost.CategoryList : restore).Focus(), DispatcherPriority.Loaded);
     }
 
+    /// <summary>
+    /// <paramref name="command"/>, closing Settings first when it is open: a shortcut or menu item that edits the project or
+    /// changes the workspace brings the workspace back, so nothing changes behind Settings unseen.
+    /// </summary>
+    internal ICommand InWorkspace(ICommand command) => new ReturningCommand(command, Settings);
+
     private void OnAudioSettingsClick(object? sender, RoutedEventArgs e) => ShowAudioSettings();
 
     private void OnShowPlugins(object? sender, RoutedEventArgs e) => ShowPlugins();
@@ -99,5 +106,23 @@ public partial class MainWindow
         {
             ShowSettings();
         }
+    }
+}
+
+/// <summary>A command that closes Settings before running another.</summary>
+internal sealed class ReturningCommand(ICommand inner, SettingsViewModel settings) : ICommand
+{
+    public event EventHandler? CanExecuteChanged
+    {
+        add => inner.CanExecuteChanged += value;
+        remove => inner.CanExecuteChanged -= value;
+    }
+
+    public bool CanExecute(object? parameter) => inner.CanExecute(parameter);
+
+    public void Execute(object? parameter)
+    {
+        settings.Close();
+        inner.Execute(parameter);
     }
 }

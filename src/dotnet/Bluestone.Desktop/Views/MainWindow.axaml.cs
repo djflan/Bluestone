@@ -621,7 +621,7 @@ public partial class MainWindow : Window
             var isMenuGesture = modifiers.HasFlag(command) && AppMenu.MenuGestures.Contains((key, modifiers & ~command));
             if (!(skipMenuGestures && isMenuGesture))
             {
-                KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(key, modifiers), Command = target });
+                KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(key, modifiers), Command = key == Key.OemComma ? target : InWorkspace(target) });
             }
         }
 
