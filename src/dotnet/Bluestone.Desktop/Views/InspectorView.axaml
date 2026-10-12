@@ -45,15 +45,15 @@
             <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding IsSingle}">
               <TextBlock Text="Instrument" Classes="label" />
               <Panel Grid.Column="1">
-                <Button x:Name="InstrumentButton" Classes="value" IsVisible="{Binding HasInstrument}" Command="{Binding ShowInstrumentCommand}"
+                <Button x:Name="InstrumentButton" Classes="value" IsVisible="{Binding Track.HasInstrument}" Command="{Binding Track.ShowInstrumentCommand}"
                         ToolTip.Tip="Show it in the Device View" AutomationProperties.Name="Show the instrument">
                   <Grid ColumnDefinitions="Auto,*,Auto">
                     <Ellipse Classes="roleDot" Fill="{StaticResource Signal.Instrument}" />
-                    <TextBlock Grid.Column="1" Text="{Binding InstrumentText}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding Track.InstrumentText}" TextTrimming="CharacterEllipsis" />
                     <PathIcon Grid.Column="2" Classes="stroke" Data="{StaticResource Icon.Devices}" />
                   </Grid>
                 </Button>
-                <Button x:Name="AddInstrumentButton" Classes="value empty" IsVisible="{Binding !HasInstrument}" Command="{Binding AddInstrumentCommand}"
+                <Button x:Name="AddInstrumentButton" Classes="value empty" IsVisible="{Binding !Track.HasInstrument}" Command="{Binding Track.AddInstrumentCommand}"
                         ToolTip.Tip="Choose an instrument in the Browser; Return or a drag puts it on this track" AutomationProperties.Name="Add an instrument">
                   <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Text="Add an instrument…" TextTrimming="CharacterEllipsis" />
@@ -64,23 +64,24 @@
             </Grid>
             <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding IsSingle}">
               <TextBlock Text="Devices" Classes="label" />
-              <Button x:Name="DevicesButton" Grid.Column="1" Classes="value" Command="{Binding ShowDevicesCommand}"
+              <Button x:Name="DevicesButton" Grid.Column="1" Classes="value" Command="{Binding Track.ShowDevicesCommand}"
                       ToolTip.Tip="Show the track's devices in the Device View" AutomationProperties.Name="Show the devices">
                 <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="{Binding Sound.DevicesText}" />
+                  <TextBlock Text="{Binding Track.Sound.DevicesText}" />
                   <PathIcon Grid.Column="1" Classes="stroke" Data="{StaticResource Icon.ChevronRight}" />
                 </Grid>
               </Button>
             </Grid>
             <Grid Classes="field" ColumnDefinitions="68,*">
               <TextBlock Text="Audio to" Classes="label" />
-              <ComboBox Grid.Column="1" ItemsSource="{Binding AudioDestinationChoices}" SelectedItem="{Binding AudioDestination}" HorizontalAlignment="Stretch"
+              <ComboBox Grid.Column="1" ItemsSource="{Binding Track.AudioDestinationChoices}" SelectedItem="{Binding Track.AudioDestination}" HorizontalAlignment="Stretch"
                         AutomationProperties.Name="Audio output" PlaceholderText="Mixed"
                         ToolTip.Tip="Where the track's sound goes: the master, a mixer channel, or nowhere. Its devices' own sends stay in Connections." />
             </Grid>
-            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding HasNoteDestination}">
+            <TextBlock Classes="muted" Text="{Binding Track.SendsText}" IsVisible="{Binding Track.HasSends}" Margin="68,0,0,0" />
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding Track.HasNoteDestination}">
               <TextBlock Text="Notes to" Classes="label" />
-              <TextBlock Grid.Column="1" Text="{Binding Sound.NoteDestination}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+              <TextBlock Grid.Column="1" Text="{Binding Track.Sound.NoteDestination}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                          ToolTip.Tip="The track's notes are also sent here. Change it in Connections." />
             </Grid>
             <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding ShowsRole}">
@@ -98,7 +99,7 @@
             <Grid ColumnDefinitions="Auto,*">
               <TextBlock Text="External MIDI" VerticalAlignment="Center" />
               <TextBlock x:Name="HardwareSummary" Grid.Column="1" Classes="sectionSummary" Classes.active="{Binding UsesHardware}" Text="{Binding HardwareSummary}"
-                         ToolTip.Tip="{Binding HardwareSummary}" />
+                         ToolTip.Tip="{Binding Subtitle}" />
             </Grid>
           </Expander.Header>
           <StackPanel Classes="fields">

@@ -68,10 +68,10 @@ public sealed class DawFirstTrackTests
         var audio = Assert.Single(app.Session.Project.Connections);
         Assert.Equal((SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master), (audio.Kind, audio.Source, audio.Destination));
         Assert.True(app.ViewModel.Tracks[0].IsReady);
-        Assert.Equal(Sine.DisplayName, app.ViewModel.Selection.InstrumentText);
+        Assert.Equal(Sine.DisplayName, app.ViewModel.Selection.Track.InstrumentText);
         Assert.True(app.Find<Button>("InstrumentButton").IsEffectivelyVisible);
-        Assert.Equal("1 device", app.ViewModel.Selection.Sound.DevicesText);
-        Assert.Equal("Master", app.ViewModel.Selection.AudioDestination?.Name);
+        Assert.Equal("1 device", app.ViewModel.Selection.Track.Sound.DevicesText);
+        Assert.Equal("Master", app.ViewModel.Selection.Track.AudioDestination?.Name);
         app.SaveFrame("daw-first-instrument-added");
 
         // One undo removes the device; the track keeps the audio path it was created with.

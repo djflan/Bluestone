@@ -62,9 +62,22 @@ public static class TrackSetup
     }
 
     /// <summary>
-    /// Sends each track's audio to <paramref name="destination"/> (the master, a mixer channel, or another track), or nowhere
-    /// when it is null: its first audio connection from its output is pointed there, or one is added. Further audio
-    /// connections and taps are left alone. One undo step; refused if it would make a routing error.
+    /// A track's <b>primary audio output</b>: the first audio connection from its output, in project order. The inspector's
+    /// "Audio to" shows and edits this one; any further audio connections from the output are sends, listed in Connections.
+    /// Edits keep the primary connection's place in the order, so it stays primary.
+    /// </summary>
+    public static SignalConnection? PrimaryAudioOutput(Project project, TrackId track)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var output = SignalNode.Track(track);
+        return project.Connections.FirstOrDefault(c => c.Kind == SignalKind.Audio && c.Source == output);
+    }
+
+    /// <summary>
+    /// Points each track's primary audio output (<see cref="PrimaryAudioOutput"/>) at <paramref name="destination"/> (the master,
+    /// a mixer channel, or another track), adding one when it has none, or removes it when <paramref name="destination"/> is
+    /// null. A send that already goes to <paramref name="destination"/> becomes the primary output in its place, so a track
+    /// never sends the same audio to one destination twice. One undo step; refused if it would make a routing error.
     /// </summary>
     public static IProjectCommand SetAudioDestination(IReadOnlyCollection<TrackId> tracks, SignalNode? destination, DeviceDefinitionLookup definitions)
     {
@@ -75,18 +88,31 @@ public static class TrackSetup
             foreach (var track in tracks)
             {
                 var output = SignalNode.Track(track);
-                var current = result.Connections.FirstOrDefault(c => c.Kind == SignalKind.Audio && c.Source == output);
+                var primary = PrimaryAudioOutput(result, track);
                 if (destination is not { } target)
                 {
-                    result = current is null ? result : result with { Connections = result.Connections.Remove(current) };
+                    result = primary is null ? result : result with { Connections = result.Connections.Remove(primary) };
+                    continue;
                 }
-                else if (current is null)
+
+                if (primary?.Destination == target)
                 {
-                    result = result with { Connections = result.Connections.Add(SignalConnection.Create(SignalKind.Audio, output, target)) };
+                    continue;
                 }
-                else if (current.Destination != target)
+
+                var send = result.Connections.FirstOrDefault(c => c.Kind == SignalKind.Audio && c.Source == output && c.Destination == target);
+                if (primary is null)
                 {
-                    result = result with { Connections = result.Connections.Replace(current, current with { Destination = target }) };
+                    result = send is not null ? result : result with { Connections = result.Connections.Add(SignalConnection.Create(SignalKind.Audio, output, target)) };
+                }
+                else if (send is not null)
+                {
+                    // The send takes the primary's place; the old primary destination is dropped, as choosing another output means.
+                    result = result with { Connections = result.Connections.Remove(send).Replace(primary, send) };
+                }
+                else
+                {
+                    result = result with { Connections = result.Connections.Replace(primary, primary with { Destination = target }) };
                 }
             }
 

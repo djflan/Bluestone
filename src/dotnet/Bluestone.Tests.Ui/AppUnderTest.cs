@@ -246,6 +246,17 @@ internal sealed class AppUnderTest : IAsyncDisposable
         }
     }
 
+    /// <summary>Lets transitions (an expander's chevron, a fade) and pending refreshes finish, so a saved frame shows a settled state.</summary>
+    public async Task SettleTransitionsAsync()
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromMilliseconds(400);
+        while (DateTime.UtcNow < until)
+        {
+            await Task.Delay(20);
+            Settle();
+        }
+    }
+
     /// <summary>Renders a frame now: some views settle their scroll position while drawing.</summary>
     public void Render()
     {

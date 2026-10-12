@@ -149,4 +149,60 @@ public sealed class TrackSetupTests
         Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, a.Id)).Destination);
         Assert.Empty(AudioFrom(history.Current, b.Id));
     }
+
+    [Fact]
+    public void OnlyThePrimaryAudioOutput_IsRepointed_AndASendToTheChosenDestination_TakesItsPlace()
+    {
+        var history = Empty();
+        var track = Track.Create("Lead", TrackRole.Hybrid);
+        var bus = MixerChannel.Create("Bus");
+        var verb = MixerChannel.Create("Verb");
+        history.Execute(TrackSetup.NewTrack(track, Definitions));
+        history.Execute(RoutingCommands.AddMixerChannel(bus));
+        history.Execute(RoutingCommands.AddMixerChannel(verb));
+        var send = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(verb.Id));
+        history.Execute(RoutingCommands.Connect(send, Definitions));
+
+        history.Execute(TrackSetup.SetAudioDestination([track.Id], SignalNode.Mixer(bus.Id), Definitions));
+
+        Assert.Equal([SignalNode.Mixer(bus.Id), SignalNode.Mixer(verb.Id)], AudioFrom(history.Current, track.Id).Select(c => c.Destination));
+        Assert.Equal(SignalNode.Mixer(bus.Id), TrackSetup.PrimaryAudioOutput(history.Current, track.Id)!.Destination);
+
+        // Choosing the send's destination makes the send primary instead of sending the same audio there twice.
+        history.Execute(TrackSetup.SetAudioDestination([track.Id], SignalNode.Mixer(verb.Id), Definitions));
+
+        Assert.Equal([send], AudioFrom(history.Current, track.Id));
+    }
+
+    [Fact]
+    public void AnAudioDestinationThatWouldFeedBack_IsRefused_AndChangesNothing()
+    {
+        var history = Empty();
+        var a = Track.Create("A", TrackRole.Hybrid);
+        var b = Track.Create("B", TrackRole.Hybrid);
+        history.Execute(TrackSetup.NewTrack(a, Definitions));
+        history.Execute(TrackSetup.NewTrack(b, Definitions));
+        history.Execute(TrackSetup.SetAudioDestination([b.Id], SignalNode.Track(a.Id), Definitions));
+        var before = history.Current;
+
+        Assert.Throws<CommandRefusedException>(() => history.Execute(TrackSetup.SetAudioDestination([a.Id], SignalNode.Track(b.Id), Definitions)));
+
+        Assert.Same(before, history.Current);
+    }
+
+    [Fact]
+    public void RemovingTheDeviceWhoseTapWasTheOnlyPath_LeavesTheTrackUnrouted_RatherThanRoutingItAgainBehindTheMusiciansBack()
+    {
+        var track = Track.Create("Lead", TrackRole.Hybrid);
+        var synth = TestDevices.Instance(TestDevices.Synth);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track) });
+        history.Execute(DeviceCommands.InsertDevice(track.Id, synth, Definitions));
+        history.Execute(TrackSetup.SetAudioDestination([track.Id], null, Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Master), Definitions));
+
+        history.Execute(DeviceCommands.RemoveDevice(synth.Id, Definitions));
+
+        Assert.Empty(history.Current.Connections);
+        Assert.False(TrackSetup.HasAudioPath(history.Current, track.Id));
+    }
 }

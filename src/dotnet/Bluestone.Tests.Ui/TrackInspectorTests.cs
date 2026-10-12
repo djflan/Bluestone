@@ -60,7 +60,7 @@ public sealed class TrackInspectorTests
         app.Choose(AppUnderTest.ComboNamed(routing, "MIDI output"), o => o is OutputOption { Name: "Synth" });
         app.Choose(AppUnderTest.ComboNamed(routing, "Instrument profile"), o => o is ProfileOption { Name: "Test GM" });
         app.Choose(AppUnderTest.ComboNamed(routing, "Channel"), o => o is ChannelOption { Channel.Number: 3 });
-        Assert.Equal("Synth · Ch 3 · Test GM", app.ViewModel.Selection.HardwareSummary);
+        Assert.Equal("Synth · Ch 3", app.ViewModel.Selection.HardwareSummary);
         var voice = routing;
         app.Choose(AppUnderTest.ComboNamed(voice, "Voice bank"), o => o is BankOption { Id: "main" });
         app.Choose(AppUnderTest.ComboNamed(voice, "Voice program"), o => o is ProgramOption { Program.Number: 5 });

@@ -1123,7 +1123,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     internal TrackSound SoundOf(TrackId track)
     {
         var sound = TrackSound.Of(Project, track, Devices.Lookup);
-        return sound.InstrumentDevice is { } id && Project.FindDevice(id) is { } found && DeviceStatus(found.Device).NeedsAttention
+        return sound.InstrumentDevices.Any(id => Project.FindDevice(id) is { } found && DeviceStatus(found.Device).NeedsAttention)
             ? sound with { IsInstrumentUnavailable = true }
             : sound;
     }

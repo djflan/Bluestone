@@ -96,6 +96,23 @@ public sealed class TrackStatusTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ABypassedInstrument_IsAChoice_NotAProblem_AndLayeredInstrumentsAreCounted()
+    {
+        var track = Track.FromEvents(TrackId.New(), "Lead", [new NoteEvent(Tick.Zero, new TickSpan(240), MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max)]);
+        var row = new TrackViewModel(_vm, track.Id);
+
+        row.Sync(1, track, Unrouted(track.Id), [], new TrackSound { Instrument = "Surge XT", HoldsNotes = true, IsInstrumentBypassed = true, AudioDestination = "Master" });
+
+        Assert.True(row.IsIdle);
+        Assert.Empty(row.Problems);
+        Assert.Equal("Surge XT · Bypassed", row.StatusLine);
+
+        row.Sync(1, track, Unrouted(track.Id), [], new TrackSound { Instrument = "Surge XT", InstrumentDevices = [DeviceId.New(), DeviceId.New()], HoldsNotes = true });
+        Assert.True(row.IsReady);
+        Assert.Equal("Surge XT +1", row.StatusLine);
+    }
+
+    [Fact]
     public void NotesThatNothingPlays_AreAProblem_ButOnlyThen()
     {
         var track = Track.FromEvents(TrackId.New(), "Lead", [new NoteEvent(Tick.Zero, new TickSpan(240), MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max)]);

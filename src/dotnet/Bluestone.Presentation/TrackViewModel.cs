@@ -219,7 +219,7 @@ public sealed partial class TrackViewModel : ObservableObject
         (true, RouteHealth.Attention) => $"{Output.Name} · Check",
         (true, _) => $"{Output.Name} · Offline",
         (false, RouteHealth.Offline) => "No output",
-        _ when Sound.Instrument is { } instrument => Sound.IsInstrumentUnavailable ? $"{instrument} · Unavailable"
+        _ when Sound.InstrumentSummary is { } instrument => Sound.IsInstrumentUnavailable ? $"{instrument} · Unavailable"
             : Sound.IsInstrumentBypassed ? $"{instrument} · Bypassed"
             : Health == RouteHealth.Attention ? $"{instrument} · Check"
             : instrument,
@@ -262,7 +262,9 @@ public sealed partial class TrackViewModel : ObservableObject
                     : new ProfileOption(reference.ProfileId, $"{reference.DisplayName ?? reference.ProfileId} (not installed)", false);
 
             var problems = resolved?.Problems ?? [];
-            var unplayedNotes = !UsesHardware && sound.HoldsNotes && !sound.HasNotePath && resolved?.Live is null && !problems.Contains(RouteResolver.NoOutputProblem);
+            // Notes with no instrument at all are a problem; an instrument the musician bypassed is a choice, shown as such.
+            var unplayedNotes = !UsesHardware && sound.HoldsNotes && sound.Instrument is null && sound.NoteDestination is null
+                && resolved?.Live is null && !problems.Contains(RouteResolver.NoOutputProblem);
             Problems = unplayedNotes ? [.. problems, NoInstrumentProblem] : problems;
             Health = resolved switch
             {
@@ -275,13 +277,14 @@ public sealed partial class TrackViewModel : ObservableObject
                 },
                 _ when problems.Contains(RouteResolver.NoOutputProblem) => RouteHealth.Offline,
                 _ when sound.IsInstrumentUnavailable || Problems.Count > 0 => RouteHealth.Attention,
+                _ when sound.IsInstrumentBypassed && sound.NoteDestination is null && !sound.HoldsAudio => RouteHealth.Idle,
                 _ when sound.Instrument is not null || sound.NoteDestination is not null || sound.HoldsAudio || resolved.Live is not null => RouteHealth.Ready,
                 _ => RouteHealth.Idle,
             };
             SyncHardwareParameters(track, resolved);
             RouteText = UsesHardware
                 ? $"{Profile.Name} → {Output.Name}"
-                : $"{sound.Instrument ?? sound.NoteDestination ?? "No instrument"} → {sound.AudioDestination ?? "no audio output"}";
+                : $"{sound.InstrumentSummary ?? sound.NoteDestination ?? "No instrument"} → {sound.AudioDestination ?? "no audio output"}";
             OnPropertyChanged(nameof(HealthText));
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(IsReady));

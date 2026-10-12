@@ -4,8 +4,10 @@ using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
+using Bluestone.Midi.Endpoints;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol;
 
@@ -33,8 +35,22 @@ public sealed class WorkspaceShowcaseTests
             new(new Tick(beat * Beat), new TickSpan(length), MidiChannel.FromNumber(1), new NoteNumber((byte)note), new Velocity(100));
         session.Execute(ProjectCommands.AddTrack(Track.FromEvents(TrackId.New(), "Lead", [.. Enumerable.Range(0, 16).Select(i => Note(i, 60 + ((i * 5) % 12)))])));
         session.Execute(ProjectCommands.AddTrack(Track.FromEvents(TrackId.New(), "Bass", [.. Enumerable.Range(0, 8).Select(i => Note(i * 2, 36 + (i % 3 * 5), Beat * 2))])));
-        session.Execute(ProjectCommands.AddTrack(Track.Create("Pad", TrackRole.Hybrid)));
+        session.Execute(TrackSetup.NewTrack(Track.Create("Pad", TrackRole.Hybrid), Signal.DeviceCatalog.BuiltIn.Lookup));
         return session;
+    }
+
+    /// <summary>Opens the song with Bass played by external hardware (the loopback port "Synth" on channel 2) and Lead selected.</summary>
+    private static async Task<AppUnderTest> OpenSongAsync(Func<ProjectSession, PluginDeviceHost>? plugins = null)
+    {
+        var app = await AppUnderTest.OpenAsync(Song(), plugins);
+        var bass = app.Session.Project.Sequence.Tracks[1].Id;
+        app.Session.Execute(ProjectCommands.SetTrackOutput(bass, new TrackOutput
+        {
+            Endpoint = new EndpointReference(LoopbackMidiProvider.ProviderId, app.Port.OutputId.Value, "Synth"),
+            Channel = MidiChannel.FromNumber(2),
+        }));
+        app.Settle();
+        return app;
     }
 
     private static PluginHostManager Plugins()
@@ -51,7 +67,7 @@ public sealed class WorkspaceShowcaseTests
     public Task TheWorkspace_WithAPopulatedChain(double width, double height, string size) => HeadlessApp.RunAsync(async () =>
     {
         await using var plugins = Plugins();
-        await using var app = await AppUnderTest.OpenAsync(Song(), s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
         app.Window.Width = width;
         app.Window.Height = height;
         app.ViewModel.Select(app.ViewModel.Tracks[0]);
@@ -62,9 +78,10 @@ public sealed class WorkspaceShowcaseTests
         view.InsertAt(1, PluginDeviceHost.DefinitionOf(Sine));
         view.InsertAt(2, BuiltIn("Transpose"));
         app.Settle();
-        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3, "the chain");
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3 && view.Devices[1].Parameters.Count > 0, "the chain and the plugin's parameters");
+        await AppUnderTest.WaitUntilAsync(() => app.ViewModel.Tracks[0].StatusLine == Sine.DisplayName, "the track to name its instrument");
         view.SelectedDevice = view.Devices[1];
-        app.Settle();
+        await app.SettleTransitionsAsync();
 
         Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-chain")));
         Assert.True(app.Find<ContentControl>("DockedDeviceView").IsEffectivelyVisible);
@@ -75,12 +92,12 @@ public sealed class WorkspaceShowcaseTests
     [InlineData(1440, 900, "normal")]
     public Task TheWorkspace_AfterAddingANewTrack(double width, double height, string size) => HeadlessApp.RunAsync(async () =>
     {
-        await using var app = await AppUnderTest.OpenAsync(Song());
+        await using var app = await OpenSongAsync();
         app.Window.Width = width;
         app.Window.Height = height;
         app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
         app.ViewModel.AddTrackCommand.Execute(null);
-        app.Settle();
+        await app.SettleTransitionsAsync();
 
         Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-new-track")));
     });
@@ -88,13 +105,13 @@ public sealed class WorkspaceShowcaseTests
     [Fact]
     public Task TheWorkspace_WithSeveralTracksSelected() => HeadlessApp.RunAsync(async () =>
     {
-        await using var app = await AppUnderTest.OpenAsync(Song());
+        await using var app = await OpenSongAsync();
         app.Window.Width = 1440;
         app.Window.Height = 900;
         app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
         app.ViewModel.Select(app.ViewModel.Tracks[0]);
         app.ViewModel.SelectAdjacent(1, extend: true);
-        app.Settle();
+        await app.SettleTransitionsAsync();
 
         Assert.True(File.Exists(app.SaveFrame("showcase-normal-multiple")));
     });

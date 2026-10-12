@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
@@ -36,14 +37,14 @@ public sealed record TrackSound
     /// <summary>Where the track's output audio goes ("Master", a mixer channel's or a track's name), or null.</summary>
     public string? AudioDestination { get; init; }
 
-    /// <summary>The destination node of <see cref="AudioDestination"/>.</summary>
+    /// <summary>The destination node of <see cref="AudioDestination"/>: the track's primary audio output.</summary>
     public SignalNode? AudioNode { get; init; }
+
+    /// <summary>Further audio connections from the track's output (sends), beyond the primary one.</summary>
+    public int AudioSendCount { get; init; }
 
     /// <summary>Where the track's notes go other than to hardware (a rack or another track), or null.</summary>
     public string? NoteDestination { get; init; }
-
-    /// <summary>Whether something in the project plays the track's notes: an instrument in its chain or a note destination.</summary>
-    public bool HasNotePath => (Instrument is not null && !IsInstrumentBypassed) || NoteDestination is not null;
 
     /// <summary>"3 devices", "1 device", or "No devices".</summary>
     public string DevicesText => DeviceCount switch
@@ -63,20 +64,24 @@ public sealed record TrackSound
         }
 
         var chain = project.ChainOf(track);
-        var instrument = chain?.Devices.FirstOrDefault(d => definitions(d.Definition.Id)?.Category == DeviceCategory.Instrument);
+        var instruments = chain?.Devices.Where(d => definitions(d.Definition.Id)?.Category == DeviceCategory.Instrument).ToImmutableArray() ?? [];
+        var instrument = instruments.FirstOrDefault();
         var output = SignalNode.Track(track);
-        var audio = project.Connections.FirstOrDefault(c => c.Kind == SignalKind.Audio && c.Source == output);
+        var audioOutputs = project.Connections.Where(c => c.Kind == SignalKind.Audio && c.Source == output).ToList();
+        var audio = audioOutputs.FirstOrDefault();
         var notes = project.Connections.FirstOrDefault(c => c.Kind == SignalKind.Events && c.Source == output && c.Destination.Kind != SignalNodeKind.ExternalInstrument);
         return new TrackSound
         {
             Instrument = instrument?.DisplayName,
             InstrumentDevice = instrument?.Id,
-            IsInstrumentBypassed = instrument?.IsBypassed == true,
+            InstrumentDevices = [.. instruments.Select(d => d.Id)],
+            IsInstrumentBypassed = instruments.Length > 0 && instruments.All(d => d.IsBypassed),
             DeviceCount = chain?.Devices.Length ?? 0,
             HoldsNotes = found.Clips.Any(c => c is NoteClip),
             HoldsAudio = found.Clips.Any(c => c is AudioClip),
             AudioDestination = audio is null ? null : NameOf(project, audio.Destination),
             AudioNode = audio?.Destination,
+            AudioSendCount = Math.Max(0, audioOutputs.Count - 1),
             NoteDestination = notes is null ? null : NameOf(project, notes.Destination),
         };
     }
@@ -92,6 +97,7 @@ public sealed record TrackSound
             SignalNodeKind.Track => project.Sequence.FindTrack(node.AsTrack())?.Name ?? "Missing track",
             SignalNodeKind.Rack => project.FindChain(node.AsRack()) is { } rack ? DeviceViewViewModel.RackName(rack) : "Missing rack",
             SignalNodeKind.Device => project.FindDevice(node.AsDevice())?.Device.DisplayName ?? "Missing device",
+            SignalNodeKind.ExternalInstrument => project.FindInstrument(node.AsInstrument())?.Name ?? "Missing instrument",
             _ => SignalRoutingValidator.Describe(project, node),
         };
     }
