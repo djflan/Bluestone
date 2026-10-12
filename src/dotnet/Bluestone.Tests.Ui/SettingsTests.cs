@@ -110,6 +110,35 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
+    public Task Escape_ClosesAnOpenDropDownFirst_ThenSettings_AndFocusReturnsWhereItWas() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+        app.Settle();
+        var search = AppUnderTest.Within<TextBox>(app.Find<BrowserView>("DockedBrowser"), t => t.Name == "SearchBox");
+        search.Focus();
+        app.Settle();
+
+        app.Press(Key.OemComma, AppUnderTest.Command);
+        await app.SettleTransitionsAsync();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var buffer = AppUnderTest.ComboNamed(page, "Buffer size");
+        app.Click(buffer);
+        Assert.True(buffer.IsDropDownOpen);
+
+        app.Press(Key.Escape);
+        Assert.False(buffer.IsDropDownOpen);
+        Assert.True(app.Window.Settings.IsOpen);
+
+        app.Press(Key.Escape);
+        await app.SettleTransitionsAsync();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Same(search, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Fact]
     public Task AnEmptyInstrumentsCategory_LeadsToThePluginSettings() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();

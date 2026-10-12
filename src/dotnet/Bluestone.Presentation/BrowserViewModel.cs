@@ -135,6 +135,7 @@ public sealed partial class BrowserViewModel : ObservableObject
     public partial string TargetText { get; private set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(InsertCommand))]
     public partial bool HasTarget { get; private set; }
 
     /// <summary>The footer button's word for the selected item: Insert a device, Open a rack, Use a hardware profile on a track.</summary>
@@ -322,7 +323,8 @@ public sealed partial class BrowserViewModel : ObservableObject
         }
     }
 
-    private bool CanInsert() => SelectedItem is not null;
+    // Only when the footer names a place it can go: a rack always opens; a device needs a chain, a profile a selected track.
+    private bool CanInsert() => SelectedItem is not null && (SelectedItem.Kind == BrowserItemKind.Rack || HasTarget);
 
     [RelayCommand]
     private void ClearSearch() => SearchText = string.Empty;

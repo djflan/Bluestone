@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Views;
@@ -12,6 +13,8 @@ namespace Bluestone.Desktop.Views;
 /// </summary>
 public partial class MainWindow
 {
+    private Control? _focusBeforeSettings;
+
     /// <summary>The Settings surface: its pages are the audio and plugin view models the host attaches.</summary>
     public SettingsViewModel Settings { get; } = new();
 
@@ -41,10 +44,10 @@ public partial class MainWindow
         };
         ApplySettingsVisibility();
 
-        // Escape closes Settings wherever focus is, before the workspace's own shortcuts see it.
+        // Escape closes Settings before the workspace's own shortcuts see it, unless an open drop-down or popup takes it first.
         AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (Settings.IsOpen && e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None)
+            if (Settings.IsOpen && e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && !IsInOpenPopup(e.Source as Control))
             {
                 Settings.Close();
                 e.Handled = true;
@@ -52,13 +55,30 @@ public partial class MainWindow
         }, RoutingStrategies.Tunnel);
     }
 
+    /// <summary>Whether Escape belongs to a popup first: <paramref name="source"/> is in a popup of its own, or a drop-down in Settings is open.</summary>
+    private bool IsInOpenPopup(Control? source) =>
+        (source is not null && TopLevel.GetTopLevel(source) != this)
+        || SettingsHost.GetVisualDescendants().OfType<ComboBox>().Any(c => c.IsDropDownOpen);
+
     private void ApplySettingsVisibility()
     {
         var open = Settings.IsOpen;
+        SettingsButton.IsChecked = open;
+        if (open == SettingsHost.IsVisible)
+        {
+            return;
+        }
+
+        if (open)
+        {
+            // Put focus back where it was when Settings closes, if that control is still there to take it.
+            _focusBeforeSettings = FocusManager?.GetFocusedElement() as Control;
+        }
+
         WorkspaceGrid.IsVisible = !open;
         SettingsHost.IsVisible = open;
-        SettingsButton.IsChecked = open;
-        Dispatcher.UIThread.Post(() => (open ? SettingsHost.CategoryList : (Control)TrackList).Focus(), DispatcherPriority.Loaded);
+        var restore = _focusBeforeSettings is { IsEffectivelyVisible: true } previous && TopLevel.GetTopLevel(previous) is not null ? previous : TrackList;
+        Dispatcher.UIThread.Post(() => (open ? SettingsHost.CategoryList : restore).Focus(), DispatcherPriority.Loaded);
     }
 
     private void OnAudioSettingsClick(object? sender, RoutedEventArgs e) => ShowAudioSettings();

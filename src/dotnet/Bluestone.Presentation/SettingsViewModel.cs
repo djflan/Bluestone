@@ -92,6 +92,11 @@ public sealed partial class SettingsViewModel : ObservableObject
             SearchText = string.Empty;
             SelectedCategory = Categories.FirstOrDefault(c => c.Page == wanted) ?? SelectedCategory;
         }
+        else if (IsEmpty)
+        {
+            // A search that found nothing is not worth coming back to.
+            SearchText = string.Empty;
+        }
 
         SelectedCategory ??= Categories.FirstOrDefault();
         IsOpen = true;

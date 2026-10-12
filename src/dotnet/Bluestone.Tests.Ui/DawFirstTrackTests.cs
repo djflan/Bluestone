@@ -3,6 +3,7 @@ using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
+using Bluestone.Desktop.Views;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
@@ -165,5 +166,72 @@ public sealed class DawFirstTrackTests
         Assert.Equal("test.gm", app.Session.Project.Instruments.Single().Profile?.ProfileId);
         Assert.True(app.Find<Expander>("HardwareSection").IsExpanded);
         Assert.Equal("Test GM", app.ViewModel.Selection.Profile?.Name);
+    });
+
+    [Fact]
+    public Task TheBrowsersAction_IsAvailableOnlyWhereItsFooterNamesAPlace() => HeadlessApp.RunAsync(async () =>
+    {
+        var profiles = ProfileCatalog.Empty.Add("gm", ProfileLoader.Load("""
+            { "format": "bluestone-device-profile", "schemaVersion": 1, "id": "test.gm", "version": "1", "name": "Test GM",
+              "provenance": { "sources": ["t"], "contributors": ["t"], "license": "MIT", "redistributionConfirmed": true, "verification": "unverified" },
+              "banks": [] }
+            """u8));
+        await using var app = await AppUnderTest.OpenAsync(profiles: profiles);
+        app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+        app.Settle();
+        var browser = app.ViewModel.Browser;
+        var action = app.Find<Button>("ActionButton");
+
+        // No track: a device has no chain to go into, a profile no track to go on.
+        browser.SelectedItem = browser.Items.First(i => i.Kind == BrowserItemKind.Device);
+        app.Settle();
+        Assert.False(action.IsEffectivelyEnabled);
+        browser.ShowCategory(BrowserCategory.Hardware);
+        browser.SelectedItem = browser.Items.Single();
+        app.Settle();
+        Assert.False(action.IsEffectivelyEnabled);
+        Assert.Equal("Select a track to use this profile", browser.TargetText);
+
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        Assert.True(action.IsEffectivelyEnabled);
+        browser.ShowCategory(BrowserCategory.All);
+        browser.SelectedItem = browser.Items.First(i => i.Kind == BrowserItemKind.Device);
+        app.Settle();
+        Assert.True(action.IsEffectivelyEnabled);
+    });
+
+    [Fact]
+    public Task DetachedViews_AreBroughtForwardWhereTheyAre_NotDockedAgainOrDuplicated() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.ViewModel.AddTrackCommand.Execute(null);
+        var workspace = app.ViewModel.Workspace;
+        workspace.Browser.DetachCommand.Execute(null);
+        var deviceView = workspace.Views.Single(v => v.DeviceView is not null);
+        deviceView.DetachCommand.Execute(null);
+        app.Settle();
+        var windows = app.Window.OwnedWindows.OfType<ViewWindow>().ToList();
+        Assert.Equal(2, windows.Count);
+        var fronted = new List<WorkspaceView>();
+        workspace.FrontRequested += (_, view) => fronted.Add(view);
+
+        app.Click(app.Find<Button>("AddInstrumentButton"));
+
+        Assert.True(workspace.Browser.IsDetached);
+        Assert.True(deviceView.IsDetached);
+        Assert.Single(workspace.DeviceViews);
+        Assert.Equal(windows, app.Window.OwnedWindows.OfType<ViewWindow>());
+        Assert.Equal([deviceView, workspace.Browser], fronted);
+        Assert.Equal(BrowserCategory.Instruments, app.ViewModel.Browser.SelectedCategory.Category);
+
+        app.Click(app.Find<Button>("DevicesButton"));
+        Assert.Single(workspace.DeviceViews);
+        Assert.True(deviceView.IsDetached);
+        Assert.Equal(deviceView, fronted[^1]);
+        foreach (var window in windows)
+        {
+            window.Close();
+        }
     });
 }
