@@ -139,6 +139,18 @@ public sealed class PluginHostManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Kills every worker process at once, without unloading anything. For quitting when <see cref="DisposeAsync"/> has
+    /// taken too long: a worker stuck in plugin code would not notice its pipe closing and would outlive Bluestone.
+    /// </summary>
+    public void KillWorkers()
+    {
+        foreach (var worker in _launched)
+        {
+            worker.Kill(WorkerExitReason.ShutDown);
+        }
+    }
+
     /// <summary>Unloads every instance and stops every worker; no worker process outlives this call.</summary>
     public async ValueTask DisposeAsync()
     {

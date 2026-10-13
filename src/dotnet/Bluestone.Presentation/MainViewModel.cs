@@ -1655,15 +1655,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Releases held keys, unloads plugins, and stops playback. Nothing after the first await comes back to the UI
+    /// thread: the desktop app waits for this on the UI thread while quitting, so a continuation posted there would
+    /// never run.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         Keyboard?.ReleaseAll();
         _monitor?.Dispose();
         if (_plugins is not null)
         {
-            await _plugins.DisposeAsync();
+            await _plugins.DisposeAsync().ConfigureAwait(false);
         }
 
-        await _playback.DisposeAsync();
+        await _playback.DisposeAsync().ConfigureAwait(false);
     }
 }
