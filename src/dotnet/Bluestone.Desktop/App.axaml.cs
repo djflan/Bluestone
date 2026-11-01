@@ -18,6 +18,12 @@ public partial class App : Avalonia.Application
 {
     private static AudioViewModel? _audio;
 
+    /// <summary>Cancels start-up work that runs off the UI thread (the plugin scan) when Bluestone quits during start-up.</summary>
+    private static readonly CancellationTokenSource StartupCancellation = new();
+
+    /// <summary>The start-up plugin scan while it runs, so quitting can wait for it to stop its scanner process.</summary>
+    private static Task? _startupScan;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -59,6 +65,8 @@ public partial class App : Avalonia.Application
             }
             else
             {
+                // Quitting during start-up: stop the plugin scan, which ends its scanner process, before going.
+                StopStartupScan();
                 plugins?.KillWorkers();
                 platformProviders.ForEach(p => p.Dispose());
             }
@@ -244,14 +252,46 @@ public partial class App : Avalonia.Application
     private static async Task ScanPluginsAsync(PluginLibrary library, SplashWindow? splash)
     {
         // The scan runs off the UI thread so the splash keeps drawing; progress is posted back to it.
-        await Task.Run(() => library.ScanAsync(progress => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            splash?.Report(
-                progress.Total == 0 ? "Scanning plugins…" : $"Scanning plugins ({Math.Min(progress.Done + 1, progress.Total)} of {progress.Total})…",
-                progress.Module is { } module ? Path.GetFileName(module) : null,
-                progress.Total == 0 ? null : (double)progress.Done / progress.Total))));
+        var cancellation = StartupCancellation.Token;
+        _startupScan = Task.Run(
+            () => library.ScanAsync(
+                progress => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    splash?.Report(
+                        progress.Total == 0 ? "Scanning plugins…" : $"Scanning plugins ({Math.Min(progress.Done + 1, progress.Total)} of {progress.Total})…",
+                        progress.Module is { } module ? Path.GetFileName(module) : null,
+                        progress.Total == 0 ? null : (double)progress.Done / progress.Total)),
+                cancellation),
+            cancellation);
+        await _startupScan;
         foreach (var module in library.Modules.Where(m => m.State != PluginModuleState.Loaded))
         {
             System.Diagnostics.Trace.TraceWarning($"Plugin module {module.ModulePath} was not loaded: {module.Problem}");
+        }
+    }
+
+    /// <summary>
+    /// Cancels the start-up plugin scan and waits, at most <see cref="ShutdownLimit"/>, for it to end; ending disposes its
+    /// scanner process. Runs on the UI thread while quitting; the scan runs on the thread pool, so waiting cannot deadlock.
+    /// </summary>
+    private static void StopStartupScan()
+    {
+        StartupCancellation.Cancel();
+        try
+        {
+            if (_startupScan is { IsCompleted: false } scan && !scan.Wait(ShutdownLimit))
+            {
+                System.Diagnostics.Trace.TraceError($"The plugin scan did not stop within {ShutdownLimit.TotalSeconds:0} s.");
+            }
+        }
+        catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException))
+        {
+            // Cancelled, as asked.
+        }
+#pragma warning disable CA1031 // Quitting must not crash; the failure is recorded instead.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Error while stopping the plugin scan: {ex}");
         }
     }
 

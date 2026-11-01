@@ -17,7 +17,7 @@ head="$(git rev-parse "$1^{commit}")"
 here="$(cd "$(dirname "$0")" && pwd)"
 pattern='v[0-9]*.[0-9]*.[0-9]*'
 
-latest_tag() { git tag --list "$pattern" --sort=-v:refname | head -n 1; }
+latest_tag() { git tag --list "$pattern" --sort=-v:refname | sed -n '1p'; }
 
 latest="$(latest_tag)"
 if [[ -z "$latest" ]]; then
