@@ -2,10 +2,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.LogicalTree;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Bluestone.Desktop.Controls;
-using Avalonia.LogicalTree;
 using Bluestone.Desktop.Views;
 
 namespace Bluestone.Tests.Ui;
@@ -88,9 +88,10 @@ public sealed class SplashWindowTests
     public void AppVersion_ShowsSemverAndShortCommit(string? informationalVersion, string expected) =>
         Assert.Equal(expected, Bluestone.Desktop.AppVersion.Format(informationalVersion));
 
+    /// <summary>The build takes its version from the latest vX.Y.Z tag (0.0.0 without one) and records its commit.</summary>
     [Fact]
-    public void BuiltVersion_IsTheConfiguredSemverWithItsCommit() =>
-        Assert.Matches(@"^v0\.0\.1( [0-9a-f]{7})?$", Bluestone.Desktop.AppVersion.Display);
+    public void BuiltVersion_IsSemverWithItsCommit() =>
+        Assert.Matches(@"^v\d+\.\d+\.\d+( [0-9a-f]{7})?$", Bluestone.Desktop.AppVersion.Display);
 
     [Fact]
     public void MarbleShader_Compiles()
@@ -123,9 +124,13 @@ public sealed class SplashWindowTests
         return Task.CompletedTask;
     });
 
+    // Controls are made on the UI thread: making one on a test thread starts Avalonia there and breaks later tests.
     [Fact]
-    public void EachSlab_ShowsADifferentPartOfTheMarble() =>
+    public Task EachSlab_ShowsADifferentPartOfTheMarble() => HeadlessApp.RunAsync(() =>
+    {
         Assert.NotEqual(new MarbleSlab().Seed, new MarbleSlab().Seed);
+        return Task.CompletedTask;
+    });
 
     /// <summary>Counts dark and blue pixels in the marble, inside the shadow margin.</summary>
     private static (int Dark, int Blue, int Total) Sample(Bitmap frame)

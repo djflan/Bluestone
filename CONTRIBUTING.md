@@ -43,6 +43,23 @@ Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugi
 6. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the Core MIDI tests, which are unreliable on hosted runners; if you change the Core MIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally.
 7. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
 
+### Versions and releases
+
+Every commit that lands on `main` is tagged with the next version (`vX.Y.Z`) by the [version workflow](.github/workflows/version.yml), and the app shows that version with its commit, for example `v0.4.0 a32f6d1`. The bump is patch unless the message of the commit that lands asks otherwise. Put a token in the **pull request title**: a merge commit includes it, and a squash merge uses it as the message. Tokens are case-insensitive.
+
+| Token | Effect (from `v0.3.7`) |
+|---|---|
+| none | `v0.3.8` |
+| `[minor]` | `v0.4.0` |
+| `[major]` | `v1.0.0` |
+| `[skip version]` | no new tag |
+| `[release]` | bump as above, then build every platform and publish a GitHub Release |
+| `[pre-release]` or `[prerelease]` | the same, marked as a pre-release |
+
+`[skip version]` wins over `[major]`, which wins over `[minor]`, and a pre-release token wins over `[release]`. `[skip version]` with a release token builds and releases the latest tag again without a new version. To build and release an existing tag by hand (for example after a failed build), run the Version workflow from the Actions tab and give it the tag. Only the commit that lands on `main` is read, so a token in one of a pull request's own commits has no effect.
+
+A release builds a self-contained, unsigned archive for macOS (Apple silicon and Intel), Windows (x64 and ARM64), and Linux (x64 and ARM64), after running the tests on each. Builds made without tags (CI, or a clone without tags) show `v0.0.0`. To try the token rules, run `.github/scripts/next-version.test.sh`.
+
 ## Device profiles
 
 Profiles are data, not code. Follow the rules in [profiles/README.md](profiles/README.md) and the format in [docs/profiles.md](docs/profiles.md). In short: include provenance, state verification honestly, and only submit material you have the right to redistribute.

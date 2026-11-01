@@ -1,0 +1,231 @@
+name: Version
+
+# Tags every commit that lands on main with the next version, and builds and publishes a GitHub Release when asked.
+# Independent of CI: it does not wait for or gate on the CI checks, and adds none of its own.
+#
+# Tokens in the message of the commit that landed (for a merge commit that includes the PR title; case-insensitive):
+#   (none)                         patch: v0.3.7 -> v0.3.8
+#   [minor]                        v0.3.7 -> v0.4.0
+#   [major]                        v0.3.7 -> v1.0.0
+#   [skip version]                 no tag
+#   [release]                      also build every platform and publish a release
+#   [pre-release] / [prerelease]   the same, marked as a pre-release
+# [skip version] with a release token re-releases the latest tag. See CONTRIBUTING.md and .github/scripts/next-version.sh.
+#
+# Tags and releases made with GITHUB_TOKEN start no other workflow, so this cannot loop or start CI.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and release (e.g. v0.4.0)
+        required: true
+        type: string
+      kind:
+        description: Kind of release
+        required: true
+        type: choice
+        options: [prerelease, release]
+        default: prerelease
+
+permissions:
+  contents: read
+
+# One run at a time, in order, so two merges never compute the same version.
+concurrency:
+  group: version
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  tag:
+    name: Tag the next version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+      release: ${{ steps.decide.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_KIND: ${{ inputs.kind }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            if ! git rev-parse -q --verify "refs/tags/$INPUT_TAG" >/dev/null; then
+              echo "::error::Tag $INPUT_TAG does not exist."
+              exit 1
+            fi
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            echo "release=$INPUT_KIND" >> "$GITHUB_OUTPUT"
+            echo "Releasing existing tag **$INPUT_TAG** ($INPUT_KIND), started by hand." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          existing="$(git tag --points-at "$GITHUB_SHA" --list 'v[0-9]*.[0-9]*.[0-9]*' | head -n 1)"
+          if [[ -n "$existing" ]]; then
+            echo "release=none" >> "$GITHUB_OUTPUT"
+            echo "This commit is already tagged **$existing**; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          message="$(git log -1 --format=%B "$GITHUB_SHA")"
+          result="$(.github/scripts/next-version.sh "$latest" "$message")"
+          version="$(sed -n 's/^version=//p' <<<"$result")"
+          bump="$(sed -n 's/^bump=//p' <<<"$result")"
+          release="$(sed -n 's/^release=//p' <<<"$result")"
+
+          if [[ "$bump" == "skip" ]]; then
+            if [[ "$release" == "none" ]]; then
+              echo "release=none" >> "$GITHUB_OUTPUT"
+              echo "Skipped: the commit message asks for [skip version]. Latest is ${latest:-(none)}." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "tag=$latest" >> "$GITHUB_OUTPUT"
+            echo "release=$release" >> "$GITHUB_OUTPUT"
+            echo "Re-releasing **$latest** ($release) without a new version." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "tag=v$version"
+            echo "release=$release"
+            echo "version=$version"
+            echo "bump=$bump"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push the tag
+        if: steps.decide.outputs.version != ''
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          BUMP: ${{ steps.decide.outputs.bump }}
+          RELEASE: ${{ steps.decide.outputs.release }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Bluestone $TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+          echo "Tagged **$TAG** ($BUMP), release: $RELEASE." >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs: tag
+    if: needs.tag.outputs.release == 'release' || needs.tag.outputs.release == 'prerelease'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: osx-arm64, os: macos-latest, archive: zip }
+          - { rid: osx-x64, os: macos-15-intel, archive: zip }
+          - { rid: win-x64, os: windows-latest, archive: zip }
+          - { rid: win-arm64, os: windows-11-arm, archive: zip }
+          - { rid: linux-x64, os: ubuntu-latest, archive: tar.gz }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm, archive: tar.gz }
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+    steps:
+      # The tag's own history, so the build finds the tag and stamps that version.
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.tag.outputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      # cpal's ALSA backend links libasound.
+      - name: Install ALSA development files
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Test native crates
+        working-directory: src/native
+        run: cargo test --locked
+
+      - name: Build
+        run: dotnet build src/dotnet/Bluestone.slnx --configuration Release
+
+      # As in CI: one test assembly at a time, and no CoreMIDI tests on hosted macOS runners.
+      - name: Test
+        run: dotnet test src/dotnet/Bluestone.slnx --no-build --configuration Release --max-parallel-test-modules 1 --filter-not-class Bluestone.Tests.Integration.Platform.CoreMidiProviderTests
+
+      # Self-contained: includes .NET, the Rust libraries, the profiles, and the plugin worker, so nothing else is needed.
+      - name: Publish
+        run: dotnet publish src/dotnet/Bluestone.Desktop --configuration Release --runtime ${{ matrix.rid }} --self-contained --output publish/Bluestone
+
+      - name: Package (zip, macOS)
+        if: runner.os == 'macOS'
+        working-directory: publish
+        run: ditto -c -k --keepParent Bluestone "Bluestone-$TAG-${{ matrix.rid }}.zip"
+
+      - name: Package (zip, Windows)
+        if: runner.os == 'Windows'
+        working-directory: publish
+        shell: pwsh
+        run: Compress-Archive -Path Bluestone -DestinationPath "Bluestone-$env:TAG-${{ matrix.rid }}.zip"
+
+      - name: Package (tar.gz, Linux)
+        if: runner.os == 'Linux'
+        working-directory: publish
+        run: tar -czf "Bluestone-$TAG-${{ matrix.rid }}.tar.gz" Bluestone
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Bluestone-${{ matrix.rid }}
+          path: publish/Bluestone-${{ needs.tag.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish the release
+    needs: [tag, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+      KIND: ${{ needs.tag.outputs.release }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: Bluestone-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create or update the release
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            echo "Updated the files of release **$TAG**." >> "$GITHUB_STEP_SUMMARY"
+          else
+            flags=(--title "Bluestone $TAG" --generate-notes --verify-tag)
+            if [[ "$KIND" == "prerelease" ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "$TAG" "${flags[@]}" dist/*
+            echo "Published **$TAG** ($KIND)." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,20 @@
+<Project>
+  <!--
+    The version comes from the latest release tag (vX.Y.Z), which the version workflow creates on every merge to main
+    (.github/workflows/version.yml). Without git or a tag, the build keeps <Version> from Directory.Build.props (0.0.0),
+    so an untagged build is easy to spot. The SDK still appends "+<commit>" to the informational version.
+  -->
+  <Target Name="BluestoneVersionFromGit" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo;GenerateNuspec" Condition="'$(BluestoneVersionFromGit)' != 'false'">
+    <Exec Command="git describe --tags --abbrev=0 --match &quot;v[0-9]*.[0-9]*.[0-9]*&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low" EchoOff="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_BluestoneTag" />
+      <Output TaskParameter="ExitCode" PropertyName="_BluestoneTagExitCode" />
+    </Exec>
+    <PropertyGroup Condition="'$(_BluestoneTagExitCode)' == '0' And $([System.Text.RegularExpressions.Regex]::IsMatch('$(_BluestoneTag)', '^v\d+\.\d+\.\d+$'))">
+      <Version>$(_BluestoneTag.Substring(1))</Version>
+      <VersionPrefix>$(Version)</VersionPrefix>
+      <AssemblyVersion>$(Version).0</AssemblyVersion>
+      <FileVersion>$(Version).0</FileVersion>
+      <InformationalVersion>$(Version)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+</Project>
