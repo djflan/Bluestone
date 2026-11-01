@@ -10,7 +10,8 @@ name: Version
 #   [skip version]                 no tag
 #   [release]                      also build every platform and publish a release
 #   [pre-release] / [prerelease]   the same, marked as a pre-release
-# [skip version] with a release token re-releases the latest tag. See CONTRIBUTING.md and .github/scripts/next-version.sh.
+# [skip version] with a release token re-releases the latest tag. See CONTRIBUTING.md and .github/scripts/.
+# Each run tags every untagged commit on main since the latest tag, oldest first, so none is missed.
 #
 # Tags and releases made with GITHUB_TOKEN start no other workflow, so this cannot loop or start CI.
 
@@ -33,11 +34,6 @@ on:
 permissions:
   contents: read
 
-# One run at a time, in order, so two merges never compute the same version.
-concurrency:
-  group: version
-  cancel-in-progress: false
-
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -46,6 +42,11 @@ jobs:
   tag:
     name: Tag the next version
     runs-on: ubuntu-latest
+    # Only tagging runs one at a time (it takes seconds), so two merges never compute the same version. A run GitHub
+    # replaces while waiting loses nothing: the next run tags every untagged commit since the latest tag.
+    concurrency:
+      group: version-tag
+      cancel-in-progress: false
     permissions:
       contents: write
     outputs:
@@ -77,52 +78,28 @@ jobs:
             exit 0
           fi
 
-          existing="$(git tag --points-at "$GITHUB_SHA" --list 'v[0-9]*.[0-9]*.[0-9]*' | head -n 1)"
-          if [[ -n "$existing" ]]; then
-            echo "release=none" >> "$GITHUB_OUTPUT"
-            echo "This commit is already tagged **$existing**; nothing to do." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
-          message="$(git log -1 --format=%B "$GITHUB_SHA")"
-          result="$(.github/scripts/next-version.sh "$latest" "$message")"
-          version="$(sed -n 's/^version=//p' <<<"$result")"
-          bump="$(sed -n 's/^bump=//p' <<<"$result")"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          result="$(.github/scripts/tag-commits.sh "$GITHUB_SHA")"
+          tags="$(sed -n 's/^tags=//p' <<<"$result")"
+          release_tag="$(sed -n 's/^release_tag=//p' <<<"$result")"
           release="$(sed -n 's/^release=//p' <<<"$result")"
 
-          if [[ "$bump" == "skip" ]]; then
-            if [[ "$release" == "none" ]]; then
-              echo "release=none" >> "$GITHUB_OUTPUT"
-              echo "Skipped: the commit message asks for [skip version]. Latest is ${latest:-(none)}." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            echo "tag=$latest" >> "$GITHUB_OUTPUT"
-            echo "release=$release" >> "$GITHUB_OUTPUT"
-            echo "Re-releasing **$latest** ($release) without a new version." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          if [[ -n "$tags" ]]; then
+            read -r -a list <<<"$tags"
+            git push origin "${list[@]/#/refs/tags/}"
+            echo "Tagged **$tags**." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No new tag (already tagged, or [skip version])." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           {
-            echo "tag=v$version"
+            echo "tag=$release_tag"
             echo "release=$release"
-            echo "version=$version"
-            echo "bump=$bump"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Push the tag
-        if: steps.decide.outputs.version != ''
-        env:
-          TAG: ${{ steps.decide.outputs.tag }}
-          BUMP: ${{ steps.decide.outputs.bump }}
-          RELEASE: ${{ steps.decide.outputs.release }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Bluestone $TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$TAG"
-          echo "Tagged **$TAG** ($BUMP), release: $RELEASE." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$release" != "none" ]]; then
+            echo "Releasing **$release_tag** ($release)." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   build:
     name: Build ${{ matrix.rid }}
@@ -220,7 +197,12 @@ jobs:
           ls -l dist
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
-            echo "Updated the files of release **$TAG**." >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$KIND" == "prerelease" ]]; then
+              gh release edit "$TAG" --prerelease=true
+            else
+              gh release edit "$TAG" --prerelease=false
+            fi
+            echo "Updated release **$TAG** ($KIND) with new files." >> "$GITHUB_STEP_SUMMARY"
           else
             flags=(--title "Bluestone $TAG" --generate-notes --verify-tag)
             if [[ "$KIND" == "prerelease" ]]; then
