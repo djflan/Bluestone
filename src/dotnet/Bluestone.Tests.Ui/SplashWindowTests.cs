@@ -99,22 +99,40 @@ public sealed class SplashWindowTests
         Assert.True(effect is not null, errors);
     }
 
-    [Fact]
-    public Task Marble_IsDarkStoneWithBlueVeins() => HeadlessApp.RunAsync(() =>
+    [Theory]
+    [InlineData(0.0, 0.0)]
+    [InlineData(7.3, 21.9)]
+    [InlineData(18.4, 3.1)]
+    [InlineData(29.7, 33.2)]
+    [InlineData(39.9, 12.6)]
+    public Task Marble_IsDarkStoneWithBlueVeins_WhateverItsSeed(double x, double y) => HeadlessApp.RunAsync(() =>
     {
         var splash = new SplashWindow();
+        splash.GetLogicalDescendants().OfType<MarbleSlab>().Single().Seed = new Vector(x, y);
         splash.Show();
         splash.UpdateLayout();
         using var frame = splash.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
         var directory = Path.Combine(AppContext.BaseDirectory, "frames");
         Directory.CreateDirectory(directory);
-        frame.Save(Path.Combine(directory, "splash.png"), new PngBitmapEncoderOptions());
+        frame.Save(Path.Combine(directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"splash-{x}-{y}.png")), new PngBitmapEncoderOptions());
+        var (dark, blue, total) = Sample(frame);
 
+        splash.Close();
+        Assert.True(dark > total / 2, $"Expected mostly dark stone; {dark} of {total} samples were dark.");
+        Assert.True(blue > total / 400, $"Expected some glowing blue veins; {blue} of {total} samples were blue.");
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public void EachSlab_ShowsADifferentPartOfTheMarble() =>
+        Assert.NotEqual(new MarbleSlab().Seed, new MarbleSlab().Seed);
+
+    /// <summary>Counts dark and blue pixels in the marble, inside the shadow margin.</summary>
+    private static (int Dark, int Blue, int Total) Sample(Bitmap frame)
+    {
         var pixels = Pixels(frame);
         var width = frame.PixelSize.Width;
         var height = frame.PixelSize.Height;
-
-        // Sample the marble only (inside the shadow margin and away from the text).
         int dark = 0, blue = 0, total = 0;
         for (var y = height / 6; y < height * 5 / 6; y += 2)
         {
@@ -135,11 +153,8 @@ public sealed class SplashWindowTests
             }
         }
 
-        splash.Close();
-        Assert.True(dark > total / 2, $"Expected mostly dark stone; {dark} of {total} samples were dark.");
-        Assert.True(blue > total / 400, $"Expected some glowing blue veins; {blue} of {total} samples were blue.");
-        return Task.CompletedTask;
-    });
+        return (dark, blue, total);
+    }
 
     private static byte[] Pixels(Bitmap frame)
     {

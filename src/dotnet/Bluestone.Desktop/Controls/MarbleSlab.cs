@@ -9,8 +9,8 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// Polished black marble with glowing azure veins and a fleck of gold beside them, drawn by a GPU shader, with light
-/// travelling along the veins while it is shown. The marble is the same on every launch. Where Skia or the shader is
-/// unavailable it draws a plain dark rounded card instead, so it can never stop start-up.
+/// travelling along the veins while it is shown. Each slab shows a different part of the marble (<see cref="Seed"/>).
+/// Where Skia or the shader is unavailable it draws a plain dark rounded card instead, so it can never stop start-up.
 /// </summary>
 internal sealed class MarbleSlab : Control
 {
@@ -23,6 +23,14 @@ internal sealed class MarbleSlab : Control
     private static readonly Lazy<SKRuntimeEffect?> Shader = new(Compile);
 
     private readonly DateTime _start = DateTime.UtcNow;
+
+    /// <summary>
+    /// Which part of the marble is shown. Each slab picks one at random, so every launch (and every About) shows a
+    /// different stone; set it to show a particular one.
+    /// </summary>
+#pragma warning disable CA5394 // Decorative variety, not security.
+    public Vector Seed { get; set; } = new(Random.Shared.NextDouble() * 40, Random.Shared.NextDouble() * 40);
+#pragma warning restore CA5394
     private DateTime _lastFrame;
     private bool _animating;
 
@@ -31,6 +39,7 @@ internal sealed class MarbleSlab : Control
         uniform float2 size;
         uniform float time;
         uniform float radius;
+        uniform float2 seed;
 
         float hash(float2 p) {
             p = fract(p * float2(123.34, 456.21));
@@ -83,9 +92,12 @@ internal sealed class MarbleSlab : Control
         half4 main(float2 xy) {
             float2 uv = xy / size.y;
 
+            // The seed moves the pattern to another part of the same endless marble.
+            float2 at = uv + seed;
+
             // Domain warp: the marble's flowing, folded look.
-            float2 w = float2(fbm(uv * 1.6 + float2(3.1, 7.4)), fbm(uv * 1.6 + float2(8.3, 2.8)));
-            float2 p = uv * 2.2 + w * 1.6;
+            float2 w = float2(fbm(at * 1.6 + float2(3.1, 7.4)), fbm(at * 1.6 + float2(8.3, 2.8)));
+            float2 p = at * 2.2 + w * 1.6;
 
             // Black stone with faint charcoal clouding and fine grey-white hairlines.
             float cloud = fbm(p * 1.3);
@@ -98,11 +110,11 @@ internal sealed class MarbleSlab : Control
             col += float3(0.28, 0.30, 0.34) * hair2 * 0.12;
 
             // Blue veins: a sharp core with a wide glow, brightness travelling along them.
-            float2 vp = uv * 1.1 + w * 0.8 + float2(5.0, 1.0);
+            float2 vp = at * 1.1 + w * 0.8 + float2(5.0, 1.0);
             float d = abs(fbm3(vp) - 0.5);
             float core = 1.0 - smoothstep(0.0, 0.012, d);
             float glow = exp(-d * 38.0);
-            float2 vp2 = uv * 1.7 + w * 1.1 + float2(1.0, 6.0);
+            float2 vp2 = at * 1.7 + w * 1.1 + float2(1.0, 6.0);
             float d2 = abs(fbm3(vp2) - 0.5);
             float core2 = 1.0 - smoothstep(0.0, 0.008, d2);
             float glow2 = exp(-d2 * 60.0);
@@ -117,7 +129,7 @@ internal sealed class MarbleSlab : Control
             col += azure * glow2 * 0.70 * flow2 + mix(azure, hot, flow2) * core2 * 0.7 * flow2;
 
             // Gold fleck: sparse sparkles only just beside the blue veins.
-            float2 cell = floor(xy / 5.0);
+            float2 cell = floor(xy / 5.0) + floor(seed * 97.0);
             float2 centre = (cell + 0.2 + 0.6 * float2(hash(cell + 3.1), hash(cell + 8.7))) * 5.0;
             float fleck = 1.0 - smoothstep(0.4, 1.3 * (0.6 + hash(cell + 1.9)), length(xy - centre));
             float sparkle = step(0.80, hash(cell + 7.0)) * fleck;
@@ -207,11 +219,11 @@ internal sealed class MarbleSlab : Control
         context.DrawRectangle(FallbackFill, null, new RoundedRect(bounds, CornerRadius));
         if (Shader.Value is { } shader)
         {
-            context.Custom(new Draw(bounds, (float)(DateTime.UtcNow - _start).TotalSeconds, shader));
+            context.Custom(new Draw(bounds, (float)(DateTime.UtcNow - _start).TotalSeconds, Seed, shader));
         }
     }
 
-    private sealed class Draw(Rect bounds, float time, SKRuntimeEffect effect) : ICustomDrawOperation
+    private sealed class Draw(Rect bounds, float time, Vector seed, SKRuntimeEffect effect) : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
 
@@ -236,6 +248,7 @@ internal sealed class MarbleSlab : Control
                 ["size"] = new[] { (float)bounds.Width, (float)bounds.Height },
                 ["time"] = time,
                 ["radius"] = (float)CornerRadius,
+                ["seed"] = new[] { (float)seed.X, (float)seed.Y },
             };
             using var shader = effect.ToShader(uniforms);
             using var paint = new SKPaint { Shader = shader, IsAntialias = true };
