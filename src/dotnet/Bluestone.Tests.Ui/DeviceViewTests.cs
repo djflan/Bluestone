@@ -143,6 +143,12 @@ public sealed class DeviceViewTests
         app.Settle();
         Assert.Equal(3, ValueOf(2, BuiltInDevices.ArpeggiatorRate));
 
+        // Dragging stores a step too: 70 px down is 1.3 positions of Rate's range, so 3 is stored as 2, not 1.69.
+        var middle = new Point(rate.Bounds.Width / 2, rate.Bounds.Height / 2);
+        app.Drag(rate, middle, middle + new Vector(0, 70));
+        var arpeggiator = app.ViewModel.Project.Chains.SelectMany(c => c.Devices).Single(d => d.Id == vm.Devices[2].Id);
+        Assert.Equal(BuiltInDevices.Arpeggiator.Parameters[0].ToStored(2), arpeggiator.ValueOf(BuiltInDevices.ArpeggiatorRate));
+
         // Transpose: one semitone per press, not two.
         var semitones = KnobFor(0, BuiltInDevices.TransposeSemitones);
         semitones.Focus();

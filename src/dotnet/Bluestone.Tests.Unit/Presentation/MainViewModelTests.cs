@@ -35,6 +35,10 @@ public sealed class MainViewModelTests : IAsyncLifetime
               "sysex": [ { "id": "reset", "name": "Reset", "effect": "reset", "bytes": "F0 7E 7F 09 01 F7" } ],
               "parameterMap": [ { "id": "cutoff", "name": "Filter Cutoff", "kind": "nrpn", "msb": 1, "lsb": 32 } ],
               "initialization": [ { "sysex": "reset" } ] }
+            """u8)).Add("transpose", ProfileLoader.Load("""
+            { "format": "bluestone-device-profile", "schemaVersion": 1, "id": "bluestone.midi.transpose", "version": "1", "name": "Shares an ID",
+              "provenance": { "sources": ["t"], "contributors": ["t"], "license": "MIT", "redistributionConfirmed": true, "verification": "unverified" },
+              "banks": [] }
             """u8));
         var playback = new PlaybackController(_session, _directoryOfEndpoints, catalog, _clock, startThread: false);
         _vm = new MainViewModel(_session, playback, _directoryOfEndpoints, _ui, new ImmediateDispatcher());
@@ -478,6 +482,19 @@ public sealed class MainViewModelTests : IAsyncLifetime
         await _vm.ImportMidiCommand.ExecuteAsync(null);
 
         Assert.Contains(_vm.Messages, m => m.Severity == MessageSeverity.Error && m.Source == "Import");
+    }
+
+    [Fact]
+    public void BrowserSelection_DoesNotJumpToADeviceThatSharesAProfilesId()
+    {
+        var browser = _vm.Browser;
+        browser.ShowCategory(BrowserCategory.Hardware);
+        browser.SelectedItem = browser.Items.Single(i => i.Name == "Shares an ID");
+
+        browser.ShowCategory(BrowserCategory.All);
+
+        Assert.Contains(browser.Items, i => i.Kind == BrowserItemKind.Device && i.Key == "bluestone.midi.transpose");
+        Assert.Null(browser.SelectedItem);
     }
 
     /// <summary>Inserts a device into the active Device View, as Return in the Browser does.</summary>

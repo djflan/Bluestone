@@ -622,6 +622,28 @@ public sealed class WorkspaceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OpeningAnotherProject_SavesTheOutgoingProjectsWindowBoundsAsTheyAreNow()
+    {
+        var laptop = DisplayConfiguration.Signature([Laptop]);
+        var first = Path.Combine(_directory, "First.bluestone");
+        var other = Path.Combine(_directory, "Other.bluestone");
+        await _session.SaveAsync(first, TestContext.Current.CancellationToken);
+        await new ProjectSession().SaveAsync(other, TestContext.Current.CancellationToken);
+        await Settle();
+        _vm.Screens = () => [Laptop];
+        _vm.Workspace.MainWindowBounds = ImmutableDictionary<string, WindowBounds>.Empty.Add(laptop, new WindowBounds(0, 0, 1440, 900));
+
+        // The window was moved since the layout was restored; the window reports that only when asked.
+        var moved = new WindowBounds(300, 150, 1000, 700);
+        _vm.RememberWindowBounds = () => _vm.Workspace.MainWindowBounds = _vm.Workspace.MainWindowBounds.SetItem(laptop, moved);
+
+        await _vm.OpenFileAsync(other);
+        await Settle();
+
+        Assert.Equal(moved, _vm.LayoutStore!.Load(first)!.MainWindow[laptop]);
+    }
+
+    [Fact]
     public void DisplayConfiguration_DoesNotDependOnTheOrderTheDisplaysAreListedIn() =>
         Assert.Equal(DisplayConfiguration.Signature([Laptop, SideMonitor]), DisplayConfiguration.Signature([SideMonitor, Laptop]));
 

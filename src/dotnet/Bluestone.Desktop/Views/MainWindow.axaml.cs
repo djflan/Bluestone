@@ -150,6 +150,7 @@ public partial class MainWindow : Window
     private void AttachWorkspace(MainViewModel vm)
     {
         vm.Screens = () => CurrentScreens();
+        vm.RememberWindowBounds = () => RememberBounds(vm.Workspace);
         vm.Workspace.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(WorkspaceViewModel.DetailExtent))
@@ -1145,7 +1146,6 @@ public partial class MainWindow : Window
         if (await _viewModel.ConfirmCloseAsync())
         {
             _closeConfirmed = true;
-            RememberBounds(_viewModel.Workspace);
             _viewModel.SaveLayout();
             foreach (var window in _detached.Values.ToList())
             {
