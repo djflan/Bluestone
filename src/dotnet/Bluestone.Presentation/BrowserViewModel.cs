@@ -342,14 +342,15 @@ public sealed partial class BrowserViewModel : ObservableObject
             .ToList();
         if (!Items.SequenceEqual(matches))
         {
-            var selected = SelectedItem?.Key;
+            var selected = SelectedItem;
             Items.Clear();
             foreach (var item in matches)
             {
                 Items.Add(item);
             }
 
-            SelectedItem = Items.FirstOrDefault(i => i.Key == selected);
+            // Keys are unique only within a kind: a hardware profile may share a built-in device's ID.
+            SelectedItem = Items.FirstOrDefault(i => i.Kind == selected?.Kind && i.Key == selected.Key);
         }
 
         EmptyText = terms.Length > 0 ? $"Nothing matches \u201c{SearchText.Trim()}\u201d."

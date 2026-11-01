@@ -11,7 +11,7 @@ namespace Bluestone.Desktop.Controls;
 /// <summary>
 /// A compact rotary parameter control for device panels. Drag vertically to change it (Shift for fine), scroll, or use the
 /// arrow keys; double-click returns it to its default. A stepped parameter (<see cref="Step"/> above zero) moves one step per
-/// key press or wheel notch; a continuous one moves 2% of its range (0.2% with Shift). Dragging writes the value live, so the change is heard as it is
+/// key press or wheel notch and lands only on its steps when dragged; a continuous one moves 2% of its range (0.2% with Shift). Dragging writes the value live, so the change is heard as it is
 /// made; the project's history coalesces consecutive edits of one parameter into a single undo step.
 /// </summary>
 public sealed class Knob : Control
@@ -103,6 +103,11 @@ public sealed class Knob : Control
         }
     }
 
+    /// <summary>Clamps a value to the range and, for a stepped parameter, rounds it to the nearest step.</summary>
+    private double Snap(double value) => Step > 0
+        ? Math.Clamp(Minimum + (Math.Round((value - Minimum) / Step) * Step), Minimum, Maximum)
+        : Math.Clamp(value, Minimum, Maximum);
+
     public override void Render(DrawingContext context)
     {
         var size = Math.Min(Bounds.Width, Bounds.Height);
@@ -173,7 +178,7 @@ public sealed class Knob : Control
 
         var scale = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 0.1 : 1;
         var delta = (_dragStart.Y - e.GetPosition(this).Y) / PixelsForFullRange * Range * scale;
-        _preview = Math.Clamp(_dragStartValue + delta, Minimum, Maximum);
+        _preview = Snap(_dragStartValue + delta);
         SetCurrentValue(ValueProperty, _preview.Value);
         InvalidateVisual();
         e.Handled = true;

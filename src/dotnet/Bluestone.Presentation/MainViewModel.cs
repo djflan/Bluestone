@@ -239,6 +239,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The displays attached now, supplied by the window, so saved windows are put back where they can be seen.</summary>
     public Func<IReadOnlyList<ScreenArea>> Screens { get; set; } = () => [];
 
+    /// <summary>Records where the windows are now, supplied by the window; runs before every layout save so the saved bounds are current.</summary>
+    public Action RememberWindowBounds { get; set; } = () => { };
+
     /// <summary>The selected track's (or edited rack's) connections: the routing inspector.</summary>
     public ConnectionsViewModel Connections { get; }
 
@@ -1492,8 +1495,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    /// <summary>Saves the local view state for the open project and as the user's defaults. The project is not marked edited.</summary>
-    public void SaveLayout() => LayoutStore?.Save(_workspacePath, CaptureLayout());
+    /// <summary>
+    /// Saves the local view state for the open project and as the user's defaults, with the windows' bounds as they are now.
+    /// The project is not marked edited.
+    /// </summary>
+    public void SaveLayout()
+    {
+        if (LayoutStore is null)
+        {
+            return;
+        }
+
+        RememberWindowBounds();
+        LayoutStore.Save(_workspacePath, CaptureLayout());
+    }
 
     /// <summary>The current local view state.</summary>
     public WorkspaceState CaptureLayout() => Workspace.Capture(Browser.Capture());
