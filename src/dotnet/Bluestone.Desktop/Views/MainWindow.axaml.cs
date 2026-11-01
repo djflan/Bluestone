@@ -860,6 +860,22 @@ public partial class MainWindow : Window
 
     internal void ShowShortcuts() => _ = Shortcuts.CreateWindow().ShowDialog(this);
 
+    private SplashWindow? _about;
+
+    /// <summary>Shows About Bluestone (the splash, without start-up progress), or brings it forward if it is open.</summary>
+    internal void ShowAbout()
+    {
+        if (_about is { } open)
+        {
+            open.Activate();
+            return;
+        }
+
+        _about = SplashWindow.CreateAbout();
+        _about.Closed += (_, _) => _about = null;
+        _about.Show(this);
+    }
+
     /// <summary>
     /// Single-key and navigation shortcuts. Runs before focused controls (tunnel) so that, for
     /// example, Space plays even when the track list has focus, but never while text is being edited.

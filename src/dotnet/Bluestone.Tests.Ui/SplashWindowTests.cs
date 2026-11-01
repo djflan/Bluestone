@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Bluestone.Desktop.Controls;
@@ -22,7 +23,8 @@ public sealed class SplashWindowTests
 
         var texts = splash.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
         Assert.Contains("BLUESTONE", texts);
-        Assert.Contains("PRE-RELEASE VERSION", texts);
+        Assert.Contains("PRE-RELEASE", texts);
+        Assert.Contains(Bluestone.Desktop.AppVersion.Release, texts);
         Assert.Contains("Scanning plugins (2 of 4)…", texts);
         Assert.Contains("Surge XT.vst3", texts);
         var progress = splash.GetLogicalDescendants().OfType<ProgressBar>().Single();
@@ -52,6 +54,43 @@ public sealed class SplashWindowTests
         splash.Close();
         return Task.CompletedTask;
     });
+
+    [Fact]
+    public Task About_ShowsTheNoticeInsteadOfProgress_AndOpensOnce() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.ShowAbout();
+        app.Window.ShowAbout();
+
+        var about = Assert.Single(app.Window.OwnedWindows.OfType<SplashWindow>());
+        Assert.True(about.IsAbout);
+        var texts = about.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
+        Assert.Contains("BLUESTONE", texts);
+        Assert.Contains(Bluestone.Desktop.AppVersion.Release, texts);
+        Assert.Contains(SplashWindow.NonAffiliationNotice, texts);
+        Assert.Contains(SplashWindow.Summary, texts);
+        Assert.Empty(about.GetLogicalDescendants().OfType<ProgressBar>());
+        app.SaveFrame("about", about);
+
+        about.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Assert.Empty(app.Window.OwnedWindows.OfType<SplashWindow>());
+
+        app.Window.ShowAbout();
+        Assert.Single(app.Window.OwnedWindows.OfType<SplashWindow>()).Close();
+    });
+
+    [Theory]
+    [InlineData("0.0.1+f3d6f8f2013231bb148f33b23729e7e137edbc94", "v0.0.1 f3d6f8f")]
+    [InlineData("0.0.1+abc", "v0.0.1 abc")]
+    [InlineData("0.0.1", "v0.0.1")]
+    [InlineData("0.0.1+", "v0.0.1")]
+    [InlineData(null, "development build")]
+    public void AppVersion_ShowsSemverAndShortCommit(string? informationalVersion, string expected) =>
+        Assert.Equal(expected, Bluestone.Desktop.AppVersion.Format(informationalVersion));
+
+    [Fact]
+    public void BuiltVersion_IsTheConfiguredSemverWithItsCommit() =>
+        Assert.Matches(@"^v0\.0\.1( [0-9a-f]{7})?$", Bluestone.Desktop.AppVersion.Display);
 
     [Fact]
     public void MarbleShader_Compiles()

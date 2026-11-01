@@ -101,11 +101,11 @@ internal sealed class MarbleSlab : Control
             float2 vp = uv * 1.1 + w * 0.8 + float2(5.0, 1.0);
             float d = abs(fbm3(vp) - 0.5);
             float core = 1.0 - smoothstep(0.0, 0.012, d);
-            float glow = exp(-d * 45.0);
+            float glow = exp(-d * 38.0);
             float2 vp2 = uv * 1.7 + w * 1.1 + float2(1.0, 6.0);
             float d2 = abs(fbm3(vp2) - 0.5);
             float core2 = 1.0 - smoothstep(0.0, 0.008, d2);
-            float glow2 = exp(-d2 * 70.0);
+            float glow2 = exp(-d2 * 60.0);
 
             float along = (w.x * 9.0 + uv.x * 3.0 + uv.y * 1.5);
             float flow = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(along - time * 1.4), 6.0);
@@ -113,8 +113,8 @@ internal sealed class MarbleSlab : Control
 
             float3 azure = float3(0.16, 0.48, 1.0);
             float3 hot = float3(0.80, 0.92, 1.0);
-            col += azure * glow * 0.55 * flow + mix(azure, hot, flow) * core * 1.1 * flow;
-            col += azure * glow2 * 0.30 * flow2 + mix(azure, hot, flow2) * core2 * 0.7 * flow2;
+            col += azure * glow * 0.9 * flow + mix(azure, hot, flow) * core * 1.1 * flow;
+            col += azure * glow2 * 0.70 * flow2 + mix(azure, hot, flow2) * core2 * 0.7 * flow2;
 
             // Gold fleck: sparse sparkles only just beside the blue veins.
             float2 cell = floor(xy / 5.0);

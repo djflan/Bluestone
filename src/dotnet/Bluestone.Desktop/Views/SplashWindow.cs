@@ -1,4 +1,3 @@
-using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -9,30 +8,46 @@ using Bluestone.Desktop.Theme;
 namespace Bluestone.Desktop.Views;
 
 /// <summary>
-/// Shown while Bluestone starts: a borderless window that is a slab of black marble with glowing blue veins, the
-/// product name, and what start-up is doing right now. A failed start shows the error and a Quit button instead
-/// of leaving the splash up for ever.
+/// A borderless window that is a slab of black marble with glowing blue veins and the product name. While Bluestone
+/// starts it shows what start-up is doing right now; a failed start shows the error and a Quit button instead of
+/// leaving the splash up for ever. As About Bluestone (<see cref="CreateAbout"/>) it shows the licence and the
+/// non-affiliation notice instead, and closes on Esc or when another window is clicked.
 /// </summary>
 internal sealed class SplashWindow : Window
 {
+    public const string NonAffiliationNotice =
+        "Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation " +
+        "or by the owner of any other product, format, or standard it names. Yamaha, XG, QY100, and other product names and trademarks " +
+        "belong to their respective owners and are used only to identify products and describe compatibility. " +
+        "VST is a registered trademark of Steinberg Media Technologies GmbH.";
+
+    public const string Summary = "A hardware-oriented DAW built around MIDI and real instruments. MIT licensed.";
+
     private readonly TextBlock _status;
     private readonly TextBlock _detail;
     private readonly ProgressBar _progress;
     private readonly Button _quit;
 
+    private bool _closing;
+
+    /// <summary>The start-up splash.</summary>
     public SplashWindow()
+        : this(about: false)
     {
-        Title = "Bluestone";
+    }
+
+    private SplashWindow(bool about)
+    {
+        IsAbout = about;
+        Title = about ? "About Bluestone" : "Bluestone";
         Width = 620;
-        Height = 300;
+        Height = about ? 340 : 300;
         CanResize = false;
-        ShowInTaskbar = true;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        ShowInTaskbar = !about;
+        WindowStartupLocation = about ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen;
         WindowDecorations = WindowDecorations.None;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
         Background = Brushes.Transparent;
-
-        var version = typeof(SplashWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "development build";
 
         _status = new TextBlock { Text = "Starting…", Foreground = new SolidColorBrush(Palette.Text), FontSize = 13 };
         _detail = new TextBlock
@@ -53,7 +68,18 @@ internal sealed class SplashWindow : Window
             Children =
             {
                 Wordmark(),
-                new TextBlock { Text = "PRE-RELEASE VERSION", FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent), Margin = new Thickness(3, 0, 0, 0) },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Margin = new Thickness(3, 0, 0, 0),
+                    Children =
+                    {
+                        new TextBlock { Text = AppVersion.Release, FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
+                        new TextBlock { Text = AppVersion.Commit, FontSize = 11, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.TextMuted), IsVisible = AppVersion.Commit.Length > 0 },
+                        new TextBlock { Text = "PRE-RELEASE", FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
+                    },
+                },
             },
         };
 
@@ -66,9 +92,6 @@ internal sealed class SplashWindow : Window
         footer.Children.Add(_status);
         Grid.SetRow(_detail, 1);
         footer.Children.Add(_detail);
-        var versionText = new TextBlock { Text = version, FontSize = 11, Foreground = new SolidColorBrush(Palette.TextMuted), VerticalAlignment = VerticalAlignment.Bottom };
-        Grid.SetColumn(versionText, 1);
-        footer.Children.Add(versionText);
         Grid.SetColumn(_quit, 1);
         Grid.SetRow(_quit, 1);
         footer.Children.Add(_quit);
@@ -90,15 +113,83 @@ internal sealed class SplashWindow : Window
             Padding = new Thickness(40, 30, 32, 24),
             Child = new DockPanel
             {
-                Children = { WithDock(footer, Dock.Bottom), title },
+                Children = { WithDock(about ? AboutFooter() : footer, Dock.Bottom), title },
             },
         };
 
-        Content = new Panel { Children = { shadow, new Controls.MarbleSlab { Margin = new Thickness(Inset) }, content } };
+        var layers = new Panel { Children = { shadow, new Controls.MarbleSlab { Margin = new Thickness(Inset) } } };
+        if (about)
+        {
+            // The small print sits on a darker fade so the veins do not run through it.
+            layers.Children.Add(new Border
+            {
+                Margin = new Thickness(Inset),
+                Height = 170,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                CornerRadius = new CornerRadius(0, 0, Controls.MarbleSlab.CornerRadius, Controls.MarbleSlab.CornerRadius),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.Parse("#00040508"), 0), new GradientStop(Color.Parse("#D0040508"), 0.45), new GradientStop(Color.Parse("#E8040508"), 1) },
+                },
+            });
+        }
+
+        layers.Children.Add(content);
+        Content = layers;
     }
 
     /// <summary>The space round the marble for its shadow.</summary>
     private const double Inset = 16;
+
+    /// <summary>Whether this is About Bluestone rather than the start-up splash.</summary>
+    public bool IsAbout { get; }
+
+    /// <summary>About Bluestone: the splash with the licence and notice in place of start-up progress. Show it with an owner.</summary>
+    public static SplashWindow CreateAbout() => new(about: true);
+
+    protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
+    {
+        if (IsAbout && e.Key == Avalonia.Input.Key.Escape)
+        {
+            e.Handled = true;
+            CloseOnce();
+            return;
+        }
+
+        base.OnKeyDown(e);
+    }
+
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        if (IsAbout)
+        {
+            // Closes when the user clicks another window (or switches app), like a popover.
+            Deactivated += (_, _) => CloseOnce();
+            Activate();
+        }
+    }
+
+    private void CloseOnce()
+    {
+        if (!_closing)
+        {
+            _closing = true;
+            Close();
+        }
+    }
+
+    private static StackPanel AboutFooter() => new()
+    {
+        Spacing = 8,
+        Children =
+        {
+            new TextBlock { Text = Summary, FontSize = 12, Foreground = new SolidColorBrush(Palette.Text), TextWrapping = TextWrapping.Wrap },
+            new TextBlock { Text = NonAffiliationNotice, FontSize = 10, Foreground = new SolidColorBrush(Palette.TextSecondary), TextWrapping = TextWrapping.Wrap, LineHeight = 14 },
+        },
+    };
 
     /// <summary>Raised when the user asks to quit after start-up failed.</summary>
     public event EventHandler? QuitRequested;
@@ -132,24 +223,31 @@ internal sealed class SplashWindow : Window
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 
-    /// <summary>The product name: bold capitals with an ice-to-blue sheen.</summary>
-    private static TextBlock Wordmark() => new()
+    /// <summary>The product name: bold white capitals over two blurred azure copies, a wide halo and a tight bright glow.</summary>
+    private static Panel Wordmark()
     {
-        Text = "BLUESTONE",
-        FontSize = 40,
-        FontWeight = FontWeight.Bold,
-        Foreground = new LinearGradientBrush
+        static TextBlock Layer(IBrush brush, double blur, double opacity) => new()
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops =
+            Text = "BLUESTONE",
+            FontSize = 40,
+            FontWeight = FontWeight.Bold,
+            Foreground = brush,
+            Opacity = opacity,
+            Effect = blur > 0 ? new BlurEffect { Radius = blur } : null,
+            IsHitTestVisible = false,
+        };
+
+        return new Panel
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Children =
             {
-                new GradientStop(Color.Parse("#F2F8FF"), 0),
-                new GradientStop(Color.Parse("#A9D2FF"), 0.45),
-                new GradientStop(Palette.Accent, 1),
+                Layer(new SolidColorBrush(Color.Parse("#2F7BFF")), blur: 18, opacity: 0.7),
+                Layer(new SolidColorBrush(Color.Parse("#7DB8FF")), blur: 5, opacity: 0.7),
+                Layer(Brushes.White, blur: 0, opacity: 1),
             },
-        },
-    };
+        };
+    }
 
     private static Control WithDock(Control control, Dock dock)
     {

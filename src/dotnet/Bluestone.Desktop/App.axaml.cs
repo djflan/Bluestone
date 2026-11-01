@@ -18,7 +18,16 @@ public partial class App : Avalonia.Application
 {
     private static AudioViewModel? _audio;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+
+        // macOS reads the application menu once, straight after this; a menu set any later is ignored.
+        if (OperatingSystem.IsMacOS())
+        {
+            AppMenu.InstallApplicationMenu(this, () => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow as MainWindow);
+        }
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -34,13 +43,9 @@ public partial class App : Avalonia.Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>The least time the splash stays up, so a fast start does not just flash it.</summary>
-    private static readonly TimeSpan MinimumSplash = TimeSpan.FromSeconds(5);
-
     /// <summary>Composes the app behind the splash, reporting each step, then swaps the splash for the main window.</summary>
     private static async Task StartAsync(IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splash)
     {
-        var started = System.Diagnostics.Stopwatch.StartNew();
         MainViewModel? viewModel = null;
         List<IMidiEndpointProvider> platformProviders = [];
         PluginHostManager? plugins = null;
@@ -89,11 +94,6 @@ public partial class App : Avalonia.Application
             }
 
             await Step(splash, "Ready", fraction: 1);
-            if (MinimumSplash - started.Elapsed is { TotalMilliseconds: > 0 } remaining)
-            {
-                await Task.Delay(remaining);
-            }
-
             desktop.MainWindow = window;
             window.Show();
             splash.Close();

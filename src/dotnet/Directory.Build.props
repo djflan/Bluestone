@@ -18,6 +18,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
+    <!-- The release version (semver), bumped by hand. Each build also records the commit it was built from
+         (the SDK appends "+<commit>" to the informational version); the app shows it as e.g. "v0.0.1 a32f6d1". -->
+    <Version>0.0.1</Version>
+
     <Authors>Bluestone contributors</Authors>
     <Product>Bluestone</Product>
     <Copyright>Copyright (c) 2026 Bluestone contributors</Copyright>
