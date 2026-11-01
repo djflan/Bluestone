@@ -103,7 +103,8 @@ public sealed class PluginScannerProcessTests : IDisposable
 
         var scan = scanner.ScanAsync([hang], cancel.Token);
         var started = DateTime.UtcNow;
-        while (!ScannerProcesses().Except(before).Any())
+        int[] launched;
+        while ((launched = [.. ScannerProcesses().Except(before)]).Length == 0)
         {
             Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(30), "The scanner process did not start.");
             await Task.Delay(50, Ct);
@@ -121,7 +122,14 @@ public sealed class PluginScannerProcessTests : IDisposable
             // Cancelled while reading the module.
         }
 
-        Assert.Empty(ScannerProcesses().Except(before));
+        // A killed process can stay listed for a moment while the system tears it down (seen on Windows).
+        var stopping = DateTime.UtcNow;
+        while (ScannerProcesses().Intersect(launched).Any() && DateTime.UtcNow - stopping < TimeSpan.FromSeconds(15))
+        {
+            await Task.Delay(100, Ct);
+        }
+
+        Assert.Empty(ScannerProcesses().Intersect(launched));
         Assert.Empty(scanner.Quarantined);
     }
 
