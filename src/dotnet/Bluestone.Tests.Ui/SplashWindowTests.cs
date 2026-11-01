@@ -79,6 +79,21 @@ public sealed class SplashWindowTests
         Assert.Single(app.Window.OwnedWindows.OfType<SplashWindow>()).Close();
     });
 
+    /// <summary>Windows and Linux have no native menu bar, so About is in the in-window File menu too.</summary>
+    [Fact]
+    public Task About_OpensFromTheInWindowFileMenu() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var file = app.Find<DropDownButton>("FileMenuButton");
+        app.Click(file);
+        var flyout = Assert.IsType<MenuFlyout>(file.Flyout);
+        app.Click(flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "About Bluestone")));
+
+        var about = Assert.Single(app.Window.OwnedWindows.OfType<SplashWindow>());
+        Assert.True(about.IsAbout);
+        about.Close();
+    });
+
     [Theory]
     [InlineData("0.0.1+f3d6f8f2013231bb148f33b23729e7e137edbc94", "v0.0.1 f3d6f8f")]
     [InlineData("0.0.1+abc", "v0.0.1 abc")]
@@ -116,11 +131,12 @@ public sealed class SplashWindowTests
         var directory = Path.Combine(AppContext.BaseDirectory, "frames");
         Directory.CreateDirectory(directory);
         frame.Save(Path.Combine(directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"splash-{x}-{y}.png")), new PngBitmapEncoderOptions());
-        var (dark, blue, total) = Sample(frame);
+        var (dark, blue, gold, total) = Sample(frame);
 
         splash.Close();
         Assert.True(dark > total / 2, $"Expected mostly dark stone; {dark} of {total} samples were dark.");
         Assert.True(blue > total / 400, $"Expected some glowing blue veins; {blue} of {total} samples were blue.");
+        Assert.True(gold > 0, "Expected some gold flecks beside the veins.");
         return Task.CompletedTask;
     });
 
@@ -132,19 +148,29 @@ public sealed class SplashWindowTests
         return Task.CompletedTask;
     });
 
-    /// <summary>Counts dark and blue pixels in the marble, inside the shadow margin.</summary>
-    private static (int Dark, int Blue, int Total) Sample(Bitmap frame)
+    /// <summary>Counts dark, blue, and gold pixels in the marble, inside the shadow margin. Gold flecks are a pixel or two, so every pixel is checked for them.</summary>
+    private static (int Dark, int Blue, int Gold, int Total) Sample(Bitmap frame)
     {
         var pixels = Pixels(frame);
         var width = frame.PixelSize.Width;
         var height = frame.PixelSize.Height;
-        int dark = 0, blue = 0, total = 0;
-        for (var y = height / 6; y < height * 5 / 6; y += 2)
+        int dark = 0, blue = 0, gold = 0, total = 0;
+        for (var y = height / 6; y < height * 5 / 6; y++)
         {
-            for (var x = width / 12; x < width * 11 / 12; x += 2)
+            for (var x = width / 12; x < width * 11 / 12; x++)
             {
                 var i = ((y * width) + x) * 4;
                 var (b, g, r) = (pixels[i], pixels[i + 1], pixels[i + 2]);
+                if (r > 110 && r > b + 30 && g > b)
+                {
+                    gold++;
+                }
+
+                if ((x | y) % 2 != 0)
+                {
+                    continue;
+                }
+
                 total++;
                 if (r < 40 && g < 40 && b < 50)
                 {
@@ -158,7 +184,7 @@ public sealed class SplashWindowTests
             }
         }
 
-        return (dark, blue, total);
+        return (dark, blue, gold, total);
     }
 
     private static byte[] Pixels(Bitmap frame)

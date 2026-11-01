@@ -81,6 +81,8 @@
                 <MenuItem Header="Audio Settings…" Classes="keepsSettings" Click="OnAudioSettingsClick" ToolTip.Tip="Settings ▸ Audio: the output device, sample rate, and buffer" />
                 <Separator />
                 <MenuItem Header="Settings…" Classes="keepsSettings" Click="OnSettingsClick" InputGesture="Ctrl+OemComma" />
+                <Separator />
+                <MenuItem Header="About Bluestone" Click="OnAboutClick" />
               </MenuFlyout>
             </DropDownButton.Flyout>
           </DropDownButton>

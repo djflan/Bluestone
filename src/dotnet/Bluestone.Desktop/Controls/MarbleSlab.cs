@@ -129,8 +129,10 @@ internal sealed class MarbleSlab : Control
             col += azure * glow2 * 0.70 * flow2 + mix(azure, hot, flow2) * core2 * 0.7 * flow2;
 
             // Gold fleck: sparse sparkles only just beside the blue veins.
-            float2 cell = floor(xy / 5.0) + floor(seed * 97.0);
-            float2 centre = (cell + 0.2 + 0.6 * float2(hash(cell + 3.1), hash(cell + 8.7))) * 5.0;
+            // The seed changes which cells sparkle (cell), not where a cell is on the card (grid).
+            float2 grid = floor(xy / 5.0);
+            float2 cell = grid + floor(seed * 97.0);
+            float2 centre = (grid + 0.2 + 0.6 * float2(hash(cell + 3.1), hash(cell + 8.7))) * 5.0;
             float fleck = 1.0 - smoothstep(0.4, 1.3 * (0.6 + hash(cell + 1.9)), length(xy - centre));
             float sparkle = step(0.80, hash(cell + 7.0)) * fleck;
             float near = smoothstep(0.05, 0.02, d) * (1.0 - core);
