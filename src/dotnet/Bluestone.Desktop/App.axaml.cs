@@ -35,7 +35,7 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>The least time the splash stays up, so a fast start does not just flash it.</summary>
-    private static readonly TimeSpan MinimumSplash = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan MinimumSplash = TimeSpan.FromSeconds(5);
 
     /// <summary>Composes the app behind the splash, reporting each step, then swaps the splash for the main window.</summary>
     private static async Task StartAsync(IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splash)

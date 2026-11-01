@@ -3,16 +3,14 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using Bluestone.Desktop.Theme;
 
 namespace Bluestone.Desktop.Views;
 
 /// <summary>
-/// Shown while Bluestone starts: a borderless, see-through window with the artwork over a slightly translucent card,
-/// the product name, and what start-up is doing right now. A failed start shows the error and a Quit button instead
+/// Shown while Bluestone starts: a borderless window that is a slab of black marble with glowing blue veins, the
+/// product name, and what start-up is doing right now. A failed start shows the error and a Quit button instead
 /// of leaving the splash up for ever.
 /// </summary>
 internal sealed class SplashWindow : Window
@@ -25,8 +23,8 @@ internal sealed class SplashWindow : Window
     public SplashWindow()
     {
         Title = "Bluestone";
-        Width = 640;
-        Height = 320;
+        Width = 620;
+        Height = 300;
         CanResize = false;
         ShowInTaskbar = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -78,29 +76,29 @@ internal sealed class SplashWindow : Window
         Grid.SetColumnSpan(_progress, 2);
         footer.Children.Add(_progress);
 
-        // The card sits below the top edge so the artwork can break out of it.
-        var card = new Border
+        // A margin round the marble leaves room for its shadow in the see-through window.
+        var shadow = new Border
         {
-            Margin = new Thickness(16, 56, 16, 16),
-            CornerRadius = new CornerRadius(14),
-            Background = new SolidColorBrush(Palette.Base, 0.95),
-            BorderBrush = new SolidColorBrush(Colors.White, 0.08),
-            BorderThickness = new Thickness(1),
-            BoxShadow = BoxShadows.Parse("0 12 40 0 #A0000000"),
-            Padding = new Thickness(232, 22, 28, 18),
+            Margin = new Thickness(Inset),
+            CornerRadius = new CornerRadius(Controls.MarbleSlab.CornerRadius),
+            Background = Brushes.Black,
+            BoxShadow = BoxShadows.Parse("0 10 30 0 #B0000000"),
+        };
+        var content = new Border
+        {
+            Margin = new Thickness(Inset),
+            Padding = new Thickness(40, 30, 32, 24),
             Child = new DockPanel
             {
                 Children = { WithDock(footer, Dock.Bottom), title },
             },
         };
 
-        var art = Artwork();
-        art.Margin = new Thickness(20, 0, 0, 0);
-        art.HorizontalAlignment = HorizontalAlignment.Left;
-        art.VerticalAlignment = VerticalAlignment.Top;
-
-        Content = new Panel { Children = { card, art } };
+        Content = new Panel { Children = { shadow, new Controls.MarbleSlab { Margin = new Thickness(Inset) }, content } };
     }
+
+    /// <summary>The space round the marble for its shadow.</summary>
+    private const double Inset = 16;
 
     /// <summary>Raised when the user asks to quit after start-up failed.</summary>
     public event EventHandler? QuitRequested;
@@ -133,18 +131,6 @@ internal sealed class SplashWindow : Window
         await Task.WhenAny(frame.Task, Task.Delay(100));
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
-
-    /// <summary>
-    /// The splash artwork, Assets/splash.png: a transparent PNG drawn at 2× (420×520 px) for this 210×260 area. Replace
-    /// the file to change the image; it may break out above the card, which starts 56 px down.
-    /// </summary>
-    private static Image Artwork() => new()
-    {
-        Width = 210,
-        Height = 260,
-        Stretch = Stretch.Uniform,
-        Source = new Bitmap(AssetLoader.Open(new Uri("avares://Bluestone.Desktop/Assets/splash.png"))),
-    };
 
     /// <summary>The product name: bold capitals with an ice-to-blue sheen.</summary>
     private static TextBlock Wordmark() => new()
