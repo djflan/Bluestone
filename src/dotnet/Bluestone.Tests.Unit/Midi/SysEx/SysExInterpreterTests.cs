@@ -168,7 +168,7 @@ public sealed class SysExInterpreterTests
 
     [Fact]
     public void Interpret_NeverThrowsForWellFormedMessages() =>
-        Gen.Select(Gen.OneOfConst<byte>(0x7E, 0x7F, 0x43, 0x41, 0x00), Gen.Byte[0, 0x7F].Array[0, 40]).Sample(t =>
+        Gen.Select(Gen.OneOf<byte>(0x7E, 0x7F, 0x43, 0x41, 0x00), Gen.Byte[0, 0x7F].Array[0, 40]).Sample(t =>
         {
             _ = SysExInterpreter.Interpret(SysExMessage.Create([0xF0, t.Item1, .. t.Item2, 0xF7]))?.Summary;
         });
