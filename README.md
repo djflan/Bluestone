@@ -1,6 +1,6 @@
 # Bluestone
 
-[![CI](https://github.com/djflan/Bluestone/actions/workflows/ci.yml/badge.svg)](https://github.com/djflan/Bluestone/actions/workflows/ci.yml)
+[![CI](https://github.com/djflan/Bluestone/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/djflan/Bluestone/actions/workflows/ci.yml)
 
 Bluestone is an open-source, cross-platform DAW built around MIDI and real instruments. It sequences, records, and edits MIDI for hardware and software instruments, plays audio clips through a mixer, and hosts VST 3 and CLAP plugins in separate processes, so a plugin that crashes cannot take the project down with it.
 

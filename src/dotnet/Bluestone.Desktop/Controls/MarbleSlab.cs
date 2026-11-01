@@ -1,7 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.Rendering.SceneGraph;
+using Avalonia.Rendering.Composition;
 using Avalonia.Skia;
 using SkiaSharp;
 
@@ -11,6 +11,8 @@ namespace Bluestone.Desktop.Controls;
 /// Polished black marble with glowing azure veins and a fleck of gold beside them, drawn by a GPU shader, with light
 /// travelling along the veins while it is shown. Each slab shows a different part of the marble (<see cref="Seed"/>).
 /// Where Skia or the shader is unavailable it draws a plain dark rounded card instead, so it can never stop start-up.
+/// The marble is drawn and animated on the render thread (a composition visual), so work on the UI thread, such as
+/// start-up behind the splash, cannot make it stutter.
 /// </summary>
 internal sealed class MarbleSlab : Control
 {
@@ -22,8 +24,6 @@ internal sealed class MarbleSlab : Control
     private static readonly IBrush FallbackFill = new SolidColorBrush(Color.Parse("#0B0D12"));
     private static readonly Lazy<SKRuntimeEffect?> Shader = new(Compile);
 
-    private readonly DateTime _start = DateTime.UtcNow;
-
     /// <summary>
     /// Which part of the marble is shown. Each slab picks one at random, so every launch (and every About) shows a
     /// different stone; set it to show a particular one.
@@ -31,8 +31,7 @@ internal sealed class MarbleSlab : Control
 #pragma warning disable CA5394 // Decorative variety, not security.
     public Vector Seed { get; set; } = new(Random.Shared.NextDouble() * 40, Random.Shared.NextDouble() * 40);
 #pragma warning restore CA5394
-    private DateTime _lastFrame;
-    private bool _animating;
+    private CompositionCustomVisual? _visual;
 
     /// <summary>The SkSL source: marble base, blue veins with a travelling glow, gold fleck, a calm area for the title, rounded edge.</summary>
     internal const string Source = """
@@ -181,80 +180,115 @@ internal sealed class MarbleSlab : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        _animating = true;
-        NextFrame();
-    }
-
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        _animating = false;
-        base.OnDetachedFromVisualTree(e);
-    }
-
-    private void NextFrame()
-    {
-        if (_animating && TopLevel.GetTopLevel(this) is { } top)
-        {
-            top.RequestAnimationFrame(_ =>
-            {
-                var now = DateTime.UtcNow;
-                if (now - _lastFrame >= FrameInterval)
-                {
-                    _lastFrame = now;
-                    InvalidateVisual();
-                }
-
-                NextFrame();
-            });
-        }
-    }
-
-    public override void Render(DrawingContext context)
-    {
-        var bounds = new Rect(Bounds.Size);
-        if (bounds.Width < 1 || bounds.Height < 1)
+        if (Shader.Value is not { } shader || ElementComposition.GetElementVisual(this)?.Compositor is not { } compositor)
         {
             return;
         }
 
-        // The plain card goes underneath, so it shows wherever the shader cannot be drawn.
-        context.DrawRectangle(FallbackFill, null, new RoundedRect(bounds, CornerRadius));
-        if (Shader.Value is { } shader)
+        _visual = compositor.CreateCustomVisual(new MarbleVisual(shader));
+        _visual.Size = new Vector(Bounds.Width, Bounds.Height);
+        ElementComposition.SetElementChildVisual(this, _visual);
+        _visual.SendHandlerMessage(new Start(Seed));
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (_visual is not null)
         {
-            context.Custom(new Draw(bounds, (float)(DateTime.UtcNow - _start).TotalSeconds, Seed, shader));
+            _visual.SendHandlerMessage(Stop.Instance);
+            ElementComposition.SetElementChildVisual(this, null);
+            _visual = null;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (_visual is not null)
+        {
+            _visual.Size = new Vector(e.NewSize.Width, e.NewSize.Height);
         }
     }
 
-    private sealed class Draw(Rect bounds, float time, Vector seed, SKRuntimeEffect effect) : ICustomDrawOperation
+    /// <summary>The plain card, under the marble, so it shows wherever the shader cannot be drawn.</summary>
+    public override void Render(DrawingContext context)
     {
-        public Rect Bounds => bounds;
-
-        public bool HitTest(Point p) => bounds.Contains(p);
-
-        public bool Equals(ICustomDrawOperation? other) => false;
-
-        public void Dispose()
+        if (Bounds.Width >= 1 && Bounds.Height >= 1)
         {
+            context.DrawRectangle(FallbackFill, null, new RoundedRect(new Rect(Bounds.Size), CornerRadius));
+        }
+    }
+
+    private sealed record Start(Vector Seed);
+
+    private sealed class Stop
+    {
+        public static readonly Stop Instance = new();
+    }
+
+    /// <summary>Draws the shader on the render thread and asks for the next frame there, at most every <see cref="FrameInterval"/>.</summary>
+    private sealed class MarbleVisual(SKRuntimeEffect effect) : CompositionCustomVisualHandler
+    {
+        private Vector _seed;
+        private TimeSpan? _start;
+        private TimeSpan _lastFrame;
+        private bool _running;
+
+        public override void OnMessage(object message)
+        {
+            switch (message)
+            {
+                case Start start:
+                    _seed = start.Seed;
+                    _start = null;
+                    _running = true;
+                    Invalidate();
+                    RegisterForNextAnimationFrameUpdate();
+                    break;
+                case Stop:
+                    _running = false;
+                    break;
+            }
         }
 
-        public void Render(ImmediateDrawingContext context)
+        public override void OnAnimationFrameUpdate()
         {
-            if (context.TryGetFeature<ISkiaSharpApiLeaseFeature>() is not { } feature)
+            if (!_running)
             {
                 return;
             }
 
+            if (CompositionNow - _lastFrame >= FrameInterval)
+            {
+                _lastFrame = CompositionNow;
+                Invalidate();
+            }
+
+            RegisterForNextAnimationFrameUpdate();
+        }
+
+        public override void OnRender(ImmediateDrawingContext drawingContext)
+        {
+            var size = EffectiveSize;
+            if (size.X < 1 || size.Y < 1 || drawingContext.TryGetFeature<ISkiaSharpApiLeaseFeature>() is not { } feature)
+            {
+                return;
+            }
+
+            _start ??= CompositionNow;
             using var lease = feature.Lease();
             var uniforms = new SKRuntimeEffectUniforms(effect)
             {
-                ["size"] = new[] { (float)bounds.Width, (float)bounds.Height },
-                ["time"] = time,
+                ["size"] = new[] { (float)size.X, (float)size.Y },
+                ["time"] = (float)(CompositionNow - _start.Value).TotalSeconds,
                 ["radius"] = (float)CornerRadius,
-                ["seed"] = new[] { (float)seed.X, (float)seed.Y },
+                ["seed"] = new[] { (float)_seed.X, (float)_seed.Y },
             };
             using var shader = effect.ToShader(uniforms);
             using var paint = new SKPaint { Shader = shader, IsAntialias = true };
-            lease.SkCanvas.DrawRect(SKRect.Create((float)bounds.Width, (float)bounds.Height), paint);
+            lease.SkCanvas.DrawRect(SKRect.Create((float)size.X, (float)size.Y), paint);
         }
     }
 }

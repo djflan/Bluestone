@@ -58,7 +58,7 @@ Every commit that lands on `main` is tagged with the next version (`vX.Y.Z`) by 
 
 `[skip version]` wins over `[major]`, which wins over `[minor]`, and a pre-release token wins over `[release]`. `[skip version]` with a release token builds and releases the latest tag again without a new version. To build and release an existing tag by hand (for example after a failed build), run the Version workflow from the Actions tab and give it the tag. Only the commit that lands on `main` is read, so a token in one of a pull request's own commits has no effect. Each run tags every untagged commit on `main` since the latest tag, oldest first, so a merge whose run was cancelled (GitHub keeps only the newest waiting run) is still tagged with its tokens; if several of them ask for a release, the last one is built.
 
-A release builds a self-contained, unsigned archive for macOS (Apple silicon and Intel), Windows (x64 and ARM64), and Linux (x64 and ARM64), after running the tests on each. Builds made without tags (CI, or a clone without tags) show `v0.0.0`. To try the rules, run `.github/scripts/next-version.test.sh` and `.github/scripts/tag-commits.test.sh`.
+A release builds a self-contained, unsigned archive for macOS (Apple silicon and Intel), Windows (x64 and ARM64), and Linux (x64 and ARM64). It does not run the tests again: the pull request checks already did. Builds made without tags (CI, or a clone without tags) show `v0.0.0`. To try the rules, run `.github/scripts/next-version.test.sh` and `.github/scripts/tag-commits.test.sh`.
 
 ## Device profiles
 

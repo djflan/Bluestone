@@ -3,6 +3,8 @@ name: Version
 # Tags every commit that lands on main with the next version, and builds and publishes a GitHub Release when asked.
 # Independent of CI: it does not wait for or gate on the CI checks, and adds none of its own.
 #
+# Release builds do not run the tests again; the required pull request checks already did.
+#
 # Tokens in the message of the commit that landed (for a merge commit that includes the PR title; case-insensitive):
 #   (none)                         patch: v0.3.7 -> v0.3.8
 #   [minor]                        v0.3.7 -> v0.4.0
@@ -135,18 +137,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - name: Test native crates
-        working-directory: src/native
-        run: cargo test --locked
-
-      - name: Build
-        run: dotnet build src/dotnet/Bluestone.slnx --configuration Release
-
-      # As in CI: one test assembly at a time, and no CoreMIDI tests on hosted macOS runners.
-      - name: Test
-        run: dotnet test src/dotnet/Bluestone.slnx --no-build --configuration Release --max-parallel-test-modules 1 --filter-not-class Bluestone.Tests.Integration.Platform.CoreMidiProviderTests
-
-      # Self-contained: includes .NET, the Rust libraries, the profiles, and the plugin worker, so nothing else is needed.
+      # No tests here: the commit already passed the required CI checks to reach main. The publish builds what it needs
+      # (the Rust libraries too) and is self-contained: .NET, the Rust libraries, the profiles, and the plugin worker.
       - name: Publish
         run: dotnet publish src/dotnet/Bluestone.Desktop --configuration Release --runtime ${{ matrix.rid }} --self-contained --output publish/Bluestone
 
