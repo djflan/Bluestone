@@ -1,8 +1,8 @@
 name: CI
 
+# Pull requests only: main is protected and takes changes only through pull requests that pass these checks, so the
+# merged commit is not tested again. Run it by hand (workflow_dispatch) to check main.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
