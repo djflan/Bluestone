@@ -87,6 +87,56 @@ public sealed class PluginScannerProcessTests : IDisposable
         Assert.Equal(ScanFailureKind.TimedOut, Assert.Single(scanner.Quarantined).Reason);
     }
 
+    /// <summary>
+    /// Quitting during the start-up scan cancels it; that must end the scanner process rather than leave it running, and
+    /// must not blame the module. Cancelled while the scanner starts and while it is reading the module.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2000)]
+    public async Task CancellingAScan_EndsTheScannerProcess_WithoutQuarantiningTheModule(int cancelAfterMilliseconds)
+    {
+        var hang = Module("hang.bluestone-reference-plugin", "#bluestone-test: hang-scanner\n");
+        using var scanner = Scanner(TimeSpan.FromMinutes(5));
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var before = ScannerProcesses();
+
+        var scan = scanner.ScanAsync([hang], cancel.Token);
+        var started = DateTime.UtcNow;
+        int[] launched;
+        while ((launched = [.. ScannerProcesses().Except(before)]).Length == 0)
+        {
+            Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(30), "The scanner process did not start.");
+            await Task.Delay(50, Ct);
+        }
+
+        await Task.Delay(cancelAfterMilliseconds, Ct);
+        await cancel.CancelAsync();
+        try
+        {
+            var result = await scan.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+            Assert.NotEqual(ModuleScanStatus.Scanned, result[0].Status);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested && !Ct.IsCancellationRequested)
+        {
+            // Cancelled while reading the module.
+        }
+
+        // A killed process can stay listed for a moment while the system tears it down (seen on Windows).
+        var stopping = DateTime.UtcNow;
+        while (ScannerProcesses().Intersect(launched).Any() && DateTime.UtcNow - stopping < TimeSpan.FromSeconds(15))
+        {
+            await Task.Delay(100, Ct);
+        }
+
+        Assert.Empty(ScannerProcesses().Intersect(launched));
+        Assert.Empty(scanner.Quarantined);
+    }
+
+    /// <summary>The worker processes now running. Process names are cut to 15 or 16 characters on Linux and macOS.</summary>
+    private static int[] ScannerProcesses() =>
+        [.. System.Diagnostics.Process.GetProcesses().Where(p => p.ProcessName.StartsWith("Bluestone.Plug", StringComparison.Ordinal)).Select(p => p.Id)];
+
     [Fact]
     public async Task AChangedModule_IsScannedAgain()
     {

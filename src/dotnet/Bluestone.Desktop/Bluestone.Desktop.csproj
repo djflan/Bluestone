@@ -14,6 +14,7 @@
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="SkiaSharp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Platform.Alsa/Bluestone.Platform.Alsa.csproj" />
@@ -22,6 +23,10 @@
     <ProjectReference Include="../Bluestone.Presentation/Bluestone.Presentation.csproj" />
     <!-- Plugins run in this worker, a separate process copied beside the app; it is never loaded into the app. -->
     <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Images built into the app (avares://Bluestone.Desktop/Assets/...), such as the splash artwork. -->
+    <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shipped device profiles are data, copied beside the executable. -->

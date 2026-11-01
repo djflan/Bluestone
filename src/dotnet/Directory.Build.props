@@ -18,6 +18,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
+    <!-- Only the fallback: the version comes from the latest vX.Y.Z tag (Directory.Build.targets), which the version
+         workflow creates on every merge to main. 0.0.0 here marks a build made without git or tags. -->
+    <Version>0.0.0</Version>
+
     <Authors>Bluestone contributors</Authors>
     <Product>Bluestone</Product>
     <Copyright>Copyright (c) 2026 Bluestone contributors</Copyright>

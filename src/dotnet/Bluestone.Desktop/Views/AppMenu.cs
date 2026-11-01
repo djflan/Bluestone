@@ -27,17 +27,27 @@ internal static class AppMenu
         (Key.G, KeyModifiers.None), (Key.OemComma, KeyModifiers.None),
     ];
 
+    /// <summary>
+    /// The application menu (macOS's "Bluestone" menu). Call it from <c>App.Initialize</c>: Avalonia reads the
+    /// application's menu once, just after that, and puts its own default (About Avalonia) in place when there is none;
+    /// a menu set later is ignored. The items act on the main window, and do nothing while start-up is still running.
+    /// </summary>
+    public static void InstallApplicationMenu(Avalonia.Application app, Func<MainWindow?> mainWindow)
+    {
+        var command = app.PlatformSettings?.HotkeyConfiguration.CommandModifiers ?? KeyModifiers.Meta;
+
+        // macOS supplies Services, Hide, Hide Others, Show All, and Quit.
+        NativeMenu.SetMenu(app,
+        [
+            Item("About Bluestone", () => mainWindow()?.ShowAbout()),
+            new NativeMenuItemSeparator(),
+            Item("Settings…", () => mainWindow()?.ShowSettings(), new KeyGesture(Key.OemComma, command)),
+        ]);
+    }
+
     public static void Install(MainWindow window, MainViewModel vm, KeyModifiers command)
     {
         KeyGesture Cmd(Key key, KeyModifiers extra = KeyModifiers.None) => new(key, command | extra);
-
-        // Items added to the application menu; macOS supplies Services, Hide, Hide Others, Show All, and Quit.
-        var about = Item("About Bluestone", () => _ = new AboutWindow().ShowDialog(window));
-        var settings = Item("Settings…", () => window.ShowSettings(), Cmd(Key.OemComma));
-        if (Avalonia.Application.Current is { } app)
-        {
-            NativeMenu.SetMenu(app, [about, new NativeMenuItemSeparator(), settings]);
-        }
 
         var editor = vm.Editor;
         NativeMenuItem[] menus =
@@ -140,7 +150,9 @@ internal static class AppMenu
                 Item("Audio Settings…", new RelayCommand(window.ShowAudioSettings))),
             Submenu("Help",
                 Item("Keyboard Shortcuts", window.ShowShortcuts, Cmd(Key.OemQuestion)),
-                Item("Bluestone Help", () => _ = window.Launcher.LaunchUriAsync(new Uri(HelpUrl)))),
+                Item("Bluestone Help", () => _ = window.Launcher.LaunchUriAsync(new Uri(HelpUrl))),
+                new NativeMenuItemSeparator(),
+                Item("About Bluestone", window.ShowAbout)),
         ];
         foreach (var menu in menus)
         {

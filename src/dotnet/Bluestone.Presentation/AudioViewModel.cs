@@ -107,6 +107,9 @@ public sealed partial class AudioViewModel : ObservableObject
     /// <summary>The settings as chosen in the view.</summary>
     public AudioSettings Settings => new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring);
 
+    /// <summary>Whether the saved settings say audio was on, so <see cref="StartIfEnabled"/> will open a device.</summary>
+    public bool IsEnabledInSettings => _store.Load().Enabled;
+
     /// <summary>Opens the device the saved settings name, when they say audio was on. For start-up.</summary>
     public void StartIfEnabled()
     {

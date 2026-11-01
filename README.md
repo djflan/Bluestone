@@ -190,6 +190,10 @@ dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --live 20 --p
 
 ## Running Bluestone
 
+Released builds, when there are any, are on the [Releases](https://github.com/djflan/Bluestone/releases) page: unpack the archive for your platform and run `Bluestone.Desktop` (`Bluestone.Desktop.exe` on Windows). They include .NET, so nothing else needs installing. They are not signed yet: on macOS, clear the download quarantine once with `xattr -dr com.apple.quarantine <unpacked folder>`; on Windows, choose **More info** then **Run anyway** when SmartScreen warns.
+
+To run from source:
+
 ```sh
 dotnet run --project src/dotnet/Bluestone.Desktop
 ```

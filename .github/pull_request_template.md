@@ -1,3 +1,6 @@
+<!-- Versioning: merging tags a patch version. Add [minor], [major], or [skip version] to the PR title to change that,
+     and [release] or [pre-release] to build and publish a release. See CONTRIBUTING.md, "Versions and releases". -->
+
 ## Summary
 
 <!-- What does this change and why? Link related issues, e.g. "Fixes #123". -->
