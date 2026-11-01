@@ -24,34 +24,101 @@ public partial class App : Avalonia.Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var window = new MainWindow();
-            var platformProviders = PlatformProviders.Create(SystemMonotonicClock.Instance).ToList();
-            var plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
-            var scanner = new PluginScanner(new PluginScannerOptions(PluginCacheDirectory));
-            var library = new PluginLibrary(scanner, PluginFolders);
-            var viewModel = Compose(window, platformProviders, plugins, library);
-            window.Attach(viewModel);
-            _audio?.StartIfEnabled();
-            desktop.MainWindow = window;
-            desktop.Exit += (_, _) =>
-            {
-                Shutdown(viewModel, platformProviders, plugins);
-                library.Dispose();
-                scanner.Dispose();
-            };
-
-            // A project or MIDI file named on the command line (or by the OS file association) opens at start.
-            if (desktop.Args is [var path, ..] && MainViewModel.CanOpenFile(path))
-            {
-                window.Opened += async (_, _) => await viewModel.OpenFileAsync(path);
-            }
+            // The lifetime shows the splash; start-up runs once the UI loop is going, so the splash can say what it is doing.
+            var splash = new SplashWindow();
+            splash.QuitRequested += (_, _) => desktop.Shutdown(1);
+            desktop.MainWindow = splash;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = StartAsync(desktop, splash));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>The composition root: the only place that chooses concrete providers and services.</summary>
-    public static MainViewModel Compose(MainWindow window, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins, PluginLibrary library)
+    /// <summary>The least time the splash stays up, so a fast start does not just flash it.</summary>
+    private static readonly TimeSpan MinimumSplash = TimeSpan.FromSeconds(3);
+
+    /// <summary>Composes the app behind the splash, reporting each step, then swaps the splash for the main window.</summary>
+    private static async Task StartAsync(IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splash)
+    {
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        MainViewModel? viewModel = null;
+        List<IMidiEndpointProvider> platformProviders = [];
+        PluginHostManager? plugins = null;
+        PluginScanner? scanner = null;
+        PluginLibrary? library = null;
+        desktop.Exit += (_, _) =>
+        {
+            if (viewModel is not null && plugins is not null)
+            {
+                Shutdown(viewModel, platformProviders, plugins);
+            }
+            else
+            {
+                plugins?.KillWorkers();
+                platformProviders.ForEach(p => p.Dispose());
+            }
+
+            library?.Dispose();
+            scanner?.Dispose();
+        };
+
+        try
+        {
+            await splash.RenderedAsync();
+            var window = new MainWindow();
+            await Step(splash, "Connecting to MIDI drivers…");
+            platformProviders = [.. PlatformProviders.Create(SystemMonotonicClock.Instance)];
+            plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
+            scanner = new PluginScanner(new PluginScannerOptions(PluginCacheDirectory));
+            library = new PluginLibrary(scanner, PluginFolders);
+            viewModel = await ComposeAsync(window, platformProviders, plugins, library, splash);
+            window.Attach(viewModel);
+
+            if (_audio?.IsEnabledInSettings == true)
+            {
+                await Step(splash, "Starting the audio engine…");
+            }
+
+            _audio?.StartIfEnabled();
+
+            // A project or MIDI file named on the command line (or by the OS file association) opens at start.
+            if (desktop.Args is [var path, ..] && MainViewModel.CanOpenFile(path))
+            {
+                var model = viewModel;
+                window.Opened += async (_, _) => await model.OpenFileAsync(path);
+            }
+
+            await Step(splash, "Ready", fraction: 1);
+            if (MinimumSplash - started.Elapsed is { TotalMilliseconds: > 0 } remaining)
+            {
+                await Task.Delay(remaining);
+            }
+
+            desktop.MainWindow = window;
+            window.Show();
+            splash.Close();
+        }
+#pragma warning disable CA1031 // A failed start is shown on the splash rather than crashing silently.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Start-up failed: {ex}");
+            splash.ShowFailure(ex.Message);
+        }
+    }
+
+    /// <summary>Shows a start-up step on the splash and waits until it is drawn, so the step runs with it visible.</summary>
+    private static async Task Step(SplashWindow? splash, string status, string? detail = null, double? fraction = null)
+    {
+        if (splash is not null)
+        {
+            splash.Report(status, detail, fraction);
+            await splash.RenderedAsync();
+        }
+    }
+
+    /// <summary>The composition root: the only place that chooses concrete providers and services. Reports its steps on <paramref name="splash"/>.</summary>
+    internal static async Task<MainViewModel> ComposeAsync(MainWindow window, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins, PluginLibrary library, SplashWindow? splash = null)
     {
         ArgumentNullException.ThrowIfNull(plugins);
         ArgumentNullException.ThrowIfNull(library);
@@ -67,13 +134,16 @@ public partial class App : Avalonia.Application
         providers.AddRange(platformProviders);
         var endpoints = new EndpointDirectory(providers);
 
+        await Step(splash, "Loading device profiles…");
         var profiles = ProfileCatalog.LoadDirectory(Path.Combine(AppContext.BaseDirectory, "profiles"))
             .AddDirectory(UserProfileDirectory);
 
         var session = new ProjectSession();
         var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread);
-        var monitor = new MidiMonitor(builtIn.OpenInputAsync(monitorPort.InputId).AsTask().GetAwaiter().GetResult());
-        ScanPlugins(library);
+        var monitor = new MidiMonitor(await builtIn.OpenInputAsync(monitorPort.InputId));
+        await Step(splash, "Scanning plugins…");
+        await ScanPluginsAsync(library, splash);
+        await Step(splash, "Preparing the workspace…");
         var hosting = new PluginHostingSettingsStore(PluginHostingSettingsPath);
         var devices = new PluginDeviceHost(plugins, session, library, hosting: hosting.Load());
         var dispatcher = new AvaloniaDispatcher();
@@ -82,8 +152,20 @@ public partial class App : Avalonia.Application
             Plugins = new PluginsViewModel(library, dispatcher, devices, hosting),
             LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
-        _ = viewModel.InitializeAsync();
+        var initialized = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices, viewModel);
+        await Step(splash, "Finding MIDI devices and resolving routes…");
+        try
+        {
+            await initialized;
+        }
+#pragma warning disable CA1031 // As before the splash: a device that fails here is reported by the app, not fatal to start-up.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            System.Diagnostics.Trace.TraceError($"Initial device refresh failed: {ex}");
+        }
+
         return viewModel;
     }
 
@@ -159,9 +241,14 @@ public partial class App : Avalonia.Application
     /// scanner cannot take Bluestone with it; it is reported and skipped on later scans until retried from the plugins
     /// view (ADR 0025).
     /// </summary>
-    private static void ScanPlugins(PluginLibrary library)
+    private static async Task ScanPluginsAsync(PluginLibrary library, SplashWindow? splash)
     {
-        Task.Run(() => library.ScanAsync()).GetAwaiter().GetResult();
+        // The scan runs off the UI thread so the splash keeps drawing; progress is posted back to it.
+        await Task.Run(() => library.ScanAsync(progress => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            splash?.Report(
+                progress.Total == 0 ? "Scanning plugins…" : $"Scanning plugins ({Math.Min(progress.Done + 1, progress.Total)} of {progress.Total})…",
+                progress.Module is { } module ? Path.GetFileName(module) : null,
+                progress.Total == 0 ? null : (double)progress.Done / progress.Total))));
         foreach (var module in library.Modules.Where(m => m.State != PluginModuleState.Loaded))
         {
             System.Diagnostics.Trace.TraceWarning($"Plugin module {module.ModulePath} was not loaded: {module.Problem}");

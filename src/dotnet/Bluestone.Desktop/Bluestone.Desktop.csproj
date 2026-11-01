@@ -24,6 +24,10 @@
     <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Images built into the app (avares://Bluestone.Desktop/Assets/...), such as the splash artwork. -->
+    <AvaloniaResource Include="Assets/**" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Shipped device profiles are data, copied beside the executable. -->
     <None Include="../../../profiles/*.bluestone-profile.json" Link="profiles/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
