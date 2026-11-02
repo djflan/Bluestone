@@ -116,6 +116,8 @@ The Release 1.0 work begins by converting this into an explicit supported, exper
 
 ## Build and run
 
+Bluestone is a C#/.NET application by default. Rust is reserved for measured real-time constraints and native interfaces, with small, versioned boundaries between the two. See [ADR 0026](docs/adr/0026-native-technology-policy.md) for the language policy.
+
 Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) required by `global.json` and a stable Rust toolchain supporting edition 2024. Linux also needs the ALSA development files. From the repository root:
 
 ```sh
