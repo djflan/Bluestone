@@ -11,7 +11,7 @@ namespace Bluestone.Tests.Ui;
 
 /// <summary>
 /// The Connections section (the routing inspector) in the real window: connections are added and removed with the
-/// mouse, both ends show them, and a connection that would feed back is refused with a message (decision 22 in docs/roadmap.md).
+/// mouse, both ends show them, and a connection that would feed back is refused with a message (decision 22 in docs/engineering-handoff.md).
 /// </summary>
 public sealed class ConnectionsTests
 {

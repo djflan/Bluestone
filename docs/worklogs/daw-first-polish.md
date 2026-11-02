@@ -23,7 +23,8 @@ and the final assessment. Screenshots are in [../images/daw-first-polish/](../im
 - **Toolchain**: .NET SDK 10.0.300, cargo 1.99.0, macOS (Apple silicon).
 - **Relevant decisions**: ADR 0020 (hybrid tracks), 0021 (track roles), 0022 (device chains), 0023 (signal routing
   model), 0030 (group tracks), 0032 (audio engine), 0034 (plugin hosting modes), 0036 (semantic workspace and Device
-  View), 0037 (parallel signal bundle). Also `docs/architecture.md`, `docs/plugin-hosting.md`, `docs/roadmap.md`.
+  View), 0037 (parallel signal bundle). Also `docs/architecture.md`, `docs/plugin-hosting.md`, and the document now named
+  `docs/engineering-handoff.md` (then `docs/roadmap.md`).
 
 ### Baseline tests
 

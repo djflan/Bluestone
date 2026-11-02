@@ -10,7 +10,7 @@ body:
     id: instrument
     attributes:
       label: Instrument
-      placeholder: Yamaha MU128
+      placeholder: Manufacturer and model
     validations:
       required: true
   - type: dropdown

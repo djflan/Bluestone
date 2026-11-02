@@ -1,15 +1,21 @@
 # Bluestone architecture
 
+This document describes the architecture that exists: its boundaries, invariants, compromises, and dependency
+rules. Product positioning belongs in [product-vision.md](product-vision.md); priorities belong in
+[roadmap.md](roadmap.md); ordered delivery work belongs in [release-1.0.md](release-1.0.md).
+
 Bluestone models music and musical intent. Tracks organize music, clips contain it (notes or audio),
 devices process signals in chains, automation targets device and instrument parameters, and one list
 of connections routes signals to other tracks, shared racks, external instruments, and mixer channels.
 An audio engine plays audio clips, plugin instruments and effects, and the mixer; third-party plugins
-run in separate worker processes. MIDI 1.0, MIDI 2.0/UMP, SysEx dialects, operating-system MIDI APIs,
-audio devices, and plugin binaries sit at the edges. This page shows where things live and why. The
+run in separate worker processes. MIDI 1.0, SysEx dialects, operating-system MIDI APIs, audio devices,
+and plugin binaries sit at the edges. Future protocols such as MIDI 2.0/UMP must remain boundary concerns
+rather than becoming the domain model. This page shows where things live and why. The
 decisions behind it are in [docs/adr/](adr/), in particular ADRs
 [0018](adr/0018-midi-protocol-layering.md), [0019](adr/0019-sysex-preservation-and-interpretation.md),
 and [0020](adr/0020-hybrid-tracks-clips-and-automation.md) to
-[0035](adr/0035-live-input-and-delay-compensation.md). What is left to do is in [roadmap.md](roadmap.md).
+[0041](adr/0041-product-direction.md). Current implementation notes and frozen constraints are in
+[engineering-handoff.md](engineering-handoff.md).
 
 ## Layers
 
@@ -526,7 +532,7 @@ retries quarantined modules, and plugins it finds join the device catalog withou
 Deliberate for now, each with a known cost:
 
 - **Notes are MIDI 1.0-shaped.** Note velocity is 7-bit (MIDI 2.0 has 16 bits), and notes have no
-  per-note attributes, controllers, or pitch bend. See [Planned work](#planned-work).
+  per-note attributes, controllers, or pitch bend. See [Future compatibility notes](#future-compatibility-notes).
 - **RPN and NRPN in clips stay controller sequences** (CC 101/100 or 99/98, then 6 and 38). Folding them
   into single parameter events cannot always reproduce the original bytes. For example, a message that
   sends only CC 6 leaves the device's previous LSB in place. A MIDI 2.0 encoder could translate the
@@ -561,7 +567,10 @@ is built and tested in CI but has not been heard; unplugging an audio device (te
 plugin editors on Windows and Linux; live input latency outside macOS; third-party plugins through the
 audio engine on a real device; the shipped XG parameter map on an XG instrument.
 
-## Planned work
+## Future compatibility notes
+
+These notes preserve analysis for possible future protocol work. They are not scheduled roadmap commitments;
+the current priorities are in [roadmap.md](roadmap.md) and [release-1.0.md](release-1.0.md).
 
 ### 16-bit velocity
 
@@ -604,9 +613,9 @@ hand for legacy instruments or filled in from MIDI-CI later. Controller lanes wo
 to the steps and show values in the device's own units. (Parameter map entries already have their own
 `min` and `max`.) Nothing supplies this data yet, so it waits.
 
-## Deferred
+## Outside the current implementation
 
-Not built; [roadmap.md](roadmap.md) keeps the full list:
+Not built. The product roadmap decides priority; this list records architectural seams and present limits:
 
 - **Audio**: audio input and recording, compressed formats (FLAC, MP3, Ogg; only WAVE and AIFF play),
   send and fader automation, and fade curves other than linear and equal power.
@@ -652,6 +661,7 @@ Not built; [roadmap.md](roadmap.md) keeps the full list:
 | New tracks are hybrid and heard through explicit connections; Settings takes the workspace's place | ADR 0038 |
 | Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; project format 5 | ADR 0039 |
 | Floating plugin editors follow the selection, can be pinned, and can send their keys to Bluestone | ADR 0040 |
+| Bluestone is a device-centric production DAW; routing depth is progressively disclosed | ADR 0041 |
 
 ## Native technology
 
