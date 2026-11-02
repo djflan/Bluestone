@@ -173,7 +173,7 @@ Bluestone is independent and is not affiliated with, sponsored, endorsed, or aut
 
 ## Supporting Bluestone
 
-If Bluestone is useful to you, support its continued development through the links in [`.github/FUNDING.yml`](.github/FUNDING.yml).
+If Bluestone is useful to you, you can support its development through [Ko-fi](https://ko-fi.com/djflan) or [GitHub Sponsors](https://github.com/sponsors/djflan).
 
 ## License
 
