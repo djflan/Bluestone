@@ -111,9 +111,10 @@ Contributors know exactly what 1.0 supports and how timing, latency, reliability
 ### Deliver
 
 - A support matrix for macOS, Windows, and Linux covering audio input/output, MIDI input/output, plugin formats and editors, hardware timing, and release packaging. Mark each path **supported**, **experimental**, or **not in 1.0**.
-- Measured baseline reports for playback jitter, audio callback stability, live-input latency, recording placement, plugin delay compensation, and offline export equivalence.
-- Approved tolerances for each measurement. State the device, buffer, rate, run length, load, sample count, and percentile used; do not reduce timing to one unexplained average.
-- A canonical 1.0 acceptance project that uses MIDI, a plugin instrument, a hardware-device substitute, recorded audio, automation, buses, and export.
+- Measured baseline reports for currently implemented playback jitter, audio callback stability, live-input latency, and plugin-delay-compensation paths. Record an unavailable path as unsupported or not yet implemented instead of adding production behavior in this slice.
+- Measurement protocols and proposed tolerances for recording placement and offline export equivalence. State the fixture, device, buffer, rate, run length, load, sample count, percentile, and expected report format; Slices 3 and 6 respectively must supply the first executable evidence before they can complete.
+- Approved tolerances for each currently measurable path. Do not reduce timing to one unexplained average. Approve the recording-placement and export tolerances no later than the decision gate of their owning slice.
+- A canonical 1.0 acceptance-project specification covering MIDI, a plugin instrument, a hardware-device substitute, recorded audio, automation, buses, and export. Commit a seed project containing the currently supported elements; each owning slice extends it when its workflow becomes executable.
 - A manual visual-review matrix for window sizes, scaling, focus, keyboard use, and detached views.
 - A project-format policy for the 1.0 development series: next version number, migration ownership, and fixture rules.
 
@@ -125,14 +126,15 @@ Contributors know exactly what 1.0 supports and how timing, latency, reliability
 
 ### Acceptance
 
-- Baseline commands are reproducible from a clean checkout.
+- Baseline commands for implemented paths are reproducible from a clean checkout.
 - Results identify the machine and configuration and can be compared across runs.
+- Deferred measurement protocols name their owning slice, fixture, inputs, expected report, and release tolerance; their absence is not reported as measured evidence.
 - CI covers every hardware-independent gate; the manual matrix names an owner and evidence for the rest.
 - No later slice uses an undefined phrase such as “sample accurate,” “low latency,” or “professional timing.”
 
 ### Non-goals
 
-No new production feature belongs in this slice.
+No new production feature, and no fabricated baseline for an unimplemented workflow, belongs in this slice.
 
 ## Slice 1: the production track
 

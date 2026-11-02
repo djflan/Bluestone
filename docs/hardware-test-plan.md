@@ -22,9 +22,10 @@ connection path, plugins, and results for each run.
 | # | Step | Expected |
 | - | ---- | -------- |
 | 1 | Open the inspector's **External MIDI ▸ Output** list | The interface port is listed as *Hardware* with its name; Bluestone Monitor and Bluestone Out are also listed |
-| 2 | Import `samples/bluestone-demo.mid`, route all tracks to the interface (**Use for all tracks**) | All tracks show **Ready** |
-| 3 | Press Space | The instrument plays drums, bass, keys, and lead in time; the status bar shows 0 late, 0 dropped |
-| 4 | Select *Bass*, choose a compatible profile and any named program; play from the start | The voice changes at the start of playback and the saved program returns after reopening |
+| 2 | Import `samples/bluestone-demo.mid`, route one compatible melodic track (*Bass*, *Keys*, or *Lead*) to the interface, and choose a channel and program the instrument can play | The routed track shows **Ready**; unrelated tracks may remain unrouted or use other devices |
+| 3 | Press Space | The selected part plays in time; the status bar shows 0 late, 0 dropped |
+| 3a | On a multitimbral GM-compatible instrument, route all demo tracks to the interface (**Use for all tracks**) and play | All routed tracks show **Ready**; the instrument plays drums, bass, keys, and lead in time |
+| 4 | Select the routed track, choose a compatible profile and any named program; play from the start | The voice changes at the start of playback and the saved program returns after reopening |
 | 5 | If the profile supplies an initialization message, press **Initialize Instrument…** | A confirmation names the operation; **Cancel** sends nothing; **Send** performs the initialization (check the instrument) |
 | 6 | While playing, press Ctrl/Cmd + . (Panic) | All sound stops immediately; playback continues |
 | 7 | Hold a long note (loop four bars with L, play), then press Stop | No hanging notes |
