@@ -1,6 +1,6 @@
 # Contributing to Bluestone
 
-Thanks for your interest in Bluestone. Contributions are welcome in sequencing, MIDI interoperability, audio, plugin hosting, device profiles, platform adapters, accessibility, documentation, and testing.
+Thanks for your interest in Bluestone. Contributions are welcome in recording, editing, sequencing, MIDI and hardware integration, audio, plugin hosting, devices, platform adapters, accessibility, visual design, documentation, and testing.
 
 By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -10,7 +10,15 @@ By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 - **New features or architectural changes:** open an issue to discuss the approach before writing much code. Consequential decisions are recorded as architecture decision records in [docs/adr/](docs/adr/).
 - **Security problems:** do not open a public issue; see [SECURITY.md](SECURITY.md).
 
-Read the [architectural principle](README.md#architectural-principle), the [architecture overview](docs/architecture.md), and the decision records first. In particular, device profiles (what an instrument understands) must stay independent of MIDI endpoints (where messages are sent).
+Read the [product vision](docs/product-vision.md), [product roadmap](docs/roadmap.md), relevant [Release 1.0 slice](docs/release-1.0.md), [architecture overview](docs/architecture.md), and decision records first. The [engineering handoff](docs/engineering-handoff.md) contains regression constraints and implementation traps that product documents intentionally omit.
+
+In particular:
+
+- timing, recording placement, playback, and export claims need measurements rather than adjectives;
+- hardware and software should enter the musician's workflow as peer devices even when their implementation differs;
+- ordinary workflows use sensible defaults and must not require manual signal-graph construction;
+- device profiles (what an instrument understands) stay independent of endpoints (where messages are sent); and
+- user-facing work must preserve Bluestone's shared interaction patterns and visual design system.
 
 ## Development setup
 
@@ -40,8 +48,9 @@ Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugi
 3. Include tests that do not require contributors to own specific hardware or software. Tests must skip cleanly, with a reason, when what they need is missing: a platform MIDI service, an audio output device (CI runners have none), or an installed third-party plugin.
 4. State which hardware behavior was physically verified and which was simulated (for example with a software synth or the MIDI monitor). See [docs/hardware-test-plan.md](docs/hardware-test-plan.md).
 5. Update documentation, and add or update an ADR when you change a consequential design decision.
-6. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the Core MIDI tests, which are unreliable on hosted runners; if you change the Core MIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally.
-7. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
+6. For user-facing work, test the complete workflow, review the running UI at compact and normal sizes, use the shared tokens and controls, and state what was checked for keyboard use and accessibility. A headless frame proves rendering, not product coherence.
+7. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the Core MIDI tests, which are unreliable on hosted runners; if you change the Core MIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally.
+8. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
 
 ### Versions and releases
 

@@ -14,6 +14,16 @@ body:
     attributes:
       label: Proposed solution
   - type: textarea
+    id: workflow
+    attributes:
+      label: Musician workflow
+      description: Starting from an ordinary project, what should the musician do and what should Bluestone handle automatically?
+  - type: textarea
+    id: vision
+    attributes:
+      label: Product fit
+      description: How does this support timing and accuracy, hardware/software parity, modularity, approachability, or product coherence?
+  - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered

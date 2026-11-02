@@ -71,7 +71,7 @@ public static class SignalGraph
 
     /// <summary>
     /// The channel a track's content is rendered on for automation conflicts: the single channel its
-    /// outgoing event connections force, or none when they force none or several (decision 10 in docs/roadmap.md).
+    /// outgoing event connections force, or none when they force none or several (decision 10 in docs/engineering-handoff.md).
     /// </summary>
     public static MidiChannel? ChannelOverride(IEnumerable<SignalConnection> connections, TrackId track)
     {

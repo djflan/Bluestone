@@ -200,7 +200,7 @@ public sealed class HardwareAutomationTests
         var prepared = Prepare(project);
 
         Assert.Equal(["0 0 B2077F"], Sent(prepared.Compile(project.Sequence)));
-        // The second track has no connection of its own, so it is also "not routed" (decision 15 in docs/roadmap.md).
+        // The second track has no connection of its own, so it is also "not routed" (decision 15 in docs/engineering-handoff.md).
         Assert.Collection(
             prepared.Diagnostics.Where(d => d.Message != PlaybackRouting.NotRoutedMessage),
             d => Assert.Contains("does not define a parameter \"resonance\"", d.Message, StringComparison.Ordinal),

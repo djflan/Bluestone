@@ -3,11 +3,13 @@
 The automated suite covers everything that can be checked without instruments, speakers, or a
 person watching: virtual Core MIDI ports, the built-in monitor, (when enabled) the IAC bus, audio through
 a test backend, and plugins through Bluestone's test plugins. This checklist covers what needs real
-hardware or a person. The MIDI target is a Yamaha QY100 or another XG module on a USB-MIDI interface.
-Record the date, operating system and version, interface, audio device, plugins, and results for each run.
+hardware or a person. Use at least one professional hardware synthesizer on a USB-MIDI interface; where possible,
+repeat the timing and recovery checks with a second manufacturer and interface. Optional compatibility sections name
+more specific equipment. Record the date, operating system and version, interface, audio device, instrument, firmware,
+connection path, plugins, and results for each run.
 
-> Bluestone is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation. Yamaha, XG, and QY100
-> belong to their respective owners and are named only to describe what is tested; see [TRADEMARKS.md](../TRADEMARKS.md).
+> Bluestone is independent and is not affiliated with, authorized, sponsored, or endorsed by the manufacturers or
+> standards owners named in this plan. Names identify what was tested; see [TRADEMARKS.md](../TRADEMARKS.md).
 
 ## Setup
 
@@ -20,10 +22,11 @@ Record the date, operating system and version, interface, audio device, plugins,
 | # | Step | Expected |
 | - | ---- | -------- |
 | 1 | Open the inspector's **External MIDI ▸ Output** list | The interface port is listed as *Hardware* with its name; Bluestone Monitor and Bluestone Out are also listed |
-| 2 | Import `samples/bluestone-demo.mid`, route all tracks to the interface (**Use for all tracks**) | All tracks show **Ready** |
-| 3 | Press Space | The instrument plays drums, bass, keys, and lead in time; the status bar shows 0 late, 0 dropped |
-| 4 | Select *Bass*, choose profile **Generic XG**, voice bank *Normal voices (MSB 0)*, any program; play from the start | The bass voice changes at the start of playback |
-| 5 | Select a track with an XG profile and press **Initialize Instrument…** | A confirmation names *XG System On*; **Cancel** sends nothing; **Send** resets the instrument (check its display) |
+| 2 | Import `samples/bluestone-demo.mid`, route one compatible melodic track (*Bass*, *Keys*, or *Lead*) to the interface, and choose a channel and program the instrument can play | The routed track shows **Ready**; unrelated tracks may remain unrouted or use other devices |
+| 3 | Press Space | The selected part plays in time; the status bar shows 0 late, 0 dropped |
+| 3a | On a multitimbral GM-compatible instrument, route all demo tracks to the interface (**Use for all tracks**) and play | All routed tracks show **Ready**; the instrument plays drums, bass, keys, and lead in time |
+| 4 | Select the routed track, choose a compatible profile and any named program; play from the start | The voice changes at the start of playback and the saved program returns after reopening |
+| 5 | If the profile supplies an initialization message, press **Initialize Instrument…** | A confirmation names the operation; **Cancel** sends nothing; **Send** performs the initialization (check the instrument) |
 | 6 | While playing, press Ctrl/Cmd + . (Panic) | All sound stops immediately; playback continues |
 | 7 | Hold a long note (loop four bars with L, play), then press Stop | No hanging notes |
 | 8 | Unplug the interface during playback | The track shows **Offline** with "not connected"; nothing crashes |
@@ -84,7 +87,10 @@ Install at least one VST 3 and one CLAP instrument and effect in the default plu
 | 36 | Save, quit, reopen the project | Plugin settings are restored |
 | 37 | In **Plugins…**, change the hosting mode (for example from By plugin to Individually) while playing | Plugins move to their new workers and keep their settings |
 
-## Hardware parameter automation
+## Generic XG compatibility (optional legacy coverage)
+
+This section preserves coverage for Bluestone's shipped Generic XG profile. It is compatibility testing, not the
+primary product workflow, and it requires an XG-compatible instrument.
 
 Route a track to the XG instrument with the **Generic XG** profile.
 
