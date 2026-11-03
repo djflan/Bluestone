@@ -1,11 +1,13 @@
 using System.Collections.Immutable;
 using Bluestone.Application.Audio;
 using Bluestone.Application.Sessions;
+using Bluestone.Application.Status;
 using Bluestone.Audio.Devices;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
 using Bluestone.Presentation;
 using Bluestone.Profiles;
+using Bluestone.Tests.Unit.Application;
 
 namespace Bluestone.Tests.Unit.Presentation;
 
@@ -82,6 +84,51 @@ public sealed class AudioViewModelTests : IDisposable
         File.WriteAllText(Store.Path, "{ not json");
 
         Assert.Equal(new AudioSettings(), Store.Load());
+    }
+
+    [Fact]
+    public async Task OpeningTheDevice_AndWaitingForALostOne_AreReportedAsActivities()
+    {
+        var backend = new AudioPlaybackRecoveryTests.FakeBackend();
+        var session = new ProjectSession();
+        await using var playback = new PlaybackController(session, _endpoints, ProfileCatalog.Empty, new VirtualClock(), startThread: false);
+        using var audio = new AudioPlayback(playback, session, _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var activities = new ActivityLog();
+        var ended = new List<ActivityEndedEventArgs>();
+        activities.Ended += (_, e) => ended.Add(e);
+        var vm = new AudioViewModel(audio, Store, new Immediate(), backend.ListDevices, activities);
+
+        // Nothing to open: the start is recorded, and Bluestone shows that it waits for a device.
+        vm.StartCommand.Execute(null);
+
+        Assert.Equal("Opening System default output…", ended[0].Activity.Text);
+        Assert.StartsWith("Audio is waiting for its device", ended[0].Text, StringComparison.Ordinal);
+        Assert.Equal("Waiting for the audio device to return…", Assert.Single(activities.Running).Text);
+
+        backend.Devices.Add(new AudioDeviceInfo("built-in", "Speakers", "Test", true, 48_000, 2, [48_000], [2], 64, 4096));
+        audio.CheckDevice();
+
+        Assert.Empty(activities.Running);
+        Assert.StartsWith("Audio is on: 48000 Hz", ended[1].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OpeningADevice_IsRecordedWithWhatOpened()
+    {
+        var backend = new AudioPlaybackRecoveryTests.FakeBackend();
+        backend.Devices.Add(new AudioDeviceInfo("built-in", "Speakers", "Test", true, 48_000, 2, [48_000], [2], 64, 4096));
+        var session = new ProjectSession();
+        using var audio = new AudioPlayback(_playback, session, _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var activities = new ActivityLog();
+        ActivityEndedEventArgs? ended = null;
+        activities.Ended += (_, e) => ended = e;
+        var vm = new AudioViewModel(audio, Store, new Immediate(), backend.ListDevices, activities);
+
+        vm.StartCommand.Execute(null);
+
+        Assert.Equal(ActivityOutcome.Completed, ended?.Outcome);
+        Assert.StartsWith("Audio is on:", ended?.Text, StringComparison.Ordinal);
+        Assert.Empty(activities.Running);
     }
 
     private static AudioDeviceInfo Device(string id, string name, params int[] rates) =>

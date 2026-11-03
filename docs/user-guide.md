@@ -128,11 +128,15 @@ A plugin editor opens in a separate worker-owned window. Unpinned editors follow
 
 Plugins run with the user's full permissions. Worker processes isolate crashes, not file or network access; see [SECURITY.md](../SECURITY.md).
 
+## Status line and messages
+
+The status line at the bottom of the window says what Bluestone is doing: opening or saving a project, importing or exporting, scanning plugins, opening the audio device, or waiting for a lost one to return. A moving bar beside it means the work is still running; when several things run at once it shows the newest and how many more. When nothing is running it shows the latest message. Click it to open **Messages**, which records how each activity ended, how long it took, and any warnings or errors.
+
 ## Menus and accessibility
 
 macOS uses the standard application menu bar. Windows and Linux place file commands in the toolbar and expose other commands through buttons, context menus, and key bindings.
 
-Primary controls have screen-reader names, and statuses use words and icons rather than color alone. Custom-drawn arrangement and editor surfaces describe their gestures as a whole rather than exposing each event as a separate accessibility element. Platform accessibility verification is ongoing.
+Primary controls have screen-reader names, and statuses use words and icons rather than color alone. Screen readers announce changes to the status line politely, at most a few times a second. Custom-drawn arrangement and editor surfaces describe their gestures as a whole rather than exposing each event as a separate accessibility element. Platform accessibility verification is ongoing.
 
 ## Hardware checks
 

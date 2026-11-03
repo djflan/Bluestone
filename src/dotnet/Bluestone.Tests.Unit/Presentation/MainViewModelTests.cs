@@ -1,4 +1,5 @@
 using Bluestone.Application.Sessions;
+using Bluestone.Application.Status;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
@@ -482,6 +483,63 @@ public sealed class MainViewModelTests : IAsyncLifetime
         await _vm.ImportMidiCommand.ExecuteAsync(null);
 
         Assert.Contains(_vm.Messages, m => m.Severity == MessageSeverity.Error && m.Source == "Import");
+    }
+
+    [Fact]
+    public async Task StatusLine_ShowsTheNewestActivity_ThenTheLatestMessage()
+    {
+        _vm.AddMessage(MessageSeverity.Info, "Test", "Earlier message.");
+        Assert.Equal(("Earlier message.", false), (_vm.StatusText, _vm.IsWorking));
+
+        var scan = _vm.Activities.Begin("Plugins", "Scanning plugins…");
+        var open = _vm.Activities.Begin("Open", "Opening song.bluestone…");
+        await Settle();
+        Assert.Equal(("Opening song.bluestone… (and 1 more)", true), (_vm.StatusText, _vm.IsWorking));
+
+        open.Complete();
+        await Settle();
+        Assert.Equal("Scanning plugins…", _vm.StatusText);
+
+        scan.Fail("A scanner process crashed.");
+        await Settle();
+        Assert.False(_vm.IsWorking);
+        Assert.Equal("Scanning plugins failed: A scanner process crashed.", _vm.StatusText);
+        Assert.Equal(MessageSeverity.Error, _vm.Messages[^1].Severity);
+        Assert.Contains(_vm.Messages, m => m.Source == "Open" && m.Text.StartsWith("Opening song.bluestone finished (", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StatusLine_ShowsProgress_WhenTheActivityKnowsIt()
+    {
+        var activity = _vm.Activities.Begin("Export", "Exporting…");
+        await Task.Delay(ActivityLog.ReportInterval + TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+
+        activity.Report("Exporting…", 0.4);
+        await Settle();
+
+        Assert.Equal("Exporting… (40%)", _vm.StatusText);
+        activity.Complete();
+    }
+
+    [Fact]
+    public async Task SaveImportAndFailures_AreRecordedAsActivities()
+    {
+        await ImportAsync();
+        _ui.NextSavePath = Path.Combine(_directory, "song.bluestone");
+        await _vm.SaveCommand.ExecuteAsync(null);
+
+        var bad = Path.Combine(_directory, "broken.mid");
+        await File.WriteAllTextAsync(bad, "not midi", TestContext.Current.CancellationToken);
+        _ui.NextOpenPath = bad;
+        await _vm.ImportMidiCommand.ExecuteAsync(null);
+        await Settle();
+
+        Assert.Contains(_vm.Messages, m => m.Source == "Import" && m.Text.StartsWith("Imported demo.mid with 1 tracks", StringComparison.Ordinal));
+        Assert.Contains(_vm.Messages, m => m.Source == "Save" && m.Text.StartsWith("Saving song.bluestone finished (", StringComparison.Ordinal));
+        var failed = Assert.Single(_vm.Messages, m => m.Severity == MessageSeverity.Error);
+        Assert.StartsWith("Importing broken.mid failed: ", failed.Text, StringComparison.Ordinal);
+        Assert.Empty(_vm.Activities.Running);
+        Assert.False(_vm.IsWorking);
     }
 
     [Fact]

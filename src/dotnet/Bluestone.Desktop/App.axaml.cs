@@ -3,6 +3,7 @@ using Avalonia.Markup.Xaml;
 using Bluestone.Application.Audio;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
+using Bluestone.Application.Status;
 using Bluestone.Desktop.Services;
 using Bluestone.Desktop.Views;
 using Bluestone.Midi.Endpoints;
@@ -155,9 +156,10 @@ public partial class App : Avalonia.Application
         var hosting = new PluginHostingSettingsStore(PluginHostingSettingsPath);
         var devices = new PluginDeviceHost(plugins, session, library, hosting: hosting.Load());
         var dispatcher = new AvaloniaDispatcher();
-        var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices)
+        var activities = new ActivityLog();
+        var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices, activities)
         {
-            Plugins = new PluginsViewModel(library, dispatcher, devices, hosting),
+            Plugins = new PluginsViewModel(library, dispatcher, devices, hosting, activities),
             LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
         var initialized = viewModel.InitializeAsync();
@@ -186,7 +188,7 @@ public partial class App : Avalonia.Application
             session,
             devices.InstanceOf,
             prepareSampleRate: rate => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetSampleRateAsync(rate)));
-        _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher());
+        _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher(), activities: viewModel.Activities);
         viewModel.Mixer.MeterSource = channel => audio.IsRunning && audio.Graph is { } graph
             ? (channel is { } id ? graph.StripOf(id)?.Meter.Read() : graph.Master.Meter.Read())
             : null;

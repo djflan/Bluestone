@@ -7,6 +7,14 @@ namespace Bluestone.Tests.Unit.Presentation;
 public sealed class FormattingTests
 {
     [Theory]
+    [InlineData(0.4, "0 ms")]
+    [InlineData(120, "120 ms")]
+    [InlineData(2_449, "2.4 s")]
+    [InlineData(185_000, "3 min 5 s")]
+    public void Duration_ReadsNaturally(double milliseconds, string expected) =>
+        Assert.Equal(expected, Formatting.Duration(TimeSpan.FromMilliseconds(milliseconds)));
+
+    [Theory]
     [InlineData(60, "C4")]
     [InlineData(0, "C-1")]
     [InlineData(127, "G9")]

@@ -3,6 +3,7 @@ using System.Globalization;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
+using Bluestone.Application.Status;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Projects;
@@ -76,9 +77,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private int _inputActivityFrames;
     private ProjectId _workspaceProject;
     private string? _workspacePath;
+    private int _statusQueued;
 
-    public MainViewModel(ProjectSession session, PlaybackController playback, EndpointDirectory endpoints, IUserInteraction ui, IUiDispatcher dispatcher, MidiMonitor? monitor = null, ComputerKeyboardViewModel? keyboard = null, PluginDeviceHost? plugins = null)
+    public MainViewModel(ProjectSession session, PlaybackController playback, EndpointDirectory endpoints, IUserInteraction ui, IUiDispatcher dispatcher, MidiMonitor? monitor = null, ComputerKeyboardViewModel? keyboard = null, PluginDeviceHost? plugins = null, ActivityLog? activities = null)
     {
+        Activities = activities ?? new ActivityLog();
         Keyboard = keyboard;
         _plugins = plugins;
         _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -169,10 +172,74 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             _plugins.AvailableChanged += (_, _) => _dispatcher.Post(() => _ = OnPluginsChangedAsync());
         }
 
+        // The status line: the newest running activity, otherwise the latest message. Activities report from any
+        // thread; updates are coalesced into one pending UI-thread pass.
+        Messages.CollectionChanged += (_, _) => UpdateStatus();
+        Activities.Changed += (_, _) =>
+        {
+            if (Interlocked.Exchange(ref _statusQueued, 1) == 0)
+            {
+                _dispatcher.Post(() =>
+                {
+                    Volatile.Write(ref _statusQueued, 0);
+                    UpdateStatus();
+                });
+            }
+        };
+        Activities.Ended += (_, ended) => _dispatcher.Run(() => AddMessage(
+            ended.Outcome == ActivityOutcome.Failed ? MessageSeverity.Error : MessageSeverity.Info,
+            ended.Activity.Source,
+            EndedText(ended)));
+
         foreach (var failure in _playback.Profiles.Failures)
         {
             AddMessage(MessageSeverity.Warning, "Profiles", $"{Path.GetFileName(failure.Source)} was not loaded: {(failure.Diagnostics.Count > 0 ? failure.Diagnostics[0].ToString() : "unknown error")}");
         }
+    }
+
+    /// <summary>
+    /// What Bluestone is doing: long-running work reports itself here, from any thread. Shared with the other view
+    /// models (plugins, audio); a new log when none is passed in.
+    /// </summary>
+    public ActivityLog Activities { get; }
+
+    /// <summary>The status line: the newest activity in progress, otherwise the latest message.</summary>
+    [ObservableProperty]
+    public partial string StatusText { get; private set; } = string.Empty;
+
+    /// <summary>True while <see cref="StatusText"/> describes an activity in progress.</summary>
+    [ObservableProperty]
+    public partial bool IsWorking { get; private set; }
+
+    private void UpdateStatus()
+    {
+        var running = Activities.Running;
+        if (running.Count > 0)
+        {
+            var current = running[^1];
+            var progress = current.Progress is { } p ? string.Create(CultureInfo.InvariantCulture, $" ({p:0%})") : string.Empty;
+            var others = running.Count > 1 ? string.Create(CultureInfo.InvariantCulture, $" (and {running.Count - 1} more)") : string.Empty;
+            StatusText = current.Text + progress + others;
+            IsWorking = true;
+        }
+        else
+        {
+            StatusText = Messages.Count > 0 ? Messages[^1].Text : string.Empty;
+            IsWorking = false;
+        }
+    }
+
+    // "Opening demo.bluestone…" that finished becomes "Opening demo.bluestone finished (120 ms)."; one that failed,
+    // "Opening demo.bluestone failed: <problem>".
+    internal static string EndedText(ActivityEndedEventArgs ended)
+    {
+        var what = ended.Activity.Text.TrimEnd('…', '.', ' ');
+        if (ended.Outcome == ActivityOutcome.Failed)
+        {
+            return $"{what} failed: {ended.Text}";
+        }
+
+        return ended.HasSummary ? ended.Text : $"{what} finished ({Formatting.Duration(ended.Duration)}).";
     }
 
     public ObservableCollection<TrackViewModel> Tracks { get; } = [];
@@ -924,7 +991,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private static bool HasExtension(string path, FileFilter filter) =>
         filter.Extensions.Any(e => Path.GetExtension(path).Equals("." + e, StringComparison.OrdinalIgnoreCase));
 
-    private Task OpenProjectAsync(string path) => RunAsync("Open", async () =>
+    private Task OpenProjectAsync(string path) => RunActivityAsync("Open", $"Opening {Path.GetFileName(path)}…", async _ =>
     {
         _playback.Stop();
         var report = await _session.OpenAsync(path);
@@ -941,7 +1008,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     });
 
     [RelayCommand]
-    private Task SaveAsync() => _session.FilePath is null ? SaveAsAsync() : RunAsync("Save", async () =>
+    private Task SaveAsync() => _session.FilePath is not { } file ? SaveAsAsync() : RunActivityAsync("Save", $"Saving {Path.GetFileName(file)}…", async _ =>
     {
         await CapturePluginStateAsync();
         await _session.SaveAsync();
@@ -955,7 +1022,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (await _ui.PickSaveFileAsync("Save Project", ProjectName + ".bluestone", FileFilters.Project) is { } path)
         {
-            await RunAsync("Save", async () =>
+            await RunActivityAsync("Save", $"Saving {Path.GetFileName(path)}…", async _ =>
             {
                 await CapturePluginStateAsync();
                 await _session.SaveAsync(path);
@@ -972,12 +1039,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private Task ImportMidiFileAsync(string path) => RunAsync("Import", async () =>
+    private Task ImportMidiFileAsync(string path) => RunActivityAsync("Import", $"Importing {Path.GetFileName(path)}…", async activity =>
     {
         _playback.Stop();
         var report = await _session.ImportMidiAsync(path);
         ReportMidi("Import", report.ImportDiagnostics);
-        AddMessage(MessageSeverity.Info, "Import", $"Imported {Path.GetFileName(path)} with {_session.Project.Sequence.Tracks.Length} tracks. Choose an output for each track to hear it.");
+        activity.Complete($"Imported {Path.GetFileName(path)} with {_session.Project.Sequence.Tracks.Length} tracks. Choose an output for each track to hear it.");
     });
 
     [RelayCommand]
@@ -985,10 +1052,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (await _ui.PickSaveFileAsync("Export MIDI File", ProjectName + ".mid", FileFilters.Midi) is { } path)
         {
-            await RunAsync("Export", async () =>
+            await RunActivityAsync("Export", $"Exporting {Path.GetFileName(path)}…", async activity =>
             {
                 ReportMidi("Export", await _session.ExportMidiAsync(path, _playback.Profiles));
-                AddMessage(MessageSeverity.Info, "Export", $"Exported {Path.GetFileName(path)}.");
+                activity.Complete($"Exported {Path.GetFileName(path)}.");
             });
         }
     }
@@ -1638,6 +1705,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 return !_session.IsDirty;
             default:
                 return false;
+        }
+    }
+
+    /// <summary>
+    /// Runs long-running work as an activity: the status line shows <paramref name="text"/> while it runs, and Messages
+    /// records how it ended. The work may complete the activity itself with a summary.
+    /// </summary>
+    private async Task RunActivityAsync(string source, string text, Func<RunningActivity, Task> action)
+    {
+        using var activity = Activities.Begin(source, text);
+        try
+        {
+            await action(activity);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ProjectFormatException or SmfFormatException or EndpointUnavailableException or InvalidOperationException)
+        {
+            activity.Fail(ex.Message);
         }
     }
 

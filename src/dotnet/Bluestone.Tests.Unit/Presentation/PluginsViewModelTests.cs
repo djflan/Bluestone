@@ -1,6 +1,7 @@
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
+using Bluestone.Application.Status;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
@@ -92,6 +93,31 @@ public sealed class PluginsViewModelTests : IDisposable
         Assert.Equal("Rescanned. 3 plugins available from 4 modules. 1 module could not be read. 1 module quarantined.", vm.StatusText);
         Assert.False(vm.IsBusy);
         Assert.Equal(string.Empty, vm.ProgressText);
+    }
+
+    [Fact]
+    public async Task RescanAll_IsAnActivity_ThatEndsWithTheScanSummary()
+    {
+        await _library.ScanAsync(cancellationToken: Ct);
+        var activities = new ActivityLog();
+        var reported = new List<string>();
+        activities.Changed += (_, _) =>
+        {
+            if (activities.Current is { } current)
+            {
+                reported.Add(current.Text);
+            }
+        };
+        ActivityEndedEventArgs? ended = null;
+        activities.Ended += (_, e) => ended = e;
+        var vm = new PluginsViewModel(_library, new ImmediateDispatcher(), activities: activities);
+
+        await vm.RescanAllCommand.ExecuteAsync(null);
+
+        Assert.Equal("Scanning plugins…", reported[0]);
+        Assert.Equal(("Plugins", ActivityOutcome.Completed), (ended?.Activity.Source, ended?.Outcome));
+        Assert.Equal(vm.StatusText, ended?.Text);
+        Assert.Empty(activities.Running);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Audio;
+using Bluestone.Application.Status;
 using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -26,6 +27,8 @@ public sealed partial class AudioViewModel : ObservableObject
     private readonly AudioSettingsStore _store;
     private readonly IUiDispatcher _dispatcher;
     private readonly Func<IReadOnlyList<AudioDeviceInfo>> _listDevices;
+    private readonly ActivityLog? _activities;
+    private RunningActivity? _waiting;
 
     [ObservableProperty]
     private AudioDeviceOption? _device;
@@ -61,8 +64,10 @@ public sealed partial class AudioViewModel : ObservableObject
     /// <param name="store">Where settings are saved.</param>
     /// <param name="dispatcher">For status changes reported on other threads.</param>
     /// <param name="listDevices">The output devices (the operating system's, or a test's).</param>
-    public AudioViewModel(AudioPlayback audio, AudioSettingsStore store, IUiDispatcher dispatcher, Func<IReadOnlyList<AudioDeviceInfo>>? listDevices = null)
+    /// <param name="activities">Where opening the device and waiting for a lost one are reported, for the main window's status line.</param>
+    public AudioViewModel(AudioPlayback audio, AudioSettingsStore store, IUiDispatcher dispatcher, Func<IReadOnlyList<AudioDeviceInfo>>? listDevices = null, ActivityLog? activities = null)
     {
+        _activities = activities;
         _audio = audio ?? throw new ArgumentNullException(nameof(audio));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -115,8 +120,7 @@ public sealed partial class AudioViewModel : ObservableObject
     {
         if (_store.Load().Enabled)
         {
-            _audio.Start(Settings with { Enabled = true });
-            UpdateStatus();
+            Open();
         }
     }
 
@@ -157,11 +161,29 @@ public sealed partial class AudioViewModel : ObservableObject
     [RelayCommand]
     private void Start()
     {
-        var started = _audio.Start(Settings with { Enabled = true });
+        var started = Open();
 
         // Waiting for an unplugged device still counts as on: it opens when it returns, also after a restart.
         _store.Save(Settings with { Enabled = started || _audio.IsWaitingForDevice });
         UpdateStatus();
+    }
+
+    // Opens the device as an activity: Messages records "Audio is on: …" or why it did not open.
+    private bool Open()
+    {
+        var activity = _activities?.Begin("Audio", $"Opening {Device?.Name ?? "the audio device"}…");
+        var started = _audio.Start(Settings with { Enabled = true });
+        UpdateStatus();
+        if (started || _audio.IsWaitingForDevice)
+        {
+            activity?.Complete(Status);
+        }
+        else
+        {
+            activity?.Fail(_audio.Problem ?? "the device did not open.");
+        }
+
+        return started;
     }
 
     /// <summary>Closes the device and saves that audio is off.</summary>
@@ -240,6 +262,18 @@ public sealed partial class AudioViewModel : ObservableObject
         }
 
         Problems = string.Join(Environment.NewLine, _audio.GraphProblems);
+
+        // A lost device is something Bluestone is doing: waiting for it to come back. The status line shows it until it
+        // returns or audio is turned off.
+        if (_audio.IsWaitingForDevice && _waiting is null)
+        {
+            _waiting = _activities?.Begin("Audio", "Waiting for the audio device to return…");
+        }
+        else if (!_audio.IsWaitingForDevice && _waiting is { } waiting)
+        {
+            _waiting = null;
+            waiting.Complete(Status);
+        }
     }
 
     private static string Decibels(float linear)

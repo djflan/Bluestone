@@ -108,9 +108,6 @@ public partial class MainWindow : Window
                 MonitorList.ScrollIntoView(viewModel.MonitorEntries.Count - 1);
             }
         };
-        viewModel.Messages.CollectionChanged += (_, _) =>
-            LastMessage.Text = viewModel.Messages.Count > 0 ? viewModel.Messages[^1].Text : string.Empty;
-
         AttachNavigation(viewModel);
         AttachEditorKeys(viewModel);
 
