@@ -99,10 +99,10 @@ public sealed class SmfImportExportTests
 
         var plan = PlanDump.Compile(PlanDump.Routed(result.Sequence, shared: true));
         Assert.Empty(plan.Diagnostics);
-        Assert.Single(plan.Payloads);
+        Assert.Equal(1, plan.PayloadCount);
         Assert.Equal(0, plan.Events[0].PayloadIndex);
         // Each bank select travels with its program change: SysEx, then channel 1's CC 0, CC 32, program.
-        Assert.Equal(["B000", "B020", "C028"], plan.Events[1..4].Select(e => $"{e.Message.Status:X2}{e.Message.Data1:X2}"));
+        Assert.Equal(["B000", "B020", "C028"], plan.Events[1..4].ToArray().Select(e => $"{e.Message.Status:X2}{e.Message.Data1:X2}"));
 
         var roundTrip = SmfImporter.Import(SmfReader.Read(SmfWriter.Write(SmfExporter.Export(result.Sequence, result.Title).File)).File);
         Assert.Empty(roundTrip.Diagnostics);

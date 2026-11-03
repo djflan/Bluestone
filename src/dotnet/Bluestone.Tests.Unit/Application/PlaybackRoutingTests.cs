@@ -79,7 +79,7 @@ public sealed class PlaybackRoutingTests
 
         var plan = PlaybackPlanCompiler.Compile(sequence, [part]);
 
-        Assert.Equal(["B0 0", "C0 2", "C0 9", "90 3C"], plan.Events.Select(e => $"{e.Message.Status:X2} {e.Message.Data1:X}"));
+        Assert.Equal(["B0 0", "C0 2", "C0 9", "90 3C"], plan.Events.ToArray().Select(e => $"{e.Message.Status:X2} {e.Message.Data1:X}"));
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class PlaybackRoutingTests
 
         var plan = PlaybackRouting.Prepare(project, DeviceCatalog.BuiltIn, ProfileCatalog.Empty, [synth]).Compile(project.Sequence);
 
-        Assert.Equal([72, 112], plan.Events.Select(e => (int)e.Message.Data1));
+        Assert.Equal([72, 112], plan.Events.ToArray().Select(e => (int)e.Message.Data1));
         var diagnostic = Assert.Single(plan.Diagnostics);
         Assert.Equal(track.Id, diagnostic.Track);
         Assert.Contains("1 notes were transposed outside", diagnostic.Message, StringComparison.Ordinal);

@@ -64,7 +64,7 @@ public sealed class SysExPreservationTests
         var track = Assert.Single(sequence.Tracks);
 
         var plan = PlanDump.Compile(PlanDump.Routed(sequence));
-        var sent = plan.Payloads.Select(p => Convert.ToHexString(p.Span)).ToList();
+        var sent = Enumerable.Range(0, plan.PayloadCount).Select(i => Convert.ToHexString(plan.Payload(i))).ToList();
 
         Assert.Null(SysExInterpreter.Interpret(Unknown));
         Assert.False(Assert.IsType<GsDataSet>(SysExInterpreter.Interpret(DamagedGsReset)).ChecksumValid);

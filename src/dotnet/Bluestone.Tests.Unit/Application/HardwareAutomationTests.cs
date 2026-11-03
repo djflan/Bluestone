@@ -70,8 +70,8 @@ public sealed class HardwareAutomationTests
 
     // Every message in plan order as "slot tick hex".
     private static List<string> Sent(PlaybackPlan plan) =>
-        [.. plan.Events.Select(e => e.PayloadIndex >= 0
-            ? $"{e.Slot} {e.Tick} {Convert.ToHexString(plan.Payloads[e.PayloadIndex].Span)}"
+        [.. plan.Events.ToArray().Select(e => e.PayloadIndex >= 0
+            ? $"{e.Slot} {e.Tick} {Convert.ToHexString(plan.Payload(e.PayloadIndex))}"
             : $"{e.Slot} {e.Tick} {Hex(e.Message.Status, e.Message.Data1, e.Message.Data2, e.Message.Length)}")];
 
     private static string Hex(byte status, byte data1, byte data2, int length) =>

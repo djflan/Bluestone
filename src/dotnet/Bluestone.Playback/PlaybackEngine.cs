@@ -663,7 +663,7 @@ public sealed class PlaybackEngine : IDisposable
         }
         else if (e.PayloadIndex >= 0)
         {
-            result = output.Send(_plan.Payloads[e.PayloadIndex].Span, timestamp);
+            result = output.Send(_plan.Payload(e.PayloadIndex), timestamp);
         }
         else
         {

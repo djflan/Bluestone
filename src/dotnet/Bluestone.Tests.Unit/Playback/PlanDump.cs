@@ -68,7 +68,7 @@ internal static class PlanDump
             var e = plan.Events[i];
             if (e.PayloadIndex >= 0)
             {
-                sent.Add((e.Slot, "sys", e.Tick, i, Convert.ToHexString(plan.Payloads[e.PayloadIndex].Span)));
+                sent.Add((e.Slot, "sys", e.Tick, i, Convert.ToHexString(plan.Payload(e.PayloadIndex))));
                 continue;
             }
 
