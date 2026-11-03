@@ -90,6 +90,13 @@ public sealed class AudioGraphImageTests : IDisposable
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, 4, 2)));
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(image.AsSpan(0, image.Length - 8)));
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithDouble(image, 120, double.NaN)));
+
+        // A node claiming more events or regions than its section holds is refused before anything is sized by the
+        // claim (this once ran out of memory). A node entry is 48 bytes: key, kind, name, first region, region count,
+        // first event, event count, and parameters. The first node is the plugin, the second the clips.
+        var nodes = BitConverter.ToInt32(image, 12);
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 36, int.MaxValue)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 48 + 28, int.MaxValue)));
     }
 
     [Fact]
@@ -150,12 +157,15 @@ public sealed class AudioGraphImageTests : IDisposable
 
     // Every kind of node and step, a plugin schedule with notes, a pitch bend, SysEx, and parameter changes, a looped
     // clip, and settings that differ from the defaults.
+    // Fixed keys, so the image, and so a failing corruption seed, is the same on every run.
     private static AudioGraphDescription RichDescription()
     {
+        var key = 0;
+        Guid Key() => new($"00000000-0000-0000-0000-{++key:000000000000}");
         var builder = new AudioGraphDescriptionBuilder();
-        var channel = builder.AddStrip(new DescribedStrip(Guid.NewGuid(), new MixerStripSettings(-6, 0.5, Muted: false, Soloed: true)));
-        var bus = builder.AddStrip(new DescribedStrip(Guid.NewGuid(), new MixerStripSettings(-1.5, -0.25, Muted: true)));
-        var send = builder.AddStrip(new DescribedStrip(Guid.NewGuid(), default));
+        var channel = builder.AddStrip(new DescribedStrip(Key(), new MixerStripSettings(-6, 0.5, Muted: false, Soloed: true)));
+        var bus = builder.AddStrip(new DescribedStrip(Key(), new MixerStripSettings(-1.5, -0.25, Muted: true)));
+        var send = builder.AddStrip(new DescribedStrip(Key(), default));
         builder.RouteStrip(channel, bus);
         builder.SendStrip(channel, send, -12, preFader: true);
         builder.SendStrip(bus, send, -3.5, preFader: false);
@@ -170,8 +180,8 @@ public sealed class AudioGraphImageTests : IDisposable
                 new(400, PluginEvent.ProgramChange(0, 15, 12)),
             ],
             [new(50, 7, 0.25), new(450, 7, 0.75)]);
-        var synth = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Guid.NewGuid(), "Sÿnth ♪") { Schedule = schedule });
-        var clips = builder.AddNode(new DescribedNode(DescribedNodeKind.Clips, Guid.NewGuid(), "Drums")
+        var synth = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Sÿnth ♪") { Schedule = schedule });
+        var clips = builder.AddNode(new DescribedNode(DescribedNodeKind.Clips, Key(), "Drums")
         {
             Regions =
             [
@@ -179,13 +189,13 @@ public sealed class AudioGraphImageTests : IDisposable
                 new AudioClipRegion("/audio/drums.wav", 100_000, 200_000, 0) { LoopStartSeconds = 0.25, LoopLengthSeconds = 1.5 },
             ],
         });
-        var effect = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Guid.NewGuid(), "Verb"));
+        var effect = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Verb"));
         builder.Monitor(synth);
         builder.Connect(synth, effect);
         builder.Connect(clips, effect);
         builder.ConnectToStrip(effect, channel);
         builder.ConnectToMaster(clips);
-        return builder.Build(-2.5, [Guid.NewGuid(), Guid.NewGuid()]);
+        return builder.Build(-2.5, [Key(), Key()]);
     }
 
     private static void AssertSame(AudioGraphDescription expected, AudioGraphDescription actual)

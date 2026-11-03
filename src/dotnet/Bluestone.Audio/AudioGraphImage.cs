@@ -201,8 +201,10 @@ public static class AudioGraphImage
         switch ((DescribedNodeKind)node.Kind)
         {
             case DescribedNodeKind.Clips:
-                var decoded = ImmutableArray.CreateBuilder<AudioClipRegion>(node.RegionCount);
-                foreach (var region in Range(regions, node.FirstRegion, node.RegionCount))
+                // Counts are checked against their sections before anything is sized by them.
+                var nodeRegions = Range(regions, node.FirstRegion, node.RegionCount);
+                var decoded = ImmutableArray.CreateBuilder<AudioClipRegion>(nodeRegions.Length);
+                foreach (var region in nodeRegions)
                 {
                     decoded.Add(new AudioClipRegion(Text(region.Path, strings, bytes), region.SongStartFrame, region.SongEndFrame, Finite(region.SourceSecondsAtStart))
                     {
@@ -214,14 +216,16 @@ public static class AudioGraphImage
 
                 return new DescribedNode(DescribedNodeKind.Clips, node.Key, name) { Regions = decoded.MoveToImmutable() };
             case DescribedNodeKind.Plugin:
-                var scheduled = new List<ScheduledEvent>(node.EventCount);
-                foreach (var e in Range(events, node.FirstEvent, node.EventCount))
+                var nodeEvents = Range(events, node.FirstEvent, node.EventCount);
+                var nodeParameters = Range(parameters, node.FirstParameter, node.ParameterCount);
+                var scheduled = new List<ScheduledEvent>(nodeEvents.Length);
+                foreach (var e in nodeEvents)
                 {
                     scheduled.Add(new ScheduledEvent(e.Frame, Event(e, bytes)));
                 }
 
-                var changes = new List<ScheduledParameterChange>(node.ParameterCount);
-                foreach (var p in Range(parameters, node.FirstParameter, node.ParameterCount))
+                var changes = new List<ScheduledParameterChange>(nodeParameters.Length);
+                foreach (var p in nodeParameters)
                 {
                     changes.Add(new ScheduledParameterChange(p.Frame, p.Parameter, Finite(p.Value)));
                 }
