@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Bluestone.Application.Plugins;
 using Bluestone.Audio;
@@ -13,7 +12,6 @@ using Bluestone.Domain.Time;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol.Exchange;
 using Bluestone.Signal;
-using NotificationKind = Bluestone.Plugins.Protocol.NotificationKind;
 
 namespace Bluestone.Application.Audio;
 
@@ -32,6 +30,12 @@ public sealed record ProjectAudioGraphResult(AudioGraph Graph, ImmutableArray<st
 /// <see cref="LatencyChanged"/> so the graph can be built again.
 /// </summary>
 /// <remarks>
+/// Building has two halves (ADR 0044): describing the graph from the project (<see cref="Describe"/>, an
+/// <see cref="AudioGraphDescription"/> of plain data, which the UI process can do) and realizing it
+/// (<see cref="AudioGraphRealizer"/>, which owns the nodes, strip states, and delay lines, and will run in the engine
+/// process). <see cref="Build"/> does both in this process.
+/// </remarks>
+/// <remarks>
 /// A chain's audio starts with the owner's own audio (a track's audio clips, when the track plays by the mute and
 /// solo rule, plus audio connected into the track or rack). Each device in order: a plugin audio effect processes
 /// it; a plugin instrument adds its output; anything else (bypassed devices, MIDI effects, built-in event devices,
@@ -45,11 +49,7 @@ public sealed class ProjectAudioGraph : IDisposable
     private readonly int _sampleRate;
     private readonly int _blockFrames;
     private readonly Func<DeviceId, PluginInstance?> _instances;
-    private readonly ConcurrentDictionary<MixerChannelId, MixerStripState> _strips = new();
-    private readonly Dictionary<DeviceId, PluginNode> _plugins = [];
-    private readonly Dictionary<TrackId, ClipEntry> _clips = [];
-    private readonly List<ClipPlayerNode> _retired = [];
-    private readonly LatencyCompensation _compensation = new();
+    private readonly AudioGraphRealizer _realizer;
     private readonly Lock _monitorGate = new();
     private ImmutableHashSet<DeviceId> _monitored = [];
 
@@ -61,9 +61,11 @@ public sealed class ProjectAudioGraph : IDisposable
         _sampleRate = sampleRate;
         _blockFrames = blockFrames;
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
+        _realizer = new AudioGraphRealizer(sampleRate, blockFrames, key => instances(new DeviceId(key)));
+        _realizer.LatencyChanged += (_, _) => LatencyChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public MixerStripState Master { get; } = new();
+    public MixerStripState Master => _realizer.Master;
 
     /// <summary>A plugin in the graph reported a new latency (any thread); build the graph again to compensate for it.</summary>
     public event EventHandler? LatencyChanged;
@@ -92,10 +94,10 @@ public sealed class ProjectAudioGraph : IDisposable
     }
 
     /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
-    public MixerStripState? StripOf(MixerChannelId channel) => _strips.GetValueOrDefault(channel);
+    public MixerStripState? StripOf(MixerChannelId channel) => _realizer.StripOf(channel.Value);
 
     /// <summary>The node playing a plugin device, once a graph has included it. Control thread.</summary>
-    public PluginNode? PluginNodeOf(DeviceId device) => _plugins.GetValueOrDefault(device);
+    public PluginNode? PluginNodeOf(DeviceId device) => _realizer.PluginNodes.GetValueOrDefault(device.Value);
 
     /// <summary>Every plugin node of the last graph built, by device. Any thread.</summary>
     public ImmutableDictionary<DeviceId, PluginNode> PluginNodes { get; private set; } = ImmutableDictionary<DeviceId, PluginNode>.Empty;
@@ -106,43 +108,29 @@ public sealed class ProjectAudioGraph : IDisposable
     /// <param name="projectDirectory">Where relative audio file locations start; null resolves them against the working directory.</param>
     public ProjectAudioGraphResult Build(Project project, SignalGraphResult signal, DeviceCatalog devices, string? projectDirectory)
     {
+        var (description, problems) = Describe(project, signal, devices, projectDirectory);
+        var realized = _realizer.Realize(description);
+        PluginNodes = _realizer.PluginNodes.ToImmutableDictionary(p => new DeviceId(p.Key), p => p.Value);
+        return new ProjectAudioGraphResult(
+            realized.Graph,
+            [.. problems.Concat(realized.Problems).Distinct()],
+            realized.LatencyFrames.ToImmutableDictionary(p => new DeviceId(p.Key), p => p.Value));
+    }
+
+    /// <summary>
+    /// The graph for <paramref name="project"/> as plain data, and what it leaves out in words: the half of
+    /// <see cref="Build"/> that needs only the project and the running plugin instances (ADR 0044).
+    /// </summary>
+    public (AudioGraphDescription Description, ImmutableArray<string> Problems) Describe(Project project, SignalGraphResult signal, DeviceCatalog devices, string? projectDirectory)
+    {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(signal);
         ArgumentNullException.ThrowIfNull(devices);
-        foreach (var node in _retired)
-        {
-            node.Dispose();
-        }
-
-        _retired.Clear();
         return new Builder(this, project, signal, devices, projectDirectory).Run();
     }
 
     /// <summary>Closes the files of every clip node this object opened. Call once no engine renders its graphs.</summary>
-    public void Dispose()
-    {
-        foreach (var node in _retired.Concat(_clips.Values.Select(c => c.Node)))
-        {
-            node.Dispose();
-        }
-
-        _retired.Clear();
-        _clips.Clear();
-        foreach (var plugin in _plugins.Values)
-        {
-            plugin.Instance.Changed -= OnPluginChanged;
-        }
-
-        _plugins.Clear();
-    }
-
-    private void OnPluginChanged(object? sender, NotificationKind kind)
-    {
-        if (kind == NotificationKind.LatencyChanged)
-        {
-            LatencyChanged?.Invoke(this, EventArgs.Empty);
-        }
-    }
+    public void Dispose() => _realizer.Dispose();
 
     /// <summary>The song frame of a tick, at <paramref name="sampleRate"/>.</summary>
     public static long FrameAt(TempoMap tempo, Tick position, int sampleRate)
@@ -202,13 +190,10 @@ public sealed class ProjectAudioGraph : IDisposable
     // A clip's origin can be before tick 0 (a trimmed clip moved to the start).
     private static double SecondsAt(TempoMap tempo, long position) => tempo.SignedTimeAt(position).TotalSeconds;
 
-    private sealed record ClipEntry(ImmutableArray<AudioClipRegion> Regions, ClipPlayerNode Node, IReadOnlyList<string> Problems);
-
     private sealed class Builder(ProjectAudioGraph owner, Project project, SignalGraphResult signal, DeviceCatalog devices, string? directory)
     {
-        private readonly AudioGraphBuilder _builder = new();
+        private readonly AudioGraphDescriptionBuilder _builder = new();
         private readonly ImmutableArray<string>.Builder _problems = ImmutableArray.CreateBuilder<string>();
-        private readonly ImmutableDictionary<DeviceId, int>.Builder _latency = ImmutableDictionary.CreateBuilder<DeviceId, int>();
         private readonly Dictionary<DeviceChainId, List<int>[]> _chains = [];
         private readonly Dictionary<TrackId, List<int>> _starts = [];
         private readonly HashSet<SignalNode> _visiting = [];
@@ -216,7 +201,7 @@ public sealed class ProjectAudioGraph : IDisposable
         private readonly Dictionary<MixerChannelId, int> _stripIndex = [];
         private ImmutableArray<SignalConnection> _audio = [];
 
-        public ProjectAudioGraphResult Run()
+        public (AudioGraphDescription Description, ImmutableArray<string> Problems) Run()
         {
             var rejected = SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(project, devices.Lookup)).SelectMany(i => i.Connections).ToHashSet();
             _audio = [.. project.Connections.Where(c => c.Kind == SignalKind.Audio && !rejected.Contains(c.Id))];
@@ -239,23 +224,16 @@ public sealed class ProjectAudioGraph : IDisposable
                 }
             }
 
-            ForgetUnused();
-            owner.PluginNodes = owner._plugins.ToImmutableDictionary();
-            var graph = _builder.Build(owner._blockFrames, owner.Master, project.Mixer.MasterGainDecibels, owner._compensation);
-            return new ProjectAudioGraphResult(graph, _problems.Distinct().ToImmutableArray(), _latency.ToImmutable());
+            // Nodes of every device and track in the project are kept, even those this graph does not play.
+            var retained = project.Chains.SelectMany(c => c.Devices).Select(d => d.Id.Value).Concat(project.Sequence.Tracks.Select(t => t.Id.Value));
+            return (_builder.Build(project.Mixer.MasterGainDecibels, retained), _problems.Distinct().ToImmutableArray());
         }
 
         private void AddStrips()
         {
             foreach (var channel in project.Mixer.Channels)
             {
-                if (!owner._strips.TryGetValue(channel.Id, out var state))
-                {
-                    state = new MixerStripState();
-                    owner._strips[channel.Id] = state;
-                }
-
-                _stripIndex[channel.Id] = _builder.AddStrip(state, new MixerStripSettings(channel.GainDecibels, channel.Pan, channel.IsMuted, channel.IsSoloed));
+                _stripIndex[channel.Id] = _builder.AddStrip(new DescribedStrip(channel.Id.Value, new MixerStripSettings(channel.GainDecibels, channel.Pan, channel.IsMuted, channel.IsSoloed)));
             }
 
             // Outputs first, then sends; an edge that would close a loop (only in a file edited by hand) is left out.
@@ -293,11 +271,6 @@ public sealed class ProjectAudioGraph : IDisposable
                         }
                     }
                 }
-            }
-
-            foreach (var gone in owner._strips.Keys.Where(id => !_stripIndex.ContainsKey(id)).ToList())
-            {
-                owner._strips.TryRemove(gone, out _);
             }
         }
 
@@ -433,7 +406,7 @@ public sealed class ProjectAudioGraph : IDisposable
         // The plan's rule, groups included (ADR 0030): mute and solo apply to a track's own content.
         private bool Plays(Track track) => GroupTracks.Plays(project.Sequence, track);
 
-        private ClipPlayerNode? ClipsOf(Track track)
+        private DescribedNode? ClipsOf(Track track)
         {
             var tempo = project.Sequence.TempoMap;
             var rate = owner._sampleRate;
@@ -462,100 +435,36 @@ public sealed class ProjectAudioGraph : IDisposable
                 return null;
             }
 
-            // Only the gain or fades changed: the node keeps its streams. Anything else (or a node closed elsewhere)
-            // opens the clips again. The engine never closes a node that leaves its graph, so a node kept for a muted
-            // track is still open when the track plays again.
-            var entry = owner._clips.GetValueOrDefault(track.Id);
-            if (entry is not null && !entry.Node.IsClosed && entry.Regions.Length == regions.Length && entry.Regions.Zip(regions).All(p => p.First.SameStream(p.Second)))
-            {
-                if (!entry.Regions.SequenceEqual(regions))
-                {
-                    entry.Node.UpdateEnvelopes(regions);
-                    entry = entry with { Regions = regions };
-                    owner._clips[track.Id] = entry;
-                }
-            }
-            else
-            {
-                if (entry is not null)
-                {
-                    owner._retired.Add(entry.Node);
-                }
-
-                var node = ClipPlayerNode.Open(track.Name, regions, rate, owner._blockFrames, out var problems);
-                entry = new ClipEntry(regions, node, problems);
-                owner._clips[track.Id] = entry;
-            }
-
-            foreach (var problem in entry.Problems)
-            {
-                _problems.Add($"{track.Name}: {problem}");
-            }
-
-            return entry.Node;
+            return new DescribedNode(DescribedNodeKind.Clips, track.Id.Value, track.Name) { Regions = regions };
         }
 
         private string Resolve(string location) =>
             Path.IsPathRooted(location) || directory is null ? location : Path.GetFullPath(Path.Combine(directory, location));
 
-        private PluginNode? NodeOf(DeviceInstance device)
+        private DescribedNode? NodeOf(DeviceInstance device)
         {
             if (owner._instances(device.Id) is not { } instance)
             {
                 return null;
             }
 
-            if (!owner._plugins.TryGetValue(device.Id, out var node) || !ReferenceEquals(node.Instance, instance))
+            var name = device.Definition.DisplayName ?? device.Definition.Id.Value;
+            if ((int)instance.Request.SampleRate != owner._sampleRate)
             {
-                if ((int)instance.Request.SampleRate != owner._sampleRate)
-                {
-                    _problems.Add($"{(device.Definition.DisplayName ?? device.Definition.Id.Value)} runs at {instance.Request.SampleRate} Hz and the audio device at {owner._sampleRate} Hz, so it is silent.");
-                    return null;
-                }
+                _problems.Add($"{name} runs at {instance.Request.SampleRate} Hz and the audio device at {owner._sampleRate} Hz, so it is silent.");
+                return null;
+            }
 
-                if (instance.Request.MaxBlockFrames < owner._blockFrames)
-                {
-                    _problems.Add($"{(device.Definition.DisplayName ?? device.Definition.Id.Value)} takes at most {instance.Request.MaxBlockFrames} frames per block and the engine renders {owner._blockFrames}, so it is silent.");
-                    return null;
-                }
-
-                if (owner._plugins.TryGetValue(device.Id, out var replaced))
-                {
-                    replaced.Instance.Changed -= owner.OnPluginChanged;
-                }
-
-                node = new PluginNode(instance, (device.Definition.DisplayName ?? device.Definition.Id.Value), owner._blockFrames);
-                instance.Changed += owner.OnPluginChanged;
-                owner._plugins[device.Id] = node;
+            if (instance.Request.MaxBlockFrames < owner._blockFrames)
+            {
+                _problems.Add($"{name} takes at most {instance.Request.MaxBlockFrames} frames per block and the engine renders {owner._blockFrames}, so it is silent.");
+                return null;
             }
 
             var feed = signal.SoftwareInstruments.FirstOrDefault(f => f.Device == device.Id);
             var parameters = signal.Parameters.FirstOrDefault(f => f.Device == device.Id);
-            // An unchanged schedule keeps its instance: replacing it would make the node look for notes to release.
             var schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
-            if (!schedule.HasSameContent(node.Schedule))
-            {
-                node.Schedule = schedule;
-            }
-
-            _latency[device.Id] = node.LatencyFrames;
-            return node;
-        }
-
-        private void ForgetUnused()
-        {
-            var present = project.Chains.SelectMany(c => c.Devices).Select(d => d.Id).ToHashSet();
-            foreach (var gone in owner._plugins.Keys.Where(id => !present.Contains(id)).ToList())
-            {
-                owner._plugins[gone].Instance.Changed -= owner.OnPluginChanged;
-                owner._plugins.Remove(gone);
-            }
-
-            foreach (var gone in owner._clips.Keys.Where(id => project.Sequence.FindTrack(id) is null).ToList())
-            {
-                owner._retired.Add(owner._clips[gone].Node);
-                owner._clips.Remove(gone);
-            }
+            return new DescribedNode(DescribedNodeKind.Plugin, device.Id.Value, name) { Schedule = schedule };
         }
     }
 }

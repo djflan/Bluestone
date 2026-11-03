@@ -125,7 +125,19 @@ samples read from their images send the golden bytes, and a plan with SysEx, cha
 changes plays identically from mid-song and across loop wraps. The engine's pump is unchanged in cost (about 30 ns)
 and allocates nothing.
 
-Still to do: graph descriptions (the audio graph's nodes, strips, and connections) follow the same pattern.
+**Graphs (step 3, done):** building the audio graph now has two halves. `ProjectAudioGraph.Describe` produces an
+`AudioGraphDescription`: plain data with nodes by key (a track's clips, a device's plugin), strips by channel id, and
+the builder calls in order. `AudioGraphRealizer` (in Bluestone.Audio, for the engine) turns a description into a
+render graph. It keeps clip streams, plugin note tracking, strip meters, and compensation delay lines between graphs,
+as `ProjectAudioGraph` did; `ProjectAudioGraph.Build` now does both halves in one process, and every existing graph and
+plugin test passes unchanged. `AudioGraphImage` writes a description as a flat image (names, paths, and SysEx as UTF-8
+and bytes; plugin events as compact 24-byte entries) and reads it back, replaying the steps through the description
+builder so that whatever it accepts realizes. A rich project (fades, a looped clip, a bus, a pre-fader send to a
+return, a muted track) renders identical samples whether its graph is built directly or described, written, read,
+and realized separately. Unlike a plan, a description is decoded into objects. They are small, apart from plugin
+schedules, and the realizer replaces a plugin's schedule only when its events change. A realizer refuses a
+description whose connections form a loop, as the builder does; the describing side never produces one.
+
 Separately, the chase sent when playback starts or seeks mid-song (`ChaseState.Compute`) runs on the playback thread
 and allocates. Wrap chases are already computed when a plan is loaded. In the engine, the seek chase must use
 preallocated state or be precomputed with the plan.
