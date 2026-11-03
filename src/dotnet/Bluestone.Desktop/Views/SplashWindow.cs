@@ -16,12 +16,13 @@ namespace Bluestone.Desktop.Views;
 internal sealed class SplashWindow : Window
 {
     public const string NonAffiliationNotice =
-        "Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by Yamaha Corporation " +
-        "or by the owner of any other product, format, or standard it names. Yamaha, XG, QY100, and other product names and trademarks " +
-        "belong to their respective owners and are used only to identify products and describe compatibility. " +
-        "VST is a registered trademark of Steinberg Media Technologies GmbH.";
+        "Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by the owners " +
+        "of the products, formats, or standards it names. Product names and trademarks belong to their respective owners and are used " +
+        "only to identify products and describe compatibility. VST is a registered trademark of Steinberg Media Technologies GmbH.";
 
-    public const string Summary = "A hardware-oriented DAW built around MIDI and real instruments. MIT licensed.";
+    public const string Summary =
+        "A device-centric digital audio workstation built for tight timing and accuracy, where hardware instruments, " +
+        "plugins, and Bluestone's own devices work side by side as peers. Open source under the MIT License.";
 
     private readonly TextBlock _status;
     private readonly TextBlock _detail;

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/djflan/Bluestone/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/djflan/Bluestone/actions/workflows/ci.yml)
 
-Bluestone is a modern, open-source, device-centric digital audio workstation built for trustworthy timing and musical accuracy. It brings hardware instruments, software instruments, effects, and note processors into one modular environment without making musicians work like routing engineers.
+Bluestone is a modern, open-source, device-centric digital audio workstation built for tight timing and accuracy. It brings hardware instruments, software instruments, effects, and note processors into one modular environment without making musicians work like routing engineers. Bluestone on its own is meant to be a complete virtual studio; plugins and hardware join it as peers.
 
 Bluestone combines deep, flexible signal flow with clear, approachable workflows. Its interface is designed as a cohesive professional product: fresh, responsive, musically focused, and consistent across every feature.
 
@@ -13,12 +13,12 @@ Bluestone combines deep, flexible signal flow with clear, approachable workflows
 
 ## The idea
 
-Bluestone is for musicians whose studios combine software with hardware: synthesizers, boutique instruments, Eurorack systems, audio interfaces, external effects, and plugins. It is aimed primarily at intermediate and professional musicians, producers, and studio owners, while keeping the common path approachable to committed amateurs.
+Bluestone is for serious musicians, whatever their studio looks like: Bluestone alone, a plugin collection, or a room of synthesizers, boutique instruments, Eurorack systems, audio interfaces, and external effects. Each of those setups is a complete, first-class studio with the same timing and accuracy. It is aimed primarily at intermediate and professional musicians, producers, and studio owners, while keeping the common path approachable to committed amateurs.
 
 Five priorities guide the product:
 
-1. Trustworthy timing, synchronization, latency handling, and musical accuracy.
-2. Hardware and software as equal participants in the device workflow.
+1. Tight timing, synchronization, latency handling, and accuracy.
+2. Bluestone devices, third-party plugins, and hardware as equal participants, in any combination.
 3. Deep modularity and extensibility.
 4. Clear defaults, progressive disclosure, and approachable workflows.
 5. A cohesive, contemporary, professional user experience.
