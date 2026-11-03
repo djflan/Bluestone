@@ -141,7 +141,7 @@ public sealed class EnginePlaybackTests
     }
 
     [Fact]
-    public async Task TheEnginesInputAndThruPath_AllocatesNothing()
+    public async Task TheEnginesInputAndThruPath_AndItsAudioRender_AllocateNothing()
     {
         var engine = EngineLauncher.ResolveDefault();
         var info = EngineLauncher.CreateStartInfo(engine, "unused", "unused", restarted: false, allowTestCommands: false);
@@ -157,7 +157,8 @@ public sealed class EnginePlaybackTests
         await process.WaitForExitAsync(Ct);
 
         Assert.True(process.ExitCode == 0, output);
-        Assert.Contains("allocated 0 bytes", output, StringComparison.Ordinal);
+        Assert.Contains("MIDI: allocated 0 bytes", output, StringComparison.Ordinal);
+        Assert.Contains("audio: allocated 0 bytes", output, StringComparison.Ordinal);
     }
 
     private static NoteEvent Note(long at, int note) => new(new Tick(at), new TickSpan(120), MidiChannel.FromIndex(0), new NoteNumber(note), Velocity.Max);

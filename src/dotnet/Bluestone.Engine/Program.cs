@@ -1,9 +1,10 @@
 using Bluestone.Engine;
 
 // The engine process (ADR 0044). Bluestone starts it with the name of the pipe to connect to and a per-launch token:
-//   Bluestone.Engine --pipe NAME --token TOKEN [--restarted] [--allow-test-commands]
+//   Bluestone.Engine --pipe NAME --token TOKEN [--restarted] [--allow-test-commands [--test-audio]]
 // With --spike it runs the ahead-of-time compilation smoke test instead, and with --check-allocations the check that
-// its input and thru path allocates nothing.
+// its input and thru path and its audio render allocate nothing. --test-audio (tests only) replaces the audio device with a
+// stand-in that renders only when a test asks.
 if (args.Contains("--spike"))
 {
     return AotSpike.Run();
@@ -20,7 +21,7 @@ if (Option("--pipe") is not { } pipe || Option("--token") is not { } token)
     return 2;
 }
 
-return await EngineHost.RunAsync(pipe, token, args.Contains("--restarted"), args.Contains("--allow-test-commands")).ConfigureAwait(false);
+return await EngineHost.RunAsync(pipe, token, args.Contains("--restarted"), args.Contains("--allow-test-commands"), args.Contains("--test-audio")).ConfigureAwait(false);
 
 string? Option(string name)
 {

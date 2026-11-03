@@ -12,7 +12,7 @@ internal static class EngineLauncher
 {
     public const string EngineName = "Bluestone.Engine";
 
-    public static ProcessStartInfo CreateStartInfo(string path, string pipeName, string token, bool restarted, bool allowTestCommands)
+    public static ProcessStartInfo CreateStartInfo(string path, string pipeName, string token, bool restarted, bool allowTestCommands, bool testAudio = false)
     {
         var info = new ProcessStartInfo
         {
@@ -44,6 +44,10 @@ internal static class EngineLauncher
         if (allowTestCommands)
         {
             info.ArgumentList.Add("--allow-test-commands");
+            if (testAudio)
+            {
+                info.ArgumentList.Add("--test-audio");
+            }
         }
 
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));

@@ -378,7 +378,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
                 }
 
                 break;
-            case EngineProblem problem:
+            case EngineProblem { Area: EngineProblemArea.Midi } problem:
                 IEngineEndpoint? failed;
                 lock (_gate)
                 {

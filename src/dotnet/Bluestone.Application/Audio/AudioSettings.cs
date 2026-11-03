@@ -32,6 +32,13 @@ public sealed record AudioSettings(
 {
     public const int DefaultQueuedFrames = 1024;
 
+    /// <summary>
+    /// The render-ahead queue when the engine process renders (ADR 0044): 0 by default, so it renders in the device
+    /// callback. The engine's small heap keeps collections out of the callback, which the queue exists to absorb in
+    /// Bluestone's own process; a queue is still available for devices or machines that need one.
+    /// </summary>
+    public int EngineQueuedFrames { get; init; }
+
     public const int DefaultLiveQueuedFrames = 512;
 
     public static IReadOnlyList<int> BufferSizes { get; } = [64, 128, 256, 512, 1024];

@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Bluestone.Audio.Clips;
 using Bluestone.Audio.Plugins;
+using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol.Exchange;
 
 namespace Bluestone.Audio;
@@ -15,10 +16,11 @@ namespace Bluestone.Audio;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Layout (version 1), native-endian, which is little-endian on every supported platform, every section 8-aligned:
+/// Layout (version 2), native-endian, which is little-endian on every supported platform, every section 8-aligned:
 /// a 128-byte header (magic "BSGR", version, each section's count and offset, and the master gain), then nodes, clip
-/// regions, plugin events, plugin parameter changes, strips, steps, retained keys, strings, and bytes (UTF-8 names and
-/// paths, and SysEx). A plugin event is stored compactly, with its SysEx in the bytes section, not as the 272-byte
+/// regions, plugin events, plugin parameter changes, strips, steps, retained keys, strings, bytes (UTF-8 names and
+/// paths, and SysEx), and plugin links (each plugin instance's block exchange file, generation, and shape, for the
+/// engine to attach to). A plugin event is stored compactly, with its SysEx in the bytes section, not as the 272-byte
 /// <see cref="PluginEvent"/>.
 /// </para>
 /// <para>
@@ -31,7 +33,7 @@ namespace Bluestone.Audio;
 /// </remarks>
 public static class AudioGraphImage
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     private const uint Magic = 0x52475342; // "BSGR"
     private const int HeaderSize = 128;
@@ -46,7 +48,9 @@ public static class AudioGraphImage
     private const int RetainedSection = 6;
     private const int StringSection = 7;
     private const int ByteSection = 8;
-    private const int SectionCount = 9;
+    private const int LinkSection = 9;
+    private const int SectionCount = 10;
+    private static readonly long MaxCollectWaitTicks = TimeSpan.FromMinutes(1).Ticks;
 
     private static readonly int[] ElementSizes =
     [
@@ -59,6 +63,7 @@ public static class AudioGraphImage
         Unsafe.SizeOf<Guid>(),
         Unsafe.SizeOf<StringEntry>(),
         1,
+        Unsafe.SizeOf<LinkEntry>(),
     ];
 
     /// <summary>Writes <paramref name="description"/> to a new array.</summary>
@@ -130,6 +135,7 @@ public static class AudioGraphImage
         var retained = Section<Guid>(image, counts, offsets, RetainedSection);
         var strings = Section<StringEntry>(image, counts, offsets, StringSection);
         var bytes = image.Slice(offsets[ByteSection], counts[ByteSection]);
+        var links = Section<LinkEntry>(image, counts, offsets, LinkSection);
 
         try
         {
@@ -142,7 +148,7 @@ public static class AudioGraphImage
             var described = new DescribedNode[nodes.Length];
             for (var i = 0; i < nodes.Length; i++)
             {
-                described[i] = Node(nodes[i], regions, events, parameters, strings, bytes);
+                described[i] = Node(nodes[i], regions, events, parameters, strings, bytes, links);
             }
 
             var added = 0;
@@ -195,8 +201,13 @@ public static class AudioGraphImage
         }
     }
 
-    private static DescribedNode Node(in NodeEntry node, ReadOnlySpan<RegionEntry> regions, ReadOnlySpan<EventEntry> events, ReadOnlySpan<ParameterEntry> parameters, ReadOnlySpan<StringEntry> strings, ReadOnlySpan<byte> bytes)
+    private static DescribedNode Node(in NodeEntry node, ReadOnlySpan<RegionEntry> regions, ReadOnlySpan<EventEntry> events, ReadOnlySpan<ParameterEntry> parameters, ReadOnlySpan<StringEntry> strings, ReadOnlySpan<byte> bytes, ReadOnlySpan<LinkEntry> links)
     {
+        if (node.Link != -1 && ((DescribedNodeKind)node.Kind != DescribedNodeKind.Plugin || (uint)node.Link >= (uint)links.Length))
+        {
+            throw new InvalidDataException("The audio graph image is damaged: a node's plugin link is missing.");
+        }
+
         var name = Text(node.Name, strings, bytes);
         switch ((DescribedNodeKind)node.Kind)
         {
@@ -230,10 +241,36 @@ public static class AudioGraphImage
                     changes.Add(new ScheduledParameterChange(p.Frame, p.Parameter, Finite(p.Value)));
                 }
 
-                return new DescribedNode(DescribedNodeKind.Plugin, node.Key, name) { Schedule = scheduled.Count == 0 && changes.Count == 0 ? PluginSchedule.Empty : new PluginSchedule(scheduled, changes) };
+                return new DescribedNode(DescribedNodeKind.Plugin, node.Key, name)
+                {
+                    Schedule = scheduled.Count == 0 && changes.Count == 0 ? PluginSchedule.Empty : new PluginSchedule(scheduled, changes),
+                    Link = node.Link == -1 ? null : Link(links[node.Link], strings, bytes),
+                };
             default:
                 throw new InvalidDataException($"The audio graph image is damaged: unknown node kind {node.Kind}.");
         }
+    }
+
+    // The exchange's shape is checked by ExchangeOptions (an ArgumentException, so a damaged image).
+    private static DescribedPluginLink Link(in LinkEntry link, ReadOnlySpan<StringEntry> strings, ReadOnlySpan<byte> bytes)
+    {
+        var shape = new ExchangeOptions(link.MaxFrames, link.InputChannels, link.OutputChannels, link.SlotCount, link.EventCapacity, link.ParameterCapacity);
+        if (link.PipelineDepth < 1 || link.PipelineDepth > shape.SlotCount || link.CollectWaitTicks < 0 || link.CollectWaitTicks > MaxCollectWaitTicks
+            || link.LatencyFrames < 0 || link.Bypass is not (0 or 1) || link.Path < -1)
+        {
+            throw new InvalidDataException("The audio graph image is damaged: a plugin link is out of range.");
+        }
+
+        PluginDataPlane? plane = null;
+        if (link.Path != -1)
+        {
+            var path = Text(link.Path, strings, bytes);
+            plane = path.Length > 0 && Path.IsPathRooted(path)
+                ? new PluginDataPlane(path, link.Generation, shape)
+                : throw new InvalidDataException("The audio graph image is damaged: a plugin's exchange is not a full path.");
+        }
+
+        return new DescribedPluginLink(shape, link.PipelineDepth, TimeSpan.FromTicks(link.CollectWaitTicks), link.Bypass == 1, link.LatencyFrames, plane);
     }
 
     private static PluginEvent Event(in EventEntry e, ReadOnlySpan<byte> bytes)
@@ -311,6 +348,7 @@ public static class AudioGraphImage
         private readonly List<EventEntry> _events = [];
         private readonly List<ParameterEntry> _parameters = [];
         private readonly List<StringEntry> _strings = [];
+        private readonly List<LinkEntry> _links = [];
         private readonly List<byte> _bytes = [];
         private readonly int[] _counts;
         private readonly int[] _offsets = new int[SectionCount];
@@ -320,7 +358,27 @@ public static class AudioGraphImage
             _description = description;
             foreach (var node in description.Nodes)
             {
-                var entry = new NodeEntry { Key = node.Key, Kind = (int)node.Kind, Name = String(node.Name), FirstRegion = _regions.Count, FirstEvent = _events.Count, FirstParameter = _parameters.Count };
+                var entry = new NodeEntry { Key = node.Key, Kind = (int)node.Kind, Name = String(node.Name), FirstRegion = _regions.Count, FirstEvent = _events.Count, FirstParameter = _parameters.Count, Link = -1 };
+                if (node.Link is { } link)
+                {
+                    entry.Link = _links.Count;
+                    _links.Add(new LinkEntry
+                    {
+                        CollectWaitTicks = link.CollectWait.Ticks,
+                        Path = link.DataPlane is { } plane ? String(plane.Path) : -1,
+                        Generation = link.DataPlane?.Generation ?? 0,
+                        MaxFrames = link.Shape.MaxFrames,
+                        InputChannels = link.Shape.InputChannels,
+                        OutputChannels = link.Shape.OutputChannels,
+                        SlotCount = link.Shape.SlotCount,
+                        EventCapacity = link.Shape.EventCapacity,
+                        ParameterCapacity = link.Shape.ParameterChangeCapacity,
+                        PipelineDepth = link.PipelineDepth,
+                        LatencyFrames = link.LatencyFrames,
+                        Bypass = link.BypassOnFailure ? 1 : 0,
+                    });
+                }
+
                 foreach (var region in node.Regions)
                 {
                     _regions.Add(new RegionEntry
@@ -367,6 +425,7 @@ public static class AudioGraphImage
                 description.Retained.Count,
                 _strings.Count,
                 _bytes.Count,
+                _links.Count,
             ];
             long position = HeaderSize;
             for (var section = 0; section < SectionCount; section++)
@@ -417,6 +476,7 @@ public static class AudioGraphImage
             ordered.CopyTo(retained);
             CollectionsMarshal.AsSpan(_strings).CopyTo(Section<StringEntry>(image, StringSection));
             CollectionsMarshal.AsSpan(_bytes).CopyTo(Section<byte>(image, ByteSection));
+            CollectionsMarshal.AsSpan(_links).CopyTo(Section<LinkEntry>(image, LinkSection));
         }
 
         private Span<T> Section<T>(Span<byte> image, int section)
@@ -450,6 +510,8 @@ public static class AudioGraphImage
         public int EventCount;
         public int FirstParameter;
         public int ParameterCount;
+        public int Link;
+        public int Padding;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -508,6 +570,24 @@ public static class AudioGraphImage
         public int A;
         public int B;
         public int PreFader;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LinkEntry
+    {
+        public long CollectWaitTicks;
+        public int Path;
+        public uint Generation;
+        public int MaxFrames;
+        public int InputChannels;
+        public int OutputChannels;
+        public int SlotCount;
+        public int EventCapacity;
+        public int ParameterCapacity;
+        public int PipelineDepth;
+        public int LatencyFrames;
+        public int Bypass;
+        public int Padding;
     }
 
     [StructLayout(LayoutKind.Sequential)]

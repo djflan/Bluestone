@@ -61,7 +61,7 @@ public sealed class ProjectAudioGraph : IDisposable
         _sampleRate = sampleRate;
         _blockFrames = blockFrames;
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
-        _realizer = new AudioGraphRealizer(sampleRate, blockFrames, key => instances(new DeviceId(key)));
+        _realizer = new AudioGraphRealizer(sampleRate, blockFrames, described => instances(new DeviceId(described.Key)));
         _realizer.LatencyChanged += (_, _) => LatencyChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -464,7 +464,15 @@ public sealed class ProjectAudioGraph : IDisposable
             var feed = signal.SoftwareInstruments.FirstOrDefault(f => f.Device == device.Id);
             var parameters = signal.Parameters.FirstOrDefault(f => f.Device == device.Id);
             var schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
-            return new DescribedNode(DescribedNodeKind.Plugin, device.Id.Value, name) { Schedule = schedule };
+            var request = instance.Request;
+            var link = new DescribedPluginLink(
+                instance.ExchangeShape,
+                instance.PipelineDepth,
+                instance.CollectWait,
+                request.FailurePolicy == FailurePolicy.BypassInput,
+                instance.ReportedLatencyFrames,
+                instance.DataPlane);
+            return new DescribedNode(DescribedNodeKind.Plugin, device.Id.Value, name) { Schedule = schedule, Link = link };
         }
     }
 }

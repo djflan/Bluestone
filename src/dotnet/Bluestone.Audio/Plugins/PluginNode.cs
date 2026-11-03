@@ -6,7 +6,8 @@ namespace Bluestone.Audio.Plugins;
 /// <summary>
 /// A plugin instance (in its worker process) driven by the audio engine: every block it hands the instance the
 /// node's input audio, the scheduled events and parameter changes that fall in the block, and the transport, through
-/// <see cref="PluginInstance.ProcessBlock"/>. Plugins run every block, playing or not, so tails ring out. On a jump
+/// <see cref="IPluginProcessor.ProcessBlock"/>: a <see cref="PluginInstance"/>, or in the engine process an
+/// <see cref="AttachedPluginInstance"/> (ADR 0044). Plugins run every block, playing or not, so tails ring out. On a jump
 /// (start, stop, seek, loop wrap) every note the node started is released first. When its schedule is replaced during
 /// playback, the notes the new schedule still holds at the play position keep sounding and the others are released
 /// (a note the new schedule starts before the play position is not started late).
@@ -17,7 +18,7 @@ namespace Bluestone.Audio.Plugins;
 public sealed class PluginNode : AudioNode
 {
     private const int NoteSlots = 16 * 128;
-    private readonly PluginInstance _instance;
+    private readonly IPluginProcessor _instance;
     private readonly float[] _input;
     private readonly float[] _output;
     private readonly PluginEvent[] _events;
@@ -37,25 +38,29 @@ public sealed class PluginNode : AudioNode
     /// <param name="instance">The instance; its block size must hold the engine's blocks.</param>
     /// <param name="name">For diagnostics.</param>
     /// <param name="engineBlockFrames">The engine's block size.</param>
-    public PluginNode(PluginInstance instance, string name, int engineBlockFrames)
+    public PluginNode(IPluginProcessor instance, string name, int engineBlockFrames)
     {
         _instance = instance ?? throw new ArgumentNullException(nameof(instance));
         Name = name ?? throw new ArgumentNullException(nameof(name));
-        var request = instance.Request;
-        if (engineBlockFrames > request.MaxBlockFrames)
+        if (engineBlockFrames > instance.MaxBlockFrames)
         {
-            throw new ArgumentException($"The plugin takes at most {request.MaxBlockFrames} frames per block; the engine renders {engineBlockFrames}.", nameof(engineBlockFrames));
+            throw new ArgumentException($"The plugin takes at most {instance.MaxBlockFrames} frames per block; the engine renders {engineBlockFrames}.", nameof(engineBlockFrames));
         }
 
-        _input = new float[request.InputChannels * request.MaxBlockFrames];
-        _output = new float[request.OutputChannels * request.MaxBlockFrames];
-        _events = new PluginEvent[request.EventCapacity];
-        _outputEvents = new PluginEvent[request.EventCapacity];
+        _input = new float[instance.InputChannels * instance.MaxBlockFrames];
+        _output = new float[instance.OutputChannels * instance.MaxBlockFrames];
+        _events = new PluginEvent[instance.EventCapacity];
+        _outputEvents = new PluginEvent[instance.EventCapacity];
     }
 
     public override string Name { get; }
 
-    public PluginInstance Instance => _instance;
+    /// <summary>What processes the node's blocks.</summary>
+    public IPluginProcessor Processor => _instance;
+
+    /// <summary>The instance, when it is supervised in this process.</summary>
+    /// <exception cref="InvalidOperationException">The node drives an instance supervised elsewhere.</exception>
+    public PluginInstance Instance => _instance as PluginInstance ?? throw new InvalidOperationException("This node drives an instance supervised by another process.");
 
     /// <summary>Pipelining plus the plugin's own latency, in frames.</summary>
     public override int LatencyFrames => _instance.ReportedLatencyFrames;
@@ -89,7 +94,6 @@ public sealed class PluginNode : AudioNode
     public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output)
     {
         var frames = context.Frames;
-        var request = _instance.Request;
         var count = 0;
         var schedule = Volatile.Read(ref _schedule);
         if (context.Jumped || context.SongFrame != _expectedFrame)
@@ -114,9 +118,11 @@ public sealed class PluginNode : AudioNode
         count = CollectLive(context, count);
         var end = context.EndFrame;
         _expectedFrame = context.Playing ? end : context.SongFrame;
-        var inputAudio = _input.AsSpan(0, request.InputChannels * frames);
-        Deinterleave(input, inputAudio, request.InputChannels, frames);
-        var outputAudio = _output.AsSpan(0, request.OutputChannels * frames);
+        var inputChannels = _instance.InputChannels;
+        var outputChannels = _instance.OutputChannels;
+        var inputAudio = _input.AsSpan(0, inputChannels * frames);
+        Deinterleave(input, inputAudio, inputChannels, frames);
+        var outputAudio = _output.AsSpan(0, outputChannels * frames);
         var outcome = _instance.ProcessBlock(frames, inputAudio, outputAudio, _events.AsSpan(0, count), _outputEvents, new TransportState(context.SongFrame, context.Tempo, context.Playing));
         Interlocked.Increment(ref _blocks);
         if (outcome.Outcome is not (ProcessOutcome.Processed or ProcessOutcome.Priming))
@@ -124,12 +130,12 @@ public sealed class PluginNode : AudioNode
             Interlocked.Increment(ref _failedBlocks);
         }
 
-        if (request.OutputChannels >= 2)
+        if (outputChannels >= 2)
         {
             outputAudio[..frames].CopyTo(output.Left);
             outputAudio.Slice(frames, frames).CopyTo(output.Right);
         }
-        else if (request.OutputChannels == 1)
+        else if (outputChannels == 1)
         {
             outputAudio[..frames].CopyTo(output.Left);
             outputAudio[..frames].CopyTo(output.Right);

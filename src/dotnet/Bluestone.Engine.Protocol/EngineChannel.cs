@@ -8,7 +8,7 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;
@@ -38,6 +38,22 @@ public static class EngineLimits
 
     /// <summary>The most buckets in a timing histogram.</summary>
     public const int MaxHistogramBuckets = 4096;
+
+    /// <summary>The most mixer strips in one <see cref="AudioStatus"/>.</summary>
+    public const int MaxMeters = 1024;
+
+    /// <summary>The most problems in one <see cref="AudioGraphLoaded"/>.</summary>
+    public const int MaxGraphProblems = 64;
+
+    /// <summary>The highest sample rate, the largest buffer and block, and the longest render-ahead queue Bluestone asks for.</summary>
+    public const int MaxSampleRate = 768_000;
+
+    public const int MaxBufferFrames = 8192;
+
+    public const int MaxQueuedFrames = 65_536;
+
+    /// <summary>The most frames one <see cref="TestRender"/> renders.</summary>
+    public const int MaxTestRenderFrames = 48_000 * 60;
 
     /// <summary>How often a running engine sends a heartbeat.</summary>
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMilliseconds(250);
@@ -245,6 +261,8 @@ public sealed partial class EngineChannel(Stream stream) : IDisposable
 
         public void UInt32(uint value) => BinaryPrimitives.WriteUInt32LittleEndian(Take(4), value);
 
+        public void Single(float value) => BinaryPrimitives.WriteSingleLittleEndian(Take(4), value);
+
         public void Guid(Guid value)
         {
             if (!value.TryWriteBytes(Take(16)))
@@ -310,6 +328,13 @@ public sealed partial class EngineChannel(Stream stream) : IDisposable
         public uint UInt32() => BinaryPrimitives.ReadUInt32LittleEndian(Take(4));
 
         public Guid Guid() => new(Take(16));
+
+        /// <summary>A finite, non-negative float (a level).</summary>
+        public float Level()
+        {
+            var value = BinaryPrimitives.ReadSingleLittleEndian(Take(4));
+            return float.IsFinite(value) && value >= 0 ? value : throw new EngineProtocolException($"{value} is not a level.");
+        }
 
         /// <summary>A count or length from 0 to <paramref name="max"/>.</summary>
         public int Count(int max)

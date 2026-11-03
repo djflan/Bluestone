@@ -150,6 +150,12 @@ public sealed class HostBlockExchange : IDisposable
                 return ExchangeStatus.Stale;
             }
 
+            if (MarkedEnded())
+            {
+                _faulted = true;
+                return ExchangeStatus.Faulted;
+            }
+
             var slotOffset = _layout.SlotOffset(SlotOf(blockIndex));
             ref var state = ref _region.Int32At(slotOffset + ExchangeLayout.SlotStateOffset);
             var current = Volatile.Read(ref state);
@@ -267,6 +273,12 @@ public sealed class HostBlockExchange : IDisposable
             {
                 _faulted = true;
                 return ExchangeStatus.Stale;
+            }
+
+            if (MarkedEnded())
+            {
+                _faulted = true;
+                return ExchangeStatus.Faulted;
             }
 
             var slotOffset = _layout.SlotOffset(SlotOf(blockIndex));
@@ -399,6 +411,11 @@ public sealed class HostBlockExchange : IDisposable
         MemoryMarshal.Cast<byte, float>(slot.Slice((int)offset, count * sizeof(float)));
 
     private int SlotOf(long blockIndex) => (int)(blockIndex % _layout.Options.SlotCount);
+
+    // Faulted or closed by another handle on the file: the process that supervises the worker, when the engine drives the
+    // data plane (ADR 0044), or the worker itself.
+    private bool MarkedEnded() =>
+        (Volatile.Read(ref _region.Int32At(ExchangeLayout.FlagsOffset)) & (int)(ExchangeState.Faulted | ExchangeState.Closed)) != 0;
 
     private bool GenerationMatches() =>
         (uint)Volatile.Read(ref _region.Int32At(ExchangeLayout.GenerationOffset)) == Generation;

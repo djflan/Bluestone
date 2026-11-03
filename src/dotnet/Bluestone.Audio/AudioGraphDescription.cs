@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 using Bluestone.Audio.Clips;
 using Bluestone.Audio.Plugins;
+using Bluestone.Plugins;
+using Bluestone.Plugins.Protocol.Exchange;
 
 namespace Bluestone.Audio;
 
@@ -28,7 +30,18 @@ public sealed record DescribedNode(DescribedNodeKind Kind, Guid Key, string Name
 
     /// <summary>What the plugin receives over the song (<see cref="DescribedNodeKind.Plugin"/>).</summary>
     public PluginSchedule Schedule { get; init; } = PluginSchedule.Empty;
+
+    /// <summary>How another process reaches the plugin's instance (<see cref="DescribedNodeKind.Plugin"/>); null when not described.</summary>
+    public DescribedPluginLink? Link { get; init; }
 }
+
+/// <summary>
+/// A plugin node's instance as the engine process reaches it (ADR 0044): the shape of its block exchange, the host's
+/// pipeline settings, the latency Bluestone knows for it, and the exchange of the worker running it now (null while it is
+/// not running: the output then follows the failure policy). A restarted worker has a new exchange; the engine attaches
+/// to it when it realizes the next graph.
+/// </summary>
+public sealed record DescribedPluginLink(ExchangeOptions Shape, int PipelineDepth, TimeSpan CollectWait, bool BypassOnFailure, int LatencyFrames, PluginDataPlane? DataPlane);
 
 /// <summary>A mixer strip by its channel's id, with its fader, pan, mute, and solo.</summary>
 public sealed record DescribedStrip(Guid Key, MixerStripSettings Settings);

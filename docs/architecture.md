@@ -84,7 +84,8 @@ Bluestone.Engine            Audio, Engine.Protocol, Midi, Playback, Plugins, Plu
                             Platform.CoreMidi, Platform.Windows
                                                the engine process (ADR 0044), published with NativeAOT; started and
                                                supervised by Application's EngineSupervisor, copied beside the app; runs
-                                               MIDI playback, MIDI endpoints, and live thru when BLUESTONE_ENGINE=1
+                                               MIDI playback, MIDI endpoints, live thru, the audio device, the audio
+                                               graph, clips, meters, and the plugin data plane when BLUESTONE_ENGINE=1
 Bluestone.Benchmarks        Application, Audio, Infrastructure, Platform.CoreMidi, Platform.Windows, Playback, Profiles
                                                performance measurements and probes (ADR 0012)
 Bluestone.Tests.Unit        Application, Audio, Domain, Infrastructure, Midi, Playback, PluginWorker, Plugins,
@@ -149,7 +150,7 @@ and Linux; separate tests check the macOS menu's items, gestures, and Window men
 | Group tracks: membership, mute and solo, folding | `Bluestone.Domain/Sequencing/GroupTracks.cs`; edits in `Bluestone.Application/Editing/GroupCommands.cs` |
 | A mixer concept (channels, outputs, sends) | `Bluestone.Domain/Mixing/Mixer.cs`; edits in `RoutingCommands`; strips and meters in `Bluestone.Audio/MixerStrip.cs` |
 | Audio processing on the real-time path (a node, metering, decoding, resampling, delay compensation) | `Bluestone.Audio` |
-| How a project becomes audio (clips, chains, connections, mixer) | `Bluestone.Application/Audio/ProjectAudioGraph.cs`; the device and engine lifecycle in `AudioPlayback.cs` |
+| How a project becomes audio (clips, chains, connections, mixer) | `Bluestone.Application/Audio/ProjectAudioGraph.cs`; the device and engine lifecycle in `AudioPlayback.cs` (in process) or `Bluestone.Engine/AudioHost.cs` with `Bluestone.Application/Engine/EngineAudio.cs` (engine process), both behind `IAudioPlayback` |
 | Audio device access (a backend, a stream setting) | `src/native/crates/bluestone_audio` (Rust), its C ABI in `Bluestone.Audio/Devices/NativeMethods.cs` |
 | How live input finds and plays its route | `Bluestone.Application/Live` (`LiveRoutePlan`, `LiveInput`) |
 | How plugin devices are created, restarted, and moved between workers | `Bluestone.Application/Plugins/PluginDeviceHost.cs` |
@@ -443,6 +444,14 @@ a ring that the Rust device callback only copies from. The MIDI playback engine 
 audio engine follows (`IAudioTimeline`), so audio and external MIDI stay in time. `AudioPlayback` opens
 the device, falls back to the default output when the chosen one disappears, and waits for a device when
 none can open.
+
+With the engine process (`BLUESTONE_ENGINE=1`, ADR 0044) the device, the render, clip streaming, and the
+plugin data plane run in `Bluestone.Engine` (`AudioHost`), rendering in the device callback by default.
+Bluestone describes the graph (`ProjectAudioGraph.Describe`) for the stream the engine opened and hands it
+over as an `AudioGraphImage` file, with each plugin instance's block exchange; the engine realizes it off
+the real-time thread and attaches to the exchanges of workers that Bluestone still supervises
+(`AttachedPluginInstance`). `EngineAudio` mirrors the device's state, meters, and figures. The Audio
+window and the mixer read either through `IAudioPlayback`.
 
 ### Delay compensation
 
