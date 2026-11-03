@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Bluestone.Application.Editing;
+using Bluestone.Application.Engine;
 using Bluestone.Application.Live;
 using Bluestone.Application.Recording;
 using Bluestone.Application.Routing;
@@ -43,12 +44,20 @@ public sealed record RecordOptions(int CountInBars = 1, bool Replace = false);
 /// resolved as endpoints come and go, keeps outputs open for the endpoints in use, and recompiles the
 /// plan after every edit, including while playing.
 /// </summary>
+/// <remarks>
+/// Playback runs in one of two places (<see cref="Transport"/>): in this process, on a <see cref="PlaybackThread"/>
+/// (the default), or in the engine process (ADR 0044) through an <see cref="EnginePlayback"/>. With the engine, it opens
+/// platform outputs and inputs and runs live routes to external instruments with built-in devices; outputs and inputs
+/// only Bluestone can reach are opened here and forwarded.
+/// </remarks>
 /// <remarks>Methods are intended to be called from one (UI) thread; endpoint notifications from other threads are marshalled through <see cref="RefreshAsync"/>.</remarks>
 public sealed class PlaybackController : IAsyncDisposable
 {
     private readonly ProjectSession _session;
     private readonly EndpointDirectory _endpoints;
     private readonly PlaybackThread? _thread;
+    private readonly PlaybackEngine? _local;
+    private readonly EnginePlayback? _remote;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<EndpointId, IMidiOutput> _open = [];
 
@@ -80,17 +89,48 @@ public sealed class PlaybackController : IAsyncDisposable
         _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
         Profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        Engine = new PlaybackEngine(clock, session.Project.Sequence.TempoMap, options);
-        Live = new LiveInput(Engine, clock);
-        Recorder = new MidiRecorder(Engine, Live);
-        _thread = startThread ? new PlaybackThread(Engine, playbackThreadSetup, playbackPreciseSleep) : null;
+        _local = new PlaybackEngine(clock, session.Project.Sequence.TempoMap, options);
+        Transport = _local;
+        Live = new LiveInput(_local, clock);
+        Recorder = new MidiRecorder(_local, Live);
+        _thread = startThread ? new PlaybackThread(_local, playbackThreadSetup, playbackPreciseSleep) : null;
         if (startThread)
         {
             Live.Start();
         }
     }
 
-    public PlaybackEngine Engine { get; }
+    /// <summary>Plays through the engine process (ADR 0044): <paramref name="engine"/> must be attached to its supervisor.</summary>
+    /// <param name="session">The project being played.</param>
+    /// <param name="endpoints">Every available MIDI provider.</param>
+    /// <param name="profiles">Installed device profiles.</param>
+    /// <param name="engine">The engine's playback; its clock is the system's monotonic clock, which the endpoints must share.</param>
+    /// <param name="startLiveThread">False to pump live routes Bluestone runs by hand (tests).</param>
+    public PlaybackController(ProjectSession session, EndpointDirectory endpoints, ProfileCatalog profiles, EnginePlayback engine, bool startLiveThread = true)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
+        Profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
+        _remote = engine ?? throw new ArgumentNullException(nameof(engine));
+        _clock = engine.Clock;
+        Transport = engine;
+        Live = new LiveInput(engine, _clock, engine);
+        Recorder = new MidiRecorder(engine, Live);
+        if (startLiveThread)
+        {
+            Live.Start();
+        }
+    }
+
+    /// <summary>The transport: the in-process engine, or the engine process's.</summary>
+    public IPlaybackTransport Transport { get; }
+
+    /// <summary>The in-process engine, for driving it by hand in tests.</summary>
+    /// <exception cref="InvalidOperationException">Playback runs in the engine process.</exception>
+    public PlaybackEngine Engine => _local ?? throw new InvalidOperationException("Playback runs in the engine process.");
+
+    /// <summary>Whether playback runs in the engine process.</summary>
+    public bool UsesEngineProcess => _remote is not null;
 
     /// <summary>Live input through the devices on each track's live route (ADR 0035). Without a live thread (tests), call <see cref="LiveInput.Pump"/>.</summary>
     public LiveInput Live { get; }
@@ -169,7 +209,7 @@ public sealed class PlaybackController : IAsyncDisposable
 
                 lock (_engineGate)
                 {
-                    Engine.SetOutputs(outputs);
+                    Transport.SetOutputs(outputs);
                     _slots = slots;
                 }
 
@@ -181,12 +221,17 @@ public sealed class PlaybackController : IAsyncDisposable
             Live.Update(project, devices, (id, port) => instruments.FirstOrDefault(i => i.Instrument.Id == id)?.FindPort(port) is { Endpoint.IsUsable: true } usable ? usable.Endpoint.Endpoint : null, Volatile.Read(ref _published));
             ApplyMetronome();
             ApplyThru();
-            InputProblems = await Recorder.SetInputsAsync(_endpoints, WantedInputs(), cancellationToken).ConfigureAwait(false);
+            InputProblems = await Recorder.SetInputsAsync(OpenInputAsync, WantedInputs(), cancellationToken).ConfigureAwait(false);
 
             var plan = prepared.Compile(project.Sequence);
-            Engine.Load(plan);
-            Engine.SetLoop(project.Loop.Active is { } loop ? new LoopRegion(loop.Start, loop.End) : null);
+            Transport.Load(plan);
+            Transport.SetLoop(project.Loop.Active is { } loop ? new LoopRegion(loop.Start, loop.End) : null);
             PlanDiagnostics = [.. plan.Diagnostics];
+            if (_remote is not null)
+            {
+                problems.AddRange(_remote.TakeProblems());
+            }
+
             OutputProblems = problems.ToImmutable();
         }
         finally
@@ -200,7 +245,7 @@ public sealed class PlaybackController : IAsyncDisposable
     public async Task PlayAsync(Tick? from = null, CancellationToken cancellationToken = default)
     {
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
-        Engine.Play(from);
+        Transport.Play(from);
     }
 
     // Whether compiling the plan will ask a device outside Bluestone's process (a plugin MIDI effect in its worker).
@@ -213,7 +258,7 @@ public sealed class PlaybackController : IAsyncDisposable
     public RecordedTake? Stop()
     {
         var take = FinishRecording();
-        Engine.Stop();
+        Transport.Stop();
         return take;
     }
 
@@ -248,23 +293,23 @@ public sealed class PlaybackController : IAsyncDisposable
     public async Task RecordAsync(TrackId track, RecordOptions? options = null, CancellationToken cancellationToken = default)
     {
         _recordOptions = options ?? new RecordOptions();
-        _takeWraps = Engine.LoopWraps;
-        if (Engine.State == TransportState.Playing)
+        _takeWraps = Transport.LoopWraps;
+        if (Transport.State == TransportState.Playing)
         {
-            Recorder.Start(track, Engine.Position);
+            Recorder.Start(track, Transport.Position);
             ApplyMetronome();
             ApplyThru();
             return;
         }
 
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
-        var from = Engine.Position;
+        var from = Transport.Position;
         var sequence = _session.Project.Sequence;
         var countIn = _recordOptions.CountInBars > 0 ? CountIn.Bars(sequence.TempoMap, sequence.MeterMap, from, _recordOptions.CountInBars) : null;
         Recorder.Start(track, from);
         ApplyMetronome();
         ApplyThru();
-        Engine.Play(from, countIn);
+        Transport.Play(from, countIn);
     }
 
     /// <summary>
@@ -279,9 +324,9 @@ public sealed class PlaybackController : IAsyncDisposable
         }
 
         var project = _session.Project;
-        var end = Engine.Position;
+        var end = Transport.Position;
         // The loop is the take's range only if playback actually wrapped while recording.
-        var loop = project.Loop.Active is { } l && Engine.LoopWraps != _takeWraps ? l : null;
+        var loop = project.Loop.Active is { } l && Transport.LoopWraps != _takeWraps ? l : null;
         var take = Recorder.Stop(end, loop);
         ApplyMetronome();
         ApplyThru();
@@ -368,13 +413,13 @@ public sealed class PlaybackController : IAsyncDisposable
             : null;
     }
 
-    public void Seek(Tick position) => Engine.Seek(position);
+    public void Seek(Tick position) => Transport.Seek(position);
 
     /// <summary>Ends every live note, then sends every output's all-notes-off.</summary>
     public void Panic()
     {
         Live.ReleaseAll();
-        Engine.Panic();
+        Transport.Panic();
     }
 
     /// <summary>
@@ -432,7 +477,7 @@ public sealed class PlaybackController : IAsyncDisposable
         EndAudition();
         Recorder.Dispose();
         Live.Dispose();
-        Engine.Stop();
+        Transport.Stop();
         if (_thread is not null)
         {
             // The thread applies the Stop on its way out; pumping here would race it.
@@ -440,15 +485,16 @@ public sealed class PlaybackController : IAsyncDisposable
         }
         else
         {
-            Engine.Pump();
+            _local?.Pump();
         }
+
         foreach (var output in _open.Values)
         {
             output.Dispose();
         }
 
         _open.Clear();
-        Engine.Dispose();
+        _local?.Dispose();
         _gate.Dispose();
         await Task.CompletedTask.ConfigureAwait(false);
     }
@@ -497,7 +543,7 @@ public sealed class PlaybackController : IAsyncDisposable
         lock (_engineGate)
         {
             var slot = MetronomeEndpoint() is { } endpoint ? _slots.IndexOf(endpoint) : -1;
-            Engine.SetMetronome(slot >= 0 ? _metronome.Sound with { Slot = slot } : null, enabled);
+            Transport.SetMetronome(slot >= 0 ? _metronome.Sound with { Slot = slot } : null, enabled);
         }
     }
 
@@ -505,7 +551,23 @@ public sealed class PlaybackController : IAsyncDisposable
     {
         Recorder.SetThru(_thruTrack);
         Live.Monitored = Recorder.RecordingTrack ?? _thruTrack;
+        if (_remote is not null)
+        {
+            // The engine plays input from its own inputs on the thru track's route.
+            if (_thruTrack is { } thru)
+            {
+                Live.Prepare(thru);
+            }
+
+            _remote.SetThru(_thruTrack?.Value);
+        }
     }
+
+    // With the engine, it opens inputs it can reach; the rest are opened here.
+    private ValueTask<IMidiInput> OpenInputAsync(EndpointId id, CancellationToken cancellationToken) =>
+        _remote is not null && _endpoints.GetEndpoints(EndpointDirection.Input).FirstOrDefault(e => e.Id == id) is { } endpoint && _remote.Owns(endpoint)
+            ? ValueTask.FromResult(_remote.OpenInput(endpoint))
+            : _endpoints.OpenInputAsync(id, cancellationToken);
 
     private async Task<IMidiOutput?> GetOrOpenAsync(EndpointId id, ImmutableArray<string>.Builder problems, CancellationToken cancellationToken)
     {
@@ -518,7 +580,20 @@ public sealed class PlaybackController : IAsyncDisposable
         _open.Remove(id);
         try
         {
-            var output = await _endpoints.OpenOutputAsync(id, cancellationToken).ConfigureAwait(false);
+            IMidiOutput output;
+            if (_remote is null)
+            {
+                output = await _endpoints.OpenOutputAsync(id, cancellationToken).ConfigureAwait(false);
+            }
+            else if (_endpoints.GetEndpoints(EndpointDirection.Output).FirstOrDefault(e => e.Id == id) is { } endpoint && _remote.Owns(endpoint))
+            {
+                output = _remote.OpenOutput(endpoint);
+            }
+            else
+            {
+                output = _remote.Forward(await _endpoints.OpenOutputAsync(id, cancellationToken).ConfigureAwait(false));
+            }
+
             _open[id] = output;
             return output;
         }

@@ -50,6 +50,14 @@ internal static class PlatformProviders
     }
 
     /// <summary>
+    /// Whether the engine process opens <paramref name="endpoint"/> itself (ADR 0044): the operating system's endpoints,
+    /// except the virtual ports Bluestone publishes, which belong to this process and are forwarded.
+    /// </summary>
+    public static bool IsEngineEndpoint(EndpointDescriptor endpoint) =>
+        endpoint.Id.Provider is "coremidi" or "winmm" or "alsa"
+        && !endpoint.Id.Value.StartsWith("virtual:", StringComparison.Ordinal);
+
+    /// <summary>
     /// Scheduling for the playback thread. On macOS the real-time time-constraint policy removed
     /// multi-millisecond wake-up delays in measurement (ADR 0012). On Windows a 1 ms timer resolution
     /// and the MMCSS "Pro Audio" task do the same job (ADR 0013).

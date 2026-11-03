@@ -64,6 +64,31 @@ public sealed class TimingStatistics
 
     internal void RecordNoteOverflow() => Interlocked.Increment(ref _noteOverflow);
 
+    /// <summary>
+    /// Copies the histograms into <paramref name="histogram"/> (<see cref="BucketBounds"/> plus one) and
+    /// <paramref name="fine"/> (<see cref="FineBucketCount"/>) and returns the counters, without allocating.
+    /// </summary>
+    public TimingFigures Read(Span<long> histogram, Span<long> fine)
+    {
+        for (var i = 0; i < Math.Min(histogram.Length, _histogram.Length); i++)
+        {
+            histogram[i] = Volatile.Read(ref _histogram[i]);
+        }
+
+        for (var i = 0; i < Math.Min(fine.Length, _fine.Length); i++)
+        {
+            fine[i] = Volatile.Read(ref _fine[i]);
+        }
+
+        return new TimingFigures(
+            Volatile.Read(ref _dispatched),
+            Volatile.Read(ref _late),
+            Volatile.Read(ref _skippedLateNotes),
+            Volatile.Read(ref _dropped),
+            Volatile.Read(ref _noteOverflow),
+            TimeSpan.FromTicks(Volatile.Read(ref _maxLatenessTicks)));
+    }
+
     public TimingSnapshot Snapshot()
     {
         var histogram = new long[_histogram.Length];
@@ -104,6 +129,9 @@ public sealed class TimingStatistics
         return BucketBounds.Length;
     }
 }
+
+/// <summary>The counters of <see cref="TimingStatistics"/> at one moment, without the histograms.</summary>
+public readonly record struct TimingFigures(long Dispatched, long Late, long SkippedLateNotes, long Dropped, long NoteOverflow, TimeSpan MaxLateness);
 
 /// <summary>A point-in-time copy of <see cref="TimingStatistics"/>.</summary>
 public sealed record TimingSnapshot(

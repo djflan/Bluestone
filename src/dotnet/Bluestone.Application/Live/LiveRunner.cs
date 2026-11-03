@@ -34,7 +34,7 @@ internal sealed class LiveRunner : ILiveEventSource
     private readonly bool[] _sounding = new bool[LiveEvent.NoteSlots];
     private readonly Ppqn _ppqn;
     private readonly IMidiOutput? _external;
-    private readonly PlaybackEngine? _engine;
+    private readonly IPlaybackTransport? _engine;
     private readonly LiveLatencyMeter? _latency;
     private readonly int _fixedFrames;
     private readonly int _sampleRate;
@@ -46,7 +46,7 @@ internal sealed class LiveRunner : ILiveEventSource
     private int _queued;
     private long _overflow;
 
-    private LiveRunner(LiveRoutePlan plan, LiveChain chain, Ppqn ppqn, IMidiOutput? external, PlaybackEngine? engine, PluginNode? node, LiveLatencyMeter? latency, int fixedFrames, int sampleRate)
+    private LiveRunner(LiveRoutePlan plan, LiveChain chain, Ppqn ppqn, IMidiOutput? external, IPlaybackTransport? engine, PluginNode? node, LiveLatencyMeter? latency, int fixedFrames, int sampleRate)
     {
         Plan = plan;
         _chain = chain;
@@ -67,6 +67,15 @@ internal sealed class LiveRunner : ILiveEventSource
     /// <summary>Runs on the audio thread (a plugin instrument) rather than where input is posted.</summary>
     public bool IsAudioDriven => Node is not null;
 
+    /// <summary>Whether the engine process runs this route (<see cref="ILiveRemote"/>); it is then only a placeholder here.</summary>
+    public bool IsRemote { get; private init; }
+
+    /// <summary>The engine's id for this route once it runs there, or -1.</summary>
+    public int RemoteRoute { get; set; } = -1;
+
+    /// <summary>The output a remote route plays to.</summary>
+    public IMidiOutput? External => _external;
+
     /// <summary>Whether input posted now can be heard.</summary>
     public bool CanPlay => Plan.Target == LiveTargetKind.External ? _external is not null : Node is not null;
 
@@ -86,6 +95,13 @@ internal sealed class LiveRunner : ILiveEventSource
 
     public static LiveRunner Create(LiveRoutePlan plan, LiveContext context, LiveLatencyMeter latency)
     {
+        // A route the engine can run is not built here: it only stands for the engine's (ADR 0044).
+        if (context.Remote is { } remote && plan.Target == LiveTargetKind.External && plan.Endpoint is { } target
+            && context.Outputs.GetValueOrDefault(target.Id) is { } remoteOutput && remote.CanRun(plan, remoteOutput))
+        {
+            return new LiveRunner(plan, new LiveChain([], 1), context.Ppqn, remoteOutput, context.Engine, null, null, 0, 48_000) { IsRemote = true };
+        }
+
         var stages = new List<(ILiveProcessor, EventClass)>();
         var plugins = new List<PluginLiveStage>();
         foreach (var stage in plan.Stages)
@@ -147,7 +163,7 @@ internal sealed class LiveRunner : ILiveEventSource
     /// <summary>Advances a route the audio engine does not run to <paramref name="now"/>, sending what it puts out. One thread at a time.</summary>
     public void Pump(TimeSpan now, double tempo)
     {
-        if (IsAudioDriven || _released)
+        if (IsAudioDriven || IsRemote || _released)
         {
             return;
         }
@@ -190,7 +206,7 @@ internal sealed class LiveRunner : ILiveEventSource
     /// <summary>Ends every note the route sounds, sending the releases now. For routes the audio engine does not run.</summary>
     public void ReleaseNow()
     {
-        if (IsAudioDriven || _released)
+        if (IsAudioDriven || IsRemote || _released)
         {
             return;
         }
