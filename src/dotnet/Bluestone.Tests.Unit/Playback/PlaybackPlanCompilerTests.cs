@@ -47,7 +47,7 @@ public sealed class PlaybackPlanCompilerTests
 
         var plan = Compile(With(track), (track, new(0, MidiChannel.FromNumber(10))));
 
-        Assert.All(plan.Events, e => Assert.Equal(9, e.Message.Channel.Index));
+        Assert.All(plan.Events.ToArray(), e => Assert.Equal(9, e.Message.Channel.Index));
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public sealed class PlaybackPlanCompilerTests
 
         var plan = Compile(With(a, b), (a, new(0)), (b, new(1)));
 
-        Assert.Equal(["C0 1 1", "B0 0 7", "B0 1 7", "90 0 3C"], plan.Events.Select(e => $"{e.Message.Status:X2} {e.Slot} {e.Message.Data1:X}"));
+        Assert.Equal(["C0 1 1", "B0 0 7", "B0 1 7", "90 0 3C"], plan.Events.ToArray().Select(e => $"{e.Message.Status:X2} {e.Slot} {e.Message.Data1:X}"));
     }
 
     [Fact]
@@ -73,8 +73,8 @@ public sealed class PlaybackPlanCompilerTests
 
         var plan = Compile(With(track), (track, new(0)));
 
-        Assert.Equal([0L, 10L], plan.Events.Select(e => e.Tick));
-        Assert.Equal([0xF0, 0x43, 0x10, 0x4C, 0x00, 0xF7], plan.Payloads[plan.Events[1].PayloadIndex].ToArray());
+        Assert.Equal([0L, 10L], plan.Events.ToArray().Select(e => e.Tick));
+        Assert.Equal([0xF0, 0x43, 0x10, 0x4C, 0x00, 0xF7], plan.Payload(plan.Events[1].PayloadIndex).ToArray());
         Assert.Single(plan.Diagnostics);
     }
 
@@ -111,13 +111,13 @@ public sealed class PlaybackPlanCompilerTests
 
         var plan = Compile(With(track), (track, new(0)));
 
-        var volume = plan.Events.Where(e => e.Message.Status == 0xB0 && e.Message.Data1 == 7).ToList();
+        var volume = plan.Events.ToArray().Where(e => e.Message.Status == 0xB0 && e.Message.Data1 == 7).ToList();
         // Sampled every 15 ticks at 500 PPQN, and only when the 7-bit value changes.
         Assert.Equal(68, volume.Count);
         Assert.Equal((0L, 0), (volume[0].Tick, (int)volume[0].Message.Data2));
         Assert.Equal((1000L, 127), (volume[^1].Tick, (int)volume[^1].Message.Data2));
         Assert.True(volume.Zip(volume.Skip(1)).All(p => p.Second.Message.Data2 > p.First.Message.Data2 && p.Second.Tick - p.First.Tick <= 15));
-        Assert.Single(plan.Events, e => e.Message.Status == 0xB0 && e.Message.Data1 == 11);
+        Assert.Single(plan.Events.ToArray(), e => e.Message.Status == 0xB0 && e.Message.Data1 == 11);
         Assert.Contains("1 events in clips were replaced", Assert.Single(plan.Diagnostics).Message, StringComparison.Ordinal);
     }
 
@@ -140,8 +140,8 @@ public sealed class PlaybackPlanCompilerTests
 
         var plan = Compile(With(track), (track, new(0, MidiChannel.FromNumber(5), Transpose: 12)));
 
-        Assert.All(plan.Events.Where(e => e.Message.Status is >= 0xB0 and <= 0xBF), e => Assert.Equal((4, 7), (e.Message.Channel.Index, (int)e.Message.Data1)));
-        Assert.Equal(0x48, plan.Events.Single(e => e.IsNote).Message.Data1);
+        Assert.All(plan.Events.ToArray().Where(e => e.Message.Status is >= 0xB0 and <= 0xBF), e => Assert.Equal((4, 7), (e.Message.Channel.Index, (int)e.Message.Data1)));
+        Assert.Equal(0x48, plan.Events.ToArray().Single(e => e.IsNote).Message.Data1);
     }
 
     [Fact]

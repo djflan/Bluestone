@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
@@ -51,7 +52,7 @@ internal sealed record ParameterChase(long Tick, int Key, ChaseMessage[] Message
 /// <summary>Something the compiler left out of a plan, and why.</summary>
 public sealed record PlanDiagnostic(TrackId Track, string Message);
 
-/// <summary>One dispatchable message in a plan.</summary>
+/// <summary>One dispatchable message in a plan. Blittable, so a plan image can hold an array of them (<see cref="PlanImage"/>).</summary>
 internal readonly struct PlanEvent(long tick, int slot, ChannelMessage message, int payloadIndex, long durationTicks, Velocity releaseVelocity = default)
 {
     public readonly long Tick = tick;
@@ -60,7 +61,7 @@ internal readonly struct PlanEvent(long tick, int slot, ChannelMessage message, 
     /// <summary>The channel message, when <see cref="PayloadIndex"/> is negative.</summary>
     public readonly ChannelMessage Message = message;
 
-    /// <summary>Index into <see cref="PlaybackPlan.Payloads"/> for SysEx and other byte messages, or -1.</summary>
+    /// <summary>Index into <see cref="PlaybackPlan.Payload"/> for SysEx and other byte messages, or -1.</summary>
     public readonly int PayloadIndex = payloadIndex;
 
     /// <summary>For paired notes, the duration after which the engine releases the note; otherwise 0.</summary>
@@ -72,21 +73,58 @@ internal readonly struct PlanEvent(long tick, int slot, ChannelMessage message, 
     public bool IsNote => DurationTicks > 0;
 }
 
+/// <summary>Where one payload's bytes are in a plan's payload bytes.</summary>
+internal readonly record struct PayloadRange(int Offset, int Length);
+
 /// <summary>
 /// An immutable, prepared snapshot of everything playback needs: messages in canonical dispatch order
 /// (ADR 0003) with their output slots, plus the tempo map. Edits produce a new plan; the engine swaps
 /// plans atomically, so the UI can never race the scheduler.
 /// </summary>
+/// <remarks>
+/// The events and payload bytes are flat arrays of values with no references. A plan compiled in this process owns
+/// them; a plan read from a <see cref="PlanImage"/> views them in the image's memory, so a large plan costs the
+/// reader's garbage collector nothing (ADR 0044).
+/// </remarks>
 public sealed class PlaybackPlan
 {
+    private readonly PlanEvent[]? _events;
+    private readonly ReadOnlyMemory<byte> _eventBytes;
+    private readonly ReadOnlyMemory<byte> _payloadBytes;
+    private readonly PayloadRange[]? _payloadRanges;
+    private readonly ReadOnlyMemory<byte> _payloadRangeBytes;
+
     internal PlaybackPlan(TempoMap tempoMap, MeterMap meterMap, PlanEvent[] events, ByteBlock[] payloads, IReadOnlyList<PlanDiagnostic> diagnostics, ParameterChase[]? parameterChases = null)
     {
         TempoMap = tempoMap;
         MeterMap = meterMap;
-        Events = events;
-        Payloads = payloads;
+        _events = events;
+        var bytes = new byte[payloads.Sum(p => p.Length)];
+        var ranges = new PayloadRange[payloads.Length];
+        var offset = 0;
+        for (var i = 0; i < payloads.Length; i++)
+        {
+            payloads[i].Span.CopyTo(bytes.AsSpan(offset));
+            ranges[i] = new PayloadRange(offset, payloads[i].Length);
+            offset += payloads[i].Length;
+        }
+
+        _payloadBytes = bytes;
+        _payloadRanges = ranges;
         Diagnostics = diagnostics;
         ParameterChases = parameterChases ?? [];
+    }
+
+    /// <summary>A plan whose events and payloads are views of an image's memory (<see cref="PlanImage.Read"/>).</summary>
+    internal PlaybackPlan(TempoMap tempoMap, MeterMap meterMap, ReadOnlyMemory<byte> eventBytes, ReadOnlyMemory<byte> payloadRangeBytes, ReadOnlyMemory<byte> payloadBytes, ParameterChase[] parameterChases)
+    {
+        TempoMap = tempoMap;
+        MeterMap = meterMap;
+        _eventBytes = eventBytes;
+        _payloadRangeBytes = payloadRangeBytes;
+        _payloadBytes = payloadBytes;
+        Diagnostics = [];
+        ParameterChases = parameterChases;
     }
 
     public static PlaybackPlan Empty(TempoMap tempoMap)
@@ -102,11 +140,25 @@ public sealed class PlaybackPlan
 
     public int EventCount => Events.Length;
 
+    /// <summary>What the compiler left out. A plan read from an image has none: they are for the UI, not the engine.</summary>
     public IReadOnlyList<PlanDiagnostic> Diagnostics { get; }
 
-    internal PlanEvent[] Events { get; }
+    /// <summary>The messages in dispatch order.</summary>
+    internal ReadOnlySpan<PlanEvent> Events => _events ?? MemoryMarshal.Cast<byte, PlanEvent>(_eventBytes.Span);
 
-    internal ByteBlock[] Payloads { get; }
+    /// <summary>The number of SysEx and other byte payloads (see <see cref="PlanEvent.PayloadIndex"/>).</summary>
+    internal int PayloadCount => PayloadRanges.Length;
+
+    internal ReadOnlySpan<byte> PayloadBytes => _payloadBytes.Span;
+
+    internal ReadOnlySpan<PayloadRange> PayloadRanges => _payloadRanges ?? MemoryMarshal.Cast<byte, PayloadRange>(_payloadRangeBytes.Span);
+
+    /// <summary>The bytes of payload <paramref name="index"/>.</summary>
+    internal ReadOnlySpan<byte> Payload(int index)
+    {
+        var range = PayloadRanges[index];
+        return _payloadBytes.Span.Slice(range.Offset, range.Length);
+    }
 
     /// <summary>Changes of chased hardware parameters, in tick order (see <see cref="ParameterPart.Chased"/>).</summary>
     internal ParameterChase[] ParameterChases { get; }

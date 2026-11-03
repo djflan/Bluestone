@@ -112,9 +112,24 @@ The engine never receives object graphs. The plan becomes arrays of blittable st
 **slots** instead of endpoint objects, plus anchors and chase state. The graph becomes nodes, strips, connections, and
 parameters as structs, with indices into a string table for file paths and plugin exchange names. The UI writes a new
 buffer and publishes it with one handle swap over the control channel. The engine decodes nothing on a real-time
-thread and allocates nothing to load it.
+thread, and loading allocates only for small tables, nothing in proportion to the plan's size.
 
 Equivalence: the regression fixtures that check the in-process plan must play identically from the compact form.
+
+**Plans (step 3, done):** `PlanImage` writes a plan as one flat image. The header holds a magic number, version, and
+event size, and the sections are the tempo and meter changes, events, payload ranges, payload bytes, and chased
+parameter changes. `PlanImage.Read` returns a plan whose events and payload bytes are views of the image, not copies.
+Only the small tables (tempo, meter, chased parameters) are decoded, so reading a 160,000-event plan allocates under
+16 KB. The reader checks every count, offset, index, tick order, and MIDI byte, and refuses a damaged image or one
+from another build with `InvalidDataException`. A randomized test corrupts single bytes to check that. The shipped
+samples read from their images send the golden bytes, and a plan with SysEx, chased parameters, and tempo and meter
+changes plays identically from mid-song and across loop wraps. The engine's pump is unchanged in cost (about 30 ns)
+and allocates nothing.
+
+Still to do: graph descriptions (the audio graph's nodes, strips, and connections) follow the same pattern.
+Separately, the chase sent when playback starts or seeks mid-song (`ChaseState.Compute`) runs on the playback thread
+and allocates. Wrap chases are already computed when a plan is loaded. In the engine, the seek chase must use
+preallocated state or be precomputed with the plan.
 
 ### Rules inside the engine (ADR 0043)
 
