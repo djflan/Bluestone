@@ -57,6 +57,49 @@ public sealed class PlaybackThreadTests
     }
 
     [Fact]
+    public async Task RealThread_WithAPreciseSleep_DeliversInOrderAndSleepsTheFinalApproachInSlices()
+    {
+        var clock = SystemMonotonicClock.Instance;
+        using var provider = new LoopbackMidiProvider(clock, EndpointCapabilities.None);
+        var port = provider.CreatePort("Bus");
+        using var output = await provider.OpenOutputAsync(port.OutputId, TestContext.Current.CancellationToken);
+
+        const int noteCount = 40;
+        var notes = Enumerable.Range(0, noteCount)
+            .Select(i => (TrackEvent)new NoteEvent(new Tick(i * 5), new TickSpan(3), MidiChannel.FromIndex(0), new NoteNumber(40 + i), Velocity.Max));
+        var track = Track.FromEvents(TrackId.New(), "t", notes);
+        var sequence = Sequence.CreateEmpty(Resolution).WithTrack(track);
+
+        using var engine = new PlaybackEngine(clock, sequence.TempoMap);
+        engine.SetOutputs([output]);
+        engine.Load(PlaybackPlanCompiler.Compile(sequence, [new PlanPart(0, [.. track.ArrangedEvents.Select((e, i) => new SignalEvent(e, 0, i))])]));
+
+        var slices = new System.Collections.Concurrent.ConcurrentQueue<TimeSpan>();
+        void Sleep(TimeSpan duration)
+        {
+            slices.Enqueue(duration);
+            Thread.Sleep(0);
+        }
+
+        using (new PlaybackThread(engine, preciseSleep: Sleep))
+        {
+            engine.Play(Tick.Zero);
+            var deadline = clock.Now + TimeSpan.FromSeconds(5);
+            while (port.Sent.Count < noteCount * 2 && clock.Now < deadline)
+            {
+                await Task.Delay(10, TestContext.Current.CancellationToken);
+            }
+
+            engine.Stop();
+        }
+
+        Assert.Equal(noteCount * 2, port.Sent.Count);
+        Assert.Equal(Enumerable.Range(40, noteCount), port.Sent.Where(m => m.Bytes[0] == 0x90).Select(m => (int)m.Bytes[1]));
+        Assert.NotEmpty(slices);
+        Assert.All(slices, s => Assert.InRange(s, TimeSpan.FromTicks(1), PlaybackThread.FinalSlice));
+    }
+
+    [Fact]
     public void Dispose_StopsAnIdleThreadPromptly()
     {
         using var engine = new PlaybackEngine(SystemMonotonicClock.Instance, TempoMap.Constant(Resolution, Tempo.Default));

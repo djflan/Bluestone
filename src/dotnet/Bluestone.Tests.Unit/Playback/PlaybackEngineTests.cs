@@ -417,4 +417,23 @@ public sealed class PlaybackEngineTests
         Assert.Equal(2, snapshot.Late);
         Assert.Equal(TimeSpan.Zero, new TimingStatistics(TimeSpan.Zero).Snapshot().Percentile(50));
     }
+
+    [Fact]
+    public void Statistics_ReportFinePercentilesToTenMicroseconds()
+    {
+        var stats = new TimingStatistics(TimeSpan.FromMilliseconds(2));
+        for (var i = 0; i < 998; i++)
+        {
+            stats.RecordDispatch(TimeSpan.FromMicroseconds(12));
+        }
+
+        stats.RecordDispatch(TimeSpan.FromMicroseconds(1234));
+        stats.RecordDispatch(TimeSpan.FromMilliseconds(70));
+
+        var snapshot = stats.Snapshot();
+        Assert.Equal(TimeSpan.FromMicroseconds(20), snapshot.FinePercentile(50));
+        Assert.Equal(TimeSpan.FromMicroseconds(1240), snapshot.FinePercentile(99.9));
+        Assert.Equal(TimeSpan.FromMilliseconds(70), snapshot.FinePercentile(100));
+        Assert.Equal(TimeSpan.Zero, new TimingStatistics(TimeSpan.Zero).Snapshot().FinePercentile(99.9));
+    }
 }

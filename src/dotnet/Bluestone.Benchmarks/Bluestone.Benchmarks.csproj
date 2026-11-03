@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <RootNamespace>Bluestone.Benchmarks</RootNamespace>
+    <!-- The Core MIDI loopback sink reads packet lists with pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Benchmark methods must be instance members even when they touch no state (CA1822),
          and BenchmarkDotNet owns disposal of benchmark instances (CA1001). -->
     <NoWarn>$(NoWarn);CA1822;CA1001</NoWarn>

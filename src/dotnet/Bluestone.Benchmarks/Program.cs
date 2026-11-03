@@ -1,62 +1,67 @@
 using BenchmarkDotNet.Running;
 using Bluestone.Benchmarks;
-using Bluestone.Midi.Endpoints;
 
-if (args is ["--jitter", ..])
-{
-    var seconds = args.Length > 1 ? int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture) : 10;
-    var mode = args.Contains("--realtime") ? "realtime" : args.Contains("--promote") ? "promote" : args.Contains("--timer") ? "timer" : "default";
-    Action? setup = mode switch { "realtime" => Realtime, "promote" => Promote, "timer" => Timer, _ => null };
-    Console.WriteLine($"Playback thread: {mode}");
-    JitterProbe.Run(TimeSpan.FromSeconds(seconds), EndpointCapabilities.None, setup);
-    Console.WriteLine();
-    JitterProbe.Run(TimeSpan.FromSeconds(seconds), EndpointCapabilities.ScheduledDelivery, setup);
-    return;
-}
-
-if (args is ["--live", ..])
-{
-    LiveLatencyProbe.Run(args);
-    return;
-}
-
-if (args is ["--audio", ..])
-{
-    AudioCallbackProbe.Run(args);
-    return;
-}
-
-BenchmarkSwitcher.FromAssembly(typeof(Workloads).Assembly).Run(args);
-
-static void Realtime()
+// Timing probes (ADR 0043): each prints its metrics and writes a JSON report (--report DIR|FILE.json, default
+// TestResults/timing). Common options: [seconds] [--pressure none|app|churn|full] [--sched default|timer|promote|realtime]
+// [--repeat N] [--isolate]. Anything else runs the BenchmarkDotNet micro-benchmarks.
+if (args is ["--midi-sink", var sinkFile, ..])
 {
     if (OperatingSystem.IsMacOS())
     {
-        Bluestone.Platform.CoreMidi.ThreadScheduling.MakeCurrentThreadRealtime(TimeSpan.FromMilliseconds(2), TimeSpan.FromMilliseconds(5));
+        MidiSink.Run(sinkFile);
     }
-    else if (OperatingSystem.IsWindows())
+
+    return 0;
+}
+
+if (args is ["--compare", var before, var after, ..])
+{
+    TimingReport.Compare(before, after);
+    return 0;
+}
+
+Action<ProbeOptions>? probe = args switch
+{
+    ["--jitter", ..] => JitterProbe.Run,
+    ["--live", ..] => LiveLatencyProbe.Run,
+    ["--audio", ..] => AudioCallbackProbe.Run,
+    ["--wake", ..] => WakeProbe.Run,
+    ["--midi-loopback", ..] when OperatingSystem.IsMacOS() => MidiLoopbackProbe.Run,
+    ["--midi-loopback", ..] => _ => Console.WriteLine("The MIDI loopback probe needs Core MIDI (macOS)."),
+    _ => null,
+};
+
+if (probe is null)
+{
+    BenchmarkSwitcher.FromAssembly(typeof(Workloads).Assembly).Run(args);
+    return 0;
+}
+
+var options = ProbeOptions.Parse(args);
+if (args.Contains("--sustained"))
+{
+    System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+}
+
+for (var run = 1; run <= options.Repeat; run++)
+{
+    if (options.Repeat > 1)
     {
-        Bluestone.Platform.Windows.ThreadScheduling.RequestHighTimerResolution();
-        Bluestone.Platform.Windows.ThreadScheduling.JoinProAudioTask();
+        Console.WriteLine($"--- run {run} of {options.Repeat}");
+    }
+
+    if (options.Isolate)
+    {
+        var code = options.RunIsolated();
+        if (code != 0)
+        {
+            return code;
+        }
+    }
+    else
+    {
+        probe(options);
     }
 }
 
-static void Promote()
-{
-    if (OperatingSystem.IsMacOS())
-    {
-        Bluestone.Platform.CoreMidi.ThreadScheduling.PromoteCurrentThread();
-    }
-    else if (OperatingSystem.IsWindows())
-    {
-        Bluestone.Platform.Windows.ThreadScheduling.JoinProAudioTask();
-    }
-}
-
-static void Timer()
-{
-    if (OperatingSystem.IsWindows())
-    {
-        Bluestone.Platform.Windows.ThreadScheduling.RequestHighTimerResolution();
-    }
-}
+return 0;

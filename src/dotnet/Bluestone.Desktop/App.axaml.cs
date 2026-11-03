@@ -147,7 +147,7 @@ public partial class App : Avalonia.Application
             .AddDirectory(UserProfileDirectory);
 
         var session = new ProjectSession();
-        var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread);
+        var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread, playbackPreciseSleep: PlatformProviders.PlaybackPreciseSleep);
         var monitor = new MidiMonitor(await builtIn.OpenInputAsync(monitorPort.InputId));
         await Step(splash, "Scanning plugins…");
         await ScanPluginsAsync(library, splash);

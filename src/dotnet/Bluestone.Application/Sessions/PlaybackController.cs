@@ -73,7 +73,8 @@ public sealed class PlaybackController : IAsyncDisposable
     /// <param name="options">Scheduler options.</param>
     /// <param name="startThread">False to drive <see cref="PlaybackEngine.Pump"/> manually (tests).</param>
     /// <param name="playbackThreadSetup">Platform setup run on the playback thread, e.g. real-time scheduling (see ADR 0012).</param>
-    public PlaybackController(ProjectSession session, EndpointDirectory endpoints, ProfileCatalog profiles, IMonotonicClock clock, PlaybackOptions? options = null, bool startThread = true, Action? playbackThreadSetup = null)
+    /// <param name="playbackPreciseSleep">The platform's sub-millisecond sleep for the playback thread, if it has one (ADR 0043).</param>
+    public PlaybackController(ProjectSession session, EndpointDirectory endpoints, ProfileCatalog profiles, IMonotonicClock clock, PlaybackOptions? options = null, bool startThread = true, Action? playbackThreadSetup = null, Action<TimeSpan>? playbackPreciseSleep = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
@@ -82,7 +83,7 @@ public sealed class PlaybackController : IAsyncDisposable
         Engine = new PlaybackEngine(clock, session.Project.Sequence.TempoMap, options);
         Live = new LiveInput(Engine, clock);
         Recorder = new MidiRecorder(Engine, Live);
-        _thread = startThread ? new PlaybackThread(Engine, playbackThreadSetup) : null;
+        _thread = startThread ? new PlaybackThread(Engine, playbackThreadSetup, playbackPreciseSleep) : null;
         if (startThread)
         {
             Live.Start();

@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Diagnostics.Tracing;
 using System.Globalization;
-using System.Runtime;
 using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 
@@ -15,80 +13,62 @@ namespace Bluestone.Benchmarks;
 /// node and strip still renders.
 /// </summary>
 /// <remarks>
-/// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|churn|full]
-/// [--sustained] [--buffers 64,128,256] [--strips 32]</c>. GC configuration comes from the environment
-/// (DOTNET_gcServer, DOTNET_gcConcurrent, DOTNET_GCgen0size, DOTNET_TieredPGO), printed at the start.
+/// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|app|churn|full]
+/// [--sustained] [--buffers 64,128,256] [--strips 32] [--queue 0] [--isolate]</c>. GC configuration comes from the
+/// environment (DOTNET_gcServer, DOTNET_gcConcurrent, DOTNET_GCgen0size, ...) and is recorded in the report.
 /// </remarks>
 internal static class AudioCallbackProbe
 {
     private const int SampleRate = 48_000;
 
-    public static void Run(string[] args)
+    public static void Run(ProbeOptions options)
     {
-        var seconds = args.Length > 1 && int.TryParse(args[1], CultureInfo.InvariantCulture, out var s) ? s : 20;
-        var pressure = Option(args, "--pressure") ?? "full";
+        var args = options.Args;
         var buffers = (Option(args, "--buffers") ?? "64,128,256").Split(',').Select(b => int.Parse(b, CultureInfo.InvariantCulture)).ToArray();
-        var strips = int.Parse(Option(args, "--strips") ?? "32", CultureInfo.InvariantCulture);
-        var queue = int.Parse(Option(args, "--queue") ?? "0", CultureInfo.InvariantCulture);
-        if (args.Contains("--sustained"))
-        {
-            GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
-        }
-
+        var strips = options.Int("--strips", 32);
+        var queue = options.Int("--queue", 0);
         if (!AudioDevices.IsAvailable(out var problem))
         {
             Console.WriteLine(problem);
             return;
         }
 
-        Console.WriteLine($"Device: {AudioDevices.List().FirstOrDefault(d => d.IsDefault)?.Name ?? "default"}");
-        Console.WriteLine($"GC: server={GCSettings.IsServerGC} latency={GCSettings.LatencyMode} concurrent={Environment.GetEnvironmentVariable("DOTNET_gcConcurrent") ?? "default"} " +
-                          $"gen0size={Environment.GetEnvironmentVariable("DOTNET_GCgen0size") ?? "default"} tieredPGO={Environment.GetEnvironmentVariable("DOTNET_TieredPGO") ?? "default"}");
-        Console.WriteLine($"Pressure: {pressure}; {strips} tone nodes into {strips} strips into 4 buses; {seconds} s per buffer size at {SampleRate} Hz");
-        Console.WriteLine(queue == 0 ? "Mode: direct (the device callback calls .NET)" : $"Mode: buffered, {queue} frames queued ({queue * 1000.0 / SampleRate:0.0} ms) by a .NET render thread");
-        Console.WriteLine();
-        Console.WriteLine("buffer | period | callbacks | late (native) | late (managed) | xruns | gaps | p50 | p99 | p99.9 | max | gen0 | gen1 | gen2 | GC pause total | GC pause max | pauses > period | queue underrun frames");
+        var device = AudioDevices.List().FirstOrDefault(d => d.IsDefault)?.Name ?? "default";
         foreach (var buffer in buffers)
         {
-            Console.WriteLine(Measure(buffer, seconds, pressure, strips, queue));
+            var settings = options.BaseSettings();
+            settings["device"] = device;
+            settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
+            settings["rate"] = SampleRate.ToString(CultureInfo.InvariantCulture);
+            settings["strips"] = strips.ToString(CultureInfo.InvariantCulture);
+            settings["mode"] = queue == 0 ? "direct" : $"buffered {queue}";
+            var report = new TimingReport("audio-callback", settings);
+            report.Machine.WarnIfBusy();
+            Console.WriteLine($"Audio callback: {device}, {buffer} frames at {SampleRate} Hz, {strips} strips, {settings["mode"]}, pressure {settings["pressure"]}, {options.Seconds} s");
+            Measure(report, buffer, options, strips, queue);
+            options.Finish(report);
         }
     }
 
-    private static string Measure(int buffer, int seconds, string pressure, int strips, int queue)
+    private static void Measure(TimingReport report, int buffer, ProbeOptions options, int strips, int queue)
     {
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(Graph(buffer, strips));
         using var output = AudioOutput.Open(engine, new AudioStreamRequest(SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
         output.Start();
         Thread.Sleep(500); // warm-up: tiering, first callbacks
+        using var stop = new CancellationTokenSource();
+        var threads = options.StartPressure(stop.Token);
+        Thread.Sleep(threads.Count > 0 ? 1000 : 0); // let the pressure reach its steady state
         engine.Statistics.Reset();
         var before = output.Status;
         var baseline = output.RenderHistogram();
-        var gen0 = GC.CollectionCount(0);
-        var gen1 = GC.CollectionCount(1);
-        var gen2 = GC.CollectionCount(2);
-        var paused = GC.GetTotalPauseDuration();
+        using var gc = new GcWatch();
 
-        using var stop = new CancellationTokenSource();
-        using var pauses = new GcPauseListener();
-        var threads = new List<Thread>();
-        if (pressure == "app")
-        {
-            threads.Add(Start(() => Application(stop.Token)));
-        }
-
-        if (pressure is "churn" or "full")
-        {
-            threads.Add(Start(() => Churn(stop.Token)));
-            threads.Add(Start(() => Churn(stop.Token)));
-        }
-
-        if (pressure == "full")
-        {
-            threads.Add(Start(() => FullCollections(stop.Token)));
-        }
-
-        Thread.Sleep(TimeSpan.FromSeconds(seconds));
+        Thread.Sleep(TimeSpan.FromSeconds(options.Seconds));
+        var after = output.Status;
+        var histogram = output.RenderHistogram().Zip(baseline, (a, b) => a - b).ToArray();
+        gc.AddTo(report);
         stop.Cancel();
         foreach (var thread in threads)
         {
@@ -96,29 +76,18 @@ internal static class AudioCallbackProbe
         }
 
         output.Stop();
-        var after = output.Status;
-        var histogram = output.RenderHistogram().Zip(baseline, (a, b) => a - b).ToArray();
-        var period = TimeSpan.FromSeconds((double)after.LastBufferFrames / SampleRate);
-        return string.Join(" | ", [
-            $"{buffer} ({after.LastBufferFrames})",
-            Ms(period),
-            (after.Callbacks - before.Callbacks).ToString(CultureInfo.InvariantCulture),
-            (after.LateRenders - before.LateRenders).ToString(CultureInfo.InvariantCulture),
-            engine.Statistics.DeadlineMisses.ToString(CultureInfo.InvariantCulture),
-            (after.Xruns - before.Xruns).ToString(CultureInfo.InvariantCulture),
-            (after.Discontinuities - before.Discontinuities).ToString(CultureInfo.InvariantCulture),
-            Ms(AudioOutput.Percentile(histogram, 50)),
-            Ms(AudioOutput.Percentile(histogram, 99)),
-            Ms(AudioOutput.Percentile(histogram, 99.9)),
-            Ms(HistogramMax(histogram)),
-            (GC.CollectionCount(0) - gen0).ToString(CultureInfo.InvariantCulture),
-            (GC.CollectionCount(1) - gen1).ToString(CultureInfo.InvariantCulture),
-            (GC.CollectionCount(2) - gen2).ToString(CultureInfo.InvariantCulture),
-            Ms(GC.GetTotalPauseDuration() - paused),
-            Ms(pauses.Max),
-            pauses.LongerThan(period).ToString(CultureInfo.InvariantCulture),
-            (after.QueueUnderrunFrames - before.QueueUnderrunFrames).ToString(CultureInfo.InvariantCulture),
-        ]);
+        var period = (double)after.LastBufferFrames / SampleRate * 1000;
+        var expected = options.Seconds * SampleRate / Math.Max(1, after.LastBufferFrames);
+        report.Add(new Metric("audio.period", "ms", period));
+        report.Add(new Metric("audio.device-buffer", "frames", after.LastBufferFrames));
+        report.Add(new Metric("audio.output-latency", "ms", after.OutputLatency.TotalMilliseconds));
+        report.Add(new Metric("audio.callback-render", "ms", Distribution: Distribution.OfHistogram(histogram, 0.01, 20), Target: period));
+        report.Add(new Metric("audio.callbacks-missing", "callbacks", Math.Max(0, expected - (after.Callbacks - before.Callbacks)), Target: 0));
+        report.Add(new Metric("audio.late-callbacks", "callbacks", after.LateRenders - before.LateRenders, Target: 0));
+        report.Add(new Metric("audio.late-managed", "blocks", engine.Statistics.DeadlineMisses));
+        report.Add(new Metric("audio.xruns", "xruns", after.Xruns - before.Xruns, Target: 0));
+        report.Add(new Metric("audio.gaps", "callbacks", after.Discontinuities - before.Discontinuities, Target: 0));
+        report.Add(new Metric("audio.queue-underrun", "frames", after.QueueUnderrunFrames - before.QueueUnderrunFrames, Target: 0));
     }
 
     internal static AudioGraph Graph(int blockFrames, int strips, AudioNode? extra = null)
@@ -139,22 +108,6 @@ internal static class AudioCallbackProbe
 
         return builder.Build(blockFrames, new MixerStripState(), masterGainDecibels: -120);
     }
-
-    // The top of the highest occupied 10 µs bucket (the last bucket means "longer than 20 ms").
-    private static TimeSpan HistogramMax(long[] histogram)
-    {
-        for (var i = histogram.Length - 1; i >= 0; i--)
-        {
-            if (histogram[i] > 0)
-            {
-                return TimeSpan.FromMicroseconds((i + 1) * 10);
-            }
-        }
-
-        return TimeSpan.Zero;
-    }
-
-    internal static string Ms(TimeSpan time) => time.TotalMilliseconds.ToString("0.000", CultureInfo.InvariantCulture) + " ms";
 
     internal static string? Option(string[] args, string name)
     {
@@ -251,57 +204,4 @@ internal static class AudioCallbackProbe
     }
 
     private sealed record Node(int Value, Node? Next);
-
-    /// <summary>Every garbage collection's suspension, from the runtime's GCSuspendEEBegin to GCRestartEEEnd events.</summary>
-    private sealed class GcPauseListener : EventListener
-    {
-        private const int SuspendBegin = 9;
-        private const int RestartEnd = 3;
-        private readonly Lock _gate = new();
-        private readonly List<TimeSpan> _pauses = [];
-        private DateTime? _suspended;
-
-        public TimeSpan Max
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _pauses.Count == 0 ? TimeSpan.Zero : _pauses.Max();
-                }
-            }
-        }
-
-        public int LongerThan(TimeSpan limit)
-        {
-            lock (_gate)
-            {
-                return _pauses.Count(p => p > limit);
-            }
-        }
-
-        protected override void OnEventSourceCreated(EventSource source)
-        {
-            if (source.Name == "Microsoft-Windows-DotNETRuntime")
-            {
-                EnableEvents(source, EventLevel.Informational, (EventKeywords)1);
-            }
-        }
-
-        protected override void OnEventWritten(EventWrittenEventArgs data)
-        {
-            lock (_gate)
-            {
-                if (data.EventId == SuspendBegin)
-                {
-                    _suspended = data.TimeStamp;
-                }
-                else if (data.EventId == RestartEnd && _suspended is { } began)
-                {
-                    _pauses.Add(data.TimeStamp - began);
-                    _suspended = null;
-                }
-            }
-        }
-    }
 }

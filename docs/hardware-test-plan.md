@@ -108,8 +108,30 @@ Route a track to the XG instrument with the **Generic XG** profile.
 | 42 | Put a plugin effect that reports latency (a look-ahead limiter) on another track, then play live with **Low-latency monitoring** off and on | Off: live notes are later by about the effect's latency; on: they are as quick as before the effect was added |
 | 43 | Put an Arpeggiator before the plugin instrument and hold a chord | The arpeggio follows the tempo; releasing the keys stops it |
 
-## Timing measurement (optional)
+## Timing measurement
 
-Loop the demo for one minute and note the status bar's *p95* and *late* values. For a deeper check,
-connect the interface's OUT to its IN and compare send and receive timestamps with a MIDI monitor.
-Report results in an issue so they can inform the scheduler benchmark ADR.
+The targets and how they are judged are in [ADR 0043](adr/0043-timing-targets-and-measurement.md). Close other work
+first (the probes warn when the load average is high), build in Release, and run from the repository root:
+
+```sh
+P="dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks --"
+$P --jitter 60 --pressure app          # MIDI dispatch lateness on the playback thread
+$P --midi-loopback 60 --pressure app   # end to end through Core MIDI, including live thru (macOS)
+$P --audio 60 --pressure app --buffers 64,128 --queue 0
+$P --live 60 --pressure app --queue 0  # live MIDI to audio, rendering in the device callback
+```
+
+Add `--isolate` to run the probe in its own process while this one carries the load, and `--repeat 3` for repeated
+runs. Each run writes a JSON report to `TestResults/timing/`; compare two with `$P --compare before.json after.json`.
+Every report records the machine, OS, runtime, GC settings, and commit.
+
+For hardware ground truth:
+
+1. **MIDI:** connect the interface's MIDI OUT to its MIDI IN, loop the demo for one minute to that port, and compare
+   send and receive timestamps with a MIDI monitor. The status bar's *p95* and *late* values give a quick check.
+2. **Audio:** patch an output of the audio interface to an input, or install a virtual loopback device such as
+   BlackHole. Play a live note into a plugin instrument with a sharp attack, record the input, and compare the onset
+   with the key's timestamp. Do this at 64, 128, and 256 frames. The result should match the Audio window's
+   "Live notes heard after … ms" figure within one buffer.
+
+Report results in an issue with the JSON reports attached, so they can be added to ADR 0043.
