@@ -49,14 +49,20 @@ public sealed class PluginCrashRecoveryTests
         using var stop = new CancellationTokenSource();
         var outcomes = new List<ProcessOutcome>();
         var badSamples = 0;
+        var badBlocks = new List<string>();
         var audioThread = new Thread(() =>
         {
             while (!stop.IsCancellationRequested)
             {
-                var outcome = driver.Process().Outcome;
-                outcomes.Add(outcome);
-                var expected = outcome == ProcessOutcome.Processed ? -0.5f : 0.0f;
-                badSamples += driver.Output.Count(s => s != expected);
+                var result = driver.Process();
+                outcomes.Add(result.Outcome);
+                var expected = result.Outcome == ProcessOutcome.Processed ? -0.5f : 0.0f;
+                var bad = driver.Output.Count(s => s != expected);
+                if (bad > 0)
+                {
+                    badSamples += bad;
+                    badBlocks.Add($"block {outcomes.Count - 1}: {result} with {bad} bad samples, first {driver.Output.First(s => s != expected)}, previous {(outcomes.Count > 1 ? outcomes[^2] : null)}");
+                }
             }
         });
         audioThread.Start();
@@ -69,7 +75,7 @@ public sealed class PluginCrashRecoveryTests
 
         Assert.Equal(new PluginInstanceStatus(PluginInstanceState.Unavailable, UnavailableReason.Crashed, gain.Status.Message), gain.Status);
         Assert.Equal(1, Volatile.Read(ref unavailable));
-        Assert.Equal(0, badSamples);
+        Assert.True(badSamples == 0, $"Blocks that were neither the plugin's output nor silence: {string.Join("; ", badBlocks)}");
         Assert.Contains(ProcessOutcome.Processed, outcomes);
         Assert.Equal(ProcessOutcome.Unavailable, outcomes[^1]);
         Assert.False(IsRunning(pid));
