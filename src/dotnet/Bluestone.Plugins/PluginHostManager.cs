@@ -85,7 +85,7 @@ public sealed class PluginHostManager : IAsyncDisposable
             throw new ArgumentException("The snapshot belongs to a different plugin.", nameof(request));
         }
 
-        var instance = new PluginInstance(this, request, _options.PipelineDepth, _options.CollectWait);
+        var instance = new PluginInstance(this, request, _options.PipelineDepth, _options.CollectWait, _options.SlotCount);
         lock (_gate)
         {
             _instances.Add(instance);
@@ -392,7 +392,7 @@ public sealed class PluginHostManager : IAsyncDisposable
             var generation = instance.NextGeneration();
             worker = await AcquireWorkerAsync(instance, token).ConfigureAwait(false);
             var request = instance.Request;
-            var options = new ExchangeOptions(request.MaxBlockFrames, request.InputChannels, request.OutputChannels, _options.SlotCount, request.EventCapacity, request.ParameterChangeCapacity);
+            var options = instance.ExchangeShape;
             var reply = await RequestAsync(
                 worker,
                 new CreateInstance(instance.Id, request.Plugin, request.SampleRate, options, generation, DataDirectory, instance.LastSnapshot?.State, request.ModulePath),

@@ -72,6 +72,12 @@ public sealed record EngineSupervisorOptions
 
     /// <summary>Starts engines that obey <see cref="TestCommand"/>s. Tests only.</summary>
     public bool AllowTestCommands { get; init; }
+
+    /// <summary>
+    /// With <see cref="AllowTestCommands"/>: the engine's audio device is a stand-in that renders only on a
+    /// <see cref="TestRender"/>, so tests need no audio hardware. Tests only.
+    /// </summary>
+    public bool TestAudio { get; init; }
 }
 
 /// <summary>
@@ -95,7 +101,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
     private EngineState _state;
     private Task _recovery = Task.CompletedTask;
     private long _nextPing;
-    private IEngineClient? _client;
+    private ImmutableArray<IEngineClient> _clients = [];
 
     public EngineSupervisor(EngineSupervisorOptions options, ActivityLog activities)
     {
@@ -136,15 +142,32 @@ public sealed class EngineSupervisor : IAsyncDisposable
     }
 
     /// <summary>
-    /// Connects the one client that uses the engine (MIDI playback). Call before <see cref="StartAsync"/>: it is told
-    /// about every engine that starts, before that engine is reported Ready, so it can send what the engine needs.
+    /// Connects a client that uses the engine (MIDI playback, audio). Call before <see cref="StartAsync"/>: each client is
+    /// told about every engine that starts, in the order they were attached, before that engine is reported Ready, so it
+    /// can send what the engine needs. Every client receives every message from the engine and keeps those it handles.
     /// </summary>
     public void Attach(IEngineClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
-        if (Interlocked.CompareExchange(ref _client, client, null) is not null)
+        lock (_gate)
         {
-            throw new InvalidOperationException("The engine already has a client.");
+            if (_clients.Contains(client))
+            {
+                throw new InvalidOperationException("The client is attached already.");
+            }
+
+            _clients = _clients.Add(client);
+        }
+    }
+
+    private ImmutableArray<IEngineClient> Clients
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _clients;
+            }
         }
     }
 
@@ -205,7 +228,11 @@ public sealed class EngineSupervisor : IAsyncDisposable
         await _recovery.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         if (session is not null)
         {
-            _client?.Disconnected(session);
+            foreach (var client in Clients)
+            {
+                client.Disconnected(session);
+            }
+
             await session.ShutdownAsync().ConfigureAwait(false);
         }
 
@@ -221,7 +248,10 @@ public sealed class EngineSupervisor : IAsyncDisposable
             var session = await Session.StartAsync(this, restarted).ConfigureAwait(false);
             if (!_lifetime.IsCancellationRequested)
             {
-                _client?.Connected(session, restarted);
+                foreach (var client in Clients)
+                {
+                    client.Connected(session, restarted);
+                }
             }
 
             lock (_gate)
@@ -272,7 +302,10 @@ public sealed class EngineSupervisor : IAsyncDisposable
             _stops.Add(new EngineStop(reason, detail, processId));
             if (session is not null)
             {
-                _client?.Disconnected(session);
+                foreach (var client in _clients)
+                {
+                    client.Disconnected(session);
+                }
             }
 
             var now = Stopwatch.GetTimestamp();
@@ -380,7 +413,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
             var pipeName = "bluestone-engine-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
             var token = EngineLimits.CreateToken();
             var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            var process = new Process { StartInfo = EngineLauncher.CreateStartInfo(path, pipeName, token, restarted, options.AllowTestCommands), EnableRaisingEvents = true };
+            var process = new Process { StartInfo = EngineLauncher.CreateStartInfo(path, pipeName, token, restarted, options.AllowTestCommands, options.TestAudio), EnableRaisingEvents = true };
             try
             {
                 if (!process.Start())
@@ -537,7 +570,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
                         case Fault fault:
                             End(EngineStopReason.Fault, fault.Message);
                             return;
-                        case TransportStatus or TimingStatus or MidiBatch or PlanLoaded or EngineProblem:
+                        case TransportStatus or TimingStatus or MidiBatch or PlanLoaded or EngineProblem or AudioDeviceStatus or AudioGraphLoaded or AudioStatus or TestRendered:
                             Deliver(message);
                             break;
                         default:
@@ -563,15 +596,18 @@ public sealed class EngineSupervisor : IAsyncDisposable
 
         private void Deliver(EngineMessage message)
         {
-            try
+            foreach (var client in _owner.Clients)
             {
-                _owner._client?.Received(this, message);
-            }
+                try
+                {
+                    client.Received(this, message);
+                }
 #pragma warning disable CA1031 // A client's failure must not look like the engine's; it is reported and the channel goes on.
-            catch (Exception ex)
+                catch (Exception ex)
 #pragma warning restore CA1031
-            {
-                Trace.TraceError($"The engine client failed on {message.Type}: {ex}");
+                {
+                    Trace.TraceError($"The engine client failed on {message.Type}: {ex}");
+                }
             }
         }
 

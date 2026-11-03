@@ -160,8 +160,8 @@ public partial class App : Avalonia.Application
         var activities = new ActivityLog();
         PlaybackController playback;
 
-        // MIDI playback, platform endpoints, and live thru to external instruments run in the engine process (ADR 0044)
-        // when BLUESTONE_ENGINE=1. Opt-in until audio moves too (migration step 6); otherwise they run here.
+        // MIDI playback, platform endpoints, live thru to external instruments, and audio run in the engine process
+        // (ADR 0044) when BLUESTONE_ENGINE=1. Opt-in until live input moves too (migration step 7); otherwise they run here.
         if (Environment.GetEnvironmentVariable("BLUESTONE_ENGINE") == "1")
         {
             _engine = new EngineSupervisor(new EngineSupervisorOptions(), activities);
@@ -202,19 +202,19 @@ public partial class App : Avalonia.Application
         return viewModel;
     }
 
-    /// <summary>The audio engine (ADR 0032): off until the user starts it or the saved settings say it was on.</summary>
+    /// <summary>
+    /// The audio engine (ADR 0032): off until the user starts it or the saved settings say it was on. With the engine
+    /// process (BLUESTONE_ENGINE=1) the engine opens the device and renders; Bluestone describes the graph (ADR 0044).
+    /// </summary>
     private static void ComposeAudio(MainWindow window, ProjectSession session, PlaybackController playback, PluginDeviceHost devices, MainViewModel viewModel)
     {
         // Plugins run at the device's rate: each time a device opens, they are restarted at its rate on the UI thread.
-        var audio = new AudioPlayback(
-            playback,
-            session,
-            devices.InstanceOf,
-            prepareSampleRate: rate => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetSampleRateAsync(rate)));
+        Func<int, Task> prepare = rate => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetSampleRateAsync(rate));
+        IAudioPlayback audio = _engine is { } engine
+            ? new EngineAudio(engine, playback, session, devices.InstanceOf, prepare)
+            : new AudioPlayback(playback, session, devices.InstanceOf, prepareSampleRate: prepare);
         _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher(), activities: viewModel.Activities);
-        viewModel.Mixer.MeterSource = channel => audio.IsRunning && audio.Graph is { } graph
-            ? (channel is { } id ? graph.StripOf(id)?.Meter.Read() : graph.Master.Meter.Read())
-            : null;
+        viewModel.Mixer.MeterSource = audio.MeterOf;
         window.AttachAudio(_audio);
         window.Closed += (_, _) => audio.Dispose();
     }

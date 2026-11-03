@@ -33,46 +33,33 @@ public readonly record struct BlockOutcome(ProcessOutcome Outcome, int OutputEve
 /// <see cref="QueueParameterChange"/>; those never lock, allocate, do I/O, log, or throw for a plugin failure. Control
 /// threads use the async methods. Status changes are raised in order, never on the audio thread.
 /// </summary>
-public sealed class PluginInstance
+public sealed class PluginInstance : IPluginProcessor
 {
     private readonly PluginHostManager _manager;
     private readonly Lock _statusGate = new();
     private readonly ConcurrentQueue<PluginStatusChangedEventArgs> _statusEvents = new();
-    private readonly ParameterChange[] _pendingChanges;
-    private readonly float[] _inputHistory;
-    private readonly long[] _historyBlock;
-    private readonly int[] _historyFrames;
-    private readonly bool _bypass;
-    private readonly TimeSpan _collectWait;
+    private readonly PluginBlockPipeline _pipeline;
     private PluginInstanceStatus _status = PluginInstanceStatus.Starting;
     private volatile ActiveLink? _link;
     private volatile ParameterTable? _parameters;
     private volatile PluginStateSnapshot? _lastSnapshot;
     private int _dispatching;
-    private long _nextBlock;
-    private int _pendingCount;
-    private long _parameterChangesDropped;
     private uint _generation;
     private CancellationTokenSource? _pendingRestart;
     private CancellationTokenSource? _snapshotLoop;
     private RestartPolicy _restartPolicy;
     private volatile WorkerLoss? _lastWorkerLoss;
 
-    internal PluginInstance(PluginHostManager manager, PluginInstanceRequest request, int pipelineDepth, TimeSpan collectWait)
+    internal PluginInstance(PluginHostManager manager, PluginInstanceRequest request, int pipelineDepth, TimeSpan collectWait, int slotCount)
     {
         _manager = manager;
         Request = request;
         Id = PluginInstanceId.New();
         PipelineDepth = pipelineDepth;
-        _collectWait = collectWait;
+        CollectWait = collectWait;
+        ExchangeShape = new ExchangeOptions(request.MaxBlockFrames, request.InputChannels, request.OutputChannels, slotCount, request.EventCapacity, request.ParameterChangeCapacity);
         _lastSnapshot = request.RestoreFrom;
-        _pendingChanges = new ParameterChange[request.ParameterChangeCapacity];
-        _bypass = request.FailurePolicy == FailurePolicy.BypassInput;
-        var historyBlocks = _bypass ? pipelineDepth : 0;
-        _inputHistory = new float[historyBlocks * request.InputChannels * request.MaxBlockFrames];
-        _historyBlock = new long[historyBlocks];
-        _historyFrames = new int[historyBlocks];
-        Array.Fill(_historyBlock, -1);
+        _pipeline = new PluginBlockPipeline(request.MaxBlockFrames, request.InputChannels, request.ParameterChangeCapacity, pipelineDepth, collectWait, request.FailurePolicy == FailurePolicy.BypassInput);
         _restartPolicy = request.RestartPolicy;
         Guard = new RestartGuard(request.RestartPolicy);
         Hosting = request.Hosting;
@@ -109,6 +96,14 @@ public sealed class PluginInstance
     public PluginIdentity Plugin => Request.Plugin;
 
     public PluginInstanceRequest Request { get; }
+
+    int IPluginProcessor.MaxBlockFrames => Request.MaxBlockFrames;
+
+    int IPluginProcessor.InputChannels => Request.InputChannels;
+
+    int IPluginProcessor.OutputChannels => Request.OutputChannels;
+
+    int IPluginProcessor.EventCapacity => Request.EventCapacity;
 
     public PluginInstanceStatus Status
     {
@@ -187,7 +182,19 @@ public sealed class PluginInstance
     public uint Generation => Volatile.Read(ref _generation);
 
     /// <summary>Parameter changes dropped because the per-block queue was full.</summary>
-    public long ParameterChangesDropped => Interlocked.Read(ref _parameterChangesDropped);
+    public long ParameterChangesDropped => _pipeline.ParameterChangesDropped;
+
+    /// <summary>The shape of every block exchange this instance's workers create.</summary>
+    public ExchangeOptions ExchangeShape { get; }
+
+    /// <summary>How long <see cref="ProcessBlock"/> may spin for a block that is not Done yet.</summary>
+    public TimeSpan CollectWait { get; }
+
+    /// <summary>
+    /// The running worker's block exchange, for a process that drives the data plane itself (the engine, ADR 0044); null
+    /// while the instance is not running. It changes whenever the worker does (a new generation and file).
+    /// </summary>
+    public PluginDataPlane? DataPlane => _link is { } link ? new PluginDataPlane(link.Exchange.Path, link.Exchange.Generation, link.Exchange.Options) : null;
 
     /// <summary>The restart history. Read and use it only while holding <see cref="GuardGate"/>.</summary>
     internal RestartGuard Guard { get; private set; }
@@ -229,48 +236,7 @@ public sealed class PluginInstance
             throw new ArgumentException("The output must hold OutputChannels * frames samples.", nameof(output));
         }
 
-        var audio = output[..(Request.OutputChannels * frames)];
-        var block = _nextBlock++;
-        if (_bypass)
-        {
-            RememberInput(block, frames, input);
-        }
-
-        var collectIndex = block - (PipelineDepth - 1);
-        var link = _link;
-        if (link is null)
-        {
-            _pendingCount = 0;
-            return Fail(ProcessOutcome.Unavailable, audio, collectIndex, frames);
-        }
-
-        var exchange = link.Exchange;
-        var submitted = exchange.TrySubmit(block, frames, transport, input, inputEvents, _pendingChanges.AsSpan(0, _pendingCount));
-        if (submitted != ExchangeStatus.Busy)
-        {
-            // Busy keeps the changes for the next block; anything else consumed or invalidated them (values stay cached).
-            _pendingCount = 0;
-        }
-
-        if (collectIndex < 0)
-        {
-            audio.Clear();
-            return new BlockOutcome(ProcessOutcome.Priming, 0, false);
-        }
-
-        var collected = exchange.TryCollect(collectIndex, _collectWait, audio, outputEvents, out var result);
-        if (collected == ExchangeStatus.Ok && result.Frames == frames && result.Status is BlockStatus.Ok or BlockStatus.DeadlineMissed)
-        {
-            return new BlockOutcome(ProcessOutcome.Processed, result.OutputEventCount, false);
-        }
-
-        var outcome = collected switch
-        {
-            ExchangeStatus.Ok when result.Status == BlockStatus.PluginError => ProcessOutcome.PluginError,
-            ExchangeStatus.Faulted or ExchangeStatus.Stale => ProcessOutcome.Unavailable,
-            _ => ProcessOutcome.Late,
-        };
-        return Fail(outcome, audio, collectIndex, frames);
+        return _pipeline.Process(_link?.Exchange, frames, input, output[..(Request.OutputChannels * frames)], inputEvents, outputEvents, transport);
     }
 
     /// <summary>
@@ -288,14 +254,7 @@ public sealed class PluginInstance
         }
 
         table.Set(index, normalizedValue);
-        if (_pendingCount == _pendingChanges.Length)
-        {
-            Interlocked.Increment(ref _parameterChangesDropped);
-            return false;
-        }
-
-        _pendingChanges[_pendingCount++] = new ParameterChange(parameterId, sampleOffset, normalizedValue);
-        return true;
+        return _pipeline.Queue(parameterId, normalizedValue, sampleOffset);
     }
 
     /// <summary>The last known value of every parameter, as the host remembers it for recovery.</summary>
@@ -648,30 +607,6 @@ public sealed class PluginInstance
 
     private ActiveLink RequireLink() =>
         _link ?? throw new PluginUnavailableException($"The plugin instance is {Status}; only a running instance can be asked.");
-
-    private BlockOutcome Fail(ProcessOutcome outcome, Span<float> audio, long collectIndex, int frames)
-    {
-        if (_bypass && collectIndex >= 0)
-        {
-            var slot = (int)(collectIndex % PipelineDepth);
-            if (_historyBlock[slot] == collectIndex && _historyFrames[slot] == frames)
-            {
-                _inputHistory.AsSpan(slot * Request.InputChannels * Request.MaxBlockFrames, audio.Length).CopyTo(audio);
-                return new BlockOutcome(outcome, 0, true);
-            }
-        }
-
-        audio.Clear();
-        return new BlockOutcome(outcome, 0, false);
-    }
-
-    private void RememberInput(long block, int frames, ReadOnlySpan<float> input)
-    {
-        var slot = (int)(block % PipelineDepth);
-        input.CopyTo(_inputHistory.AsSpan(slot * Request.InputChannels * Request.MaxBlockFrames, input.Length));
-        _historyBlock[slot] = block;
-        _historyFrames[slot] = frames;
-    }
 
     private void SetStatusLocked(PluginInstanceStatus next)
     {

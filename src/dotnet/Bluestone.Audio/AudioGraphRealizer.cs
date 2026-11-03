@@ -28,7 +28,7 @@ public sealed class AudioGraphRealizer : IDisposable
 {
     private readonly int _sampleRate;
     private readonly int _blockFrames;
-    private readonly Func<Guid, PluginInstance?> _instances;
+    private readonly Func<DescribedNode, IPluginProcessor?> _instances;
     private readonly ConcurrentDictionary<Guid, MixerStripState> _strips = new();
     private readonly Dictionary<Guid, PluginNode> _plugins = [];
     private readonly Dictionary<Guid, (ImmutableArray<AudioClipRegion> Regions, ClipPlayerNode Node, IReadOnlyList<string> Problems)> _clips = [];
@@ -37,8 +37,12 @@ public sealed class AudioGraphRealizer : IDisposable
 
     /// <param name="sampleRate">The engine's rate.</param>
     /// <param name="blockFrames">The engine's block size.</param>
-    /// <param name="instances">The running plugin instance for a device key, if any.</param>
-    public AudioGraphRealizer(int sampleRate, int blockFrames, Func<Guid, PluginInstance?> instances)
+    /// <param name="instances">
+    /// What plays a described plugin node, if anything: the running instance of its device in a single process, or in the
+    /// engine an <see cref="AttachedPluginInstance"/> attached to the exchange the description names. The same object for
+    /// the same instance from one graph to the next, so the node keeps its note tracking.
+    /// </param>
+    public AudioGraphRealizer(int sampleRate, int blockFrames, Func<DescribedNode, IPluginProcessor?> instances)
     {
         _sampleRate = sampleRate;
         _blockFrames = blockFrames;
@@ -52,6 +56,9 @@ public sealed class AudioGraphRealizer : IDisposable
 
     /// <summary>The meter and gain state of a strip, once a graph has included it. Any thread.</summary>
     public MixerStripState? StripOf(Guid key) => _strips.GetValueOrDefault(key);
+
+    /// <summary>Every strip state kept, by its channel's key. Any thread (meters are read while graphs change).</summary>
+    public IEnumerable<KeyValuePair<Guid, MixerStripState>> Strips => _strips;
 
     /// <summary>Every plugin node kept, by device key. Any thread.</summary>
     public ImmutableDictionary<Guid, PluginNode> PluginNodes { get; private set; } = ImmutableDictionary<Guid, PluginNode>.Empty;
@@ -130,7 +137,7 @@ public sealed class AudioGraphRealizer : IDisposable
         _clips.Clear();
         foreach (var plugin in _plugins.Values)
         {
-            plugin.Instance.Changed -= OnPluginChanged;
+            plugin.Processor.Changed -= OnPluginChanged;
         }
 
         _plugins.Clear();
@@ -182,17 +189,17 @@ public sealed class AudioGraphRealizer : IDisposable
     {
         // The describing side only describes a plugin node for a running instance at this rate and block size; one
         // that stopped since plays silence until the graph is described again.
-        if (_instances(described.Key) is not { } instance)
+        if (_instances(described) is not { } instance)
         {
             problems.Add($"{described.Name} stopped before its audio could be connected, so it is silent.");
             return new SilentNode();
         }
 
-        if (!_plugins.TryGetValue(described.Key, out var node) || !ReferenceEquals(node.Instance, instance))
+        if (!_plugins.TryGetValue(described.Key, out var node) || !ReferenceEquals(node.Processor, instance))
         {
             if (_plugins.TryGetValue(described.Key, out var replaced))
             {
-                replaced.Instance.Changed -= OnPluginChanged;
+                replaced.Processor.Changed -= OnPluginChanged;
             }
 
             node = new PluginNode(instance, described.Name, _blockFrames);
@@ -214,7 +221,7 @@ public sealed class AudioGraphRealizer : IDisposable
     {
         foreach (var gone in _plugins.Keys.Where(key => !retained.Contains(key)).ToList())
         {
-            _plugins[gone].Instance.Changed -= OnPluginChanged;
+            _plugins[gone].Processor.Changed -= OnPluginChanged;
             _plugins.Remove(gone);
         }
 

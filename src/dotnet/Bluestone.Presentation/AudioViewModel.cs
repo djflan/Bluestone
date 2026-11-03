@@ -23,7 +23,8 @@ public sealed record AudioDeviceOption(string? Id, string Name, IReadOnlyList<in
 public sealed partial class AudioViewModel : ObservableObject
 {
     private static readonly int[] StandardRates = [44_100, 48_000, 88_200, 96_000];
-    private readonly AudioPlayback _audio;
+    private readonly IAudioPlayback _audio;
+    private readonly int _otherQueuedFrames;
     private readonly AudioSettingsStore _store;
     private readonly IUiDispatcher _dispatcher;
     private readonly Func<IReadOnlyList<AudioDeviceInfo>> _listDevices;
@@ -60,12 +61,12 @@ public sealed partial class AudioViewModel : ObservableObject
     [ObservableProperty]
     private string _masterLevel = string.Empty;
 
-    /// <param name="audio">The engine.</param>
+    /// <param name="audio">The audio, in this process or in the engine process.</param>
     /// <param name="store">Where settings are saved.</param>
     /// <param name="dispatcher">For status changes reported on other threads.</param>
     /// <param name="listDevices">The output devices (the operating system's, or a test's).</param>
     /// <param name="activities">Where opening the device and waiting for a lost one are reported, for the main window's status line.</param>
-    public AudioViewModel(AudioPlayback audio, AudioSettingsStore store, IUiDispatcher dispatcher, Func<IReadOnlyList<AudioDeviceInfo>>? listDevices = null, ActivityLog? activities = null)
+    public AudioViewModel(IAudioPlayback audio, AudioSettingsStore store, IUiDispatcher dispatcher, Func<IReadOnlyList<AudioDeviceInfo>>? listDevices = null, ActivityLog? activities = null)
     {
         _activities = activities;
         _audio = audio ?? throw new ArgumentNullException(nameof(audio));
@@ -75,7 +76,9 @@ public sealed partial class AudioViewModel : ObservableObject
         var settings = store.Load();
         _sampleRate = settings.SampleRate;
         _bufferFrames = settings.BufferFrames;
-        _queuedFrames = settings.QueuedFrames;
+        // The queue shown is the one in use: the engine's own (0 by default, ADR 0044) when the engine renders.
+        _queuedFrames = audio.RendersInEngine ? settings.EngineQueuedFrames : settings.QueuedFrames;
+        _otherQueuedFrames = audio.RendersInEngine ? settings.QueuedFrames : settings.EngineQueuedFrames;
         _liveQueuedFrames = settings.LiveQueuedFrames;
         _lowLatencyMonitoring = settings.LowLatencyMonitoring;
         LoadDevices(settings.DeviceId);
@@ -110,7 +113,9 @@ public sealed partial class AudioViewModel : ObservableObject
     }
 
     /// <summary>The settings as chosen in the view.</summary>
-    public AudioSettings Settings => new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring);
+    public AudioSettings Settings => _audio.RendersInEngine
+        ? new(IsRunning, Device?.Id, SampleRate, BufferFrames, _otherQueuedFrames, LiveQueuedFrames, LowLatencyMonitoring) { EngineQueuedFrames = QueuedFrames }
+        : new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring) { EngineQueuedFrames = _otherQueuedFrames };
 
     /// <summary>Whether the saved settings say audio was on, so <see cref="StartIfEnabled"/> will open a device.</summary>
     public bool IsEnabledInSettings => _store.Load().Enabled;
@@ -127,13 +132,12 @@ public sealed partial class AudioViewModel : ObservableObject
     /// <summary>Reads the master meter; call from a UI timer.</summary>
     public void RefreshMeters()
     {
-        if (_audio.Graph is not { } graph || !_audio.IsRunning)
+        if (!_audio.IsRunning || _audio.MeterOf(null) is not { } reading)
         {
             MasterLevel = string.Empty;
             return;
         }
 
-        var reading = graph.Master.Meter.Read();
         MasterLevel = string.Create(CultureInfo.InvariantCulture, $"Master peak {Decibels(reading.PeakLeft)} / {Decibels(reading.PeakRight)} dBFS");
         Latency = LatencyText();
     }
@@ -141,13 +145,18 @@ public sealed partial class AudioViewModel : ObservableObject
     // Delay compensation in the graph, the queue in use, and what live notes measured.
     private string LatencyText()
     {
-        if (_audio.Engine is not { } engine || _audio.Output is not { } output)
+        if (_audio.Stream is not { } stream)
         {
             return string.Empty;
         }
 
-        var rate = (double)engine.SampleRate;
-        var text = string.Create(CultureInfo.InvariantCulture, $"Delay compensation {engine.Graph.LatencyFrames / rate * 1000:0.#} ms; render-ahead {output.QueuedFrames / rate * 1000:0.#} ms{(_audio.IsLiveQueue ? " (live)" : string.Empty)}.");
+        var rate = (double)stream.SampleRate;
+        var text = string.Create(CultureInfo.InvariantCulture, $"Delay compensation {stream.LatencyFrames / rate * 1000:0.#} ms; render-ahead {stream.QueuedFrames / rate * 1000:0.#} ms{(_audio.IsLiveQueue ? " (live)" : string.Empty)}.");
+        if (_audio.Telemetry is { } telemetry && (telemetry.Xruns > 0 || telemetry.QueueUnderrunFrames > 0))
+        {
+            text += string.Create(CultureInfo.InvariantCulture, $" {telemetry.Xruns} dropouts reported by the device, {telemetry.QueueUnderrunFrames} frames the render-ahead queue missed.");
+        }
+
         var live = _audio.LiveLatency;
         if (live.Count > 0)
         {
@@ -238,15 +247,16 @@ public sealed partial class AudioViewModel : ObservableObject
     private void UpdateStatus()
     {
         OnPropertyChanged(nameof(IsRunning));
-        if (_audio.Output is { } output && _audio.Engine is { } engine)
+        if (_audio.Stream is { } stream)
         {
-            var queue = output.QueuedFrames > 0 ? string.Create(CultureInfo.InvariantCulture, $", {output.QueuedFrames * 1000.0 / output.SampleRate:0.#} ms render-ahead") : string.Empty;
-            if (output.RenderThreadPolicy is { } policy)
+            var queue = stream.QueuedFrames > 0 ? string.Create(CultureInfo.InvariantCulture, $", {stream.QueuedFrames * 1000.0 / stream.SampleRate:0.#} ms render-ahead") : string.Empty;
+            if (stream.RenderThreadPolicy is { } policy)
             {
                 queue += $" ({policy})";
             }
 
-            Status = string.Create(CultureInfo.InvariantCulture, $"Audio is on: {output.SampleRate} Hz, {output.Channels} channels, {engine.BlockFrames}-frame blocks{queue}.");
+            var where = _audio.RendersInEngine ? " in the engine" : string.Empty;
+            Status = string.Create(CultureInfo.InvariantCulture, $"Audio is on{where}: {stream.SampleRate} Hz, {stream.Channels} channels, {stream.BlockFrames}-frame blocks{queue}.");
             if (_audio.Problem is { } fallback)
             {
                 Status += $" {fallback}";

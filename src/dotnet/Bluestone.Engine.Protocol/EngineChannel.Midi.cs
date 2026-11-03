@@ -181,7 +181,7 @@ public sealed partial class EngineChannel
                 writer.String(problem.Message);
                 break;
             default:
-                return false;
+                return EncodeAudio(message, ref writer);
         }
 
         return true;
@@ -366,7 +366,7 @@ public sealed partial class EngineChannel
             case EngineMessageType.EngineProblem:
                 return new EngineProblem(reader.Int32In(-1, int.MaxValue), reader.String());
             default:
-                throw new EngineProtocolException($"Unknown message type {(ushort)type}.");
+                return DecodeAudio(type, ref reader);
         }
     }
 

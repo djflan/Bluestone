@@ -8,6 +8,7 @@ using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
+using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol.Exchange;
 using Bluestone.Signal;
 using CsCheck;
@@ -87,16 +88,34 @@ public sealed class AudioGraphImageTests : IDisposable
 
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(image.AsSpan(0, 100)));
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(With(image, 0, 0)));
-        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, 4, 2)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, 4, AudioGraphImage.Version + 1)));
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(image.AsSpan(0, image.Length - 8)));
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithDouble(image, 120, double.NaN)));
 
         // A node claiming more events or regions than its section holds is refused before anything is sized by the
-        // claim (this once ran out of memory). A node entry is 48 bytes: key, kind, name, first region, region count,
-        // first event, event count, and parameters. The first node is the plugin, the second the clips.
+        // claim (this once ran out of memory). A node entry is 56 bytes: key, kind, name, first region, region count,
+        // first event, event count, parameters, and plugin link. The first node is the plugin, the second the clips.
         var nodes = BitConverter.ToInt32(image, 12);
         Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 36, int.MaxValue)));
-        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 48 + 28, int.MaxValue)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 56 + 28, int.MaxValue)));
+
+        // A plugin link that is missing, on a clips node, or out of range is refused too. A link entry is 56 bytes:
+        // collect wait, path, generation, the exchange's shape (six ints), pipeline depth, latency, and bypass.
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 48, 7)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, nodes + 56 + 48, 0)));
+        var links = BitConverter.ToInt32(image, 4 + (4 * 20));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, links + 40, 3)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, links + 16, 0)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithInt(image, links + 48, 2)));
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(WithLong(image, links, -1)));
+
+        // An exchange the engine would open must be named by its full path.
+        var relative = new AudioGraphDescriptionBuilder();
+        relative.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Guid.NewGuid(), "Synth")
+        {
+            Link = new DescribedPluginLink(new ExchangeOptions(256, 0, 2), 2, TimeSpan.Zero, false, 0, new PluginDataPlane("instance.bsx", 1, new ExchangeOptions(256, 0, 2))),
+        });
+        Assert.Throws<InvalidDataException>(() => AudioGraphImage.Read(AudioGraphImage.ToArray(relative.Build(0, []))));
     }
 
     [Fact]
@@ -180,7 +199,11 @@ public sealed class AudioGraphImageTests : IDisposable
                 new(400, PluginEvent.ProgramChange(0, 15, 12)),
             ],
             [new(50, 7, 0.25), new(450, 7, 0.75)]);
-        var synth = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Sÿnth ♪") { Schedule = schedule });
+        var synth = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Sÿnth ♪")
+        {
+            Schedule = schedule,
+            Link = new DescribedPluginLink(new ExchangeOptions(256, 0, 2, 2, 256, 128), 2, TimeSpan.FromMilliseconds(2), false, 256, new PluginDataPlane("/data/bluestone-plugins/instance-7.bsx", 3, new ExchangeOptions(256, 0, 2, 2, 256, 128))),
+        });
         var clips = builder.AddNode(new DescribedNode(DescribedNodeKind.Clips, Key(), "Drums")
         {
             Regions =
@@ -189,7 +212,10 @@ public sealed class AudioGraphImageTests : IDisposable
                 new AudioClipRegion("/audio/drums.wav", 100_000, 200_000, 0) { LoopStartSeconds = 0.25, LoopLengthSeconds = 1.5 },
             ],
         });
-        var effect = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Verb"));
+        var effect = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Verb")
+        {
+            Link = new DescribedPluginLink(new ExchangeOptions(128, 2, 2, 3, 64, 32), 3, TimeSpan.FromMilliseconds(1.5), true, 1024, null),
+        });
         builder.Monitor(synth);
         builder.Connect(synth, effect);
         builder.Connect(clips, effect);
@@ -209,6 +235,7 @@ public sealed class AudioGraphImageTests : IDisposable
         {
             Assert.Equal((e.Kind, e.Key, e.Name), (a.Kind, a.Key, a.Name));
             Assert.Equal(e.Regions, a.Regions);
+            Assert.Equal(e.Link, a.Link);
             Assert.True(e.Schedule.HasSameContent(a.Schedule), $"{e.Name}'s schedule differs.");
         }
     }
@@ -229,6 +256,13 @@ public sealed class AudioGraphImageTests : IDisposable
     }
 
     private static byte[] WithInt(byte[] image, int at, int value)
+    {
+        var copy = (byte[])image.Clone();
+        BitConverter.TryWriteBytes(copy.AsSpan(at), value);
+        return copy;
+    }
+
+    private static byte[] WithLong(byte[] image, int at, long value)
     {
         var copy = (byte[])image.Clone();
         BitConverter.TryWriteBytes(copy.AsSpan(at), value);

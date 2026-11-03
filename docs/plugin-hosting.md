@@ -229,6 +229,15 @@ header returns `Stale` and faults itself, so it can never read a newer worker's 
 (`BlockExchangeTests.AFileRecreatedUnderANewGeneration_MakesTheOldHandleStale`). Disposal waits for any call in
 flight, is idempotent, and is safe in any state.
 
+**A second handle (the engine process).** With the engine process (ADR 0044), the engine drives the data plane: it
+opens its own handle on the exchange file (`AttachedPluginInstance`, sharing `PluginBlockPipeline` with
+`PluginInstance`), while Bluestone keeps the control plane and supervision. A handle also returns `Faulted` once the
+header's faulted or closed flag is set, so when Bluestone marks a dead worker's exchange the engine's handle stops at
+once instead of waiting out its collect wait for every block
+(`AttachedPluginInstanceTests.AnAttachedInstance_ProcessesTheWorkersBlocks_IsUnavailableAtOnceWhenTheWorkerDies_AndPlaysAgainWhenReattached`).
+Bluestone tells the engine about each new exchange (a restart's new generation and file) in the next audio graph it
+describes.
+
 ## Pipelining and latency
 
 With pipeline depth *d* (`PipelineDepth`, default 2), each `ProcessBlock` call submits block *k* and collects block

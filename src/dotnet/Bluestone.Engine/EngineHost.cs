@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using Bluestone.Audio.Devices;
 using Bluestone.Engine.Protocol;
 
 namespace Bluestone.Engine;
@@ -11,14 +12,16 @@ namespace Bluestone.Engine;
 /// </summary>
 /// <remarks>
 /// The engine owns MIDI playback, outputs, inputs, and live routes to external instruments (<see cref="MidiEngine"/>,
-/// migration step 5); audio follows in step 6. Bluestone sends the outputs, plan, routes, and inputs after Ready, and
-/// again after a restart. A restarted engine sends All Notes Off on every output as it opens it, before anything else.
+/// migration step 5), and audio: the device, the graph, clips, meters, and the plugin data plane (<see cref="AudioHost"/>,
+/// step 6). Bluestone sends the outputs, plan, routes, inputs, audio settings, and graph after Ready, and again after a
+/// restart. A restarted engine sends All Notes Off on every output as it opens it, and to every plugin before its first
+/// block, before anything else.
 /// </remarks>
 internal static class EngineHost
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
 
-    public static async Task<int> RunAsync(string pipeName, string token, bool restarted, bool allowTestCommands)
+    public static async Task<int> RunAsync(string pipeName, string token, bool restarted, bool allowTestCommands, bool testAudio)
     {
         await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try
@@ -43,10 +46,11 @@ internal static class EngineHost
             }
 
             using var midi = new MidiEngine(restarted);
+            using var audio = new AudioHost(midi.Playback, testAudio && allowTestCommands ? new TestAudioBackend() : SystemAudioBackend.Instance, restarted, test: testAudio && allowTestCommands);
             await channel.WriteAsync(new Ready(), stop.Token).ConfigureAwait(false);
             var hung = false;
             var heartbeats = Task.Run(() => HeartbeatAsync(channel, () => Volatile.Read(ref hung), stop.Token), CancellationToken.None);
-            var sender = new Thread(() => Report(midi, channel, () => Volatile.Read(ref hung), stop.Token)) { IsBackground = true, Name = "Bluestone engine reports" };
+            var sender = new Thread(() => Report(midi, audio, channel, () => Volatile.Read(ref hung), stop.Token)) { IsBackground = true, Name = "Bluestone engine reports" };
             sender.Start();
             while (await channel.ReadAsync(stop.Token).ConfigureAwait(false) is { } message)
             {
@@ -77,6 +81,11 @@ internal static class EngineHost
                         break;
                     case TestCommand or Ping:
                         break;
+                    case TestRender when !allowTestCommands:
+                        break;
+                    case var command when AudioHost.Handles(command):
+                        audio.Apply(command);
+                        break;
                     default:
                         foreach (var problem in midi.Apply(message))
                         {
@@ -100,8 +109,9 @@ internal static class EngineHost
         }
     }
 
-    // The sender thread: MIDI for forwarded outputs and from inputs as it comes, the transport, timing, and plan acknowledgements.
-    private static void Report(MidiEngine midi, EngineChannel channel, Func<bool> hung, CancellationToken stop)
+    // The sender thread: MIDI for forwarded outputs and from inputs as it comes, the transport, timing, and plan
+    // acknowledgements; the audio device's state, graph acknowledgements, and meters.
+    private static void Report(MidiEngine midi, AudioHost audio, EngineChannel channel, Func<bool> hung, CancellationToken stop)
     {
         var faulted = false;
         try
@@ -114,7 +124,9 @@ internal static class EngineHost
                     continue;
                 }
 
-                midi.Report(message => channel.WriteAsync(message, stop).GetAwaiter().GetResult());
+                void Send(EngineMessage message) => channel.WriteAsync(message, stop).GetAwaiter().GetResult();
+                midi.Report(Send);
+                audio.Report(Send);
                 if (!faulted && midi.Fault is { } fault)
                 {
                     faulted = true;

@@ -34,6 +34,13 @@ public enum EngineMessageType : ushort
     TimingStatus = 29,
     MidiBatch = 30,
     EngineProblem = 31,
+    SetAudio = 32,
+    AudioDeviceStatus = 33,
+    LoadAudioGraph = 34,
+    AudioGraphLoaded = 35,
+    AudioStatus = 36,
+    TestRender = 37,
+    TestRendered = 38,
 }
 
 /// <summary>A control-channel message (ADR 0044). Nothing here is real-time: commands, state, and telemetry.</summary>

@@ -210,7 +210,8 @@ With `BLUESTONE_ENGINE=1`, MIDI playback runs in the engine. It is still opt-in,
 - Input from endpoints only the UI can reach. The UI decides the thru route as before; a route the engine runs gets
   the message over the control channel.
 - Recording. `MidiRecorder` places input on the timeline with the mirrored transport.
-- Audio. `AudioPlayback` follows the mirrored transport, and its alignment nudges are sent to the engine.
+- Audio. `AudioPlayback` follows the mirrored transport, and its alignment nudges are sent to the engine. (Step 6
+  moved audio into the engine; see below.)
 
 **How it works.** `PlaybackController` talks to an `IPlaybackTransport`: the in-process `PlaybackEngine`, or
 `EnginePlayback`, the engine's client. The UI still resolves slots to endpoints. It sends each output under a handle
@@ -257,10 +258,109 @@ the resync.
 
 **Still to do:**
 
-- Make the engine the default, and enable the transport only when the engine is ready (with step 6).
-- Live routes with plugin MIDI effects, and routes to plugin instruments (steps 6 and 7).
+- Make the engine the default, and enable the transport only when the engine is ready (after step 7).
+- Live routes with plugin MIDI effects, and routes to plugin instruments (step 7).
 - `--engine` in the probes, with the app load in the UI process, to measure MIDI lateness and thru against ADR
   0043's targets, and the engine's collections from its sender thread (step 8). Not measured yet.
+
+## Audio in the engine (step 6)
+
+With `BLUESTONE_ENGINE=1`, audio runs in the engine too: the output device, the render graph, clip playback and the
+disk streamer, meters, and the data plane of every plugin in the graph. It is still opt-in: live input into plugin
+instruments (step 7) does not reach the engine yet. Without the variable, `AudioPlayback` renders in the UI process
+exactly as before, and every existing test uses that path.
+
+**What moved:**
+
+- **The device.** `AudioHost` (in `Bluestone.Engine`) opens the output Bluestone chooses through the same native layer,
+  falls back to the system default output when the chosen one is missing, waits for a device when none opens, and
+  checks every second for a lost device, as `AudioPlayback` does. It renders in the **device callback** by default:
+  the engine's render-ahead queue is a setting of its own (`AudioSettings.EngineQueuedFrames`, 0 unless changed; the
+  Audio window shows and edits it when the engine renders), forwarded with the device, buffer size, sample rate, and
+  test tone in `SetAudio`. The engine reports the stream it opened (`AudioDeviceStatus`: state, rate, channels, block
+  size, queue, render thread policy, and the problem in words when the chosen device is not the one playing).
+- **Following the transport.** The audio engine follows the engine's own `PlaybackEngine` (an `IAudioTimeline` over
+  its anchors), renders the graph's latency ahead of it, and every second moves the playback transport towards the
+  audio clock by half the measured drift, as Bluestone did with nudges over the control channel.
+- **The graph.** Bluestone still describes it (`ProjectAudioGraph.Describe`) but now for the stream the engine opened,
+  and writes it as an `AudioGraphImage` file in the session's folder; `LoadAudioGraph` names the file, rate, and block
+  size. The engine's audio thread (not the device callback) reads the file, realizes it with `AudioGraphRealizer`, and
+  swaps it in with one reference write, so the callback never waits or allocates for a new graph. Clip streams, plugin
+  note tracking, strip meters, and compensation delay lines carry over between graphs as before. Every graph is
+  acknowledged (`AudioGraphLoaded`, with what it could not play and its latency), played or not, and Bluestone deletes
+  older files then. A graph for another rate or block size is not played; Bluestone describes a new one when the
+  engine reports a new stream, after every refresh of the playback controller, and whenever a plugin instance in the
+  graph changes status or latency.
+- **Clips.** File paths travel in the image; the engine opens the files, and its disk streamer reads ahead.
+- **Meters and figures.** About 30 times a second while a device is open, `AudioStatus` carries every strip's meter
+  and the master's, and the stream's figures: callbacks, xruns, discontinuities, late renders, render-ahead underruns,
+  render faults, the longest render, the device's output latency, plugin blocks that followed the failure policy, and
+  the graph's latency. `EngineAudio` mirrors them; the mixer's meters and the Audio window read them through
+  `IAudioPlayback`, which `AudioPlayback` also implements (as step 5 did with `IPlaybackTransport`).
+- **The plugin data plane.** Plugin workers stay Bluestone's: launch, control channel, scanning, editors, state,
+  restart, and supervision. Each described plugin node now carries its instance's link: the exchange's shape, the
+  pipeline depth, collect wait, failure policy, latency, and the running worker's exchange file and generation (none
+  while it is not running). The engine keeps one `AttachedPluginInstance` per device and attaches it to the exchange
+  named; `PluginInstance` and `AttachedPluginInstance` share the host's half of the pipeline (`PluginBlockPipeline`),
+  so blocks, priming, and the failure policy behave identically, and `PluginNode` drives either through
+  `IPluginProcessor`. When a worker dies Bluestone marks its exchange faulted, as before; a host handle now also
+  checks that flag in the file's header, so the engine's handle stops at once and plays the failure policy rather than
+  spinning its collect wait every block. The restarted worker's new exchange reaches the engine in the next graph.
+- **Restart.** After an engine restart Bluestone sends the audio settings again; the new engine opens the device, and
+  Bluestone describes the graph for that stream. Plugin workers and their state survive, and the new engine attaches
+  to the same exchanges; it sends sustain off, All Notes Off, and All Sound Off on all 16 channels to each plugin before
+  that plugin's first block, as it does for MIDI outputs. A test kills an engine and checks that the same audio comes
+  back, sample for sample.
+
+**Protocol** version 4 adds `SetAudio`, `AudioDeviceStatus`, `LoadAudioGraph`, `AudioGraphLoaded`, `AudioStatus`, and
+the test-only `TestRender` and `TestRendered`. Counts, rates, sizes, and levels are checked when read; random bodies of
+every audio type, and valid messages with one byte changed, decode or fail with a protocol error. The graph image is
+version 2: it adds a plugin-link section (the exchange's path, generation, and shape, checked as `ExchangeOptions`
+checks them; a path must be absolute). The supervisor now takes several clients (MIDI and audio), each told about every
+engine before it is reported Ready.
+
+**Real-time rules.** The device callback and the graph swap allocate nothing in steady state.
+`Bluestone.Engine --check-allocations` now also renders as the callback does, through a looping clip streamed from disk
+and a plugin whose worker is not running, following the playing transport, while another thread reads, realizes, and
+swaps in a new graph; the rendering thread allocates nothing, in the JIT and NativeAOT builds. Reading and realizing
+graphs, opening devices, and attaching exchanges happen on the engine's audio thread, never in the callback; the
+control thread only queues audio commands for it, and the sender thread only sends what it left, so neither waits for a
+device to open or a graph to be realized. The audio thread allocates each `AudioStatus` (about 30 a second, a few
+hundred bytes plus 32 bytes a strip), which adds to the collections the `--engine` probe must measure (step 8).
+
+**Tests.** Integration tests run real engine processes with a stand-in audio device (`--test-audio`, honoured only
+with test commands) that never calls back; `TestRender` plays the current graph from the song's start through the
+callback's render path. A project with a clip and the reference sine through a mixer channel renders exactly the same
+samples in the engine (through a real worker the engine drove) as in one process; when the worker is killed the
+engine plays silence for it and the clip as before; after a restart the engine attaches to the new exchange and the
+samples match again. A killed engine is replaced and the same samples come back without any action. Unit tests cover
+the messages, the image's plugin links, and Bluestone's client (settings resent to each engine, the device state,
+meters and figures mirrored, graphs described for the open stream, and their files deleted).
+
+**Deviations from the plan above:**
+
+- Graphs cross as files, like plans, not a double-buffered shared region; meters and figures travel as a control
+  message rather than a telemetry region. Nothing real-time waits on either.
+- A described graph is decoded into objects in the engine (step 3 said so); only plugin schedules are large.
+- Device handling in the engine is a port of `AudioPlayback`'s (fallback, waiting, checks), not shared code: that
+  class also builds graphs and runs the live queue. They should become one when the in-process path goes (step 10).
+- Automation reaches plugins from the schedules in the description, as before. In the engine, the values it sends are
+  not remembered in Bluestone's parameter table, so a worker that restarts gets the last values set from Bluestone, not
+  the last automated ones, until the next automation event.
+
+**Not done, or risky:**
+
+- Live input into plugin instruments and plugin MIDI effects, and the live render-ahead queue, in the engine (step 7).
+  Low-latency monitoring is described in the graph, but has nothing to monitor until then. In engine mode, live notes into a plugin instrument are not heard yet, and the Audio window's
+  live latency figure stays empty.
+- Recording audio input (not in the engine or the UI yet).
+- Not measured: callback timing, xruns, and collections in the engine under the UI's load (step 8). The direct-mode
+  default rests on ADR 0043's isolated-process measurements.
+- Both processes map each exchange file. Only the engine submits and collects; Bluestone's handle must not be used for
+  blocks in engine mode. Nothing enforces that beyond the engine path never rendering in the UI process.
+- A device the engine cannot open is shown in the Audio window as Bluestone shows its own; it is not raised as an
+  `EngineProblem`, and it is never a crash.
+- Make the engine the default and enable the transport only when it is ready: after step 7.
 
 ## The engine host and supervisor (step 4)
 

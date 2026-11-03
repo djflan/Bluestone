@@ -3,6 +3,7 @@ using Bluestone.Application.Sessions;
 using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Mixing;
 using Bluestone.Plugins;
 
 namespace Bluestone.Application.Audio;
@@ -20,7 +21,7 @@ namespace Bluestone.Application.Audio;
 /// time a device opens at a rate, plugin instances are asked to run at that rate. Start, Stop, the checks, and Dispose
 /// are serialized; graph rebuilds run on the thread pool, one at a time.
 /// </remarks>
-public sealed class AudioPlayback : IDisposable
+public sealed class AudioPlayback : IAudioPlayback
 {
     /// <summary>How long the live queue stays after the last live note before the playback queue comes back.</summary>
     public static readonly TimeSpan LiveHold = TimeSpan.FromSeconds(10);
@@ -109,6 +110,35 @@ public sealed class AudioPlayback : IDisposable
 
     public AudioEngine? Engine => _engine;
 
+    public bool RendersInEngine => false;
+
+    public AudioStreamInfo? Stream =>
+        _output is { } output && _engine is { } engine
+            ? new AudioStreamInfo(output.SampleRate, output.Channels, engine.BlockFrames, output.QueuedFrames, output.RenderThreadPolicy, engine.Graph.LatencyFrames)
+            : null;
+
+    public AudioTelemetry? Telemetry
+    {
+        get
+        {
+            if (_output is not { } output || _engine is not { } engine)
+            {
+                return null;
+            }
+
+            try
+            {
+                var status = output.Status;
+                var failed = _graph?.PluginNodes.Values.Sum(n => n.FailedBlocks) ?? 0;
+                return new AudioTelemetry(status.Callbacks, status.Xruns, status.Discontinuities, status.LateRenders, status.QueueUnderrunFrames, engine.Statistics.Faults, status.RenderMax, status.OutputLatency, failed);
+            }
+            catch (Exception ex) when (ex is AudioDeviceException or ObjectDisposedException)
+            {
+                return null;
+            }
+        }
+    }
+
     public IAudioOutput? Output => _output;
 
     /// <summary>Meter and strip state, for a mixer view.</summary>
@@ -194,6 +224,11 @@ public sealed class AudioPlayback : IDisposable
             }
         }
     }
+
+    public MeterReading? MeterOf(MixerChannelId? channel) =>
+        IsRunning && _graph is { } graph
+            ? (channel is { } id ? graph.StripOf(id)?.Meter.Read() : graph.Master.Meter.Read())
+            : null;
 
     /// <summary>Builds a graph for the current project and routing and swaps it in. Any thread.</summary>
     public void Rebuild()
