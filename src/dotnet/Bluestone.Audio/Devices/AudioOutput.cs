@@ -299,10 +299,15 @@ public sealed unsafe class AudioOutput : IAudioOutput
         }
     }
 
-    private TimeSpan ReadOutputLatency()
+    private TimeSpan ReadOutputLatency() => ReadDeviceTiming().Latency;
+
+    // The device's output latency, and the frames it takes per callback (0 until the first callback).
+    private (TimeSpan Latency, int BufferFrames) ReadDeviceTiming()
     {
         var data = new NativeMethods.StreamStatusData { StructSize = (uint)sizeof(NativeMethods.StreamStatusData) };
-        return NativeMethods.StreamStatus(_handle, &data) == 0 ? TimeSpan.FromTicks(data.OutputLatencyNanoseconds / 100) : TimeSpan.Zero;
+        return NativeMethods.StreamStatus(_handle, &data) == 0
+            ? (TimeSpan.FromTicks(data.OutputLatencyNanoseconds / 100), (int)data.LastBufferFrames)
+            : (TimeSpan.Zero, 0);
     }
 
     private void StopRenderThread()
@@ -319,7 +324,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
         _renderThreadPolicy = RenderThreadScheduling.PromoteCurrentThread(TimeSpan.FromSeconds((double)_queued / SampleRate));
         var channels = Channels;
         var block = new float[_renderBlock * channels];
-        var latency = ReadOutputLatency();
+        var (latency, deviceFrames) = ReadDeviceTiming();
         long written = 0;
         var checks = 0;
         while (_rendering)
@@ -327,16 +332,20 @@ public sealed unsafe class AudioOutput : IAudioOutput
             // The target is read once per wake-up, so a change takes effect at the next one.
             var target = Volatile.Read(ref _queued);
             var queued = NativeMethods.RingWait(_handle, (uint)target, 2000);
-            if (++checks % 256 == 0)
+            if (++checks % 256 == 0 || deviceFrames == 0)
             {
-                latency = ReadOutputLatency();
+                (latency, deviceFrames) = ReadDeviceTiming();
             }
 
             while (_rendering && queued < target)
             {
                 var frames = (int)Math.Min(_renderBlock, target - queued);
                 var now = Stopwatch.GetTimestamp();
-                var heardIn = latency + TimeSpan.FromSeconds((double)queued / SampleRate);
+                // This thread wakes when a callback has just taken a block, so what is queued is taken from the next
+                // callback on: a frame written now is taken one device buffer after the queue ahead of it, then heard
+                // after the output latency. Measured with a loopback (ADR 0043): without the device buffer, frames
+                // were heard one buffer later than this said.
+                var heardIn = latency + TimeSpan.FromSeconds((double)(queued + deviceFrames) / SampleRate);
                 Array.Clear(block);
                 var samples = block.AsSpan(0, frames * channels);
                 try

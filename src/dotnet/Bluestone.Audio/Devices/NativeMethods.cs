@@ -8,7 +8,7 @@ namespace Bluestone.Audio.Devices;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    public const uint AbiVersion = 1;
+    public const uint AbiVersion = 2;
     public const uint FlagDiscontinuity = 1;
     public const int HistogramBuckets = 2001;
     public const int HistogramBucketMicroseconds = 10;
@@ -53,6 +53,54 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_close")]
     public static partial void Close(nint stream);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_input_devices_json")]
+    public static partial long InputDevicesJson(byte* buffer, nuint capacity);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_open_input")]
+    public static partial nint OpenInput(
+        byte* deviceId,
+        StreamRequest* request,
+        delegate* unmanaged[Cdecl]<nint, float*, uint, uint, CaptureInfo*, void> capture,
+        nint userData,
+        byte* error,
+        nuint errorCapacity);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_input_start")]
+    public static partial int InputStart(nint stream, byte* error, nuint errorCapacity);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_input_stop")]
+    public static partial int InputStop(nint stream, byte* error, nuint errorCapacity);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_input_status")]
+    public static partial int InputStatus(nint stream, InputStatusData* status);
+
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_input_close")]
+    public static partial void InputClose(nint stream);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CaptureInfo
+    {
+        public ulong FramePosition;
+        public long InputLatencyNanoseconds;
+        public ulong CallbackIndex;
+        public uint SampleRate;
+        public uint Reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct InputStatusData
+    {
+        public uint StructSize;
+        public uint State;
+        public uint SampleRate;
+        public uint Channels;
+        public ulong Callbacks;
+        public ulong Frames;
+        public ulong Overruns;
+        public long InputLatencyNanoseconds;
+        public ulong OversizedBlocks;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct BlockInfo

@@ -44,8 +44,10 @@ public sealed class PlaybackAllocationTests
             }
         }
 
-        // Three rounds; the last must allocate nothing (an earlier one may include one-time runtime work).
-        for (var round = 0; round < 3; round++)
+        // Allocations made by the code repeat every round; one-time runtime work (tier-up, a late static initializer)
+        // happens once, and on a slow machine it can land in any round. So a later round must allocate nothing.
+        var rounds = new List<long>();
+        for (var round = 0; round < 8 && (rounds.Count < 2 || rounds[^1] != 0); round++)
         {
             pumped = 0;
             Elsewhere(() => engine.SetOutputs(outputs));
@@ -68,9 +70,10 @@ public sealed class PlaybackAllocationTests
             Pump(20);
             Elsewhere(() => engine.Seek(new Tick(1_100)));
             Pump(5);
+            rounds.Add(pumped);
         }
 
-        Assert.Equal(0, pumped);
+        Assert.True(rounds[^1] == 0, $"Bytes allocated on the playback thread per round: {string.Join(", ", rounds)}.");
         Assert.True(outputs.Sum(o => ((SilentOutput)o).Count) > 50, "Too little was sent for the test to mean anything.");
     }
 

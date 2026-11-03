@@ -142,6 +142,29 @@ threads.
 
 The same effect explains the baseline's 2.86 ms immediate outlier with no load.
 
+### Audio loopback (added 2026-11-03)
+
+`--audio-loopback` plays a single-sample click on a timestamped live note, as a live route would. The output device
+is looped back to an input; the probe finds the click in the captured audio and takes the capture time from the input
+stream's own timestamps. It compares that with the model's heard time: the callback's time, plus the device's
+reported output latency, plus any render-ahead queue. The Rust audio layer gained an input stream for this (ABI 2).
+
+BlackHole 2ch at 48 kHz, 128-frame buffer, 10 s, about 100 clicks per run:
+
+| Mode | Model error, median | Spread (max − min) |
+| ---- | ------------------: | -----------------: |
+| Rendering in the callback (queue 0) | 0.001 ms | 0.06 ms |
+| Render-ahead 512 frames, before the fix | 2.65 ms | 0.09 ms |
+| Render-ahead 512 frames | −0.02 ms | 0.07 ms |
+| Render-ahead 1,024 frames | −0.02 ms | 0.07 ms |
+
+The loopback found a bug. With a render-ahead queue, the model said a frame would be heard one device buffer earlier
+than it was: the render thread wakes just after a callback has taken a block, so a frame written then also waits for
+the next callback. Audio was therefore rendered for a song position one buffer period too early relative to MIDI
+(2.7 ms at 128 frames), and the live latency meter read one buffer low. The render thread now adds the device's buffer;
+both modes agree with the loopback within 0.02 ms. BlackHole reports its latency correctly, so the clicks' total time
+from note to capture (3.8 ms median in callback mode) is the device's buffer and reported latency.
+
 ## Decisions
 
 1. **The targets above are Bluestone's timing contract** and are judged by these probes. Release 1.0 Slice 0 takes them
@@ -184,9 +207,9 @@ The same effect explains the baseline's 2.86 ms immediate outlier with no load.
 - The engine process adds an IPC boundary between the UI and the engine. It carries plans, graph snapshots, commands,
   and meters, but nothing per event or per sample on the real-time path, because MIDI devices and the audio device
   open in the engine process.
-- The live figures use the engine's heard-time model, built on the device's reported output latency. An audio loopback,
-  such as a BlackHole virtual device or an interface with OUT patched to IN, still has to confirm that model end to
-  end (docs/hardware-test-plan.md).
+- The live figures use the engine's heard-time model, built on the device's reported output latency. The audio
+  loopback below confirms that model on a virtual device; an interface with OUT patched to IN also measures its
+  converters, which the device may not report.
 - The application process still uses tiered compilation, so the first seconds of playback after start-up can see
   a JIT suspension of up to about 3.5 ms. Turning tiered compilation off for the whole application would slow UI
   start-up; that trade-off was not measured, and the engine process removes it.
