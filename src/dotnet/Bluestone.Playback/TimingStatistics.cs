@@ -22,7 +22,14 @@ public sealed class TimingStatistics
         TimeSpan.FromMilliseconds(50),
     ];
 
+    /// <summary>Width of one bucket of the fine lateness histogram, for percentiles such as p99.9.</summary>
+    public static readonly TimeSpan FineBucketWidth = TimeSpan.FromMicroseconds(10);
+
+    /// <summary>Buckets in the fine histogram (10 µs each, up to 20 ms); the last one counts everything later.</summary>
+    public const int FineBucketCount = 2001;
+
     private readonly long[] _histogram = new long[BucketBounds.Length + 1];
+    private readonly long[] _fine = new long[FineBucketCount];
     private readonly long _lateThresholdTicks;
     private long _dispatched;
     private long _late;
@@ -38,6 +45,7 @@ public sealed class TimingStatistics
         var ticks = Math.Max(0, lateness.Ticks);
         Interlocked.Increment(ref _dispatched);
         Interlocked.Increment(ref _histogram[BucketOf(ticks)]);
+        Interlocked.Increment(ref _fine[Math.Min(ticks / FineBucketWidth.Ticks, FineBucketCount - 1)]);
         if (ticks > _lateThresholdTicks)
         {
             Interlocked.Increment(ref _late);
@@ -64,6 +72,12 @@ public sealed class TimingStatistics
             histogram[i] = Volatile.Read(ref _histogram[i]);
         }
 
+        var fine = new long[_fine.Length];
+        for (var i = 0; i < fine.Length; i++)
+        {
+            fine[i] = Volatile.Read(ref _fine[i]);
+        }
+
         return new TimingSnapshot(
             Volatile.Read(ref _dispatched),
             Volatile.Read(ref _late),
@@ -71,7 +85,10 @@ public sealed class TimingStatistics
             Volatile.Read(ref _dropped),
             Volatile.Read(ref _noteOverflow),
             TimeSpan.FromTicks(Volatile.Read(ref _maxLatenessTicks)),
-            [.. histogram]);
+            [.. histogram])
+        {
+            FineHistogram = [.. fine],
+        };
     }
 
     private static int BucketOf(long ticks)
@@ -98,6 +115,38 @@ public sealed record TimingSnapshot(
     TimeSpan MaxLateness,
     ImmutableArray<long> Histogram)
 {
+    /// <summary>Lateness counts in buckets of <see cref="TimingStatistics.FineBucketWidth"/>; the last bucket is unbounded.</summary>
+    public ImmutableArray<long> FineHistogram { get; init; } = [];
+
+    /// <summary>
+    /// An upper bound on the given lateness percentile (0-100) to within one fine bucket (10 µs);
+    /// <see cref="MaxLateness"/> beyond the fine histogram's range. Zero when nothing was dispatched.
+    /// </summary>
+    public TimeSpan FinePercentile(double percentile)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(percentile, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(percentile, 100);
+        var total = FineHistogram.IsDefaultOrEmpty ? 0 : FineHistogram.Sum();
+        if (total == 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var target = Math.Max(1, (long)Math.Ceiling(total * percentile / 100));
+        long cumulative = 0;
+        for (var i = 0; i < FineHistogram.Length - 1; i++)
+        {
+            cumulative += FineHistogram[i];
+            if (cumulative >= target)
+            {
+                var bound = TimeSpan.FromTicks((i + 1) * TimingStatistics.FineBucketWidth.Ticks);
+                return bound < MaxLateness ? bound : MaxLateness;
+            }
+        }
+
+        return MaxLateness;
+    }
+
     /// <summary>
     /// An upper bound on the given lateness percentile (0-100), resolved to histogram bucket
     /// boundaries; <see cref="MaxLateness"/> for the unbounded bucket. Zero when nothing was dispatched.

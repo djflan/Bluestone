@@ -66,4 +66,10 @@ internal static class PlatformProviders
             Bluestone.Platform.Windows.ThreadScheduling.JoinProAudioTask();
         }
     }
+
+    /// <summary>
+    /// The playback thread's sub-millisecond sleep: <c>mach_wait_until</c> on macOS, where the real-time thread wakes
+    /// within about 0.1 ms (ADR 0043). Other platforms spin the final approach until measured.
+    /// </summary>
+    public static Action<TimeSpan>? PlaybackPreciseSleep => OperatingSystem.IsMacOS() ? ThreadScheduling.SleepPrecisely : null;
 }

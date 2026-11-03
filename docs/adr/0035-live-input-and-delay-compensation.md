@@ -1,6 +1,6 @@
 # 0035. Live input through every device, a live render-ahead queue, and plugin delay compensation
 
-- Status: Accepted; amends 0028 (live input) and 0032 (latency)
+- Status: Accepted; amends 0028 (live input) and 0032 (latency); amended by 0043
 - Date: 2026-10-11
 
 ## Context

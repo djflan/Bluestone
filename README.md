@@ -114,6 +114,8 @@ macOS is the current development and physically tested platform. Windows and Lin
 
 The Release 1.0 work begins by converting this into an explicit supported, experimental, and deferred matrix with measurable timing and latency gates.
 
+Timing targets, the probes that judge them, and current measurements are in [ADR 0043](docs/adr/0043-timing-targets-and-measurement.md). On an Apple silicon Mac, scheduled Core MIDI output is accurate to within 0.4 ms, and the C# audio render takes about 0.1 ms of a 2.7 ms buffer. A garbage collection in the application process can still delay audio rendered in the callback, immediate MIDI, and MIDI thru by several milliseconds. That is why audio is currently rendered ahead, and why the real-time work is moving to a separate C# engine process.
+
 ## Build and run
 
 Bluestone is a C#/.NET application by default. Rust is reserved for measured real-time constraints and native interfaces, with small, versioned boundaries between the two. See [ADR 0026](docs/adr/0026-native-technology-policy.md) for the language policy.

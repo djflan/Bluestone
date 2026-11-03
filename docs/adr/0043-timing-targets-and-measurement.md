@@ -1,0 +1,194 @@
+# 0043. Timing targets, how they are measured, and how C# meets them
+
+- Status: Accepted; amends 0012 (playback thread's final approach), 0026 (no Rust render path), 0032 and 0035 (where
+  the real-time work runs)
+- Date: 2026-11-03
+
+## Context
+
+Bluestone's first product priority is "tight timing, synchronization, latency handling, and accuracy". Until now the
+claim had no numbers behind it that a contributor could check or fail. Release 1.0 Slice 0 asks for exactly that, and
+ADR 0026 asks for a measurement before any real-time component moves from C# to Rust. Three questions were open:
+
+1. What does "tight" mean, in numbers?
+2. Does the current C# code meet those numbers, and where not, why?
+3. Can tuning C# fix the misses, or does a component need Rust?
+
+## Decision
+
+### The targets
+
+At 48 kHz, a 128-frame device buffer (2.67 ms), a Release build, 60-second runs on a quiet machine, under each load
+below. "Max" is the worst single event in the run; p99.9 is reported next to it, and both must meet the target.
+
+| Path | Metric | Target |
+| ---- | ------ | ------ |
+| MIDI output, immediate delivery (sent when due) | Lateness from due time to hand-off to the endpoint | ≤ 2 ms max |
+| MIDI output, scheduled delivery (Core MIDI timestamps) | Arrival time at a receiving process minus the timestamp | ≤ 2 ms max |
+| Live MIDI thru (input to output) | Round trip through Bluestone less two operating-system MIDI hops | ≤ 2 ms max |
+| Live MIDI to audio | Input timestamp to heard, less the device's reported output latency and one buffer period | ≤ 2 ms max |
+| Audio device stream | Xruns, late callbacks, missing callbacks, render-ahead underruns | 0 |
+| Audio callback | Render time inside the device callback | ≤ the buffer period, max |
+
+The live-audio target subtracts one buffer period because a note that arrives just after a callback must wait for the
+next one in every host. The device's reported output latency already contains the hardware and safety offsets. So
+"≤ 2 ms" means Bluestone adds less than 2 ms beyond what the chosen buffer size and audio device impose.
+
+### The loads
+
+- **none**: only the probe.
+- **app**: a synthetic editing session in the same process. A 200 MB retained heap and about 50 MB/s of small
+  allocations, a quarter of them kept in a rolling window of references (ADR 0032).
+- **edit**: Bluestone's own work while a musician edits during loop playback. Every edit recompiles the playback plan
+  (16 tracks × 1,000 notes, about 8 MB), four times a second.
+- **isolated**: the probe runs in a child process (`--isolate`) while the parent process carries the **app** load. This
+  is the experiment for a separate real-time engine process.
+
+### How it is measured
+
+`src/dotnet/Bluestone.Benchmarks` holds the probes. Each prints its metrics and writes a JSON report with the machine,
+OS, runtime, GC settings, commit, load average, settings, distributions, targets, and verdicts. `--compare a.json b.json`
+diffs two reports. Every probe takes `[seconds] [--pressure none|app|edit|churn|full] [--isolate]
+[--child-pressure P] [--repeat N] [--report DIR]`.
+
+| Probe | What it measures |
+| ----- | ---------------- |
+| `--jitter` | Dispatch lateness on the real playback thread, immediate and scheduled, from a 10 µs histogram |
+| `--midi-loopback` | End to end through Core MIDI, with no hardware. A child process publishes a virtual destination and source and timestamps arrivals with the shared host clock. It covers scheduled delivery, the immediate operating-system hop, and live thru through `PlaybackEngine.SendNow` while dense material plays. |
+| `--audio` | Render time around the call into .NET from the native callback, plus xruns, gaps, and missing callbacks, on the default device |
+| `--live` | Input timestamp to heard, through the engine's heard-time model, with `--queue 0` for rendering in the callback |
+| `--wake` | Oversleep of timed waits by primitive and thread policy |
+
+`TimingStatistics` gained a 10 µs lateness histogram (`TimingSnapshot.FinePercentile`) so the playback engine can
+state p99.9, not only the 0.25 / 0.5 / 1 / 2 ms buckets the status bar uses.
+
+## Measurements
+
+Apple M5 Max, macOS 27.2, .NET 10.0.300, built-in MacBook Pro speakers (4.9 ms reported output latency), playback
+thread with the real-time time-constraint policy, 60 s per run unless stated. Reports are under
+`TestResults/timing/` (not committed). Numbers are max, with p99.9 in brackets where they differ.
+
+### Baseline: the code before this change
+
+| Path | none | app |
+| ---- | ---- | --- |
+| MIDI immediate lateness | 2.86 ms ✗ | 5.90 ms ✗ |
+| MIDI scheduled, Core MIDI loopback | 0.31 ms ✓ | 0.12 ms ✓ |
+| MIDI thru added | 0.19 ms ✓ | 5.71 ms (4.35) ✗ |
+| Audio, rendering in the callback | render 0.12 ms, 0 xruns ✓ | render 9.0 ms, 224 xruns ✗ |
+| Audio, 1024-frame render-ahead queue | — | 0 xruns, 0 underruns ✓ (21 ms of queue) |
+| Live added, rendering in the callback | 0.005 ms ✓ | 8.3 ms (6.5), 226 xruns ✗ |
+| Live added, the 512-frame live queue (today's default) | — | 17.3 ms (14.1), 256 underrun frames ✗ |
+
+Under **app** every GC suspended the real-time threads: pauses were 4.5 ms at the median and up to 13.7 ms.
+
+### Round 1: tuning C# in one process
+
+| Change | Result |
+| ------ | ------ |
+| `DOTNET_gcConcurrent=0` | Pauses 18 ms median, up to 65 ms ✗ |
+| `DOTNET_GCgen0size` 1 MB / 4 MB / 64 MB | Pauses up to 8.3 / 8.3 / 41 ms ✗ |
+| `GCLatencyMode.SustainedLowLatency` | Pauses up to 10.3 ms ✗ |
+| Server GC (`DOTNET_gcServer=1`), 30 s | No collection ✓, but only postponed: |
+| Server GC, 180 s | Four collections of 32–37 ms, 3 xruns ✗ |
+| **edit** load instead of **app** | Live: pauses ≤ 1.3 ms, added max 0.36 ms ✓. MIDI (with a 320,000-event plan also retained): one 24 ms pause ✗ |
+| Precise final approach on the playback thread (below), none | MIDI immediate max 3.85 ms (spin) → **0.12 ms** ✓ |
+| The same, Core MIDI loopback with the production thru path | Thru added max 0.38 ms ✓ |
+
+Wake-ups (`--wake`, 30 s): on the real-time thread `WaitOne`, `Thread.Sleep`, and `mach_wait_until` all woke within
+0.08 ms; on a default thread they overslept by about 1 ms. `WaitHandle.WaitOne(TimeSpan)` has whole-millisecond
+resolution and woke about 0.5 ms early at the median, which is why the playback thread spun the final approach.
+
+No GC setting removes multi-millisecond pauses for a large, reference-heavy heap such as an editing session's.
+Pauses are short when the retained heap is small and simple: about 0.5–1.3 ms. They grow when it is large or has
+many references to scan.
+
+### Round 2: the same C# in a process of its own
+
+The child renders, dispatches, and receives in C# exactly as above; the **app** load runs in the parent.
+
+| Path | Result |
+| ---- | ------ |
+| Audio in the callback, 64 / 128 frames | Render max 0.07 / 0.12 ms, 0 GCs, 0 xruns ✓ |
+| Live added, 128 frames | Max 0.001 ms, 0 xruns ✓ |
+| MIDI immediate lateness | Max 1.58 ms (p99.9 0.03 ms) ✓ |
+| MIDI scheduled, Core MIDI loopback | Max 0.36 ms ✓ |
+| MIDI thru added | Max 0.41 ms ✓ |
+| Live added, with the engine compiling plans on its own small heap (**edit** in the child) | GC pauses ≤ 0.95 ms, added max 0.008 ms, 0 xruns ✓ |
+
+### Re-test on the final code
+
+Repeated 60-second runs with the **app** load in the other process. In the middle of the series the default output
+device changed from the built-in speakers to a USB headset (Jabra Evolve2 50), so the 64-frame runs used the headset.
+
+| Path | Runs | Result |
+| ---- | ---: | ------ |
+| Live added, 128 frames | 9 | Max 0.034 ms in the worst run; 0 GCs, 0 xruns in every run ✓ |
+| Live added, 64 frames (headset) | 3 | Max 0.046 ms; 0 xruns ✓ |
+| Audio in the callback, 128 frames (headset) | 2 | Render max 0.13 ms; 0 xruns ✓ |
+| MIDI scheduled, Core MIDI loopback | 3 | Max 0.27 ms ✓ |
+| MIDI thru added | 3 | Max 0.30 ms ✓ |
+| MIDI immediate, measured after a warm-up (the loopback's second phase) | 3 | Max 0.21 ms ✓ |
+| MIDI immediate, measured from a cold start (`--jitter`) | 3 | Max 2.05 / 1.86 / 1.14 ms, p99.9 ≤ 0.15 ms in two runs ✗ |
+
+The cold-start outliers are not GC and not the operating system. They come from .NET tiered compilation: shortly after
+code starts running, the runtime replaces it with optimized code, and installing that code briefly suspends managed
+threads.
+
+| `--jitter 60 --pressure none`, 3 runs each | Max per run |
+| ------------------------------------------- | ----------- |
+| Default (tiered compilation) | 0.024, 3.48, 3.31 ms |
+| `DOTNET_TieredCompilation=0` | 0.057, 0.215, 0.055 ms |
+
+The same effect explains the baseline's 2.86 ms immediate outlier with no load.
+
+## Decisions
+
+1. **The targets above are Bluestone's timing contract** and are judged by these probes. Release 1.0 Slice 0 takes them
+   as its starting tolerances.
+2. **Nothing moves to Rust.** In a process whose managed heap stays quiet, the C# render path uses 0.06–0.12 ms of a
+   1.3–2.7 ms buffer, and every MIDI path is far inside its target. No measurement meets ADR 0026's bar for a Rust
+   component. The existing Rust device layer (`bluestone_audio`) and plugin host are unchanged.
+3. **The playback thread no longer spins on macOS** (done here). The final approach to a due time is slept in
+   ≤ 0.25 ms slices (`PlaybackThread.FinalSlice`) with `mach_wait_until`, re-pumping between slices
+   (`PlatformProviders.PlaybackPreciseSleep`). Spinning used the real-time thread's computation budget and produced
+   rare multi-millisecond lateness. It also left commands and `SendNow` waiting for up to 1.5 ms. Windows and Linux
+   keep spinning until measured on their own hardware.
+4. **The real-time work moves into a C# engine process** (to be built; this ADR records the decision and its
+   evidence). The UI process will always allocate: a plan compile is 8–100 MB and opening a project about 1 GB
+   (ADR 0012). Any collection in a process stops every managed thread in it, and no GC setting kept those pauses
+   under 2 ms. The engine process owns the audio stream with rendering in the device callback, the playback engine and
+   thread, MIDI input and output, live routes, and the connection to plugin workers. It must keep these rules, each
+   checked by a test or a probe:
+   - **No allocation in steady state** on the real-time threads (as `ChainRunnerTests` checks), so playback alone
+     never causes a collection.
+   - **A small, reference-light retained heap** (arrays of structs, not object graphs), so any collection that does
+     happen is short. An engine that compiled plans on its own small heap still met every target, with pauses of at
+     most 0.95 ms. With a 320,000-event plan also retained, one pause took 24 ms.
+   - **Plans and graphs arrive in a compact form**, in preallocated or shared memory and swapped in whole, rather than
+     as large object graphs.
+   - **The engine reports every collection and its pause.** A probe fails on any pause longer than 1 ms during
+     playback.
+   - **No JIT compilation during playback.** The engine is published with NativeAOT, or runs with tiered compilation
+     off, so code is never replaced while it plays.
+5. **Until the engine process exists**, the app keeps the render-ahead queues of ADRs 0032 and 0035. Audio is then
+   glitch-free under load, but live input carries the queue as latency. Immediate MIDI and thru can be late by a GC
+   pause. Scheduled Core MIDI output, the macOS path to hardware, already meets its target in one process. The README
+   states the claim with these limits.
+
+## Consequences
+
+- A live plugin instrument adds its worker pipeline (ADR 0025: one engine block at depth 2, 2.67 ms at 128 frames) on
+  top of the figures above. That exceeds the 2 ms target whatever the language. Meeting it needs 64-frame blocks or a
+  depth-1 pipeline for instruments being played live; the offline `LiveInputPluginTests` measure that path exactly.
+- The engine process adds an IPC boundary between the UI and the engine. It carries plans, graph snapshots, commands,
+  and meters, but nothing per event or per sample on the real-time path, because MIDI devices and the audio device
+  open in the engine process.
+- The live figures use the engine's heard-time model, built on the device's reported output latency. An audio loopback,
+  such as a BlackHole virtual device or an interface with OUT patched to IN, still has to confirm that model end to
+  end (docs/hardware-test-plan.md).
+- The application process still uses tiered compilation, so the first seconds of playback after start-up can see
+  a JIT suspension of up to about 3.5 ms. Turning tiered compilation off for the whole application would slow UI
+  start-up; that trade-off was not measured, and the engine process removes it.
+- All numbers come from one Mac with a synthetic load. Rerun the probes on other machines, and on Windows and Linux
+  when their adapters gain precise waits, before changing a target or a default.

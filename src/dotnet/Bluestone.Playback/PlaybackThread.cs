@@ -4,15 +4,25 @@ namespace Bluestone.Playback;
 
 /// <summary>
 /// Drives a <see cref="PlaybackEngine"/> on a dedicated high-priority thread: pump, then wait until
-/// the next event or until a command arrives. Waits longer than <see cref="SpinThreshold"/> block on
-/// the engine's signal; shorter ones spin so immediate-delivery endpoints are served on time.
+/// the next event or until a command arrives. Waits longer than <see cref="SpinThreshold"/> (2 ms with a
+/// precise sleep) block on the engine's signal, whose timeout has whole-millisecond resolution, so it ends early; the rest is
+/// spun, or, when the platform supplies a precise sleep, slept in slices of at most
+/// <see cref="FinalSlice"/> with a pump between them, so immediate-delivery endpoints are served on
+/// time without spinning and commands and <see cref="PlaybackEngine.SendNow"/> are not held up (ADR 0043).
 /// </summary>
 public sealed class PlaybackThread : IDisposable
 {
     public static readonly TimeSpan SpinThreshold = TimeSpan.FromMilliseconds(1.5);
 
+    /// <summary>The longest precise sleep before the thread pumps again; bounds the delay of commands and live thru.</summary>
+    public static readonly TimeSpan FinalSlice = TimeSpan.FromMilliseconds(0.25);
+
+    // With a precise sleep, block only when the 1 ms-early wait is at least a whole millisecond (shorter timeouts round to zero).
+    private static readonly TimeSpan BlockThreshold = TimeSpan.FromMilliseconds(2);
+
     private readonly PlaybackEngine _engine;
     private readonly Action? _onThreadStart;
+    private readonly Action<TimeSpan>? _preciseSleep;
     private readonly Thread _thread;
     private volatile bool _stopping;
 
@@ -21,10 +31,15 @@ public sealed class PlaybackThread : IDisposable
     /// Optional platform setup run on the playback thread before pumping, such as raising its
     /// scheduling class. Kept outside this project so playback stays platform-neutral.
     /// </param>
-    public PlaybackThread(PlaybackEngine engine, Action? onThreadStart = null)
+    /// <param name="preciseSleep">
+    /// Optional platform sleep accurate to well under a millisecond on the configured thread, such as
+    /// <c>mach_wait_until</c> on a real-time thread. Without it the final approach to a due time is spun.
+    /// </param>
+    public PlaybackThread(PlaybackEngine engine, Action? onThreadStart = null, Action<TimeSpan>? preciseSleep = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _onThreadStart = onThreadStart;
+        _preciseSleep = preciseSleep;
         _thread = new Thread(Run)
         {
             IsBackground = true,
@@ -65,9 +80,13 @@ public sealed class PlaybackThread : IDisposable
                 {
                     _engine.WorkSignal.WaitOne();
                 }
-                else if (wait > SpinThreshold)
+                else if (wait > (_preciseSleep is null ? SpinThreshold : BlockThreshold))
                 {
                     _engine.WorkSignal.WaitOne(wait - TimeSpan.FromMilliseconds(1));
+                }
+                else if (wait > TimeSpan.Zero && _preciseSleep is { } sleep)
+                {
+                    sleep(wait < FinalSlice ? wait : FinalSlice);
                 }
                 else if (wait > TimeSpan.Zero)
                 {

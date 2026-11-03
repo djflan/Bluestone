@@ -32,7 +32,28 @@ public static partial class ThreadScheduling
         return thread_policy_set(mach_thread_self(), TimeConstraintPolicy, policy, 4) == 0;
     }
 
+    /// <summary>
+    /// Sleeps until <paramref name="duration"/> from now with <c>mach_wait_until</c>. On a real-time thread it wakes
+    /// within about 0.1 ms of the deadline (ADR 0043), unlike waits with whole-millisecond timeouts.
+    /// </summary>
+    public static void SleepPrecisely(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        mach_timebase_info(out var numer, out var denom);
+        _ = mach_wait_until(mach_absolute_time() + ((ulong)duration.Ticks * 100 * denom / numer));
+    }
+
     private const int TimeConstraintPolicy = 2;
+
+    [LibraryImport("/usr/lib/libSystem.dylib")]
+    private static partial ulong mach_absolute_time();
+
+    [LibraryImport("/usr/lib/libSystem.dylib")]
+    private static partial int mach_wait_until(ulong deadline);
 
     [LibraryImport("/usr/lib/libSystem.dylib")]
     private static partial int pthread_set_qos_class_self_np(uint qosClass, int relativePriority);

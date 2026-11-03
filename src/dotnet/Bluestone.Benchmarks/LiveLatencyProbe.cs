@@ -7,63 +7,64 @@ using Bluestone.Audio.Devices;
 namespace Bluestone.Benchmarks;
 
 /// <summary>
-/// ADR 0035's measurement of live-input latency on the real default output device: notes are "played" (timestamped
-/// with the system clock, as MIDI input is) at random moments and taken by a node at the start of the next block the
-/// engine renders, the way a live route feeds a plugin instrument; the latency is from the timestamp until that
-/// block is heard (the engine's heard time: render-ahead queue plus the device's reported output latency). The same
-/// run first uses the playback queue, then switches the running stream to the live queue, so it also shows that the
-/// switch keeps the stream continuous and what it costs in underruns under load. A plugin adds its pipeline (one
-/// block at depth 2) on top; the offline tests measure that part exactly.
+/// Live-input latency on the real default output device (ADR 0035, judged by ADR 0043): notes are "played"
+/// (timestamped with the system clock, as MIDI input is) at random moments and taken by a node at the start of the next
+/// block the engine renders, the way a live route feeds a plugin instrument; the latency is from the timestamp until
+/// that block is heard (the engine's heard time: render-ahead queue plus the device's reported output latency). A
+/// plugin adds its pipeline on top; the offline tests measure that part exactly.
 /// </summary>
 /// <remarks>
 /// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --live [seconds] [--pressure none|app|churn]
-/// [--buffer 128] [--queue 1024] [--live-queue 256]</c>.
+/// [--buffer 128] [--queue 512] [--isolate]</c>; <c>--queue 0</c> renders in the device callback (direct mode).
 /// </remarks>
 internal static class LiveLatencyProbe
 {
     private const int SampleRate = 48_000;
 
-    public static void Run(string[] args)
+    public static void Run(ProbeOptions options)
     {
-        var seconds = args.Length > 1 && int.TryParse(args[1], CultureInfo.InvariantCulture, out var s) ? s : 20;
-        var pressure = AudioCallbackProbe.Option(args, "--pressure") ?? "app";
-        var buffer = int.Parse(AudioCallbackProbe.Option(args, "--buffer") ?? "128", CultureInfo.InvariantCulture);
-        var queue = int.Parse(AudioCallbackProbe.Option(args, "--queue") ?? "1024", CultureInfo.InvariantCulture);
-        var liveQueue = int.Parse(AudioCallbackProbe.Option(args, "--live-queue") ?? "256", CultureInfo.InvariantCulture);
+        var buffer = options.Int("--buffer", 128);
+        var queue = options.Int("--queue", 512);
         if (!AudioDevices.IsAvailable(out var problem))
         {
             Console.WriteLine(problem);
             return;
         }
 
-        Console.WriteLine($"Device: {AudioDevices.List().FirstOrDefault(d => d.IsDefault)?.Name ?? "default"}; {buffer}-frame buffer and blocks at {SampleRate} Hz; pressure: {pressure}; {seconds} s per queue");
-        var probe = new ProbeNode();
+        var device = AudioDevices.List().FirstOrDefault(d => d.IsDefault)?.Name ?? "default";
+        var settings = options.BaseSettings();
+        settings["device"] = device;
+        settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
+        settings["rate"] = SampleRate.ToString(CultureInfo.InvariantCulture);
+        settings["queue"] = queue == 0 ? "0 (direct)" : queue.ToString(CultureInfo.InvariantCulture);
+        var report = new TimingReport("live-latency", settings);
+        report.Machine.WarnIfBusy();
+        Console.WriteLine($"Live latency: {device}; {buffer}-frame buffer and blocks at {SampleRate} Hz; queue {settings["queue"]}; pressure {settings["pressure"]}; {options.Seconds} s");
+
+        var probe = new ProbeNode((options.Seconds + 2) * 250);
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(AudioCallbackProbe.Graph(buffer, 32, probe));
         using var output = AudioOutput.Open(engine, new AudioStreamRequest(SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
         output.Start();
         Thread.Sleep(500);
-        Console.WriteLine($"Render thread: {output.RenderThreadPolicy}; device output latency {output.Status.OutputLatency.TotalMilliseconds:0.0} ms");
-        Console.WriteLine("queue | notes | min | p50 | p95 | max | underrun frames | xruns");
+        report.Notes.Add($"render thread: {(queue == 0 ? "the device callback" : output.RenderThreadPolicy)}");
 
         using var stop = new CancellationTokenSource();
-        var threads = new List<Thread>();
-        if (pressure == "app")
+        var threads = options.StartPressure(stop.Token);
+        Thread.Sleep(threads.Count > 0 ? 1000 : 200);
+        using var gc = new GcWatch();
+        var before = output.Status;
+        var random = new Random(35);
+        var until = Stopwatch.GetTimestamp() + (options.Seconds * Stopwatch.Frequency);
+        while (Stopwatch.GetTimestamp() < until)
         {
-            threads.Add(AudioCallbackProbe.Start(() => AudioCallbackProbe.Application(stop.Token)));
+            probe.Played.Enqueue(Stopwatch.GetTimestamp());
+            Thread.Sleep(5 + random.Next(30));
         }
 
-        if (pressure == "churn")
-        {
-            threads.Add(AudioCallbackProbe.Start(() => AudioCallbackProbe.Churn(stop.Token)));
-            threads.Add(AudioCallbackProbe.Start(() => AudioCallbackProbe.Churn(stop.Token)));
-        }
-
-        Console.WriteLine(Phase(output, probe, queue, seconds));
-        output.SetQueuedFrames(liveQueue);
-        Console.WriteLine(Phase(output, probe, liveQueue, seconds));
-        output.SetQueuedFrames(queue);
-        Console.WriteLine(Phase(output, probe, queue, seconds) + " (back to the playback queue)");
+        Thread.Sleep(200);
+        var after = output.Status;
+        gc.AddTo(report);
         stop.Cancel();
         foreach (var thread in threads)
         {
@@ -71,51 +72,39 @@ internal static class LiveLatencyProbe
         }
 
         output.Stop();
-    }
-
-    private static string Phase(AudioOutput output, ProbeNode probe, int queue, int seconds)
-    {
-        Thread.Sleep(200);
-        var before = output.Status;
-        probe.Latencies.Clear();
-        var random = new Random(35);
-        var until = Stopwatch.GetTimestamp() + (seconds * Stopwatch.Frequency);
-        while (Stopwatch.GetTimestamp() < until)
-        {
-            probe.Played.Enqueue(Stopwatch.GetTimestamp());
-            Thread.Sleep(20 + random.Next(30));
-        }
-
-        Thread.Sleep(200);
-        var after = output.Status;
-        var sorted = probe.Latencies.Order().ToArray();
-        string Ms(double ticks) => (ticks * 1000.0 / Stopwatch.Frequency).ToString("0.0", CultureInfo.InvariantCulture) + " ms";
-        return sorted.Length == 0
-            ? $"{queue} | 0"
-            : string.Join(" | ", [
-                $"{queue} ({queue * 1000.0 / SampleRate:0.0} ms)",
-                sorted.Length.ToString(CultureInfo.InvariantCulture),
-                Ms(sorted[0]),
-                Ms(sorted[sorted.Length / 2]),
-                Ms(sorted[(int)(sorted.Length * 0.95)]),
-                Ms(sorted[^1]),
-                (after.QueueUnderrunFrames - before.QueueUnderrunFrames).ToString(CultureInfo.InvariantCulture),
-                (after.Xruns - before.Xruns).ToString(CultureInfo.InvariantCulture),
-            ]);
+        var period = (double)after.LastBufferFrames / SampleRate * 1000;
+        var deviceLatency = after.OutputLatency.TotalMilliseconds;
+        var total = probe.Latencies().Select(t => t * 1000.0 / Stopwatch.Frequency).ToArray();
+        report.Add(new Metric("audio.period", "ms", period));
+        report.Add(new Metric("audio.output-latency", "ms", deviceLatency));
+        report.Add(new Metric("live.total", "ms", Distribution: Distribution.Of(total)));
+        report.Add(new Metric("live.beyond-device", "ms", Distribution: Distribution.Of(total.Select(t => t - deviceLatency))));
+        report.Add(new Metric("live.added", "ms", Distribution: Distribution.Of(total.Select(t => t - deviceLatency - period)), Target: Targets.LiveAddedMs));
+        report.Add(new Metric("audio.xruns", "xruns", after.Xruns - before.Xruns, Target: 0));
+        report.Add(new Metric("audio.late-callbacks", "callbacks", after.LateRenders - before.LateRenders, Target: 0));
+        report.Add(new Metric("audio.queue-underrun", "frames", after.QueueUnderrunFrames - before.QueueUnderrunFrames, Target: 0));
+        options.Finish(report);
     }
 
     /// <summary>Takes what was played at the start of each block, as a live route does, and notes when that block is heard.</summary>
-    private sealed class ProbeNode : AudioNode
+    private sealed class ProbeNode(int capacity) : AudioNode
     {
+        private readonly long[] _latencies = new long[capacity];
+        private int _count;
+
         public ConcurrentQueue<long> Played { get; } = new();
 
-        public ConcurrentBag<long> Latencies { get; } = [];
+        public IEnumerable<long> Latencies() => _latencies.Take(Volatile.Read(ref _count));
 
         public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output)
         {
             while (Played.TryDequeue(out var played))
             {
-                Latencies.Add(context.HeardTimestamp - played);
+                if (_count < _latencies.Length)
+                {
+                    _latencies[_count] = context.HeardTimestamp - played;
+                    Volatile.Write(ref _count, _count + 1);
+                }
             }
         }
     }

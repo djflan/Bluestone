@@ -1,6 +1,6 @@
 # 0012. Performance baseline: managed scheduling with OS real-time policy, no native code
 
-- Status: Accepted
+- Status: Accepted; final approach of the playback thread amended by 0043
 - Date: 2026-10-04
 
 ## Context
