@@ -20,6 +20,7 @@ public partial class App : Avalonia.Application
 {
     private static AudioViewModel? _audio;
     private static EngineSupervisor? _engine;
+    private static EnginePlayback? _enginePlayback;
 
     /// <summary>Cancels start-up work that runs off the UI thread (the plugin scan) when Bluestone quits during start-up.</summary>
     private static readonly CancellationTokenSource StartupCancellation = new();
@@ -97,12 +98,10 @@ public partial class App : Avalonia.Application
 
             _audio?.StartIfEnabled();
 
-            // The engine process (ADR 0044) starts alongside the window; editing does not wait for it. Opt-in until the
-            // engine owns MIDI and audio (migration steps 5 and 6): it does nothing else yet.
-            if (Environment.GetEnvironmentVariable("BLUESTONE_ENGINE") == "1")
+            // The engine process (ADR 0044) starts alongside the window; editing does not wait for it.
+            if (_engine is { } engine)
             {
-                _engine = new EngineSupervisor(new EngineSupervisorOptions(), viewModel.Activities);
-                _ = _engine.StartAsync();
+                _ = engine.StartAsync();
             }
 
             // A project or MIDI file named on the command line (or by the OS file association) opens at start.
@@ -158,7 +157,22 @@ public partial class App : Avalonia.Application
             .AddDirectory(UserProfileDirectory);
 
         var session = new ProjectSession();
-        var playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread, playbackPreciseSleep: PlatformProviders.PlaybackPreciseSleep);
+        var activities = new ActivityLog();
+        PlaybackController playback;
+
+        // MIDI playback, platform endpoints, and live thru to external instruments run in the engine process (ADR 0044)
+        // when BLUESTONE_ENGINE=1. Opt-in until audio moves too (migration step 6); otherwise they run here.
+        if (Environment.GetEnvironmentVariable("BLUESTONE_ENGINE") == "1")
+        {
+            _engine = new EngineSupervisor(new EngineSupervisorOptions(), activities);
+            _enginePlayback = new EnginePlayback(_engine, new EnginePlaybackOptions { IsEngineEndpoint = PlatformProviders.IsEngineEndpoint });
+            playback = new PlaybackController(session, endpoints, profiles, _enginePlayback);
+        }
+        else
+        {
+            playback = new PlaybackController(session, endpoints, profiles, clock, playbackThreadSetup: PlatformProviders.ConfigurePlaybackThread, playbackPreciseSleep: PlatformProviders.PlaybackPreciseSleep);
+        }
+
         var monitor = new MidiMonitor(await builtIn.OpenInputAsync(monitorPort.InputId));
         await Step(splash, "Scanning plugins…");
         await ScanPluginsAsync(library, splash);
@@ -166,7 +180,6 @@ public partial class App : Avalonia.Application
         var hosting = new PluginHostingSettingsStore(PluginHostingSettingsPath);
         var devices = new PluginDeviceHost(plugins, session, library, hosting: hosting.Load());
         var dispatcher = new AvaloniaDispatcher();
-        var activities = new ActivityLog();
         var viewModel = new MainViewModel(session, playback, endpoints, new DialogService(window), dispatcher, monitor, new ComputerKeyboardViewModel(keyboard), devices, activities)
         {
             Plugins = new PluginsViewModel(library, dispatcher, devices, hosting, activities),
@@ -254,6 +267,7 @@ public partial class App : Avalonia.Application
         }
 
         await viewModel.DisposeAsync().ConfigureAwait(false);
+        _enginePlayback?.Dispose();
         await plugins.DisposeAsync().ConfigureAwait(false);
         foreach (var provider in platformProviders)
         {

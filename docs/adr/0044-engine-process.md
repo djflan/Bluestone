@@ -183,6 +183,79 @@ Each step lands separately and keeps the app working:
    hosted runners.
 10. Make the engine the only path; remove the in-process real-time path.
 
+## MIDI in the engine (step 5)
+
+With `BLUESTONE_ENGINE=1`, MIDI playback runs in the engine. It is still opt-in, because audio has not moved yet
+(step 6). Without the variable, everything runs in the UI process as before, and every existing test uses that path.
+
+**What moved:**
+
+- **Playback.** The engine runs `PlaybackEngine` on its own playback thread, with the macOS real-time policy and
+  precise sleep, or MMCSS and a 1 ms timer on Windows. It plays plans; it never compiles them.
+- **Outputs.** The engine opens the operating system's endpoints itself (CoreMIDI, WinMM, or ALSA, chosen as the UI
+  chooses them). Endpoints only the UI can reach are forwarded: the monitor and test buses, the computer keyboard, and
+  the UI's own virtual ports such as "Bluestone Out". The engine plays to them through a forwarding output, which
+  sends the messages back to the UI, and the UI delivers them. This is not real-time beyond the engine. It is fine for
+  those endpoints, and it lets the integration tests run without MIDI hardware on every platform.
+- **Inputs and thru.** The engine opens the operating system's inputs. A message is played on the thru track's live
+  route in the input callback, then forwarded to the UI for recording, the monitor, and input activity. The engine runs
+  live routes to external instruments whose stages are all built-in live devices (transpose, event filter,
+  arpeggiator) or forced channels. The UI sends each route as its stages, parameter values, target output, and
+  resolution.
+
+**What stays in the UI:**
+
+- Live routes with a plugin MIDI effect, and routes to a plugin instrument. They still run in the UI, and their thru
+  to an engine output goes through the engine's playback thread.
+- Input from endpoints only the UI can reach. The UI decides the thru route as before; a route the engine runs gets
+  the message over the control channel.
+- Recording. `MidiRecorder` places input on the timeline with the mirrored transport.
+- Audio. `AudioPlayback` follows the mirrored transport, and its alignment nudges are sent to the engine.
+
+**How it works.** `PlaybackController` talks to an `IPlaybackTransport`: the in-process `PlaybackEngine`, or
+`EnginePlayback`, the engine's client. The UI still resolves slots to endpoints. It sends each output under a handle
+(opened by the engine or forwarded), then the slots as handles.
+
+- **Plans** cross as `PlanImage` files in a folder per session (`bluestone-engine-<pid>` in the temporary folder).
+  This replaces the double-buffered shared region in the protocol table above; a file mapped read-only is shared
+  memory and needs no buffer protocol. The engine maps the file and reads the plan over the mapping. It keeps the
+  mapping while the playback thread can still read the plan, and releases the previous one once the thread has switched
+  (`PlaybackEngine.LoadsApplied`). Then it acknowledges, and the UI deletes the older files.
+- **Transport.** The engine reports its transport whenever it changes and every 10 ms while playing: state, position,
+  loop wraps, count-in, and the current and previous anchors, each naming the plan whose tempo it uses. The UI mirrors
+  it. `TryGetTickAt` and `TryGetSongTimeAt` share their code (`TransportAnchor`) with the engine, so a mirrored anchor
+  maps a time to the same position; a test checks this across tempo changes, loop wraps, and seeks. Timing figures come
+  every 250 ms. The transport and input travel as control messages, not the shared regions in the table above. That is
+  simpler and fast enough for display and recording; nothing real-time waits on them.
+- **Clocks.** Both processes use the system's monotonic clock, so input and output timestamps compare directly.
+- **Restart.** After a restart the UI sends everything again: outputs, slots, the latest plan, loop, metronome, routes,
+  thru, inputs, and the position. The transport stays stopped. A restarted engine sends sustain off, All Notes Off, and
+  All Sound Off on all 16 channels of each output as it opens it, before anything else goes there. The outputs are only
+  known after the UI resends them, so this happens just after Ready rather than before it. Forwarded outputs get the
+  same messages.
+- **Protocol** version 2 adds the MIDI messages. Each has bounded counts and lengths, and every handle, tick, and MIDI
+  byte is checked when it is read. Random bodies of every type, and valid messages with one byte changed, decode or
+  fail with a protocol error.
+
+**Real-time rules.** The input callback, the live thread's route pumping, and the playback thread allocate nothing
+in steady state. Input and forwarded output are copied into a fixed buffer under a short lock; a sender thread turns
+them into messages. `Bluestone.Engine --check-allocations` plays notes from an input through a transposing route to
+a forwarded output while the transport plays, and checks that the thread allocates nothing. An integration test runs
+it, and it also passes in the NativeAOT build. The engine's sender thread still allocates a little for each status and
+batch it sends; the heartbeat reports any collections this causes.
+
+**Tests.** Integration tests run real engine processes: a plan plays in order to an output only the UI reaches; loop,
+seek, and stop work; input from an endpoint only the UI reaches is recorded and played through a transpose that the
+engine runs; and a killed engine is replaced, sends All Notes Off on its outputs, stays stopped, and plays again after
+the resync.
+
+**Still to do:**
+
+- Make the engine the default, and enable the transport only when the engine is ready (with step 6).
+- Live routes with plugin MIDI effects, and routes to plugin instruments (steps 6 and 7).
+- `--engine` in the probes, with the app load in the UI process, to measure MIDI lateness and thru against ADR
+  0043's targets (step 8). Not measured yet.
+
 ## The engine host and supervisor (step 4)
 
 The skeleton is in place:
@@ -201,9 +274,8 @@ The skeleton is in place:
   is left failed, with an error in Messages, until `RestartAsync`. Starting and restarting are activities on the
   status line. Integration tests do each of these with real engine processes: killed, hung, faulted, missing, a crash
   loop, and a clean shutdown that is not counted as a stop.
-- The desktop app starts the engine alongside the main window when `BLUESTONE_ENGINE=1`. It is opt-in because the
-  engine does nothing else yet. It becomes the default when MIDI moves in (step 5), and so does All Notes Off on
-  restart.
+- The desktop app starts the engine alongside the main window when `BLUESTONE_ENGINE=1`. It stays opt-in after step 5
+  (see above) until audio moves too.
 
 Shared building blocks were copied, not extracted: the framing is about 300 lines and differs from the plugin
 protocol's (no request ids, its own limits), and the launcher is short. Copying keeps the two protocols independent.

@@ -283,7 +283,7 @@ public sealed class AudioPlayback : IDisposable
         var block = Math.Clamp(settings.BufferFrames, 32, _maxBlockFrames);
         var engine = new AudioEngine(rate, block) { TestTone = _testTone ? new ToneNode(440, 0.125) : null };
         var device = Math.Max(settings.BufferFrames, block);
-        engine.Transport.Follow(new PlaybackTimeline(_playback.Engine), toleranceFrames: Math.Max(rate / 100, 2 * (device + block)));
+        engine.Transport.Follow(new PlaybackTimeline(_playback.Transport), toleranceFrames: Math.Max(rate / 100, 2 * (device + block)));
         lock (_gate)
         {
             _engine = engine;
@@ -366,7 +366,7 @@ public sealed class AudioPlayback : IDisposable
         lock (_control)
         {
             var last = _playback.Live.LastSoftwareInput > _liveSince ? _playback.Live.LastSoftwareInput : _liveSince;
-            if (IsLiveQueue && _output is { } output && _wanted is { } wanted && _playback.Engine.Clock.Now - last >= LiveHold)
+            if (IsLiveQueue && _output is { } output && _wanted is { } wanted && _playback.Transport.Clock.Now - last >= LiveHold)
             {
                 output.SetQueuedFrames(wanted.QueuedFrames);
                 IsLiveQueue = false;
@@ -377,7 +377,7 @@ public sealed class AudioPlayback : IDisposable
     // Live input reached a plugin instrument: render closer to the device until it has been quiet for a while.
     internal void OnLiveInput()
     {
-        _liveSince = _playback.Engine.Clock.Now;
+        _liveSince = _playback.Transport.Clock.Now;
         if (IsLiveQueue || _wanted is not { LiveQueuedFrames: > 0 } wanted || _output is not { QueuedFrames: > 0 } output || wanted.LiveQueuedFrames >= wanted.QueuedFrames)
         {
             return;
@@ -411,7 +411,7 @@ public sealed class AudioPlayback : IDisposable
         var (average, callbacks) = engine.Transport.TakeDrift();
         if (callbacks >= 10 && Math.Abs(average) >= 1)
         {
-            _playback.Engine.Nudge(TimeSpan.FromSeconds(average / 2 / engine.SampleRate));
+            _playback.Transport.Nudge(TimeSpan.FromSeconds(average / 2 / engine.SampleRate));
         }
     }
 

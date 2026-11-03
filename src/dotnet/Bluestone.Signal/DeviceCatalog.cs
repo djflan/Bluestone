@@ -84,6 +84,9 @@ public sealed class DeviceCatalog
     public ILiveProcessor? CreateLiveProcessor(DeviceDefinitionId id, Ppqn ppqn) =>
         _liveFactories.TryGetValue(id, out var factory) ? factory(ppqn) : null;
 
+    /// <summary>Whether the device has a live processor in this catalog.</summary>
+    public bool HasLiveProcessor(DeviceDefinitionId id) => _liveFactories.ContainsKey(id);
+
     /// <summary>
     /// The live processor for <paramref name="device"/> with its stored parameter values applied, and the classes it
     /// handles; null when it has none in Bluestone's process. Bypass is the caller's business.

@@ -8,13 +8,36 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;
 
     /// <summary>The longest string (UTF-8 bytes) in a message.</summary>
     public const int MaxStringBytes = 4096;
+
+    /// <summary>The most output slots a plan may use.</summary>
+    public const int MaxSlots = 1024;
+
+    /// <summary>The most inputs the engine listens to at once.</summary>
+    public const int MaxInputs = 256;
+
+    /// <summary>The most stages in one live route, and parameters in one stage.</summary>
+    public const int MaxRouteStages = 64;
+
+    public const int MaxStageParameters = 256;
+
+    /// <summary>The most clicks in a count-in.</summary>
+    public const int MaxCountInClicks = 1024;
+
+    /// <summary>The longest single MIDI message carried (a SysEx dump; anything longer is not sent).</summary>
+    public const int MaxMidiMessageBytes = 16 * 1024;
+
+    /// <summary>The most events in one <see cref="MidiBatch"/>.</summary>
+    public const int MaxBatchEvents = 4096;
+
+    /// <summary>The most buckets in a timing histogram.</summary>
+    public const int MaxHistogramBuckets = 4096;
 
     /// <summary>How often a running engine sends a heartbeat.</summary>
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMilliseconds(250);
@@ -55,7 +78,7 @@ public sealed class EngineProtocolException : Exception
 /// left over, is an <see cref="EngineProtocolException"/>. One reader and one writer per stream; each may be used from
 /// one thread at a time, and reuses its buffer. Disposing does not close the stream.
 /// </summary>
-public sealed class EngineChannel(Stream stream) : IDisposable
+public sealed partial class EngineChannel(Stream stream) : IDisposable
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private readonly byte[] _readBuffer = new byte[4 + EngineLimits.MaxFrameBytes];
@@ -139,6 +162,11 @@ public sealed class EngineChannel(Stream stream) : IDisposable
                 writer.Byte((byte)test.Action);
                 break;
             default:
+                if (EncodeMidi(message, ref writer))
+                {
+                    break;
+                }
+
                 throw new ArgumentException($"Cannot encode {message.GetType().Name}.", nameof(message));
         }
 
@@ -167,7 +195,7 @@ public sealed class EngineChannel(Stream stream) : IDisposable
                 (byte)TestAction.Fault => TestAction.Fault,
                 var other => throw new EngineProtocolException($"Unknown test action {other}."),
             }),
-            _ => throw new EngineProtocolException($"Unknown message type {(ushort)type}."),
+            _ => DecodeMidi(type, ref reader),
         };
         if (reader.Remaining != 0)
         {
@@ -214,6 +242,22 @@ public sealed class EngineChannel(Stream stream) : IDisposable
         public void Int32(int value) => BinaryPrimitives.WriteInt32LittleEndian(Take(4), value);
 
         public void Int64(long value) => BinaryPrimitives.WriteInt64LittleEndian(Take(8), value);
+
+        public void UInt32(uint value) => BinaryPrimitives.WriteUInt32LittleEndian(Take(4), value);
+
+        public void Guid(Guid value)
+        {
+            if (!value.TryWriteBytes(Take(16)))
+            {
+                throw new ArgumentException("A GUID did not fit.");
+            }
+        }
+
+        public void Bytes(ReadOnlySpan<byte> value)
+        {
+            Int32(value.Length);
+            value.CopyTo(Take(value.Length));
+        }
 
         public void String(string value)
         {
@@ -262,6 +306,38 @@ public sealed class EngineChannel(Stream stream) : IDisposable
         public int Int32() => BinaryPrimitives.ReadInt32LittleEndian(Take(4));
 
         public long Int64() => BinaryPrimitives.ReadInt64LittleEndian(Take(8));
+
+        public uint UInt32() => BinaryPrimitives.ReadUInt32LittleEndian(Take(4));
+
+        public Guid Guid() => new(Take(16));
+
+        /// <summary>A count or length from 0 to <paramref name="max"/>.</summary>
+        public int Count(int max)
+        {
+            var value = Int32();
+            return value >= 0 && value <= max ? value : throw new EngineProtocolException($"{value} is outside 0 to {max}.");
+        }
+
+        /// <summary>An int from <paramref name="min"/> to <paramref name="max"/>.</summary>
+        public int Int32In(int min, int max)
+        {
+            var value = Int32();
+            return value >= min && value <= max ? value : throw new EngineProtocolException($"{value} is outside {min} to {max}.");
+        }
+
+        /// <summary>A byte from 0 to <paramref name="max"/>.</summary>
+        public byte ByteUpTo(byte max)
+        {
+            var value = Byte();
+            return value <= max ? value : throw new EngineProtocolException($"{value} is above {max}.");
+        }
+
+        /// <summary>A copy of a length-prefixed run of bytes, from <paramref name="min"/> to <paramref name="max"/> long.</summary>
+        public byte[] Bytes(int min, int max)
+        {
+            var length = Count(max);
+            return length >= min ? Take(length).ToArray() : throw new EngineProtocolException($"{length} bytes is fewer than {min}.");
+        }
 
         public long NonNegative()
         {

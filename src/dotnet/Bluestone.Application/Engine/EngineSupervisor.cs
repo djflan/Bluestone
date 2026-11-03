@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Cryptography;
+using System.Threading.Channels;
 using Bluestone.Application.Status;
 using Bluestone.Engine.Protocol;
 
@@ -94,6 +95,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
     private EngineState _state;
     private Task _recovery = Task.CompletedTask;
     private long _nextPing;
+    private IEngineClient? _client;
 
     public EngineSupervisor(EngineSupervisorOptions options, ActivityLog activities)
     {
@@ -130,6 +132,19 @@ public sealed class EngineSupervisor : IAsyncDisposable
             {
                 return [.. _stops];
             }
+        }
+    }
+
+    /// <summary>
+    /// Connects the one client that uses the engine (MIDI playback). Call before <see cref="StartAsync"/>: it is told
+    /// about every engine that starts, before that engine is reported Ready, so it can send what the engine needs.
+    /// </summary>
+    public void Attach(IEngineClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        if (Interlocked.CompareExchange(ref _client, client, null) is not null)
+        {
+            throw new InvalidOperationException("The engine already has a client.");
         }
     }
 
@@ -190,6 +205,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
         await _recovery.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         if (session is not null)
         {
+            _client?.Disconnected(session);
             await session.ShutdownAsync().ConfigureAwait(false);
         }
 
@@ -203,6 +219,11 @@ public sealed class EngineSupervisor : IAsyncDisposable
         try
         {
             var session = await Session.StartAsync(this, restarted).ConfigureAwait(false);
+            if (!_lifetime.IsCancellationRequested)
+            {
+                _client?.Connected(session, restarted);
+            }
+
             lock (_gate)
             {
                 if (_lifetime.IsCancellationRequested)
@@ -249,6 +270,11 @@ public sealed class EngineSupervisor : IAsyncDisposable
 
             _session = null;
             _stops.Add(new EngineStop(reason, detail, processId));
+            if (session is not null)
+            {
+                _client?.Disconnected(session);
+            }
+
             var now = Stopwatch.GetTimestamp();
             _recentStops.Enqueue(now);
             while (_recentStops.Count > 0 && Stopwatch.GetElapsedTime(_recentStops.Peek(), now) > _options.RestartWindow)
@@ -300,13 +326,14 @@ public sealed class EngineSupervisor : IAsyncDisposable
 
     /// <summary>One engine process, its control channel, and the loops that watch it.</summary>
 #pragma warning disable CA1001 // _stop is cancelled, never disposed: the watch loops may still read its token, and it holds no timer or handle.
-    private sealed class Session
+    private sealed class Session : IEngineLink
 #pragma warning restore CA1001
     {
         private readonly EngineSupervisor _owner;
         private readonly Process _process;
         private readonly NamedPipeServerStream _pipe;
         private readonly CancellationTokenSource _stop = new();
+        private readonly Channel<EngineMessage> _outbox = System.Threading.Channels.Channel.CreateUnbounded<EngineMessage>(new UnboundedChannelOptions { SingleReader = true });
         private long _lastHeard = Stopwatch.GetTimestamp();
         private int _ended;
         private EngineTelemetry? _telemetry;
@@ -406,7 +433,9 @@ public sealed class EngineSupervisor : IAsyncDisposable
             }
         }
 
-        /// <summary>Starts watching for the ways a running engine can stop.</summary>
+        public bool Send(EngineMessage message) => Volatile.Read(ref _ended) == 0 && _outbox.Writer.TryWrite(message);
+
+        /// <summary>Starts watching for the ways a running engine can stop, and sending what clients queue.</summary>
         public void Watch()
         {
             _process.Exited += (_, _) => End(EngineStopReason.Exited, ExitDescription());
@@ -418,6 +447,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
 
             _ = Task.Run(ReadLoopAsync);
             _ = Task.Run(WatchdogAsync);
+            _ = Task.Run(WriteLoopAsync);
         }
 
         public async Task ShutdownAsync()
@@ -507,6 +537,9 @@ public sealed class EngineSupervisor : IAsyncDisposable
                         case Fault fault:
                             End(EngineStopReason.Fault, fault.Message);
                             return;
+                        case TransportStatus or TimingStatus or MidiBatch or PlanLoaded or EngineProblem:
+                            Deliver(message);
+                            break;
                         default:
                             End(EngineStopReason.ProtocolError, $"{message.Type} is not expected from a running engine.");
                             return;
@@ -518,6 +551,39 @@ public sealed class EngineSupervisor : IAsyncDisposable
             catch (EngineProtocolException ex)
             {
                 End(EngineStopReason.ProtocolError, ex.Message);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                End(EngineStopReason.ChannelBroken, ex.Message);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private void Deliver(EngineMessage message)
+        {
+            try
+            {
+                _owner._client?.Received(this, message);
+            }
+#pragma warning disable CA1031 // A client's failure must not look like the engine's; it is reported and the channel goes on.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                Trace.TraceError($"The engine client failed on {message.Type}: {ex}");
+            }
+        }
+
+        // Sends what clients queue, in order. A failed write is a broken channel.
+        private async Task WriteLoopAsync()
+        {
+            try
+            {
+                await foreach (var message in _outbox.Reader.ReadAllAsync(_stop.Token).ConfigureAwait(false))
+                {
+                    await Channel.WriteAsync(message, _stop.Token).ConfigureAwait(false);
+                }
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException)
             {
@@ -572,6 +638,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
 
         private async Task KillAsync()
         {
+            _outbox.Writer.TryComplete();
             await _stop.CancelAsync().ConfigureAwait(false);
             try
             {

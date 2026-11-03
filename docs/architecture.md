@@ -83,7 +83,8 @@ Bluestone.Engine.Protocol   (none)             the engine process's control chan
 Bluestone.Engine            Audio, Engine.Protocol, Midi, Playback, Plugins, Plugins.Protocol, Signal, Platform.Alsa,
                             Platform.CoreMidi, Platform.Windows
                                                the engine process (ADR 0044), published with NativeAOT; started and
-                                               supervised by Application's EngineSupervisor, copied beside the app
+                                               supervised by Application's EngineSupervisor, copied beside the app; runs
+                                               MIDI playback, MIDI endpoints, and live thru when BLUESTONE_ENGINE=1
 Bluestone.Benchmarks        Application, Audio, Infrastructure, Platform.CoreMidi, Platform.Windows, Playback, Profiles
                                                performance measurements and probes (ADR 0012)
 Bluestone.Tests.Unit        Application, Audio, Domain, Infrastructure, Midi, Playback, PluginWorker, Plugins,

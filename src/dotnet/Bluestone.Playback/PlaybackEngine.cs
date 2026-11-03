@@ -30,7 +30,7 @@ namespace Bluestone.Playback;
 /// may allocate; commands are rare.
 /// </para>
 /// </remarks>
-public sealed class PlaybackEngine : IDisposable
+public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
 {
     private const int ChannelsPerSlot = 16;
     private const int MaxLoopWrapsPerPump = 10_000;
@@ -71,8 +71,9 @@ public sealed class PlaybackEngine : IDisposable
 
     // The immediate cursor's tick-to-time mapping, published for input timestamping (seqlock).
     private int _anchorVersion;
-    private Anchor _anchor;
-    private Anchor _previousAnchor;
+    private TransportAnchor _anchor;
+    private TransportAnchor _previousAnchor;
+    private long _loadsApplied;
     private long _countInUntil;
     private long _loopWraps;
     private ChaseMessage[] _stoppedChase = [];
@@ -172,51 +173,8 @@ public sealed class PlaybackEngine : IDisposable
     /// <returns>False when the transport is stopped, or the time maps before the start of the song.</returns>
     public bool TryGetTickAt(TimeSpan time, out Tick tick)
     {
-        Anchor current, previous;
-        var spinner = default(SpinWait);
-        while (true)
-        {
-            var version = Volatile.Read(ref _anchorVersion);
-            if ((version & 1) == 0)
-            {
-                current = _anchor;
-                previous = _previousAnchor;
-                Interlocked.MemoryBarrier();
-                if (Volatile.Read(ref _anchorVersion) == version)
-                {
-                    break;
-                }
-            }
-
-            spinner.SpinOnce();
-        }
-
-        if (!current.Playing || current.Tempo is null)
-        {
-            tick = Tick.Zero;
-            return false;
-        }
-
-        // An input that arrived just before a loop wrap or seek belongs to the pass it was played in.
-        var anchor = time < current.Time && previous.Playing && previous.Tempo is not null && time >= previous.Time ? previous : current;
-        var songTime = anchor.SongTime + (time - anchor.Time);
-        if (songTime < TimeSpan.Zero)
-        {
-            tick = Tick.Zero;
-            return false;
-        }
-
-        var value = anchor.Tempo!.TickAt(songTime).Value;
-
-        // An input stamped after a loop wrap that the playback thread has not processed yet belongs
-        // to the next pass, at the start of the loop.
-        if (anchor.LoopEnd > anchor.LoopStart && value >= anchor.LoopEnd)
-        {
-            value = anchor.LoopStart + ((value - anchor.LoopEnd) % (anchor.LoopEnd - anchor.LoopStart));
-        }
-
-        tick = new Tick(value);
-        return true;
+        ReadAnchors(out var current, out var previous, out _);
+        return TransportAnchor.TryGetTickAt(current, previous, time, out tick);
     }
 
     /// <summary>
@@ -227,45 +185,44 @@ public sealed class PlaybackEngine : IDisposable
     /// <returns>False when the transport is stopped.</returns>
     public bool TryGetSongTimeAt(TimeSpan time, out SongPosition position)
     {
-        Anchor anchor;
+        ReadAnchors(out var current, out _, out _);
+        return TransportAnchor.TryGetSongTimeAt(current, time, out position);
+    }
+
+    /// <summary>
+    /// The transport as last published, read consistently, for reporting it to another process. Lock-free and
+    /// allocation-free; any thread.
+    /// </summary>
+    public TransportSnapshot ReadTransport()
+    {
+        ReadAnchors(out var current, out var previous, out var version);
+        return new TransportSnapshot(State, Position, LoopWraps, TimeSpan.FromTicks(Volatile.Read(ref _countInUntil)), current, previous, version);
+    }
+
+    /// <summary>How many plans the playback thread has switched to so far; a plan given to <see cref="Load"/> before that many is no longer read by it.</summary>
+    public long LoadsApplied => Interlocked.Read(ref _loadsApplied);
+
+    public TimingSnapshot SnapshotStatistics() => Statistics.Snapshot();
+
+    private void ReadAnchors(out TransportAnchor current, out TransportAnchor previous, out int version)
+    {
         var spinner = default(SpinWait);
         while (true)
         {
-            var version = Volatile.Read(ref _anchorVersion);
+            version = Volatile.Read(ref _anchorVersion);
             if ((version & 1) == 0)
             {
-                anchor = _anchor;
+                current = _anchor;
+                previous = _previousAnchor;
                 Interlocked.MemoryBarrier();
                 if (Volatile.Read(ref _anchorVersion) == version)
                 {
-                    break;
+                    return;
                 }
             }
 
             spinner.SpinOnce();
         }
-
-        if (!anchor.Playing || anchor.Tempo is not { } tempo)
-        {
-            position = default;
-            return false;
-        }
-
-        var song = anchor.SongTime + (time - anchor.Time);
-        TimeSpan loopStart = TimeSpan.Zero, loopEnd = TimeSpan.Zero;
-        if (anchor.LoopEnd > anchor.LoopStart)
-        {
-            loopStart = tempo.TimeAt(new Tick(anchor.LoopStart));
-            loopEnd = tempo.TimeAt(new Tick(anchor.LoopEnd));
-            if (song >= loopEnd && loopEnd > loopStart)
-            {
-                song = loopStart + TimeSpan.FromTicks((song - loopEnd).Ticks % (loopEnd - loopStart).Ticks);
-            }
-        }
-
-        var bpm = (song > TimeSpan.Zero ? tempo.TempoAt(tempo.TickAt(song)) : tempo.Changes[0].Tempo).BeatsPerMinute;
-        position = new SongPosition(song, loopStart, loopEnd, bpm);
-        return true;
     }
 
     /// <summary>
@@ -380,6 +337,7 @@ public sealed class PlaybackEngine : IDisposable
 
                 _plan = load.Plan;
                 _wrapChase = load.WrapChase;
+                Interlocked.Increment(ref _loadsApplied);
                 if (_playing)
                 {
                     PublishAnchor(playing: true);
@@ -562,7 +520,7 @@ public sealed class PlaybackEngine : IDisposable
         Interlocked.Increment(ref _anchorVersion);
         _previousAnchor = _anchor;
         var engaged = _loop is { } loop && _immediate.AnchorTick < loop.End.Value ? loop : null;
-        _anchor = new Anchor(playing, _immediate.AnchorTime, _immediate.AnchorSongTime, _plan.TempoMap, engaged?.Start.Value ?? 0, engaged?.End.Value ?? 0);
+        _anchor = new TransportAnchor(playing, _immediate.AnchorTime, _immediate.AnchorSongTime, _plan.TempoMap, engaged?.Start.Value ?? 0, engaged?.End.Value ?? 0);
         Interlocked.Increment(ref _anchorVersion);
     }
 
@@ -931,11 +889,6 @@ public sealed class PlaybackEngine : IDisposable
             };
         }
     }
-
-    /// <summary>A published tick-to-time mapping: <see cref="SongTime"/> plays at clock time <see cref="Time"/>.</summary>
-    /// <remarks><see cref="LoopStart"/> and <see cref="LoopEnd"/> are the loop the cursor will wrap at, or both zero.</remarks>
-    private readonly record struct Anchor(bool Playing, TimeSpan Time, TimeSpan SongTime, TempoMap? Tempo, long LoopStart, long LoopEnd);
-
 
     private readonly record struct ImmediateMessage(IMidiOutput Output, ChannelMessage Message);
 

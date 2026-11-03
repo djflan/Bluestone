@@ -845,7 +845,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Polls engine state for display. Called by a UI timer (about 30 Hz); never schedules MIDI.</summary>
     public void OnFrame()
     {
-        var engine = _playback.Engine;
+        var engine = _playback.Transport;
         var sequence = Project.Sequence;
         var tick = engine.Position;
         IsPlaying = engine.State == TransportState.Playing;
@@ -879,7 +879,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         TempoText = Formatting.Tempo(sequence.TempoMap.TempoAt(tick));
         MeterText = sequence.MeterMap.SignatureAt(tick).ToString();
 
-        var stats = engine.Statistics.Snapshot();
+        var stats = engine.SnapshotStatistics();
         TimingText = stats.Dispatched == 0
             ? "No messages sent yet"
             : string.Create(CultureInfo.InvariantCulture, $"{stats.Dispatched} sent · p95 ≤ {Formatting.Milliseconds(stats.Percentile(95))} · {stats.Late} late · {stats.Dropped} dropped");
@@ -934,7 +934,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else
         {
-            _playback.Engine.Seek(target);
+            _playback.Transport.Seek(target);
         }
 
         PlayheadTick = target.Value;
@@ -1078,7 +1078,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private async Task PlayPauseAsync()
     {
-        if (_playback.Engine.State == TransportState.Playing)
+        if (_playback.Transport.State == TransportState.Playing)
         {
             StopTransport();
             return;
@@ -1091,7 +1091,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private void Stop()
     {
-        if (_playback.Engine.State == TransportState.Playing)
+        if (_playback.Transport.State == TransportState.Playing)
         {
             StopTransport();
         }

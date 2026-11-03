@@ -2,10 +2,16 @@ using Bluestone.Engine;
 
 // The engine process (ADR 0044). Bluestone starts it with the name of the pipe to connect to and a per-launch token:
 //   Bluestone.Engine --pipe NAME --token TOKEN [--restarted] [--allow-test-commands]
-// With --spike it runs the ahead-of-time compilation smoke test instead.
+// With --spike it runs the ahead-of-time compilation smoke test instead, and with --check-allocations the check that
+// its input and thru path allocates nothing.
 if (args.Contains("--spike"))
 {
     return AotSpike.Run();
+}
+
+if (args.Contains("--check-allocations"))
+{
+    return AllocationCheck.Run();
 }
 
 if (Option("--pipe") is not { } pipe || Option("--token") is not { } token)

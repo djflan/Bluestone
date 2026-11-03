@@ -10,8 +10,9 @@ namespace Bluestone.Engine;
 /// <see cref="EngineLimits.HeartbeatInterval"/> and answer commands until told to shut down or until Bluestone goes away.
 /// </summary>
 /// <remarks>
-/// This is the skeleton: the engine does not yet own MIDI or audio (migration steps 5 and 6). When it does, a restarted
-/// engine sends All Notes Off on every output before reporting Ready, and devices open before Ready.
+/// The engine owns MIDI playback, outputs, inputs, and live routes to external instruments (<see cref="MidiEngine"/>,
+/// migration step 5); audio follows in step 6. Bluestone sends the outputs, plan, routes, and inputs after Ready, and
+/// again after a restart. A restarted engine sends All Notes Off on every output as it opens it, before anything else.
 /// </remarks>
 internal static class EngineHost
 {
@@ -41,9 +42,12 @@ internal static class EngineHost
                 return 4;
             }
 
+            using var midi = new MidiEngine(restarted);
             await channel.WriteAsync(new Ready(), stop.Token).ConfigureAwait(false);
             var hung = false;
             var heartbeats = Task.Run(() => HeartbeatAsync(channel, () => Volatile.Read(ref hung), stop.Token), CancellationToken.None);
+            var sender = new Thread(() => Report(midi, channel, () => Volatile.Read(ref hung), stop.Token)) { IsBackground = true, Name = "Bluestone engine reports" };
+            sender.Start();
             while (await channel.ReadAsync(stop.Token).ConfigureAwait(false) is { } message)
             {
                 switch (message)
@@ -54,6 +58,7 @@ internal static class EngineHost
                     case Shutdown:
                         await stop.CancelAsync().ConfigureAwait(false);
                         await heartbeats.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                        sender.Join();
                         return 0;
                     case TestCommand test when allowTestCommands:
                         switch (test.Action)
@@ -70,18 +75,56 @@ internal static class EngineHost
                         }
 
                         break;
+                    case TestCommand or Ping:
+                        break;
+                    default:
+                        foreach (var problem in midi.Apply(message))
+                        {
+                            await channel.WriteAsync(problem, stop.Token).ConfigureAwait(false);
+                        }
+
+                        break;
                 }
             }
 
             // Bluestone closed the channel without a Shutdown: it has gone, so the engine goes too.
             await stop.CancelAsync().ConfigureAwait(false);
             await heartbeats.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            sender.Join();
             return 0;
         }
         catch (Exception ex) when (ex is IOException or EngineProtocolException or ObjectDisposedException)
         {
             await Console.Error.WriteLineAsync($"The control channel failed: {ex.Message}").ConfigureAwait(false);
             return 5;
+        }
+    }
+
+    // The sender thread: MIDI for forwarded outputs and from inputs as it comes, the transport, timing, and plan acknowledgements.
+    private static void Report(MidiEngine midi, EngineChannel channel, Func<bool> hung, CancellationToken stop)
+    {
+        var faulted = false;
+        try
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                midi.Outbound.Signal.WaitOne(2);
+                if (hung())
+                {
+                    continue;
+                }
+
+                midi.Report(message => channel.WriteAsync(message, stop).GetAwaiter().GetResult());
+                if (!faulted && midi.Fault is { } fault)
+                {
+                    faulted = true;
+                    channel.WriteAsync(new Fault($"The playback thread failed: {fault.Message}"), stop).GetAwaiter().GetResult();
+                }
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            // Stopping, or the channel is gone: the read loop ends the process.
         }
     }
 

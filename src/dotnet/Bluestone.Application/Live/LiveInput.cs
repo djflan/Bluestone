@@ -21,7 +21,8 @@ internal sealed record LiveContext(
     IReadOnlyDictionary<EndpointId, IMidiOutput> Outputs,
     Func<DeviceId, PluginInstance?> Plugins,
     IReadOnlyDictionary<DeviceId, PluginNode>? Nodes,
-    PlaybackEngine Engine)
+    IPlaybackTransport Engine,
+    ILiveRemote? Remote = null)
 {
     /// <summary>
     /// The live clock's resolution: the sequence's, multiplied as far as it goes up to 64 times, so a tick is finer than a
@@ -56,8 +57,9 @@ public sealed class LiveInput : IDisposable
     /// <summary>The block a plugin MIDI effect gets when the live thread runs it (1.3 ms at 48 kHz).</summary>
     public const int EffectBlockFrames = 64;
 
-    private readonly PlaybackEngine _engine;
+    private readonly IPlaybackTransport _engine;
     private readonly IMonotonicClock _clock;
+    private readonly ILiveRemote? _remote;
     private readonly Lock _gate = new();
     private readonly Dictionary<TrackId, LiveRunner> _runners = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
@@ -76,10 +78,19 @@ public sealed class LiveInput : IDisposable
     private Thread? _thread;
     private volatile bool _running;
 
-    public LiveInput(PlaybackEngine engine, IMonotonicClock clock)
+    public LiveInput(IPlaybackTransport engine, IMonotonicClock clock)
+        : this(engine, clock, null)
+    {
+    }
+
+    /// <param name="engine">The transport, and where thru to external instruments is sent.</param>
+    /// <param name="clock">The live clock.</param>
+    /// <param name="remote">The engine process, which runs routes to external instruments with built-in devices (ADR 0044).</param>
+    internal LiveInput(IPlaybackTransport engine, IMonotonicClock clock, ILiveRemote? remote)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _remote = remote;
     }
 
     /// <summary>Input-to-heard latency of notes played into plugin instruments, measured on the audio thread.</summary>
@@ -189,6 +200,17 @@ public sealed class LiveInput : IDisposable
                 return false;
             }
 
+            if (runner.IsRemote)
+            {
+                // The engine already played input from its own inputs on its thru route; the rest is sent there.
+                if (runner.RemoteRoute >= 0 && !(source is not null && _remote!.IsEngineInput(source)))
+                {
+                    _remote!.Post(runner.RemoteRoute, message, timestamp);
+                }
+
+                return true;
+            }
+
             runner.Enqueue(e, timestamp);
             software = runner.IsAudioDriven;
             if (!software)
@@ -271,6 +293,15 @@ public sealed class LiveInput : IDisposable
         _wake.Dispose();
     }
 
+    /// <summary>Makes sure <paramref name="track"/>'s route is ready, so thru in the engine can play on it.</summary>
+    internal void Prepare(TrackId track)
+    {
+        lock (_gate)
+        {
+            RunnerFor(track);
+        }
+    }
+
     internal LiveRunner? RunnerOf(TrackId track)
     {
         lock (_gate)
@@ -312,7 +343,7 @@ public sealed class LiveInput : IDisposable
 
     private LiveRunner Create(LiveRoutePlan plan)
     {
-        var runner = LiveRunner.Create(plan, new LiveContext(_project!, _devices, _outputs, id => _instances.GetValueOrDefault(id), _nodes, _engine), Latency);
+        var runner = LiveRunner.Create(plan, new LiveContext(_project!, _devices, _outputs, id => _instances.GetValueOrDefault(id), _nodes, _engine, _remote), Latency);
         runner.StoppedTempo = StoppedTempo();
         return runner;
     }
@@ -366,6 +397,8 @@ public sealed class LiveInput : IDisposable
 
     private static bool SameBinding(LiveRunner a, LiveRunner b) =>
         ReferenceEquals(a.Node, b.Node)
+        && a.IsRemote == b.IsRemote
+        && (!a.IsRemote || ReferenceEquals(a.External, b.External))
         && a.ExternalEndpoint?.Id == b.ExternalEndpoint?.Id
         && a.CanPlay == b.CanPlay
         && a.PluginStages.Select(s => s.Instance).SequenceEqual(b.PluginStages.Select(s => s.Instance));
@@ -384,6 +417,11 @@ public sealed class LiveInput : IDisposable
     // Every runner that plays a node is in the node's live source set, so several tracks can play one instrument.
     private void Attach(LiveRunner runner)
     {
+        if (runner.IsRemote && runner.RemoteRoute < 0)
+        {
+            runner.RemoteRoute = _remote!.Add(runner.Plan, runner.External!, new LiveContext(_project!, _devices, _outputs, _ => null, null, _engine).Ppqn);
+        }
+
         if (runner.Node is { } node)
         {
             runner.DelayToMasterFrames = _delayToMaster(node);
@@ -413,6 +451,14 @@ public sealed class LiveInput : IDisposable
                         node.LiveSource = null;
                     }
                 }
+            }
+        }
+        else if (runner.IsRemote)
+        {
+            if (runner.RemoteRoute >= 0)
+            {
+                _remote!.Remove(runner.RemoteRoute);
+                runner.RemoteRoute = -1;
             }
         }
         else

@@ -11,9 +11,9 @@ namespace Bluestone.Application.Audio;
 /// must count from the same origin as <see cref="SystemMonotonicClock"/> (it does, and so does a test's virtual clock
 /// that is advanced alongside a virtual audio driver).
 /// </summary>
-public sealed class PlaybackTimeline(PlaybackEngine engine) : IAudioTimeline
+public sealed class PlaybackTimeline(IPlaybackTransport engine) : IAudioTimeline
 {
-    private readonly PlaybackEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+    private readonly IPlaybackTransport _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
     public bool TryGetPosition(long timestamp, out TimelinePosition position)
     {

@@ -23,7 +23,7 @@ public sealed record RecordedTake(TrackId Track, ImmutableArray<TrackEvent> Even
 /// <summary>
 /// Receives MIDI input, plays it on the selected track's live route (MIDI thru, through the route's devices;
 /// ADR 0035), and captures it into a take while recording. Messages are timestamped by the adapter and placed on the
-/// timeline with <see cref="PlaybackEngine.TryGetTickAt"/>, so input latency in the UI never moves notes. A take holds
+/// timeline with <see cref="IPlaybackTransport.TryGetTickAt"/>, so input latency in the UI never moves notes. A take holds
 /// what was played (before any device), never what the devices made of it: the devices run again at playback.
 /// </summary>
 /// <remarks>
@@ -33,7 +33,7 @@ public sealed record RecordedTake(TrackId Track, ImmutableArray<TrackEvent> Even
 /// </remarks>
 public sealed class MidiRecorder : IDisposable
 {
-    private readonly PlaybackEngine _engine;
+    private readonly IPlaybackTransport _engine;
     private readonly LiveInput _live;
     private readonly Lock _gate = new();
     private readonly List<Captured> _captured = [];
@@ -50,7 +50,7 @@ public sealed class MidiRecorder : IDisposable
     // Opened inputs are numbered from 1; the on-screen keyboard is input 0.
     private const int OnScreenKey = 0;
 
-    public MidiRecorder(PlaybackEngine engine, LiveInput live)
+    public MidiRecorder(IPlaybackTransport engine, LiveInput live)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _live = live ?? throw new ArgumentNullException(nameof(live));
@@ -99,9 +99,16 @@ public sealed class MidiRecorder : IDisposable
     /// stay open, so a note held across the change still releases.
     /// </summary>
     /// <returns>Problems opening inputs, for display.</returns>
-    public async Task<ImmutableArray<string>> SetInputsAsync(EndpointDirectory directory, IReadOnlyCollection<EndpointId> wanted, CancellationToken cancellationToken = default)
+    public Task<ImmutableArray<string>> SetInputsAsync(EndpointDirectory directory, IReadOnlyCollection<EndpointId> wanted, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(directory);
+        return SetInputsAsync(directory.OpenInputAsync, wanted, cancellationToken);
+    }
+
+    /// <summary>As <see cref="SetInputsAsync(EndpointDirectory, IReadOnlyCollection{EndpointId}, CancellationToken)"/>, opening inputs with <paramref name="openInput"/>.</summary>
+    internal async Task<ImmutableArray<string>> SetInputsAsync(Func<EndpointId, CancellationToken, ValueTask<IMidiInput>> openInput, IReadOnlyCollection<EndpointId> wanted, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(openInput);
         ArgumentNullException.ThrowIfNull(wanted);
         var problems = ImmutableArray.CreateBuilder<string>();
         List<OpenInput> stale;
@@ -124,7 +131,7 @@ public sealed class MidiRecorder : IDisposable
         {
             try
             {
-                var input = await directory.OpenInputAsync(id, cancellationToken).ConfigureAwait(false);
+                var input = await openInput(id, cancellationToken).ConfigureAwait(false);
                 var entry = new OpenInput(input, Interlocked.Increment(ref _nextInputKey));
                 lock (_gate)
                 {
@@ -296,7 +303,7 @@ public sealed class MidiRecorder : IDisposable
                 track = _thruHeld.Remove(key, out var held) ? held : null;
             }
 
-            return track is { } releasing && _live.Post(releasing, message, timestamp);
+            return track is { } releasing && _live.Post(releasing, message, timestamp, source);
         }
 
         lock (_gate)

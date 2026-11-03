@@ -8,6 +8,7 @@
     <RootNamespace>Bluestone.Engine</RootNamespace>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
