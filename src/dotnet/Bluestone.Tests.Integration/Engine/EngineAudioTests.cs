@@ -87,6 +87,20 @@ public sealed class EngineAudioTests
         Assert.Equal(expected, await rig.RenderInEngineAsync());
     }
 
+    [Fact]
+    public async Task AMissingDevice_IsReplacedByTheDefault_AndReportedAsAnEngineProblem()
+    {
+        await using var host = new PluginTestHost();
+        await using var rig = await Rig.StartAsync(host);
+
+        rig.Audio.Start(new AudioSettings(true, "no-such-device", Rate, Block));
+        await WaitUntilAsync(() => rig.Audio.IsOnFallback, Patience, "the engine to play through the default output");
+        await WaitUntilAsync(() => { lock (rig.Warnings) { return rig.Warnings.Any(w => w.Contains("is not available", StringComparison.Ordinal)); } }, Patience, "the device problem in the activity log");
+
+        Assert.True(rig.Audio.IsRunning);
+        Assert.Contains("is not available", rig.Audio.Problem, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// A project, the engine with its MIDI and audio clients, and two plugin bridges: one whose instance the engine drives,
     /// and one whose instance renders the same project in this process for comparison.
@@ -140,7 +154,17 @@ public sealed class EngineAudioTests
             Session.Execute(new ProjectCommand("Set up", _ => project));
 
             _endpoints = new EndpointDirectory([_provider]);
-            Supervisor = new EngineSupervisor(new EngineSupervisorOptions { AllowTestCommands = true, TestAudio = true }, new ActivityLog());
+            Activities.Ended += (_, ended) =>
+            {
+                lock (Warnings)
+                {
+                    if (ended.Outcome == ActivityOutcome.Warning)
+                    {
+                        Warnings.Add(ended.Text);
+                    }
+                }
+            };
+            Supervisor = new EngineSupervisor(new EngineSupervisorOptions { AllowTestCommands = true, TestAudio = true }, Activities);
             _playback = new EnginePlayback(Supervisor, new EnginePlaybackOptions { PlanDirectory = Path.Combine(_files, "plans") });
             _controller = new PlaybackController(Session, _endpoints, ProfileCatalog.Empty, _playback);
             Devices = new PluginDeviceHost(host.Manager, Session, [Sine], Rate, Block);
@@ -150,6 +174,11 @@ public sealed class EngineAudioTests
         }
 
         public ProjectSession Session { get; } = new();
+
+        public ActivityLog Activities { get; } = new();
+
+        /// <summary>Warnings recorded in the activity log (the status line and Messages).</summary>
+        public List<string> Warnings { get; } = [];
 
         public EngineSupervisor Supervisor { get; }
 
@@ -171,7 +200,8 @@ public sealed class EngineAudioTests
             await rig._controller.RefreshAsync(Ct);
             await rig.Supervisor.StartAsync();
             Assert.Equal(EngineState.Ready, rig.Supervisor.State);
-            Assert.True(rig.Audio.Start(new AudioSettings(true, null, Rate, Block)), rig.Audio.Problem);
+            rig.Audio.Start(new AudioSettings(true, null, Rate, Block));
+            await WaitUntilAsync(() => rig.Audio.IsRunning, Patience, "the engine to open the audio device");
             Assert.Equal(new AudioStreamInfo(Rate, 2, Block, 0, null, rig.Audio.Stream!.LatencyFrames), rig.Audio.Stream);
             await rig.WaitForANewGraphAsync();
             Assert.Empty(rig.Audio.GraphProblems);

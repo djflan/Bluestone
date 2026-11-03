@@ -239,6 +239,14 @@ public sealed class EngineSupervisor : IAsyncDisposable
         _lifetime.Dispose();
     }
 
+    // The engine's audio device problems go to the status line and Messages, as the device problems of Bluestone's own
+    // audio do (MIDI problems reach Messages with the playback controller's next refresh).
+    private void ReportAudioProblem(string problem)
+    {
+        using var activity = _activities.Begin("Audio", "The engine's audio device");
+        activity.CompleteWithWarning(problem);
+    }
+
     private async Task LaunchAsync(bool restarted, string what)
     {
         using var activity = _activities.Begin("Engine", what);
@@ -570,6 +578,10 @@ public sealed class EngineSupervisor : IAsyncDisposable
                         case Fault fault:
                             End(EngineStopReason.Fault, fault.Message);
                             return;
+                        case EngineProblem { Area: EngineProblemArea.Audio } problem:
+                            _owner.ReportAudioProblem(problem.Message);
+                            Deliver(message);
+                            break;
                         case TransportStatus or TimingStatus or MidiBatch or PlanLoaded or EngineProblem or AudioDeviceStatus or AudioGraphLoaded or AudioStatus or TestRendered:
                             Deliver(message);
                             break;

@@ -194,8 +194,21 @@ public sealed record MidiBatch(ImmutableArray<MidiEvent> Events) : EngineMessage
     public override EngineMessageType Type => EngineMessageType.MidiBatch;
 }
 
-/// <summary>Engine → Bluestone: something the engine could not do (open a device, read a plan), about <paramref name="Handle"/> or -1.</summary>
-public sealed record EngineProblem(int Handle, string Message) : EngineMessage
+/// <summary>What an <see cref="EngineProblem"/> is about.</summary>
+public enum EngineProblemArea : byte
+{
+    /// <summary>MIDI: an output, input, plan, or route.</summary>
+    Midi = 0,
+
+    /// <summary>The audio device: the chosen one is missing, another stands in for it, or none can be opened.</summary>
+    Audio = 1,
+}
+
+/// <summary>
+/// Engine → Bluestone: something the engine could not do (open a device, read a plan), about <paramref name="Handle"/> or
+/// -1, in <paramref name="Area"/>.
+/// </summary>
+public sealed record EngineProblem(int Handle, string Message, EngineProblemArea Area = EngineProblemArea.Midi) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.EngineProblem;
 }

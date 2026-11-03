@@ -29,6 +29,7 @@ public sealed class EngineAudioMessageTests
         new TestRender(1, "/var/run/bluestone-engine-1/render.f32", 48_000, 128),
         new TestRendered(1, null),
         new TestRendered(2, "No audio device is open."),
+        new EngineProblem(-1, "Studio is not available. Playing through the system default output until it returns.", EngineProblemArea.Audio),
     ];
 
     public static TheoryData<EngineMessage> Messages() => new(All);
@@ -86,6 +87,7 @@ public sealed class EngineAudioMessageTests
         { new AudioStatus(default, [], new AudioCounters(-1, 0, 0, 0, 0, 0, 0, 0, 0, 0)), "cannot be negative" },
         { new TestRender(1, "/r", 0, 128), "outside 1" },
         { new TestRender(1, "/r", 128, EngineLimits.MaxBufferFrames + 1), "outside 1" },
+        { new EngineProblem(-1, "x", (EngineProblemArea)7), "Unknown problem area" },
     };
 
     [Theory]

@@ -66,6 +66,7 @@ internal sealed class AudioHost : IDisposable
     private bool _onFallback;
     private string _devicesTried = string.Empty;
     private bool _statusChanged;
+    private string? _reportedProblem;
 
     // Under _queues.
     private long _newestGraph = -1;
@@ -241,14 +242,23 @@ internal sealed class AudioHost : IDisposable
         }
     }
 
-    // The device's state, if it changed. Under _gate.
+    // The device's state, if it changed, and a new device problem as an engine problem. Under _gate.
     private void PostStatus()
     {
-        if (_statusChanged)
+        if (!_statusChanged)
         {
-            _statusChanged = false;
-            Post(Status());
+            return;
         }
+
+        _statusChanged = false;
+        var status = Status();
+        Post(status);
+        if (status.Problem is { } problem && problem != _reportedProblem)
+        {
+            Post(new EngineProblem(-1, problem, EngineProblemArea.Audio));
+        }
+
+        _reportedProblem = status.Problem;
     }
 
     // Under _gate.

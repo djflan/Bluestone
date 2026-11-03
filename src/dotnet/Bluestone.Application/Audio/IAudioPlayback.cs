@@ -46,6 +46,12 @@ public interface IAudioPlayback : IDisposable
     /// <summary>The chosen device is gone and the system default output plays instead until it returns.</summary>
     bool IsOnFallback { get; }
 
+    /// <summary>
+    /// Audio was started and the device is still being opened elsewhere (the engine process): <see cref="Changed"/> is
+    /// raised when it has opened, or not. Never true in this process, where <see cref="Start"/> opens it before returning.
+    /// </summary>
+    bool IsStarting { get; }
+
     /// <summary>Audio was started but no device can be opened now; it opens by itself when it can.</summary>
     bool IsWaitingForDevice { get; }
 
@@ -73,7 +79,10 @@ public interface IAudioPlayback : IDisposable
     /// <summary>Whether the smaller live queue is in use because live input is playing a plugin instrument.</summary>
     bool IsLiveQueue { get; }
 
-    /// <summary>Opens the device (or asks for it) with <paramref name="settings"/>; returns whether one is open.</summary>
+    /// <summary>
+    /// Opens the device (or asks the engine for it, without waiting) with <paramref name="settings"/>; returns whether one
+    /// is open now. Never blocks on another process.
+    /// </summary>
     bool Start(AudioSettings settings);
 
     /// <summary>Closes the device and stops waiting for it.</summary>

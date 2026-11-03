@@ -30,6 +30,7 @@ public sealed partial class AudioViewModel : ObservableObject
     private readonly Func<IReadOnlyList<AudioDeviceInfo>> _listDevices;
     private readonly ActivityLog? _activities;
     private RunningActivity? _waiting;
+    private RunningActivity? _opening;
 
     [ObservableProperty]
     private AudioDeviceOption? _device;
@@ -172,33 +173,48 @@ public sealed partial class AudioViewModel : ObservableObject
     {
         var started = Open();
 
-        // Waiting for an unplugged device still counts as on: it opens when it returns, also after a restart.
-        _store.Save(Settings with { Enabled = started || _audio.IsWaitingForDevice });
+        // Waiting for an unplugged device, or for the engine to open it, still counts as on: it opens when it can, also
+        // after a restart.
+        _store.Save(Settings with { Enabled = started || _audio.IsWaitingForDevice || _audio.IsStarting });
         UpdateStatus();
     }
 
-    // Opens the device as an activity: Messages records "Audio is on: …" or why it did not open.
+    // Opens the device as an activity: Messages records "Audio is on: …" or why it did not open. When the engine opens it,
+    // nothing waits: the activity stays on the status line until the engine says what it opened (UpdateStatus ends it).
     private bool Open()
     {
-        var activity = _activities?.Begin("Audio", $"Opening {Device?.Name ?? "the audio device"}…");
+        _opening?.Complete();
+        _opening = _activities?.Begin("Audio", $"Opening {Device?.Name ?? "the audio device"}…");
         var started = _audio.Start(Settings with { Enabled = true });
         UpdateStatus();
-        if (started || _audio.IsWaitingForDevice)
+        return started;
+    }
+
+    // The open in progress ends once the device is open, waited for, or refused.
+    private void EndOpening()
+    {
+        if (_opening is not { } opening || _audio.IsStarting)
         {
-            activity?.Complete(Status);
+            return;
+        }
+
+        _opening = null;
+        if (_audio.IsRunning || _audio.IsWaitingForDevice)
+        {
+            opening.Complete(Status);
         }
         else
         {
-            activity?.Fail(_audio.Problem ?? "the device did not open.");
+            opening.Fail(_audio.Problem ?? "the device did not open.");
         }
-
-        return started;
     }
 
     /// <summary>Closes the device and saves that audio is off.</summary>
     [RelayCommand]
     private void Stop()
     {
+        _opening?.Complete("Audio is off.");
+        _opening = null;
         _audio.Stop();
         _store.Save(Settings with { Enabled = false });
         UpdateStatus();
@@ -262,6 +278,10 @@ public sealed partial class AudioViewModel : ObservableObject
                 Status += $" {fallback}";
             }
         }
+        else if (_audio.IsStarting)
+        {
+            Status = "Audio is starting in the engine…";
+        }
         else if (_audio.IsWaitingForDevice)
         {
             Status = $"Audio is waiting for its device: {_audio.Problem}";
@@ -272,6 +292,7 @@ public sealed partial class AudioViewModel : ObservableObject
         }
 
         Problems = string.Join(Environment.NewLine, _audio.GraphProblems);
+        EndOpening();
 
         // A lost device is something Bluestone is doing: waiting for it to come back. The status line shows it until it
         // returns or audio is turned off.

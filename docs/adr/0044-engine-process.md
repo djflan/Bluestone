@@ -278,7 +278,11 @@ exactly as before, and every existing test uses that path.
   the engine's render-ahead queue is a setting of its own (`AudioSettings.EngineQueuedFrames`, 0 unless changed; the
   Audio window shows and edits it when the engine renders), forwarded with the device, buffer size, sample rate, and
   test tone in `SetAudio`. The engine reports the stream it opened (`AudioDeviceStatus`: state, rate, channels, block
-  size, queue, render thread policy, and the problem in words when the chosen device is not the one playing).
+  size, queue, render thread policy, and the problem in words when the chosen device is not the one playing). The UI
+  thread never waits for it: `EngineAudio.Start` sends the settings and returns, the Audio window says "starting"
+  (and the status line keeps "Opening …") until the report arrives, and the graph is described then. A new device
+  problem (a stand-in playing, or nothing to open) also goes out as an `EngineProblem` of the audio area, which
+  Bluestone records as a warning in the status line and Messages; it is never a crash.
 - **Following the transport.** The audio engine follows the engine's own `PlaybackEngine` (an `IAudioTimeline` over
   its anchors), renders the graph's latency ahead of it, and every second moves the playback transport towards the
   audio clock by half the measured drift, as Bluestone did with nudges over the control channel.
@@ -312,12 +316,12 @@ exactly as before, and every existing test uses that path.
   that plugin's first block, as it does for MIDI outputs. A test kills an engine and checks that the same audio comes
   back, sample for sample.
 
-**Protocol** version 4 adds `SetAudio`, `AudioDeviceStatus`, `LoadAudioGraph`, `AudioGraphLoaded`, `AudioStatus`, and
-the test-only `TestRender` and `TestRendered`. Counts, rates, sizes, and levels are checked when read; random bodies of
-every audio type, and valid messages with one byte changed, decode or fail with a protocol error. The graph image is
-version 2: it adds a plugin-link section (the exchange's path, generation, and shape, checked as `ExchangeOptions`
-checks them; a path must be absolute). The supervisor now takes several clients (MIDI and audio), each told about every
-engine before it is reported Ready.
+**Protocol** version 4 gives `EngineProblem` an area (MIDI or audio) and adds `SetAudio`, `AudioDeviceStatus`,
+`LoadAudioGraph`, `AudioGraphLoaded`, `AudioStatus`, and the test-only `TestRender` and `TestRendered`. Counts, rates,
+sizes, and levels are checked when read; random bodies of every audio type, and valid messages with one byte changed,
+decode or fail with a protocol error. The graph image is version 2: it adds a plugin-link section (the exchange's
+path, generation, and shape, checked as `ExchangeOptions` checks them; a path must be absolute). The supervisor now
+takes several clients (MIDI and audio), each told about every engine before it is reported Ready.
 
 **Real-time rules.** The device callback and the graph swap allocate nothing in steady state.
 `Bluestone.Engine --check-allocations` now also renders as the callback does, through a looping clip streamed from disk
@@ -358,8 +362,6 @@ meters and figures mirrored, graphs described for the open stream, and their fil
   default rests on ADR 0043's isolated-process measurements.
 - Both processes map each exchange file. Only the engine submits and collects; Bluestone's handle must not be used for
   blocks in engine mode. Nothing enforces that beyond the engine path never rendering in the UI process.
-- A device the engine cannot open is shown in the Audio window as Bluestone shows its own; it is not raised as an
-  `EngineProblem`, and it is never a crash.
 - Make the engine the default and enable the transport only when it is ready: after step 7.
 
 ## The engine host and supervisor (step 4)

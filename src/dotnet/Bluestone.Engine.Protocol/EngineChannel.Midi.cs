@@ -179,6 +179,7 @@ public sealed partial class EngineChannel
             case EngineProblem problem:
                 writer.Int32(problem.Handle);
                 writer.String(problem.Message);
+                writer.Byte((byte)problem.Area);
                 break;
             default:
                 return EncodeAudio(message, ref writer);
@@ -364,7 +365,12 @@ public sealed partial class EngineChannel
                 }
 
             case EngineMessageType.EngineProblem:
-                return new EngineProblem(reader.Int32In(-1, int.MaxValue), reader.String());
+                return new EngineProblem(reader.Int32In(-1, int.MaxValue), reader.String(), reader.Byte() switch
+                {
+                    (byte)EngineProblemArea.Midi => EngineProblemArea.Midi,
+                    (byte)EngineProblemArea.Audio => EngineProblemArea.Audio,
+                    var other => throw new EngineProtocolException($"Unknown problem area {other}."),
+                });
             default:
                 return DecodeAudio(type, ref reader);
         }

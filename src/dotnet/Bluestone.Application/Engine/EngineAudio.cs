@@ -18,9 +18,6 @@ public sealed record EngineAudioOptions
 
     /// <summary>The block size plugin instances accept; the engine renders blocks no larger.</summary>
     public int MaxBlockFrames { get; init; } = 256;
-
-    /// <summary>How long <see cref="EngineAudio.Start"/> waits for the engine to say whether the device opened.</summary>
-    public TimeSpan StartWait { get; init; } = TimeSpan.FromSeconds(3);
 }
 
 /// <summary>
@@ -50,8 +47,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private AudioSettings? _wanted;
     private bool _testTone;
     private long _request;
-    private TaskCompletionSource? _answered;
-    private long _answerRequest;
+    private long _startRequest;
     private AudioDeviceStatus? _status;
     private (int Rate, int Block) _described;
     private int _preparedRate;
@@ -124,7 +120,19 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         }
     }
 
-    public bool IsWaitingForDevice => _wanted is not null && !IsRunning;
+    /// <summary>The settings went to the engine, which has not said yet what it opened.</summary>
+    public bool IsStarting
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _wanted is not null && _link is not null && (_status is null || _status.Request < _startRequest);
+            }
+        }
+    }
+
+    public bool IsWaitingForDevice => _wanted is not null && !IsRunning && !IsStarting;
 
     public ImmutableArray<string> GraphProblems
     {
@@ -191,30 +199,22 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
     /// <summary>
     /// Asks the engine to open the device with <paramref name="settings"/> (rendering ahead by
-    /// <see cref="AudioSettings.EngineQueuedFrames"/>), and waits a little for its answer. With no engine running yet the
-    /// settings wait for one, and audio starts when it does.
+    /// <see cref="AudioSettings.EngineQueuedFrames"/>) and returns at once, without waiting for the engine:
+    /// <see cref="IsStarting"/> until it reports the stream it opened (raising <see cref="Changed"/>), and the graph is
+    /// described then. With no engine running yet the settings wait for one.
     /// </summary>
+    /// <returns>Whether a device is open now (normally not yet).</returns>
     public bool Start(AudioSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        Task answered;
         lock (_gate)
         {
             _wanted = settings;
             var message = SetAudio(settings);
-            if (_link?.Send(message) != true)
-            {
-                answered = Task.CompletedTask;
-            }
-            else
-            {
-                _answered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                _answerRequest = message.Request;
-                answered = _answered.Task;
-            }
+            _startRequest = message.Request;
+            _link?.Send(message);
         }
 
-        answered.Wait(_options.StartWait);
         Changed?.Invoke(this, EventArgs.Empty);
         return IsRunning;
     }
@@ -373,7 +373,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             if (_wanted is { } wanted)
             {
                 // The graph follows once the engine reports the stream it opened.
-                link.Send(SetAudio(wanted));
+                var message = SetAudio(wanted);
+                _startRequest = message.Request;
+                link.Send(message);
             }
         }
     }
@@ -431,7 +433,6 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _status = null;
             _graphLink = null;
             Volatile.Write(ref _meters, Meters.None);
-            _answered?.TrySetResult();
             renders = [.. _renders.Values];
             _renders.Clear();
         }
@@ -457,11 +458,6 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
             var previous = _status;
             _status = status;
-            if (_answered is { } answered && status.Request >= _answerRequest)
-            {
-                answered.TrySetResult();
-                _answered = null;
-            }
 
             var open = status.State is AudioDeviceState.Running or AudioDeviceState.Fallback;
             describe = open && (!ReferenceEquals(_graphLink, link) || previous is null || previous.SampleRate != status.SampleRate || previous.BlockFrames != status.BlockFrames

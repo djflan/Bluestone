@@ -29,7 +29,7 @@ public sealed class EngineAudioTests : IAsyncDisposable
     {
         _endpoints = new EndpointDirectory([_provider]);
         _playback = new PlaybackController(_session, _endpoints, ProfileCatalog.Empty, new VirtualClock(TimeSpan.FromSeconds(1)), startThread: false);
-        _audio = new EngineAudio(_supervisor, _playback, _session, _ => null, options: new EngineAudioOptions { GraphDirectory = _graphs, StartWait = TimeSpan.FromMilliseconds(50) });
+        _audio = new EngineAudio(_supervisor, _playback, _session, _ => null, options: new EngineAudioOptions { GraphDirectory = _graphs });
     }
 
     private IEngineClient Client => _audio;
@@ -56,11 +56,13 @@ public sealed class EngineAudioTests : IAsyncDisposable
         Assert.False(_audio.Start(new AudioSettings(true, "studio", 48_000, 128, QueuedFrames: 1024) { EngineQueuedFrames = 0 }));
         var sent = Assert.IsType<SetAudio>(Assert.Single(link.Sent));
         Assert.Equal(new SetAudio(sent.Request, true, "studio", 48_000, 128, 0, 256, false), sent);
-        Assert.True(_audio.IsWaitingForDevice);
+        Assert.True(_audio.IsStarting);
+        Assert.False(_audio.IsWaitingForDevice);
         Assert.True(_audio.RendersInEngine);
 
         Client.Received(link, new AudioDeviceStatus(sent.Request, AudioDeviceState.Running, null, 48_000, 2, 128, 0, null));
 
+        Assert.False(_audio.IsStarting);
         Assert.True(_audio.IsRunning);
         Assert.False(_audio.IsWaitingForDevice);
         Assert.Equal(new AudioStreamInfo(48_000, 2, 128, 0, null, 0), _audio.Stream);
@@ -72,6 +74,36 @@ public sealed class EngineAudioTests : IAsyncDisposable
         _audio.Stop();
         Assert.False(Assert.IsType<SetAudio>(link.Sent[^1]).Enabled);
         Assert.False(_audio.IsWaitingForDevice);
+    }
+
+    [Fact]
+    public void Start_ReturnsAtOnce_WhenTheEngineNeverAnswers_AndReportsStartingUntilItDoes()
+    {
+        var link = new RecordingLink();
+        Client.Connected(link, restarted: false);
+        var changes = 0;
+        _audio.Changed += (_, _) => changes++;
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var started = _audio.Start(new AudioSettings(true));
+        watch.Stop();
+
+        Assert.False(started);
+        Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(250), $"Start took {watch.Elapsed.TotalMilliseconds:0} ms.");
+        Assert.True(_audio.IsStarting);
+        Assert.False(_audio.IsRunning);
+        Assert.False(_audio.IsWaitingForDevice);
+        Assert.Equal(1, changes);
+        Assert.Empty(link.Sent.OfType<LoadAudioGraph>());
+
+        // An answer to an earlier request does not end the start.
+        Client.Received(link, new AudioDeviceStatus(0, AudioDeviceState.Off, null, 0, 0, 0, 0, null));
+        Assert.True(_audio.IsStarting);
+
+        Client.Received(link, new AudioDeviceStatus(link.Sent.OfType<SetAudio>().Last().Request, AudioDeviceState.Waiting, "No device.", 0, 0, 0, 0, null));
+        Assert.False(_audio.IsStarting);
+        Assert.True(_audio.IsWaitingForDevice);
+        Assert.True(changes >= 3);
     }
 
     [Fact]

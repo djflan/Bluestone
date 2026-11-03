@@ -112,6 +112,8 @@ public sealed class AudioPlayback : IAudioPlayback
 
     public bool RendersInEngine => false;
 
+    public bool IsStarting => false;
+
     public AudioStreamInfo? Stream =>
         _output is { } output && _engine is { } engine
             ? new AudioStreamInfo(output.SampleRate, output.Channels, engine.BlockFrames, output.QueuedFrames, output.RenderThreadPolicy, engine.Graph.LatencyFrames)
