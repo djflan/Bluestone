@@ -23,7 +23,7 @@ The next phase makes one complete workflow dependable:
 
 ### 1. Core audio production
 
-- Move real-time audio, MIDI, and live input into a separate C# engine process, so editing in the application can never delay them, and then render live input in the device callback ([ADR 0043](adr/0043-timing-targets-and-measurement.md)).
+- Move real-time audio, MIDI, and live input into a separate C# engine process, so editing in the application can never delay them, and then render live input in the device callback ([ADR 0043](adr/0043-timing-targets-and-measurement.md), [ADR 0044](adr/0044-engine-process.md)).
 - Select and use audio inputs without disrupting the existing output path.
 - Record audio with accurate placement, input monitoring, punch, loop takes, and failure-safe file handling.
 - Import common audio files from the Browser and operating system.
