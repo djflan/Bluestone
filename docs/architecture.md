@@ -662,6 +662,7 @@ Not built. The product roadmap decides priority; this list records architectural
 | Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; project format 5 | ADR 0039 |
 | Floating plugin editors follow the selection, can be pinned, and can send their keys to Bluestone | ADR 0040 |
 | Bluestone is a device-centric production DAW; routing depth is progressively disclosed | ADR 0041 |
+| Bluestone alone, with plugins, with hardware, or any mix is a complete studio with the same timing guarantees | ADR 0042 |
 
 ## Native technology
 

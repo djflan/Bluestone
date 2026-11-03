@@ -50,7 +50,7 @@ The next phase makes one complete workflow dependable:
 
 ### 4. A small, complete native-device contract
 
-Bluestone will initially depend primarily on third-party plugins and hardware. A limited built-in collection will validate the first-party device platform:
+Bluestone will initially depend primarily on third-party plugins and hardware. A limited built-in collection will validate the first-party device platform and take the first steps toward a complete free studio that needs nothing else installed ([ADR 0042](adr/0042-complete-studio-in-any-configuration.md)):
 
 - one useful instrument;
 - one note or generative device; and
@@ -76,7 +76,8 @@ These capabilities follow after the current focus unless a dependency requires g
 
 - a clip and scene launcher that shares material with the linear arranger;
 - modulators, nested containers, and richer generative devices;
-- a larger family of first-party instruments and effects, including optional premium devices;
+- selective, per-device oversampling for Bluestone devices, chosen per instance with separate live and render settings;
+- a free first-party instrument and effect collection complete enough to finish a production with Bluestone alone, plus optional premium devices that add to it;
 - deeper sample and preset browsing;
 - an optional visual signal-graph view;
 - broader plugin-format and processor-architecture support;

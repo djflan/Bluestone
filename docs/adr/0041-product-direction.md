@@ -1,6 +1,6 @@
 # 0041. Bluestone is a device-centric production DAW with progressive routing
 
-- Status: Accepted; amends the product and interaction direction of 0023 and 0038
+- Status: Accepted; amends the product and interaction direction of 0023 and 0038; ecosystem direction amended by 0042
 - Date: 2026-11-02
 
 ## Context

@@ -442,7 +442,7 @@ Clip/scene launcher UI, notation, spectral editing, and full video-post workflow
 
 ### Outcome
 
-Bluestone ships enough useful native devices to make music and proves a contract that can support richer free and premium devices later.
+Bluestone ships enough useful native devices to make music and proves a contract that can support richer free and premium devices later. The set is the first step toward a complete free studio (ADR 0042), so each device should fill a lasting role in that kit rather than serve only as a proof.
 
 ### Deliver
 
@@ -450,6 +450,7 @@ Bluestone ships enough useful native devices to make music and proves a contract
 - A versioned device contract covering discovery, parameters, units, state, presets, automation, latency, bypass, signal capabilities, live and offline processing, missing versions, and migration.
 - A declarative presentation contract using Bluestone's design system, with a path for richer first-party editors that does not allow arbitrary visual fragmentation.
 - Forward-compatible seams for nested chains and modulation without implementing speculative frameworks.
+- A contract that leaves room for per-device oversampling: a device processes at the rate and block size the host gives that instance rather than assuming the engine's; reported latency can include the resampling filters; parameter smoothing and automation stay correct at a higher internal rate; and each device declares whether oversampling is meaningful for it.
 - Packaging and licensing boundaries between core devices and future optional premium products.
 
 ### Decision gates
@@ -468,7 +469,7 @@ Bluestone ships enough useful native devices to make music and proves a contract
 
 ### Non-goals
 
-A broad factory library, a full modular synthesis environment, or premium-device implementation.
+A broad factory library, a full modular synthesis environment, premium-device implementation, or per-device oversampling itself (only the contract seam above is in scope).
 
 ## Slice 12: release hardening and evidence
 

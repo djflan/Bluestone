@@ -2,13 +2,13 @@
 
 ## Product definition
 
-Bluestone is a modern, device-centric digital audio workstation built for trustworthy timing and musical accuracy. It treats hardware instruments, software instruments, effects, and note processors as first-class creative devices within one modular environment.
+Bluestone is a modern, device-centric digital audio workstation built for tight timing and accuracy. It treats hardware instruments, software instruments, effects, and note processors as first-class creative devices within one modular environment. Bluestone on its own is a complete virtual studio; plugins and hardware join it as peers, never as prerequisites.
 
 Bluestone combines deep, flexible signal flow with clear, approachable workflows. Sophisticated capabilities are progressively disclosed instead of exposed as engineering machinery. Its interface follows a cohesive, intentional design language across every feature and interaction. Bluestone should look and feel like a polished professional product: fresh, responsive, musically focused, and designed as a unified whole.
 
 ## Who it serves
 
-Bluestone is for serious musicians whose studios combine software with hardware: professional synthesizers, boutique instruments, Eurorack systems, audio interfaces, external effects, and other dedicated equipment. Its primary users are intermediate and professional musicians, producers, and studio owners, but committed amateurs should be able to become productive without facing a steep initial learning curve.
+Bluestone is for serious musicians, whatever their studio looks like: a laptop running only Bluestone, a plugin collection, or a room of professional synthesizers, boutique instruments, Eurorack systems, audio interfaces, external effects, and other dedicated equipment. Its primary users are intermediate and professional musicians, producers, and studio owners, but committed amateurs should be able to become productive without facing a steep initial learning curve.
 
 The product must scale from a focused home studio to professional production without simplifying away its capabilities or requiring musicians to think like engineers.
 
@@ -16,13 +16,21 @@ The product must scale from a focused home studio to professional production wit
 
 When priorities conflict, use this order:
 
-1. Trustworthy timing, synchronization, latency handling, and musical accuracy.
-2. Hardware and software as equal participants in the device workflow.
+1. Tight timing, synchronization, latency handling, and accuracy.
+2. Bluestone devices, third-party plugins, and hardware as equal participants, in any combination.
 3. Deep modularity and extensibility.
 4. Clear defaults, progressive disclosure, and approachable workflows.
 5. A cohesive, contemporary, professional user experience.
 
 Correctness includes more than avoiding crashes. Recorded material must land where the musician played it; playback and export must agree; routing, latency compensation, automation, and project recall must be deterministic; and the application must describe unsupported or lossy behavior honestly.
+
+## A complete studio in any configuration
+
+Bluestone does not assume what a musician owns. Bluestone alone, Bluestone with plugins, Bluestone with hardware, and any mix of the three are all complete, first-class studios, not degraded versions of a "real" setup.
+
+- **Bluestone alone is a complete virtual studio.** With only Bluestone and its free core devices, a musician can compose, record, arrange, mix, and export a finished production.
+- **The guarantees do not change with the setup.** Timing, latency compensation, automation, recall, and export are held to the same standard whether a project uses only Bluestone devices, only external gear, or both.
+- **Adding gear extends the studio; it does not change how it works.** A hardware synth or a third-party plugin takes its place in the same device chain, with the same add-play-record-recall workflow as a Bluestone device.
 
 ## The music-making model
 
@@ -74,7 +82,9 @@ A feature is not complete merely because its controls exist. It must fit the sur
 
 The initial product emphasizes reliable third-party plugin hosting, hardware integration, and a small set of useful Bluestone devices. Those built-in devices establish the native device contract: state, parameters, automation, presets, latency, signal types, live processing, project recall, and future nesting and modulation.
 
-Over time, Bluestone can offer a larger family of first-party instruments and effects. Essential devices remain part of the core workflow; larger premium devices may be distributed as optional paid products. The core DAW must remain useful without purchasing them.
+Over time, those core devices grow into a complete free studio: instruments for melodic and rhythmic material and the essential effects for shaping and mixing them, enough to finish a production with nothing else installed. Premium devices may be distributed as optional paid products that add depth, character, or specialized instruments, but no part of the complete-studio workflow may require a purchase.
+
+Bluestone devices will support selective oversampling. A musician can oversample only the devices that benefit, such as a saturator, a filter, or a synth voice, without raising the cost of the whole project. The setting belongs to the device instance, can differ between live playback and export, and its added latency is compensated like any other.
 
 ## Current release posture
 
@@ -88,8 +98,9 @@ The following are part of the long-term direction but are not prerequisites for 
 
 - a clip and scene launcher;
 - a full modulation system and generative environment;
+- selective, per-device oversampling;
 - a visual project signal graph;
-- a large first-party instrument and effect collection;
+- a first-party instrument and effect collection complete enough to finish a production with Bluestone alone;
 - MIDI 2.0, MPE, and broad per-note expression; and
 - specialized sequencing environments for individual legacy formats.
 
@@ -98,7 +109,7 @@ The following are part of the long-term direction but are not prerequisites for 
 Before accepting a product change, ask:
 
 1. Does it improve or preserve timing, accuracy, and dependable recall?
-2. Does it treat hardware and software as peers?
+2. Does it treat Bluestone devices, plugins, and hardware as peers, and work as well in a Bluestone-only studio as in one full of gear?
 3. Does it deepen modularity without making the common path harder?
 4. Can a musician understand the result without learning Bluestone's internals?
 5. Does it strengthen the product's visual and interaction coherence?

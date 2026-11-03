@@ -45,7 +45,8 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0038](0038-daw-first-tracks-and-settings.md) | DAW-first tracks: hybrid by default, heard through explicit connections; Settings in the workspace's place | Accepted; amends 0021 and 0036; amended by 0041 |
 | [0039](0039-arranger-and-clip-loops.md) | Arranger and clip loops: ranges kept apart from looping, repeats produced at plan time | Accepted; amends 0009, 0020, and 0032 |
 | [0040](0040-floating-plugin-editor-windows.md) | Floating plugin editors: follow the selection, pin, and send keys to Bluestone | Accepted; amends 0025 and 0033 |
-| [0041](0041-product-direction.md) | Bluestone is a device-centric production DAW with progressive routing | Accepted; amends the product and interaction direction of 0023 and 0038 |
+| [0041](0041-product-direction.md) | Bluestone is a device-centric production DAW with progressive routing | Accepted; amends the product and interaction direction of 0023 and 0038; ecosystem direction amended by 0042 |
+| [0042](0042-complete-studio-in-any-configuration.md) | Bluestone is a complete studio in any configuration | Accepted; amends the device-ecosystem direction of 0041 |
 
 ## Template
 
