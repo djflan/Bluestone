@@ -48,6 +48,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0041](0041-product-direction.md) | Bluestone is a device-centric production DAW with progressive routing | Accepted; amends the product and interaction direction of 0023 and 0038; ecosystem direction amended by 0042 |
 | [0042](0042-complete-studio-in-any-configuration.md) | Bluestone is a complete studio in any configuration | Accepted; amends the device-ecosystem direction of 0041 |
 | [0043](0043-timing-targets-and-measurement.md) | Timing targets, how they are measured, and how C# meets them | Accepted; amends 0012, 0026, 0032, and 0035 |
+| [0044](0044-engine-process.md) | A separate C# engine process for real-time work | Proposed |
 
 ## Template
 
