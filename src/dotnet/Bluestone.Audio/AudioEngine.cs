@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Bluestone.Audio.Devices;
+using Bluestone.Plugins;
 
 namespace Bluestone.Audio;
 
@@ -19,6 +20,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
     private readonly HashSet<IStreamedSource> _serviced = [];
     private AudioGraph _graph;
     private ToneNode? _testTone;
+    private double _collectShare;
 
     /// <param name="sampleRate">The device's rate in Hz; graphs and sources are built for it.</param>
     /// <param name="blockFrames">The largest block nodes see (plugin instances must accept this many frames).</param>
@@ -45,6 +47,17 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
 
     /// <summary>The graph being rendered.</summary>
     public AudioGraph Graph => Volatile.Read(ref _graph);
+
+    /// <summary>
+    /// The share of each block's period that plugin collects in it may wait for, all together (<see cref="CollectBudget"/>),
+    /// or 0 for no shared bound (each plugin waits its own collect wait). The engine process sets it, so a late worker can
+    /// never hold the device callback past it (ADR 0044 step 7). Any thread; it applies from the next block.
+    /// </summary>
+    public double CollectBudgetShare
+    {
+        get => Volatile.Read(ref _collectShare);
+        set => Volatile.Write(ref _collectShare, Math.Clamp(value, 0, 1));
+    }
 
     /// <summary>A test tone added after the master (null for none). Any thread.</summary>
     public ToneNode? TestTone
@@ -136,7 +149,23 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
     {
         var context = Transport.Next(BlockFrames, SampleRate) with { HeardTimestamp = heard };
         var master = StereoBuffer.Of(_master, BlockFrames, BlockFrames);
-        graph.Render(context, master);
+        var share = Volatile.Read(ref _collectShare);
+        if (share > 0)
+        {
+            CollectBudget.Begin(Stopwatch.GetTimestamp() + (long)(share * BlockFrames * Stopwatch.Frequency / SampleRate));
+        }
+
+        try
+        {
+            graph.Render(context, master);
+        }
+        finally
+        {
+            if (share > 0)
+            {
+                CollectBudget.End();
+            }
+        }
         if (Volatile.Read(ref _testTone) is { } tone)
         {
             var toneBlock = StereoBuffer.Of(_tone, BlockFrames, BlockFrames);

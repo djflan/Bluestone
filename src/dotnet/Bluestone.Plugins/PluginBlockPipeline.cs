@@ -65,6 +65,9 @@ public sealed class PluginBlockPipeline
 
     public int MaxPipelineDepth { get; }
 
+    /// <summary>Collects wait no longer than the thread's <see cref="CollectBudget"/> allows (the engine's device callback).</summary>
+    public bool BoundedByCallback { get; init; }
+
     /// <summary>Changes the depth from the next block (1 to <see cref="MaxPipelineDepth"/>). Any thread.</summary>
     public void SetPipelineDepth(int depth) => Volatile.Write(ref _requestedDepth, Math.Clamp(depth, 1, MaxPipelineDepth));
 
@@ -115,7 +118,7 @@ public sealed class PluginBlockPipeline
         }
 
         _lastCollected = collectIndex;
-        var collected = exchange.TryCollect(collectIndex, CollectWait, audio, outputEvents, out var result);
+        var collected = exchange.TryCollect(collectIndex, BoundedByCallback ? CollectBudget.Bound(CollectWait) : CollectWait, audio, outputEvents, out var result);
         if (collected == ExchangeStatus.Ok && result.Frames == frames && result.Status is BlockStatus.Ok or BlockStatus.DeadlineMissed)
         {
             return new BlockOutcome(ProcessOutcome.Processed, result.OutputEventCount, false);

@@ -394,7 +394,16 @@ variable, `LiveInput` runs them in Bluestone exactly as before.
   instrument and everything aligned with it move one block earlier; off, they move back. Going down drops the block in
   flight; going up gives one block of silence (`PluginBlockPipeline`). The monitored instrument was chosen rather than
   any instrument a route has played, so the depth does not flap as notes are auditioned on other tracks.
-- **Missed depth-1 deadlines.** A block that is not back within the collect wait is silent (the failure policy), as any
+- **The callback's collect budget.** Every plugin collect in the device callback waits at most what is left of one budget
+  for the block: 60% of the block's period (1.6 ms at 128 frames, 0.8 ms at 64, at 48 kHz; the share the
+  `--plugin-pipeline` probe allowed), set by the audio engine as a deadline on its rendering thread
+  (`CollectBudget`, `AudioEngine.CollectBudgetShare`) and shared by every plugin in the block: the instrument played
+  live, the MIDI effects on its route, and the depth-2 plugins too. However many workers are late, the callback cannot
+  wait past it; the instance's own collect wait (2 ms by default, longer than a 64-frame block) applies only where
+  there is no budget (the live thread, Bluestone's process, and the tests' offline render, which is not paced like a
+  device). `CollectBudgetTests` renders callbacks with three depth-1 plugins whose workers never answer, at 64 and 128
+  frames, and checks that a callback waits no longer than the budget in all.
+- **Missed depth-1 deadlines.** A block that is not back within the budget is silent (the failure policy), as any
   late block. After 3 misses within 1,000 blocks (2.7–5.3 s at 128–256 frames) the instance falls back to depth 2 by
   itself (`AttachedPluginInstance.FellBack`), and stays there until depth 1 is asked for again after another depth
   (monitoring stops and starts), so a worker that cannot keep up costs one block of latency instead of repeated
@@ -439,8 +448,6 @@ window fall back and stay back until depth 1 is asked for again, and misses furt
 
 - The fallback's re-realization and its `EngineProblem` are not covered by an engine-process test (provoking repeated
   misses from a real worker is not deterministic); the fallback itself is unit-tested.
-- The depth-1 collect wait is the instance's collect wait (2 ms by default), not a share of the device buffer: at 64- or
-  128-frame buffers a worker that is late uses most of the callback before the block is given up.
 - Two tracks whose routes go through the same plugin MIDI effect drive its exchange from both routes, as in Bluestone.
 - Not measured: live input latency and depth-1 misses through a real device under the UI's load (step 8).
 

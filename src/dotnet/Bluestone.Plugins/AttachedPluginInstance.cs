@@ -17,8 +17,10 @@ namespace Bluestone.Plugins;
 /// </para>
 /// <para>
 /// The depth can change while it plays (<see cref="RequestPipelineDepth"/>): an instrument played live runs at depth 1,
-/// submitting and collecting each block in the same call (ADR 0043 decision 6). A block that misses that deadline is
-/// silent (the failure policy). After <see cref="MissesToFallBack"/> misses within <see cref="MissWindowBlocks"/> blocks
+/// submitting and collecting each block in the same call (ADR 0043 decision 6). Every collect waits at most what is left
+/// of the rendering thread's <see cref="CollectBudget"/> (a share of the block the engine renders, shared by every
+/// plugin in it), or its collect wait where there is none. A block that misses that deadline is silent (the failure
+/// policy). After <see cref="MissesToFallBack"/> misses within <see cref="MissWindowBlocks"/> blocks
 /// the instance falls back to depth 2 by itself (<see cref="FellBack"/>) and stays there until depth 1 is asked for
 /// again after something else was (monitoring stops and starts), so a worker that cannot keep up costs one block of
 /// latency rather than repeated dropouts.
@@ -50,7 +52,11 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
     {
         ArgumentNullException.ThrowIfNull(shape);
         Shape = shape;
-        _pipeline = new PluginBlockPipeline(shape.MaxFrames, shape.InputChannels, shape.ParameterChangeCapacity, pipelineDepth, collectWait, bypassOnFailure, shape.SlotCount);
+        // The engine's callback bounds every collect: depth 1 waits within the block, and depth 2 must not overrun it either.
+        _pipeline = new PluginBlockPipeline(shape.MaxFrames, shape.InputChannels, shape.ParameterChangeCapacity, pipelineDepth, collectWait, bypassOnFailure, shape.SlotCount)
+        {
+            BoundedByCallback = true,
+        };
         Array.Fill(_misses, long.MinValue);
         _withSweep = new PluginEvent[shape.EventCapacity];
         BypassOnFailure = bypassOnFailure;

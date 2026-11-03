@@ -41,6 +41,12 @@ internal sealed class AudioHost : IDisposable
     private static readonly TimeSpan LiveHold = TimeSpan.FromSeconds(10);
     private const int MaxProblemLength = 400;
 
+    /// <summary>
+    /// The share of each block's period that all plugin collects in it may wait for together, as the --plugin-pipeline
+    /// probe allowed (ADR 0043): 1.6 ms at 128 frames, 0.8 ms at 64, at 48 kHz.
+    /// </summary>
+    internal const double CollectShare = 0.6;
+
     private readonly PlaybackEngine _playback;
     private readonly IAudioBackend _backend;
     private readonly bool _test;
@@ -360,7 +366,11 @@ internal sealed class AudioHost : IDisposable
         Close();
         var rate = output.SampleRate;
         var block = Math.Clamp(wanted.BufferFrames, 32, Math.Max(32, wanted.MaxBlockFrames));
-        var engine = new AudioEngine(rate, block, streamFromDisk: !_test) { TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null };
+        var engine = new AudioEngine(rate, block, streamFromDisk: !_test)
+        {
+            TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null,
+            CollectBudgetShare = CollectShare,
+        };
         var device = Math.Max(wanted.BufferFrames, block);
         engine.Transport.Follow(_timeline, ToleranceFrames(rate, device, block));
         Volatile.Write(ref _realizer, new AudioGraphRealizer(rate, block, ProcessorFor));
@@ -585,6 +595,10 @@ internal sealed class AudioHost : IDisposable
 
         engine.Transport.Follow(null, 0);
         engine.Transport.Play(0);
+
+        // Offline is faster than real time and not paced like a device: collects wait their full collect wait, so the
+        // samples do not depend on how busy the machine is.
+        engine.CollectBudgetShare = 0;
         try
         {
             // Whole blocks, so the next render starts on a block boundary as this one did.
@@ -618,6 +632,7 @@ internal sealed class AudioHost : IDisposable
         }
         finally
         {
+            engine.CollectBudgetShare = CollectShare;
             engine.Transport.Stop();
             engine.Transport.Follow(_timeline, ToleranceFrames(engine.SampleRate, Math.Max(wanted.BufferFrames, engine.BlockFrames), engine.BlockFrames));
         }
