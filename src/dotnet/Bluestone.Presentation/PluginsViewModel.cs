@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Plugins;
+using Bluestone.Application.Status;
 using Bluestone.Domain.Devices;
 using Bluestone.Plugins;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -99,10 +100,13 @@ public sealed partial class PluginsViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private readonly PluginDeviceHost? _devices;
     private readonly PluginHostingSettingsStore? _store;
+    private readonly ActivityLog? _activities;
+    private RunningActivity? _activity;
     private bool _syncing;
 
-    public PluginsViewModel(PluginLibrary library, IUiDispatcher dispatcher, PluginDeviceHost? devices = null, PluginHostingSettingsStore? store = null)
+    public PluginsViewModel(PluginLibrary library, IUiDispatcher dispatcher, PluginDeviceHost? devices = null, PluginHostingSettingsStore? store = null, ActivityLog? activities = null)
     {
+        _activities = activities;
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _devices = devices;
@@ -245,7 +249,7 @@ public sealed partial class PluginsViewModel : ObservableObject
             StatusText = $"The hosting settings could not be saved: {ex.Message}";
         }
 
-        await RunAsync(async () =>
+        await RunAsync("Moving plugins to their processes…", async () =>
         {
             ProgressText = "Moving plugins to their processes…";
             var moved = await _devices.ApplyHostingAsync(settings);
@@ -257,7 +261,7 @@ public sealed partial class PluginsViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(IsIdle))]
     private async Task RescanAllAsync()
     {
-        await RunAsync(async () =>
+        await RunAsync("Scanning plugins…", async () =>
         {
             await _library.RescanAllAsync(OnProgress);
             Sync();
@@ -273,7 +277,7 @@ public sealed partial class PluginsViewModel : ObservableObject
             return;
         }
 
-        await RunAsync(async () =>
+        await RunAsync($"Reading {row.Module}…", async () =>
         {
             ProgressText = $"Reading {row.Module}…";
             var result = await _library.RetryAsync(row.ModulePath);
@@ -289,21 +293,27 @@ public sealed partial class PluginsViewModel : ObservableObject
 
     private bool IsIdle() => !IsBusy;
 
-    private async Task RunAsync(Func<Task> work)
+    // The work's outcome is StatusText, which also completes the activity the main window's status line shows.
+    private async Task RunAsync(string activity, Func<Task> work)
     {
         IsBusy = true;
         Progress = 0;
+        _activity = _activities?.Begin("Plugins", activity);
         try
         {
             await work();
+            _activity?.Complete(StatusText);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Sync();
             StatusText = $"The scan stopped: {ex.Message}";
+            _activity?.Fail(ex.Message);
         }
         finally
         {
+            _activity?.Dispose();
+            _activity = null;
             IsBusy = false;
             Progress = 0;
             ProgressText = string.Empty;
@@ -317,6 +327,10 @@ public sealed partial class PluginsViewModel : ObservableObject
         ProgressText = progress.Module is { } module
             ? string.Create(CultureInfo.InvariantCulture, $"Scanning {progress.Done + 1} of {progress.Total}: {Path.GetFileName(module)}")
             : string.Empty;
+        if (progress.Total > 0)
+        {
+            _activity?.Report(string.Create(CultureInfo.InvariantCulture, $"Scanning plugins ({Math.Min(progress.Done + 1, progress.Total)} of {progress.Total})…"));
+        }
     });
 
     private void Sync()

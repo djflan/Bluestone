@@ -60,7 +60,15 @@ for (var run = 1; run <= options.Repeat; run++)
     }
     else
     {
-        probe(options);
+        try
+        {
+            probe(options);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 2;
+        }
     }
 }
 

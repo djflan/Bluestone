@@ -183,6 +183,12 @@ public static class Formatting
     public static string Milliseconds(TimeSpan time) =>
         string.Create(CultureInfo.InvariantCulture, $"{time.TotalMilliseconds:0.0} ms");
 
+    /// <summary>How long work took: "120 ms" under a second, "2.4 s" under a minute, then "3 min 5 s".</summary>
+    public static string Duration(TimeSpan time) =>
+        time < TimeSpan.FromSeconds(1) ? string.Create(CultureInfo.InvariantCulture, $"{Math.Max(0, time.TotalMilliseconds):0} ms")
+        : time < TimeSpan.FromMinutes(1) ? string.Create(CultureInfo.InvariantCulture, $"{time.TotalSeconds:0.0} s")
+        : string.Create(CultureInfo.InvariantCulture, $"{(int)time.TotalMinutes} min {time.Seconds} s");
+
     /// <summary>
     /// Describes a MIDI message for the monitor. SysEx payloads are never shown: only what Bluestone
     /// recognized it as, or else its manufacturer, and its size.

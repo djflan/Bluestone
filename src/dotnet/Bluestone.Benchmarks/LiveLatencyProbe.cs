@@ -15,7 +15,7 @@ namespace Bluestone.Benchmarks;
 /// </summary>
 /// <remarks>
 /// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --live [seconds] [--pressure none|app|churn]
-/// [--buffer 128] [--queue 512] [--isolate]</c>; <c>--queue 0</c> renders in the device callback (direct mode).
+/// [--buffer 128] [--queue 512] [--isolate] [--device NAME]</c>; <c>--queue 0</c> renders in the device callback (direct mode).
 /// </remarks>
 internal static class LiveLatencyProbe
 {
@@ -31,7 +31,7 @@ internal static class LiveLatencyProbe
             return;
         }
 
-        var device = AudioDevices.List().FirstOrDefault(d => d.IsDefault)?.Name ?? "default";
+        var (deviceId, device) = options.OutputDevice();
         var settings = options.BaseSettings();
         settings["device"] = device;
         settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
@@ -44,7 +44,7 @@ internal static class LiveLatencyProbe
         var probe = new ProbeNode((options.Seconds + 2) * 250);
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(AudioCallbackProbe.Graph(buffer, 32, probe));
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
         output.Start();
         Thread.Sleep(500);
         report.Notes.Add($"render thread: {(queue == 0 ? "the device callback" : output.RenderThreadPolicy)}");

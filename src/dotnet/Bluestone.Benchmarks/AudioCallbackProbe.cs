@@ -14,7 +14,7 @@ namespace Bluestone.Benchmarks;
 /// </summary>
 /// <remarks>
 /// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|app|churn|full]
-/// [--sustained] [--buffers 64,128,256] [--strips 32] [--queue 0] [--isolate]</c>. GC configuration comes from the
+/// [--sustained] [--buffers 64,128,256] [--strips 32] [--queue 0] [--isolate] [--device NAME]</c>. GC configuration comes from the
 /// environment (DOTNET_gcServer, DOTNET_gcConcurrent, DOTNET_GCgen0size, ...) and is recorded in the report.
 /// </remarks>
 internal static class AudioCallbackProbe
@@ -33,7 +33,7 @@ internal static class AudioCallbackProbe
             return;
         }
 
-        var device = AudioDevices.List().FirstOrDefault(d => d.IsDefault)?.Name ?? "default";
+        var (deviceId, device) = options.OutputDevice();
         foreach (var buffer in buffers)
         {
             var settings = options.BaseSettings();
@@ -45,16 +45,16 @@ internal static class AudioCallbackProbe
             var report = new TimingReport("audio-callback", settings);
             report.Machine.WarnIfBusy();
             Console.WriteLine($"Audio callback: {device}, {buffer} frames at {SampleRate} Hz, {strips} strips, {settings["mode"]}, pressure {settings["pressure"]}, {options.Seconds} s");
-            Measure(report, buffer, options, strips, queue);
+            Measure(report, buffer, options, strips, queue, deviceId);
             options.Finish(report);
         }
     }
 
-    private static void Measure(TimingReport report, int buffer, ProbeOptions options, int strips, int queue)
+    private static void Measure(TimingReport report, int buffer, ProbeOptions options, int strips, int queue, string? deviceId)
     {
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(Graph(buffer, strips));
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
         output.Start();
         Thread.Sleep(500); // warm-up: tiering, first callbacks
         using var stop = new CancellationTokenSource();

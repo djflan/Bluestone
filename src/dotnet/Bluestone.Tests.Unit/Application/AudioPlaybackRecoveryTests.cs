@@ -185,7 +185,7 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         Assert.False(_audio.IsLiveQueue);
     }
 
-    private sealed class FakeBackend : IAudioBackend
+    internal sealed class FakeBackend : IAudioBackend
     {
         public List<AudioDeviceInfo> Devices { get; } = [];
 
@@ -210,7 +210,7 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         }
     }
 
-    private sealed class FakeOutput(string device, int rate) : IAudioOutput
+    internal sealed class FakeOutput(string device, int rate) : IAudioOutput
     {
         public string Device => device;
 

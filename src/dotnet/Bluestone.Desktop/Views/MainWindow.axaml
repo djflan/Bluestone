@@ -724,7 +724,18 @@
         <TextBlock Text="{Binding OutputsText}" Classes="muted" VerticalAlignment="Center" />
         <TextBlock Grid.Column="1" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0"
                    Text="{Binding SelectedInput.Name, StringFormat='MIDI in: {0}', FallbackValue=''}" />
-        <TextBlock x:Name="LastMessage" Grid.Column="2" Classes="muted" VerticalAlignment="Center" Margin="16,0" TextTrimming="CharacterEllipsis" />
+        <!-- The status line: what Bluestone is doing now, otherwise the latest message. Opens Messages, which keeps the history. -->
+        <Button x:Name="StatusLine" Grid.Column="2" Classes="ghost" Margin="12,0" Padding="4,0" MinHeight="0" Height="20"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalAlignment="Center"
+                Command="{Binding ShowPaneCommand}" CommandParameter="{x:Static vm:LowerPane.Messages}"
+                ToolTip.Tip="Show Messages" AutomationProperties.Name="Status">
+          <Grid ColumnDefinitions="Auto,*">
+            <ProgressBar x:Name="StatusActivity" IsIndeterminate="True" IsVisible="{Binding IsWorking}" Width="28" MinWidth="0" Height="3" MinHeight="0"
+                         VerticalAlignment="Center" Margin="0,0,8,0" AutomationProperties.Name="Working" />
+            <TextBlock x:Name="LastMessage" Grid.Column="1" Text="{Binding StatusText}" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       AutomationProperties.LiveSetting="Polite" />
+          </Grid>
+        </Button>
         <TextBlock Grid.Column="3" Text="{Binding TimingText}" Classes="muted" VerticalAlignment="Center" AutomationProperties.Name="Playback timing" />
       </Grid>
     </Border>

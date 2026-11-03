@@ -6,7 +6,7 @@ namespace Bluestone.Benchmarks;
 /// <summary>
 /// Options shared by the timing probes (ADR 0043):
 /// <c>[seconds] [--pressure none|app|edit|churn|full] [--sched default|timer|promote|realtime] [--report DIR|FILE.json]
-/// [--repeat N] [--isolate]</c>.
+/// [--repeat N] [--isolate] [--device NAME]</c>.
 /// </summary>
 /// <remarks>
 /// <c>--isolate</c> is the "separate engine process" experiment: the probe runs again as a child process with no
@@ -40,6 +40,30 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
     }
 
     public int Int(string name, int fallback) => int.Parse(Option(Args, name) ?? fallback.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The output device named by <c>--device</c> (exact name, or a unique part of it, ignoring case), or the system
+    /// default without it. Naming the device keeps a measurement series on one device even if the default changes, for
+    /// example when a headset is plugged in.
+    /// </summary>
+    public (string? Id, string Name) OutputDevice()
+    {
+        var devices = Bluestone.Audio.Devices.AudioDevices.List();
+        if (Option(Args, "--device") is not { } wanted)
+        {
+            return (null, devices.FirstOrDefault(d => d.IsDefault)?.Name ?? "default");
+        }
+
+        var matches = devices.Where(d => d.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 0)
+        {
+            matches = [.. devices.Where(d => d.Name.Contains(wanted, StringComparison.OrdinalIgnoreCase))];
+        }
+
+        return matches.Count == 1
+            ? (matches[0].Id, matches[0].Name)
+            : throw new ArgumentException($"--device {wanted} matches {(matches.Count == 0 ? "no" : "more than one")} output device. Devices: {string.Join(", ", devices.Select(d => d.Name))}.");
+    }
 
     /// <summary>Settings every report carries.</summary>
     public Dictionary<string, string> BaseSettings() => new()

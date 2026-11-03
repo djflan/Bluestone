@@ -122,7 +122,8 @@ $P --live 60 --pressure app --queue 0  # live MIDI to audio, rendering in the de
 ```
 
 Add `--isolate` to run the probe in its own process while this one carries the load, and `--repeat 3` for repeated
-runs. Each run writes a JSON report to `TestResults/timing/`; compare two with `$P --compare before.json after.json`.
+runs. Audio probes use the system default output unless `--device NAME` names one; name it, so a headset plugged in
+mid-series cannot change the device. Each run writes a JSON report to `TestResults/timing/`; compare two with `$P --compare before.json after.json`.
 Every report records the machine, OS, runtime, GC settings, and commit.
 
 For hardware ground truth:
