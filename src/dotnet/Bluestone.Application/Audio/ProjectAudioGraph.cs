@@ -52,6 +52,7 @@ public sealed class ProjectAudioGraph : IDisposable
     private readonly AudioGraphRealizer _realizer;
     private readonly Lock _monitorGate = new();
     private ImmutableHashSet<DeviceId> _monitored = [];
+    private ImmutableHashSet<DeviceId> _livePlayed = [];
 
     /// <param name="sampleRate">The engine's rate.</param>
     /// <param name="blockFrames">The engine's block size.</param>
@@ -89,6 +90,31 @@ public sealed class ProjectAudioGraph : IDisposable
             lock (_monitorGate)
             {
                 _monitored = value ?? [];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Plugin instruments being played live, described for a depth-1 exchange (ADR 0043 decision 6): the engine process
+    /// submits and collects their blocks in the same callback, so they add no pipeline block, and their latency in the
+    /// description, and so the compensation, follows. Only the engine reads it; in this process instances keep their
+    /// depth. Takes effect at the next description. Any thread.
+    /// </summary>
+    public ImmutableHashSet<DeviceId> LivePlayed
+    {
+        get
+        {
+            lock (_monitorGate)
+            {
+                return _livePlayed;
+            }
+        }
+
+        set
+        {
+            lock (_monitorGate)
+            {
+                _livePlayed = value ?? [];
             }
         }
     }
@@ -198,6 +224,7 @@ public sealed class ProjectAudioGraph : IDisposable
         private readonly Dictionary<TrackId, List<int>> _starts = [];
         private readonly HashSet<SignalNode> _visiting = [];
         private readonly ImmutableHashSet<DeviceId> _monitored = owner.Monitored;
+        private readonly ImmutableHashSet<DeviceId> _livePlayed = owner.LivePlayed;
         private readonly Dictionary<MixerChannelId, int> _stripIndex = [];
         private ImmutableArray<SignalConnection> _audio = [];
 
@@ -465,12 +492,13 @@ public sealed class ProjectAudioGraph : IDisposable
             var parameters = signal.Parameters.FirstOrDefault(f => f.Device == device.Id);
             var schedule = Schedule(feed?.Events ?? [], parameters?.Changes ?? [], project.Sequence.TempoMap, owner._sampleRate);
             var request = instance.Request;
+            var depth = _livePlayed.Contains(device.Id) ? 1 : instance.PipelineDepth;
             var link = new DescribedPluginLink(
                 instance.ExchangeShape,
-                instance.PipelineDepth,
+                depth,
                 instance.CollectWait,
                 request.FailurePolicy == FailurePolicy.BypassInput,
-                instance.ReportedLatencyFrames,
+                PipelineLatency.ReportedLatencyFrames(instance.PluginLatencyFrames, depth, request.MaxBlockFrames),
                 instance.DataPlane);
             return new DescribedNode(DescribedNodeKind.Plugin, device.Id.Value, name) { Schedule = schedule, Link = link };
         }

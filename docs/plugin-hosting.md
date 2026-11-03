@@ -245,6 +245,16 @@ With pipeline depth *d* (`PipelineDepth`, default 2), each `ProcessBlock` call s
 latency plus (*d* − 1) × `MaxBlockFrames`. Use one block size throughout. While the pipeline fills, output is exact
 silence (`ProcessOutcome.Priming`).
 
+**Per-instance depth.** The depth is the host's alone; the worker processes whatever is submitted. In the engine
+process (ADR 0044 step 7) it is set per instance and can change while it plays (`AttachedPluginInstance.RequestPipelineDepth`,
+taking effect at the next block): the instrument being played live, and plugin MIDI effects on live routes, run at
+depth 1 (submitted and collected in the same call, so no pipeline block); everything else stays at depth 2. Going down,
+the block in flight is never collected (the output moves one block earlier); going up, one block is silent
+(`ProcessOutcome.Priming`). `ReportedLatencyFrames` follows the depth, so the graph compensates for it. A depth-1 block
+that misses `CollectWait` is silent; after 3 misses within 1,000 blocks the instance falls back to depth 2 until depth
+1 is asked for again after another depth (`PipelineDepthTests`). In Bluestone's own process every instance keeps the
+manager's depth.
+
 `TryCollect` spins for at most `CollectWait`. A block that is not done by then is **late**: Bluestone withdraws it if
 the worker has not started it, otherwise abandons it, and the failure policy decides the output. When an abandoned
 block's result arrives later, the block-index check discards it; it is never delivered as another block's audio

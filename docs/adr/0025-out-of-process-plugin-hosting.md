@@ -1,6 +1,8 @@
 # 0025. Plugins run out of process; isolation is crash isolation, not a sandbox
 
-- Status: Accepted; amended by 0043 (real-time worker processing threads on macOS), 0028 (plan compilation renders plugin MIDI effects in their worker), 0033 (VST 3 and CLAP through a Rust host in the worker), and 0034 (the isolation policies became user-chosen hosting modes, "by plugin" by default in the app)
+- Status: Accepted; amended by 0043 (real-time worker processing threads on macOS), 0044 (the engine process drives
+  the data plane through its own handle on each exchange, with a per-instance pipeline depth that can change while it
+  plays), 0028 (plan compilation renders plugin MIDI effects in their worker), 0033 (VST 3 and CLAP through a Rust host in the worker), and 0034 (the isolation policies became user-chosen hosting modes, "by plugin" by default in the app)
 - Date: 2026-10-10
 
 ## Context

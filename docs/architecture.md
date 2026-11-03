@@ -473,7 +473,9 @@ through the audio engine, an external one by MIDI out. `LiveInput` (`Bluestone.A
 one route per track: on the audio thread for a plugin instrument, otherwise where the input arrives, and
 on a live thread for what comes later (arpeggio steps). A route that changes first releases the notes it
 sounds, so nothing hangs. While live input plays a plugin instrument, the engine switches to a shorter
-render-ahead queue. Recording captures the input before any device. The metronome and instrument setup
+render-ahead queue. With the engine process, every live route runs in the engine (ADR 0044 step 7): live notes
+into a plugin instrument are rendered in its device callback, and the monitored instrument and plugin MIDI effects run
+at pipeline depth 1. Recording captures the input before any device. The metronome and instrument setup
 go to the route's external endpoint.
 
 ### Automation

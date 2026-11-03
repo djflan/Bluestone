@@ -45,8 +45,14 @@ internal static class EngineHost
                 return 4;
             }
 
-            using var midi = new MidiEngine(restarted);
-            using var audio = new AudioHost(midi.Playback, testAudio && allowTestCommands ? new TestAudioBackend() : SystemAudioBackend.Instance, restarted, test: testAudio && allowTestCommands);
+            using var plugins = new PluginRegistry(restarted);
+            var meter = new LiveMeter();
+            using var midi = new MidiEngine(restarted, plugins: plugins, meter: meter);
+            using var audio = new AudioHost(midi.Playback, testAudio && allowTestCommands ? new TestAudioBackend() : SystemAudioBackend.Instance, restarted, test: testAudio && allowTestCommands, plugins: plugins, meter: meter)
+            {
+                InstrumentsChanged = midi.UseInstruments,
+                PostLive = midi.PostLive,
+            };
             await channel.WriteAsync(new Ready(), stop.Token).ConfigureAwait(false);
             var hung = false;
             var heartbeats = Task.Run(() => HeartbeatAsync(channel, () => Volatile.Read(ref hung), stop.Token), CancellationToken.None);

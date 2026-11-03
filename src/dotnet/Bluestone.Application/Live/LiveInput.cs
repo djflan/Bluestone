@@ -419,7 +419,7 @@ public sealed class LiveInput : IDisposable
     {
         if (runner.IsRemote && runner.RemoteRoute < 0)
         {
-            runner.RemoteRoute = _remote!.Add(runner.Plan, runner.External!, new LiveContext(_project!, _devices, _outputs, _ => null, null, _engine).Ppqn);
+            runner.RemoteRoute = _remote!.Add(runner.Plan, runner.External, new LiveContext(_project!, _devices, _outputs, _ => null, null, _engine).Ppqn, id => _instances.GetValueOrDefault(id));
         }
 
         if (runner.Node is { } node)

@@ -16,7 +16,11 @@ namespace Bluestone.Engine.Protocol;
 /// <param name="QueuedFrames">Frames rendered ahead of the device (0: render in the device callback).</param>
 /// <param name="MaxBlockFrames">The largest block plugins accept; the engine renders blocks no larger.</param>
 /// <param name="TestTone">A 440 Hz tone at −18 dBFS after the master.</param>
-public sealed record SetAudio(long Request, bool Enabled, string? DeviceId, int SampleRate, int BufferFrames, int QueuedFrames, int MaxBlockFrames, bool TestTone) : EngineMessage
+/// <param name="LiveQueuedFrames">
+/// The smaller render-ahead queue used while live input plays a plugin instrument, when <paramref name="QueuedFrames"/>
+/// is above 0; 0 keeps <paramref name="QueuedFrames"/> (ADR 0035).
+/// </param>
+public sealed record SetAudio(long Request, bool Enabled, string? DeviceId, int SampleRate, int BufferFrames, int QueuedFrames, int MaxBlockFrames, bool TestTone, int LiveQueuedFrames = 0) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.SetAudio;
 }
@@ -84,10 +88,19 @@ public readonly record struct StripMeter(Guid Key, MeterSpec Levels);
 /// <param name="OutputLatency">From the callback until its audio is heard, as the device says, in clock ticks.</param>
 /// <param name="PluginFailedBlocks">Plugin blocks that followed the failure policy (late, failed, or unavailable).</param>
 /// <param name="LatencyFrames">The playing graph's delay compensation.</param>
-public readonly record struct AudioCounters(long Callbacks, long Xruns, long Discontinuities, long LateRenders, long QueueUnderrunFrames, long RenderFaults, long RenderMax, long OutputLatency, long PluginFailedBlocks, int LatencyFrames);
+/// <param name="QueuedFrames">Frames rendered ahead now (0: in the device callback).</param>
+/// <param name="LiveQueue">The smaller live queue is in use.</param>
+public readonly record struct AudioCounters(long Callbacks, long Xruns, long Discontinuities, long LateRenders, long QueueUnderrunFrames, long RenderFaults, long RenderMax, long OutputLatency, long PluginFailedBlocks, int LatencyFrames, int QueuedFrames = 0, bool LiveQueue = false);
+
+/// <summary>
+/// Live notes into plugin instruments, from their input timestamp until heard (ADR 0035), measured in the engine: how
+/// many, and their average, shortest, and longest latency in clock ticks. <paramref name="DeadlineMisses"/> counts
+/// live-played instruments' blocks that missed their depth-1 deadline (ADR 0043 decision 6).
+/// </summary>
+public readonly record struct LiveLatencySpec(long Notes, long Average, long Min, long Max, long DeadlineMisses);
 
 /// <summary>Engine → Bluestone, about 30 times a second while a device is open: the meters and the stream's figures.</summary>
-public sealed record AudioStatus(MeterSpec Master, ImmutableArray<StripMeter> Strips, AudioCounters Counters) : EngineMessage
+public sealed record AudioStatus(MeterSpec Master, ImmutableArray<StripMeter> Strips, AudioCounters Counters, LiveLatencySpec Live = default) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.AudioStatus;
 }
@@ -98,10 +111,22 @@ public sealed record AudioStatus(MeterSpec Master, ImmutableArray<StripMeter> St
 /// <paramref name="CallbackFrames"/>, through the render path a device callback uses, and write the interleaved stereo
 /// samples to <paramref name="Path"/> as 32-bit floats.
 /// </summary>
-public sealed record TestRender(long Id, string Path, int Frames, int CallbackFrames) : EngineMessage
+/// <param name="Id">Echoed in <see cref="TestRendered"/>.</param>
+/// <param name="Path">Where the samples go.</param>
+/// <param name="Frames">How many frames.</param>
+/// <param name="CallbackFrames">Frames per callback.</param>
+/// <param name="Notes">Live input to play on the way, as input on a track's route would arrive (see <see cref="TestNote"/>).</param>
+public sealed record TestRender(long Id, string Path, int Frames, int CallbackFrames, ImmutableArray<TestNote> Notes = default) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.TestRender;
 }
+
+/// <summary>
+/// A channel message posted on <paramref name="Track"/>'s live route just before the callback that renders frame
+/// <paramref name="Frame"/>, with an input timestamp <paramref name="Lead"/> clock ticks before that callback's first
+/// frame is heard.
+/// </summary>
+public readonly record struct TestNote(Guid Track, int Frame, long Lead, byte Status, byte Data1, byte Data2);
 
 /// <summary>Engine → Bluestone, tests only: <see cref="TestRender"/> <paramref name="Id"/> is done, or why it failed.</summary>
 public sealed record TestRendered(long Id, string? Problem) : EngineMessage

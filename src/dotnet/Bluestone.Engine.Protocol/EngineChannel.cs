@@ -8,7 +8,7 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 4;
+    public const int Version = 5;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;
@@ -51,6 +51,9 @@ public static class EngineLimits
     public const int MaxBufferFrames = 8192;
 
     public const int MaxQueuedFrames = 65_536;
+
+    /// <summary>The most live notes one <see cref="TestRender"/> plays.</summary>
+    public const int MaxTestNotes = 256;
 
     /// <summary>The most frames one <see cref="TestRender"/> renders.</summary>
     public const int MaxTestRenderFrames = 48_000 * 60;

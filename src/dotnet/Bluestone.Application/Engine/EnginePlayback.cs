@@ -1,11 +1,14 @@
 using System.Collections.Immutable;
 using Bluestone.Application.Live;
+using Bluestone.Application.Plugins;
+using Bluestone.Domain.Devices;
 using Bluestone.Domain.Time;
 using Bluestone.Engine.Protocol;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
 using Bluestone.Midi.Wire;
 using Bluestone.Playback;
+using Bluestone.Plugins;
 using Bluestone.Signal;
 
 namespace Bluestone.Application.Engine;
@@ -44,6 +47,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     private readonly Dictionary<int, OpenOutput> _openOutputs = [];
     private readonly Dictionary<int, InputSpec> _openInputs = [];
     private readonly Dictionary<int, SetRoute> _routes = [];
+    private readonly Dictionary<int, RemoteRoute> _remoteRoutes = [];
     private readonly List<(long Id, string Path)> _planFiles = [];
     private readonly Dictionary<long, TempoMap> _tempos = [];
     private readonly List<string> _problems = [];
@@ -416,34 +420,47 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         TransportChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    bool ILiveRemote.CanRun(LiveRoutePlan plan, IMidiOutput output) =>
-        plan.Target == LiveTargetKind.External && plan.Endpoint is not null && output is IEngineEndpoint
-        && plan.Stages.All(s => s.Channel is not null || (s.Device is { } device && DeviceCatalog.BuiltIn.HasLiveProcessor(device.Definition.Id)));
+    // The engine runs routes through built-in live devices, forced channels, and plugin MIDI effects, to an output it
+    // reaches or into a plugin instrument of its audio graph (ADR 0044 steps 5 and 7).
+    bool ILiveRemote.CanRun(LiveRoutePlan plan, IMidiOutput? output) =>
+        plan.Target switch
+        {
+            LiveTargetKind.External => plan.Endpoint is not null && output is IEngineEndpoint,
+            LiveTargetKind.Software => plan.Instrument is not null,
+            _ => false,
+        }
+        && plan.Stages.All(s => s.Channel is not null || (s.Device is { } device
+            && (DeviceCatalog.BuiltIn.HasLiveProcessor(device.Definition.Id) || device.Definition.Id.Value.StartsWith(PluginDeviceHost.DefinitionPrefix, StringComparison.Ordinal))));
 
-    int ILiveRemote.Add(LiveRoutePlan plan, IMidiOutput output, Ppqn ppqn)
+    int ILiveRemote.Add(LiveRoutePlan plan, IMidiOutput? output, Ppqn ppqn, Func<DeviceId, PluginInstance?> plugins)
     {
-        var stages = plan.Stages.Select(stage => stage.Channel is { } channel
-            ? new RouteStageSpec(string.Empty, channel.Index, [])
-            : new RouteStageSpec(stage.Device!.Definition.Id.Value, -1, [.. (DeviceCatalog.BuiltIn.Find(stage.Device.Definition.Id)?.Parameters ?? [])
-                .Select(p => new RouteParameter(p.Id.Value, (stage.Device.ValueOf(p.Id) ?? p.DefaultValue).Value))]));
+        var remote = new RemoteRoute(this, plan, output, ppqn, plugins);
         lock (_gate)
         {
-            var route = new SetRoute(++_nextHandle, plan.Track.Value, ((IEngineEndpoint)output).Handle, ppqn.TicksPerQuarterNote, [.. stages]);
+            remote.Id = ++_nextHandle;
+            _remoteRoutes[remote.Id] = remote;
+            var route = remote.Spec();
             _routes[route.Route] = route;
             _link?.Send(route);
-            return route.Route;
         }
+
+        remote.Watch();
+        return remote.Id;
     }
 
     void ILiveRemote.Remove(int route)
     {
+        RemoteRoute? remote;
         lock (_gate)
         {
+            _remoteRoutes.Remove(route, out remote);
             if (_routes.Remove(route))
             {
                 _link?.Send(new RemoveRoute(route));
             }
         }
+
+        remote?.Unwatch();
     }
 
     void ILiveRemote.Post(int route, ChannelMessage message, TimeSpan timestamp) =>
@@ -507,6 +524,100 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     // Under _gate.
     private TransportAnchor Anchor(in AnchorSpec spec) =>
         new(spec.Playing, TimeSpan.FromTicks(spec.Time), TimeSpan.FromTicks(spec.SongTime), _tempos.GetValueOrDefault(spec.PlanId), spec.LoopStart, spec.LoopEnd);
+
+    // A plugin effect on a route the engine runs restarted (a new exchange) or stopped: the route goes again, with it.
+    private void Resend(RemoteRoute remote)
+    {
+        lock (_gate)
+        {
+            if (_remoteRoutes.TryGetValue(remote.Id, out var current) && ReferenceEquals(current, remote))
+            {
+                var route = remote.Spec();
+                _routes[route.Route] = route;
+                _link?.Send(route);
+            }
+        }
+    }
+
+    /// <summary>A live route the engine runs, as Bluestone planned it, with the plugin effects it watches.</summary>
+    private sealed class RemoteRoute(EnginePlayback owner, LiveRoutePlan plan, IMidiOutput? output, Ppqn ppqn, Func<DeviceId, PluginInstance?> plugins)
+    {
+        private readonly List<PluginInstance> _watched = [];
+
+        public int Id { get; set; }
+
+        // The route as the engine runs it. A plugin effect with no instance runs nowhere and is left out (it passes events through).
+        public SetRoute Spec()
+        {
+            var stages = new List<RouteStageSpec>();
+            foreach (var stage in plan.Stages)
+            {
+                if (stage.Channel is { } channel)
+                {
+                    stages.Add(new RouteStageSpec(string.Empty, channel.Index, []));
+                }
+                else if (stage.Device is { } device && DeviceCatalog.BuiltIn.HasLiveProcessor(device.Definition.Id))
+                {
+                    stages.Add(new RouteStageSpec(device.Definition.Id.Value, -1, [.. (DeviceCatalog.BuiltIn.Find(device.Definition.Id)?.Parameters ?? [])
+                        .Select(p => new RouteParameter(p.Id.Value, (device.ValueOf(p.Id) ?? p.DefaultValue).Value))]));
+                }
+                else if (stage.Device is { } effect && plugins(effect.Id) is { } instance)
+                {
+                    stages.Add(new RouteStageSpec(string.Empty, -1, [], Effect(effect, instance)));
+                }
+            }
+
+            return plan.Target == LiveTargetKind.Software
+                ? new SetRoute(Id, plan.Track.Value, -1, ppqn.TicksPerQuarterNote, [.. stages], plan.Instrument!.Value.Value)
+                : new SetRoute(Id, plan.Track.Value, ((IEngineEndpoint)output!).Handle, ppqn.TicksPerQuarterNote, [.. stages]);
+        }
+
+        public void Watch()
+        {
+            foreach (var stage in plan.Stages)
+            {
+                if (stage.Device is { } device && plugins(device.Id) is { } instance && !_watched.Contains(instance))
+                {
+                    instance.StatusChanged += OnStatus;
+                    _watched.Add(instance);
+                }
+            }
+        }
+
+        public void Unwatch()
+        {
+            foreach (var instance in _watched)
+            {
+                instance.StatusChanged -= OnStatus;
+            }
+
+            _watched.Clear();
+        }
+
+        // Plugin MIDI effects play only live input, so the engine runs them at depth 1: their output comes in the same block.
+        private static PluginStageSpec Effect(DeviceInstance device, PluginInstance instance)
+        {
+            var shape = instance.ExchangeShape;
+            var plane = instance.DataPlane;
+            return new PluginStageSpec(
+                device.Id.Value,
+                device.Definition.DisplayName ?? device.Definition.Id.Value,
+                (int)instance.Request.SampleRate,
+                shape.MaxFrames,
+                shape.InputChannels,
+                shape.OutputChannels,
+                shape.SlotCount,
+                shape.EventCapacity,
+                shape.ParameterChangeCapacity,
+                1,
+                instance.CollectWait.Ticks,
+                instance.PluginLatencyFrames,
+                plane?.Path,
+                plane?.Generation ?? 0);
+        }
+
+        private void OnStatus(object? sender, PluginStatusChangedEventArgs e) => owner.Resend(this);
+    }
 
     /// <summary>The engine's transport as last reported.</summary>
     private sealed record Mirror(TransportState State, long LoopWraps, TransportAnchor Current, TransportAnchor Previous)

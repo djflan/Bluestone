@@ -11,6 +11,8 @@ namespace Bluestone.Tests.Unit.Engine;
 public sealed class EngineMidiMessageTests
 {
     private static readonly Guid Track = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
+    private static readonly Guid Instrument = Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7");
+    private static readonly PluginStageSpec Plugin = new(Guid.Parse("550e8400-e29b-41d4-a716-446655440000"), "Transpose ♪", 48_000, 256, 0, 0, 2, 256, 128, 1, TimeSpan.FromMilliseconds(2).Ticks, 0, "/data/bluestone-plugins/instance-3.bsx", 7);
 
     private static readonly EngineMessage[] All =
     [
@@ -33,6 +35,8 @@ public sealed class EngineMidiMessageTests
         new Nudge(-1234),
         new OutputSend(3, new byte[] { 0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7 }),
         new SetRoute(9, Track, 3, 32640, [new RouteStageSpec("bluestone.midi.transpose", -1, [new RouteParameter(1, 0x8000_0000)]), new RouteStageSpec(string.Empty, 9, [])]),
+        new SetRoute(10, Track, -1, 32640, [new RouteStageSpec(string.Empty, -1, [], Plugin), new RouteStageSpec(string.Empty, 3, [])], Instrument),
+        new SetRoute(11, Track, 3, 960, [new RouteStageSpec(string.Empty, -1, [], Plugin with { ExchangePath = null, Generation = 0 })]),
         new RemoveRoute(9),
         new RouteInput(9, 123_456_789, 0x90, 60, 100),
         new SetThru(Track),
@@ -78,8 +82,13 @@ public sealed class EngineMidiMessageTests
         { new TransportPlay(0, null, -1), "cannot be negative" },
         { new TransportStatus(false, 0, 0, 0, default, default, -1), "cannot be negative" },
         { new SetRoute(1, Track, 1, 0, []), "outside 1" },
-        { new SetRoute(1, Track, 1, 960, [new RouteStageSpec("bluestone.midi.transpose", 3, [])]), "not both or neither" },
-        { new SetRoute(1, Track, 1, 960, [new RouteStageSpec(string.Empty, -1, [])]), "not both or neither" },
+        { new SetRoute(1, Track, -1, 960, []), "output or into an instrument" },
+        { new SetRoute(1, Track, 1, 960, [], Instrument), "output or into an instrument" },
+        { new SetRoute(1, Track, 1, 960, [new RouteStageSpec("bluestone.midi.transpose", -1, [], Plugin)]), "exactly one" },
+        { new SetRoute(1, Track, -1, 960, [new RouteStageSpec(string.Empty, -1, [], Plugin with { PipelineDepth = 3 })], Instrument), "outside 1" },
+        { new SetRoute(1, Track, -1, 960, [new RouteStageSpec(string.Empty, -1, [], Plugin with { ExchangePath = string.Empty })], Instrument), "cannot be empty" },
+        { new SetRoute(1, Track, 1, 960, [new RouteStageSpec("bluestone.midi.transpose", 3, [])]), "exactly one" },
+        { new SetRoute(1, Track, 1, 960, [new RouteStageSpec(string.Empty, -1, [])]), "exactly one" },
         { new RouteInput(1, 0, 0xF8, 0, 0), "status" },
         { new RouteInput(1, 0, 0x90, 128, 0), "above 127" },
         { new SetMetronome(new MetronomeSpec(0, 16, 76, 110, 77, 80, 1), true), "above 15" },

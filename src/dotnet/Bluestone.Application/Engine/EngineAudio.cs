@@ -75,13 +75,8 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         _options = options ?? new EngineAudioOptions();
         _graphDirectory = _options.GraphDirectory ?? Path.Combine(Path.GetTempPath(), $"bluestone-engine-{Environment.ProcessId}");
         _playback.Refreshed += (_, _) => _ = Task.Run(Rebuild);
-        _playback.Live.MonitoredInstrumentChanged += (_, _) =>
-        {
-            if (_wanted?.LowLatencyMonitoring == true)
-            {
-                _ = Task.Run(Rebuild);
-            }
-        };
+        // The monitored instrument is played live: the engine plays it at depth 1 (and compensates for that).
+        _playback.Live.MonitoredInstrumentChanged += (_, _) => _ = Task.Run(Rebuild);
         supervisor.Attach(this);
     }
 
@@ -180,10 +175,12 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         ? new AudioTelemetry(counters.Callbacks, counters.Xruns, counters.Discontinuities, counters.LateRenders, counters.QueueUnderrunFrames, counters.RenderFaults, TimeSpan.FromTicks(counters.RenderMax), TimeSpan.FromTicks(counters.OutputLatency), counters.PluginFailedBlocks)
         : null;
 
-    /// <summary>Live notes into plugin instruments are not played in the engine yet (migration step 7).</summary>
-    public LiveLatency LiveLatency => _playback.Live.Latency.Read();
+    /// <summary>Live notes into plugin instruments, measured in the engine where they are heard (ADR 0044 step 7).</summary>
+    public LiveLatency LiveLatency => Volatile.Read(ref _meters).Live is { Notes: > 0 } live
+        ? new LiveLatency(live.Notes, TimeSpan.FromTicks(live.Average), TimeSpan.FromTicks(live.Min), TimeSpan.FromTicks(live.Max))
+        : new LiveLatency(0, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
 
-    public bool IsLiveQueue => false;
+    public bool IsLiveQueue => IsRunning && Volatile.Read(ref _meters).Counters is { LiveQueue: true };
 
     /// <summary>Whether an engine is connected now.</summary>
     public bool IsConnected
@@ -282,7 +279,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             else
             {
                 var directory = _session.FilePath is { } file ? Path.GetDirectoryName(Path.GetFullPath(file)) : null;
-                _describer.Monitored = _wanted?.LowLatencyMonitoring == true && _playback.Live.MonitoredInstrument is { } monitored ? [monitored] : [];
+                var live = _playback.Live.MonitoredInstrument;
+                _describer.Monitored = _wanted?.LowLatencyMonitoring == true && live is { } monitored ? [monitored] : [];
+                _describer.LivePlayed = live is { } played ? [played] : [];
                 (description, problems) = _describer.Describe(_session.Project, routing.Graph, _playback.Devices, directory);
             }
 
@@ -334,14 +333,14 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     /// Tests only, with an engine started for tests: the engine renders <paramref name="frames"/> of the current graph from
     /// the song's start through its device callback's render path; returns the interleaved stereo samples.
     /// </summary>
-    internal async Task<float[]> RenderForTestAsync(string path, int frames, int callbackFrames, CancellationToken cancellationToken)
+    internal async Task<float[]> RenderForTestAsync(string path, int frames, int callbackFrames, CancellationToken cancellationToken, ImmutableArray<TestNote> notes = default)
     {
         var done = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
             var id = ++_nextRender;
             _renders[id] = done;
-            if (_link?.Send(new TestRender(id, path, frames, callbackFrames)) != true)
+            if (_link?.Send(new TestRender(id, path, frames, callbackFrames, notes.IsDefault ? [] : notes)) != true)
             {
                 throw new InvalidOperationException("No engine is running.");
             }
@@ -405,7 +404,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
                     strips[strip.Key] = Reading(strip.Levels);
                 }
 
-                Volatile.Write(ref _meters, new Meters(Reading(status.Master), strips, status.Counters));
+                Volatile.Write(ref _meters, new Meters(Reading(status.Master), strips, status.Counters, status.Live));
                 break;
             case TestRendered rendered:
                 TaskCompletionSource<string?>? done;
@@ -527,7 +526,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
     // Under _gate.
     private SetAudio SetAudio(AudioSettings settings) =>
-        new(++_request, true, settings.DeviceId, settings.SampleRate, settings.BufferFrames, settings.EngineQueuedFrames, _options.MaxBlockFrames, _testTone);
+        new(++_request, true, settings.DeviceId, settings.SampleRate, settings.BufferFrames, settings.EngineQueuedFrames, _options.MaxBlockFrames, _testTone, settings.EngineLiveQueuedFrames);
 
     // A plugin in the graph that restarts (a new exchange) or reports a new latency is described again. Under _rebuild.
     private void Watch(AudioGraphDescription description)
@@ -576,7 +575,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     }
 
     /// <summary>The meters and figures the engine last reported.</summary>
-    private sealed record Meters(MeterReading Master, Dictionary<Guid, MeterReading> Strips, AudioCounters? Counters)
+    private sealed record Meters(MeterReading Master, Dictionary<Guid, MeterReading> Strips, AudioCounters? Counters, LiveLatencySpec Live = default)
     {
         public static Meters None { get; } = new(default, [], null);
     }

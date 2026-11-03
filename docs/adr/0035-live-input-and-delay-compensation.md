@@ -1,6 +1,8 @@
 # 0035. Live input through every device, a live render-ahead queue, and plugin delay compensation
 
-- Status: Accepted; amends 0028 (live input) and 0032 (latency); amended by 0043
+- Status: Accepted; amends 0028 (live input) and 0032 (latency); amended by 0043 and 0044 (with the engine process, live
+  routes run in the engine, live notes into plugin instruments are rendered in the device callback, the live queue
+  defaults to 0, and the monitored instrument and plugin MIDI effects run at pipeline depth 1)
 - Date: 2026-10-11
 
 ## Context

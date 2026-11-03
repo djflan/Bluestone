@@ -10,24 +10,48 @@ namespace Bluestone.Plugins;
 /// generation and file; while it is not running, none, and the output follows the failure policy.
 /// </summary>
 /// <remarks>
+/// <para>
 /// When the worker dies Bluestone marks the exchange faulted; the exchange sees the mark and this instance outputs the
-/// failure policy until it is attached to the next one. Latency is what Bluestone reports for the instance.
+/// failure policy until it is attached to the next one. Its latency is the plugin's own, as Bluestone reports it, plus
+/// the pipeline's.
+/// </para>
+/// <para>
+/// The depth can change while it plays (<see cref="RequestPipelineDepth"/>): an instrument played live runs at depth 1,
+/// submitting and collecting each block in the same call (ADR 0043 decision 6). A block that misses that deadline is
+/// silent (the failure policy). After <see cref="MissesToFallBack"/> misses within <see cref="MissWindowBlocks"/> blocks
+/// the instance falls back to depth 2 by itself (<see cref="FellBack"/>) and stays there until depth 1 is asked for
+/// again after something else was (monitoring stops and starts), so a worker that cannot keep up costs one block of
+/// latency rather than repeated dropouts.
+/// </para>
 /// </remarks>
 public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
 {
+    /// <summary>Missed depth-1 blocks within <see cref="MissWindowBlocks"/> that make the instance fall back to depth 2.</summary>
+    public const int MissesToFallBack = 3;
+
+    /// <summary>How many blocks back a missed depth-1 block counts towards falling back.</summary>
+    public const int MissWindowBlocks = 1000;
+
     private readonly PluginBlockPipeline _pipeline;
+    private readonly long[] _misses = new long[MissesToFallBack];
     private readonly PluginEvent[] _withSweep;
     private readonly Lock _gate = new();
     private HostBlockExchange? _exchange;
     private PluginDataPlane? _plane;
     private int _latency;
     private int _sweep;
+    private int _fellBack;
+    private int _fallbacks;
+    private long _blocks;
+    private int _nextMiss;
+    private long _liveMisses;
 
     public AttachedPluginInstance(ExchangeOptions shape, int pipelineDepth, TimeSpan collectWait, bool bypassOnFailure)
     {
         ArgumentNullException.ThrowIfNull(shape);
         Shape = shape;
-        _pipeline = new PluginBlockPipeline(shape.MaxFrames, shape.InputChannels, shape.ParameterChangeCapacity, pipelineDepth, collectWait, bypassOnFailure);
+        _pipeline = new PluginBlockPipeline(shape.MaxFrames, shape.InputChannels, shape.ParameterChangeCapacity, pipelineDepth, collectWait, bypassOnFailure, shape.SlotCount);
+        Array.Fill(_misses, long.MinValue);
         _withSweep = new PluginEvent[shape.EventCapacity];
         BypassOnFailure = bypassOnFailure;
     }
@@ -47,7 +71,17 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
     /// <summary>The exchange's shape, fixed for the instance.</summary>
     public ExchangeOptions Shape { get; }
 
+    /// <summary>The depth it plays at (from the next block).</summary>
     public int PipelineDepth => _pipeline.PipelineDepth;
+
+    /// <summary>Depth 1 was asked for, but the instance fell back to depth 2 after missing its deadline. Any thread.</summary>
+    public bool FellBack => Volatile.Read(ref _fellBack) != 0;
+
+    /// <summary>How many times it has fallen back. Any thread.</summary>
+    public int Fallbacks => Volatile.Read(ref _fallbacks);
+
+    /// <summary>Blocks that missed the depth-1 deadline (each was silent). Any thread.</summary>
+    public long LiveDeadlineMisses => Interlocked.Read(ref _liveMisses);
 
     public TimeSpan CollectWait => _pipeline.CollectWait;
 
@@ -61,11 +95,33 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
 
     public int EventCapacity => Shape.EventCapacity;
 
-    /// <summary>The latency Bluestone last reported for the instance. Any thread.</summary>
-    public int ReportedLatencyFrames
+    /// <summary>The plugin's own latency, as Bluestone last reported it. Any thread.</summary>
+    public int PluginLatencyFrames
     {
         get => Volatile.Read(ref _latency);
         set => Volatile.Write(ref _latency, Math.Max(0, value));
+    }
+
+    /// <summary>The plugin's own latency plus the pipeline's at the depth asked for. Any thread.</summary>
+    public int ReportedLatencyFrames => PipelineLatency.ReportedLatencyFrames(PluginLatencyFrames, PipelineDepth, Shape.MaxFrames);
+
+    /// <summary>
+    /// Asks for <paramref name="depth"/> from the next block. Depth 1 is not taken while the instance has fallen back,
+    /// unless another depth was asked for since. Control thread.
+    /// </summary>
+    public void RequestPipelineDepth(int depth)
+    {
+        depth = Math.Clamp(depth, 1, Shape.SlotCount);
+        if (depth > 1)
+        {
+            Volatile.Write(ref _fellBack, 0);
+        }
+        else if (FellBack)
+        {
+            return;
+        }
+
+        _pipeline.SetPipelineDepth(depth);
     }
 
     /// <summary>The exchange attached now, or null.</summary>
@@ -137,7 +193,15 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
             inputEvents = WithSweep(inputEvents);
         }
 
-        return _pipeline.Process(Volatile.Read(ref _exchange), frames, input, output[..(Shape.OutputChannels * frames)], inputEvents, outputEvents, transport);
+        var live = _pipeline.PipelineDepth == 1;
+        var outcome = _pipeline.Process(Volatile.Read(ref _exchange), frames, input, output[..(Shape.OutputChannels * frames)], inputEvents, outputEvents, transport);
+        var block = _blocks++;
+        if (live && outcome.Outcome == ProcessOutcome.Late)
+        {
+            Missed(block);
+        }
+
+        return outcome;
     }
 
     public bool QueueParameterChange(uint parameterId, double normalizedValue, int sampleOffset) =>
@@ -150,6 +214,22 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
         {
             Interlocked.Exchange(ref _exchange, null)?.Dispose();
             _plane = null;
+        }
+    }
+
+    // A missed depth-1 block; the third within the window makes the instance fall back to depth 2. Audio thread.
+    private void Missed(long block)
+    {
+        Interlocked.Increment(ref _liveMisses);
+        _misses[_nextMiss] = block;
+        _nextMiss = (_nextMiss + 1) % _misses.Length;
+        var oldest = _misses[_nextMiss];
+        if (oldest != long.MinValue && block - oldest < MissWindowBlocks)
+        {
+            _pipeline.SetPipelineDepth(2);
+            Volatile.Write(ref _fellBack, 1);
+            Interlocked.Increment(ref _fallbacks);
+            Array.Fill(_misses, long.MinValue);
         }
     }
 

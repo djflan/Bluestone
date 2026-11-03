@@ -39,6 +39,13 @@ public sealed record AudioSettings(
     /// </summary>
     public int EngineQueuedFrames { get; init; }
 
+    /// <summary>
+    /// The live queue when the engine process renders with a render-ahead queue (<see cref="EngineQueuedFrames"/> above 0):
+    /// 0 by default, which keeps the engine's playback queue (and with both at 0, live input is rendered in the device
+    /// callback). See <see cref="LiveQueuedFrames"/>.
+    /// </summary>
+    public int EngineLiveQueuedFrames { get; init; }
+
     public const int DefaultLiveQueuedFrames = 512;
 
     public static IReadOnlyList<int> BufferSizes { get; } = [64, 128, 256, 512, 1024];
