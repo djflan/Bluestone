@@ -138,9 +138,13 @@ and realized separately. Unlike a plan, a description is decoded into objects. T
 schedules, and the realizer replaces a plugin's schedule only when its events change. A realizer refuses a
 description whose connections form a loop, as the builder does; the describing side never produces one.
 
-Separately, the chase sent when playback starts or seeks mid-song (`ChaseState.Compute`) runs on the playback thread
-and allocates. Wrap chases are already computed when a plan is loaded. In the engine, the seek chase must use
-preallocated state or be precomputed with the plan.
+**The playback thread allocates nothing (done):** chases for play and seek were already computed by the caller. The
+thread itself allocated in three places: the "stopped chase" it sends when a plan is loaded, outputs change, or the
+playhead moves while stopped (live thru plays on this thread then); its per-output arrays; and a count-in's clicks.
+Those are now computed by whoever gives the command. The thread only compares a stopped chase with the last one and
+skips it if a later Seek or Play has moved the playhead. A test applies every command from another thread while the
+playback thread pumps, and checks that the pumping thread allocates nothing; the previous engine allocated 9 KB per
+round of commands.
 
 ### Rules inside the engine (ADR 0043)
 
