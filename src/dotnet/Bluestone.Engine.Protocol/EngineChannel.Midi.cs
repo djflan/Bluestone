@@ -49,11 +49,16 @@ public sealed partial class EngineChannel
                     }
                 }
 
+                writer.Int64(play.Sequence);
                 break;
-            case TransportStop or Panic:
+            case TransportStop stop:
+                writer.Int64(stop.Sequence);
+                break;
+            case Panic:
                 break;
             case TransportSeek seek:
                 writer.Int64(seek.Position);
+                writer.Int64(seek.Sequence);
                 break;
             case SetLoop loop:
                 writer.Bool(loop.Active);
@@ -137,6 +142,7 @@ public sealed partial class EngineChannel
                 writer.Int64(status.CountInUntil);
                 WriteAnchor(ref writer, status.Current);
                 WriteAnchor(ref writer, status.Previous);
+                writer.Int64(status.Applied);
                 break;
             case TimingStatus timing:
                 writer.Int64(timing.Dispatched);
@@ -225,13 +231,13 @@ public sealed partial class EngineChannel
                         countIn = new CountInSpec(duration, clicks.MoveToImmutable());
                     }
 
-                    return new TransportPlay(from, countIn);
+                    return new TransportPlay(from, countIn, reader.NonNegative());
                 }
 
             case EngineMessageType.TransportStop:
-                return new TransportStop();
+                return new TransportStop(reader.NonNegative());
             case EngineMessageType.TransportSeek:
-                return new TransportSeek(reader.NonNegative());
+                return new TransportSeek(reader.NonNegative(), reader.NonNegative());
             case EngineMessageType.SetLoop:
                 {
                     var active = reader.Bool();
@@ -316,7 +322,7 @@ public sealed partial class EngineChannel
                 }
 
             case EngineMessageType.TransportStatus:
-                return new TransportStatus(reader.Bool(), reader.Int64(), reader.NonNegative(), reader.NonNegative(), ReadAnchor(ref reader), ReadAnchor(ref reader));
+                return new TransportStatus(reader.Bool(), reader.Int64(), reader.NonNegative(), reader.NonNegative(), ReadAnchor(ref reader), ReadAnchor(ref reader), reader.NonNegative());
             case EngineMessageType.TimingStatus:
                 {
                     var dispatched = reader.NonNegative();

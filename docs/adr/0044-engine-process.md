@@ -227,13 +227,18 @@ With `BLUESTONE_ENGINE=1`, MIDI playback runs in the engine. It is still opt-in,
   maps a time to the same position; a test checks this across tempo changes, loop wraps, and seeks. Timing figures come
   every 250 ms. The transport and input travel as control messages, not the shared regions in the table above. That is
   simpler and fast enough for display and recording; nothing real-time waits on them.
+- **Command order.** Play, stop, and seek carry a sequence number. The engine echoes the last one its playback thread
+  has applied in each transport report, and the UI ignores a report older than its last command. A report already on
+  its way when the UI seeks therefore cannot move the playhead back; the UI keeps its own position until the engine
+  catches up. The numbers keep rising across restarts, and the resync's seek gets a new one, so a new engine's first
+  reports are ignored until it has applied that seek.
 - **Clocks.** Both processes use the system's monotonic clock, so input and output timestamps compare directly.
 - **Restart.** After a restart the UI sends everything again: outputs, slots, the latest plan, loop, metronome, routes,
   thru, inputs, and the position. The transport stays stopped. A restarted engine sends sustain off, All Notes Off, and
   All Sound Off on all 16 channels of each output as it opens it, before anything else goes there. The outputs are only
   known after the UI resends them, so this happens just after Ready rather than before it. Forwarded outputs get the
   same messages.
-- **Protocol** version 2 adds the MIDI messages. Each has bounded counts and lengths, and every handle, tick, and MIDI
+- **Protocol** version 3 adds the MIDI messages. Each has bounded counts and lengths, and every handle, tick, and MIDI
   byte is checked when it is read. Random bodies of every type, and valid messages with one byte changed, decode or
   fail with a protocol error.
 
@@ -241,8 +246,9 @@ With `BLUESTONE_ENGINE=1`, MIDI playback runs in the engine. It is still opt-in,
 in steady state. Input and forwarded output are copied into a fixed buffer under a short lock; a sender thread turns
 them into messages. `Bluestone.Engine --check-allocations` plays notes from an input through a transposing route to
 a forwarded output while the transport plays, and checks that the thread allocates nothing. An integration test runs
-it, and it also passes in the NativeAOT build. The engine's sender thread still allocates a little for each status and
-batch it sends; the heartbeat reports any collections this causes.
+it, and it also passes in the NativeAOT build. The engine's sender thread still allocates: a record for each status
+and MIDI batch it sends, about 100 a second while playing, plus the channel's writes. The `--engine` probe (step 8)
+must measure what this costs through the heartbeat's collection count and pause time.
 
 **Tests.** Integration tests run real engine processes: a plan plays in order to an output only the UI reaches; loop,
 seek, and stop work; input from an endpoint only the UI reaches is recorded and played through a transpose that the
@@ -254,7 +260,7 @@ the resync.
 - Make the engine the default, and enable the transport only when the engine is ready (with step 6).
 - Live routes with plugin MIDI effects, and routes to plugin instruments (steps 6 and 7).
 - `--engine` in the probes, with the app load in the UI process, to measure MIDI lateness and thru against ADR
-  0043's targets (step 8). Not measured yet.
+  0043's targets, and the engine's collections from its sender thread (step 8). Not measured yet.
 
 ## The engine host and supervisor (step 4)
 

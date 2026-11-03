@@ -8,7 +8,7 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;

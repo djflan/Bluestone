@@ -24,7 +24,7 @@ internal static class AllocationCheck
             new RouteStageSpec(string.Empty, 3, []),
         ]));
         Apply(midi, new SetThru(track));
-        Apply(midi, new TransportPlay(0, null));
+        Apply(midi, new TransportPlay(0, null, 1));
         var input = midi.AddTestInput(2, "test", "Keys");
 
         Play(midi, input, Rounds * 4);

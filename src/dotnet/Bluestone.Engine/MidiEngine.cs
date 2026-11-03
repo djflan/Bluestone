@@ -58,8 +58,13 @@ internal sealed class MidiEngine : IDisposable
     private long? _unacknowledged;
     private TempoMap _tempo = TempoMap.Constant(Ppqn.Default, Bluestone.Domain.Time.Tempo.Default);
 
+    // Transport commands given and not yet applied by the playback thread: (sequence, CommandsQueued after it), under _plans.
+    private readonly Queue<(long Sequence, long Queued)> _pendingSequences = new();
+    private long _appliedSequence;
+
     // The sender thread's view of what it last reported.
     private TransportSnapshot _reported;
+    private long _reportedSequence;
     private TimeSpan _reportedAt;
     private TimeSpan _timingAt;
     private long _timingDispatched = -1;
@@ -116,12 +121,15 @@ internal sealed class MidiEngine : IDisposable
                     Playback.Play(play.From < 0 ? null : new Tick(play.From), play.CountIn is { } c
                         ? new CountIn(TimeSpan.FromTicks(c.Duration), [.. c.Clicks.Select(k => new CountInClick(TimeSpan.FromTicks(k.Offset), k.Downbeat))])
                         : null);
+                    Given(play.Sequence);
                     break;
-                case TransportStop:
+                case TransportStop stop:
                     Playback.Stop();
+                    Given(stop.Sequence);
                     break;
                 case TransportSeek seek:
                     Playback.Seek(new Tick(seek.Position));
+                    Given(seek.Sequence);
                     break;
                 case SetLoop loop:
                     Playback.SetLoop(loop.Active ? new LoopRegion(new Tick(loop.Start), new Tick(loop.End)) : null);
@@ -203,16 +211,31 @@ internal sealed class MidiEngine : IDisposable
             send(batch);
         }
 
+        // Which transport commands the playback thread has applied, read before the transport so the report reflects them.
+        var commandsApplied = Playback.CommandsApplied;
+        long sequence;
+        lock (_plans)
+        {
+            while (_pendingSequences.TryPeek(out var pending) && pending.Queued <= commandsApplied)
+            {
+                _appliedSequence = Math.Max(_appliedSequence, pending.Sequence);
+                _pendingSequences.Dequeue();
+            }
+
+            sequence = _appliedSequence;
+        }
+
         var now = _clock.Now;
         var transport = Playback.ReadTransport();
         var playing = transport.State == TransportState.Playing;
-        if (transport.Version != _reported.Version || transport.State != _reported.State || transport.Position != _reported.Position
+        if (sequence != _reportedSequence || transport.Version != _reported.Version || transport.State != _reported.State || transport.Position != _reported.Position
             || transport.LoopWraps != _reported.LoopWraps || transport.CountInUntil != _reported.CountInUntil
             || now - _reportedAt >= (playing ? PlayingStatusInterval : IdleStatusInterval))
         {
             _reported = transport;
+            _reportedSequence = sequence;
             _reportedAt = now;
-            send(new TransportStatus(playing, transport.Position.Value, transport.LoopWraps, transport.CountInUntil.Ticks, Anchor(transport.Current), Anchor(transport.Previous)));
+            send(new TransportStatus(playing, transport.Position.Value, transport.LoopWraps, transport.CountInUntil.Ticks, Anchor(transport.Current), Anchor(transport.Previous), sequence));
         }
 
         if (now - _timingAt >= TimingInterval && Timing() is { } timing)
@@ -338,6 +361,15 @@ internal sealed class MidiEngine : IDisposable
         Playback.Dispose();
         Outbound.Dispose();
         _liveWake.Dispose();
+    }
+
+    // A transport command was just queued: it counts as applied once the playback thread has applied everything queued so far.
+    private void Given(long sequence)
+    {
+        lock (_plans)
+        {
+            _pendingSequences.Enqueue((sequence, Playback.CommandsQueued));
+        }
     }
 
     private static int Handle(EngineMessage message) => message switch

@@ -4,7 +4,9 @@ namespace Bluestone.Engine.Protocol;
 
 // MIDI in the engine (migration step 5, ADR 0044). Bluestone tells the engine which outputs to open, which plan to
 // play, the transport commands, the live routes it runs, and the inputs to listen to; the engine reports its transport,
-// timing, MIDI for endpoints only Bluestone can reach, input, and problems. Times are monotonic clock ticks
+// timing, MIDI for endpoints only Bluestone can reach, input, and problems. Transport commands carry an increasing
+// sequence number, which the engine echoes in TransportStatus once its playback thread has applied the command, so a
+// report sent before a command took effect can be told apart from one sent after. Times are monotonic clock ticks
 // (TimeSpan ticks of the system's monotonic clock, which both processes share); song positions are in plan ticks.
 
 /// <summary>
@@ -51,19 +53,19 @@ public readonly record struct CountInClickSpec(long Offset, bool Downbeat);
 public sealed record CountInSpec(long Duration, ImmutableArray<CountInClickSpec> Clicks);
 
 /// <summary>Bluestone → engine: play from <paramref name="From"/> (a plan tick; -1 for the playhead), after an optional count-in.</summary>
-public sealed record TransportPlay(long From, CountInSpec? CountIn) : EngineMessage
+public sealed record TransportPlay(long From, CountInSpec? CountIn, long Sequence) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.TransportPlay;
 }
 
 /// <summary>Bluestone → engine: stop playing.</summary>
-public sealed record TransportStop : EngineMessage
+public sealed record TransportStop(long Sequence) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.TransportStop;
 }
 
 /// <summary>Bluestone → engine: move the playhead to plan tick <paramref name="Position"/>.</summary>
-public sealed record TransportSeek(long Position) : EngineMessage
+public sealed record TransportSeek(long Position, long Sequence) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.TransportSeek;
 }
@@ -155,8 +157,11 @@ public sealed record SetInputs(ImmutableArray<InputSpec> Inputs) : EngineMessage
 /// </summary>
 public readonly record struct AnchorSpec(bool Playing, long Time, long SongTime, long PlanId, long LoopStart, long LoopEnd);
 
-/// <summary>Engine → Bluestone, when it changes and every few milliseconds while playing: the transport.</summary>
-public sealed record TransportStatus(bool Playing, long Position, long LoopWraps, long CountInUntil, AnchorSpec Current, AnchorSpec Previous) : EngineMessage
+/// <summary>
+/// Engine → Bluestone, when it changes and every few milliseconds while playing: the transport, as of the transport
+/// command with sequence number <paramref name="Applied"/> (0 before any).
+/// </summary>
+public sealed record TransportStatus(bool Playing, long Position, long LoopWraps, long CountInUntil, AnchorSpec Current, AnchorSpec Previous, long Applied) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.TransportStatus;
 }

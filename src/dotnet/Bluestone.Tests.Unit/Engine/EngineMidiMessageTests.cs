@@ -21,10 +21,10 @@ public sealed class EngineMidiMessageTests
         new SetSlots([]),
         new LoadPlan(7, "/var/run/bluestone-engine-1/plan-7.bspl"),
         new PlanLoaded(7),
-        new TransportPlay(-1, null),
-        new TransportPlay(1920, new CountInSpec(TimeSpan.FromSeconds(2).Ticks, [new CountInClickSpec(0, true), new CountInClickSpec(TimeSpan.FromMilliseconds(500).Ticks, false)])),
-        new TransportStop(),
-        new TransportSeek(960),
+        new TransportPlay(-1, null, 1),
+        new TransportPlay(1920, new CountInSpec(TimeSpan.FromSeconds(2).Ticks, [new CountInClickSpec(0, true), new CountInClickSpec(TimeSpan.FromMilliseconds(500).Ticks, false)]), 2),
+        new TransportStop(3),
+        new TransportSeek(960, long.MaxValue),
         new SetLoop(true, 0, 3840),
         new SetLoop(false, 0, 0),
         new SetMetronome(new MetronomeSpec(2, 9, 76, 110, 77, 80, TimeSpan.FromMilliseconds(40).Ticks), Enabled: true),
@@ -38,7 +38,7 @@ public sealed class EngineMidiMessageTests
         new SetThru(Track),
         new SetThru(null),
         new SetInputs([new InputSpec(5, "coremidi", "678", "Keys"), new InputSpec(6, "winmm", "in:0", "USB MIDI")]),
-        new TransportStatus(true, 1000, 3, 0, new AnchorSpec(true, 10, 20, 7, 0, 3840), new AnchorSpec(false, 0, 0, -1, 0, 0)),
+        new TransportStatus(true, 1000, 3, 0, new AnchorSpec(true, 10, 20, 7, 0, 3840), new AnchorSpec(false, 0, 0, -1, 0, 0), 42),
         new TimingStatus(100, 1, 2, 3, 4, 5000, [90, 10, 0, 0, 0, 0, 0, 0, 0], [new FineBucket(0, 90), new FineBucket(2000, 10)]),
         new MidiBatch([new MidiEvent(MidiEventKind.Output, 4, 0, new byte[] { 0x90, 60, 100 }), new MidiEvent(MidiEventKind.Input, 5, 42, new byte[] { 0x80, 60, 64 })]),
         new EngineProblem(-1, "The engine cannot open Keys."),
@@ -71,8 +71,12 @@ public sealed class EngineMidiMessageTests
         { new CloseOutput(-2), "outside 0" },
         { new SetSlots([-2]), "outside -1" },
         { new SetLoop(true, 960, 960), "end after it starts" },
-        { new TransportSeek(-1), "cannot be negative" },
-        { new TransportPlay(-2, null), "Cannot play from" },
+        { new TransportSeek(-1, 1), "cannot be negative" },
+        { new TransportSeek(0, -1), "cannot be negative" },
+        { new TransportStop(-1), "cannot be negative" },
+        { new TransportPlay(-2, null, 1), "Cannot play from" },
+        { new TransportPlay(0, null, -1), "cannot be negative" },
+        { new TransportStatus(false, 0, 0, 0, default, default, -1), "cannot be negative" },
         { new SetRoute(1, Track, 1, 0, []), "outside 1" },
         { new SetRoute(1, Track, 1, 960, [new RouteStageSpec("bluestone.midi.transpose", 3, [])]), "not both or neither" },
         { new SetRoute(1, Track, 1, 960, [new RouteStageSpec(string.Empty, -1, [])]), "not both or neither" },
@@ -93,6 +97,18 @@ public sealed class EngineMidiMessageTests
 
         var error = Assert.Throws<EngineProtocolException>(() => EngineChannel.Decode(body.AsSpan(0, length)));
         Assert.Contains(why, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TransportCommands_AndStatus_CarryTheirSequenceNumber()
+    {
+        Assert.Equal(new TransportSeek(960, 77), RoundTrip(new TransportSeek(960, 77)));
+        Assert.Equal(new TransportStop(78), RoundTrip(new TransportStop(78)));
+        Assert.Equal(79, ((TransportPlay)RoundTrip(new TransportPlay(-1, null, 79))).Sequence);
+        var status = new TransportStatus(true, 5, 1, 0, new AnchorSpec(true, 1, 2, 3, 0, 0), default, 79);
+        Assert.Equal(status, RoundTrip(status));
+
+        static EngineMessage RoundTrip(EngineMessage message) => EngineChannel.Decode(Encoded(message));
     }
 
     [Fact]

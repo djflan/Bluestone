@@ -58,6 +58,10 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     private Mirror _mirror = Mirror.Stopped(0);
     private long _position;
     private long _countInUntil;
+
+    // The last transport command sent, by sequence number. A report from the engine that has not applied it yet is
+    // older than what Bluestone already shows, so it is ignored. Numbers keep rising across engine restarts.
+    private long _transportSequence;
     private TimingSnapshot _timing = new(0, 0, 0, 0, 0, TimeSpan.Zero, [.. new long[TimingStatistics.BucketBounds.Length + 1]]);
 
     public EnginePlayback(EngineSupervisor supervisor, EnginePlaybackOptions? options = null)
@@ -150,16 +154,29 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         }
 
         Interlocked.Exchange(ref _countInUntil, countIn is null ? 0 : (Clock.Now + countIn.Duration).Ticks);
-        Send(new TransportPlay(from?.Value ?? -1, countIn is null ? null : new CountInSpec(countIn.Duration.Ticks, [.. countIn.Clicks.Select(c => new CountInClickSpec(c.Offset.Ticks, c.Downbeat))])));
+        var spec = countIn is null ? null : new CountInSpec(countIn.Duration.Ticks, [.. countIn.Clicks.Select(c => new CountInClickSpec(c.Offset.Ticks, c.Downbeat))]);
+        lock (_gate)
+        {
+            _link?.Send(new TransportPlay(from?.Value ?? -1, spec, ++_transportSequence));
+        }
     }
 
-    public void Stop() => Send(new TransportStop());
+    public void Stop()
+    {
+        lock (_gate)
+        {
+            _link?.Send(new TransportStop(++_transportSequence));
+        }
+    }
 
     public void Seek(Tick position)
     {
-        Interlocked.Exchange(ref _position, position.Value);
-        Interlocked.Exchange(ref _countInUntil, 0);
-        Send(new TransportSeek(position.Value));
+        lock (_gate)
+        {
+            Interlocked.Exchange(ref _position, position.Value);
+            Interlocked.Exchange(ref _countInUntil, 0);
+            _link?.Send(new TransportSeek(position.Value, ++_transportSequence));
+        }
     }
 
     public void SetLoop(LoopRegion? loop) => Send(_loop = loop is null ? new SetLoop(false, 0, 0) : new SetLoop(true, loop.Start.Value, loop.End.Value));
@@ -285,7 +302,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
             link.Send(Inputs());
 
             // The transport stays stopped where it was (ADR 0044).
-            link.Send(new TransportSeek(Interlocked.Read(ref _position)));
+            link.Send(new TransportSeek(Interlocked.Read(ref _position), ++_transportSequence));
         }
 
         TransportChanged?.Invoke(this, EventArgs.Empty);
@@ -318,7 +335,8 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
             case TransportStatus status:
                 lock (_gate)
                 {
-                    if (!ReferenceEquals(link, _link))
+                    // From an engine that stopped, or sent before the engine applied the last transport command.
+                    if (!ReferenceEquals(link, _link) || status.Applied < _transportSequence)
                     {
                         return;
                     }

@@ -74,6 +74,8 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     private TransportAnchor _anchor;
     private TransportAnchor _previousAnchor;
     private long _loadsApplied;
+    private long _commandsQueued;
+    private long _commandsApplied;
     private long _countInUntil;
     private long _loopWraps;
     private ChaseMessage[] _stoppedChase = [];
@@ -202,6 +204,15 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     /// <summary>How many plans the playback thread has switched to so far; a plan given to <see cref="Load"/> before that many is no longer read by it.</summary>
     public long LoadsApplied => Interlocked.Read(ref _loadsApplied);
 
+    /// <summary>Commands given so far (every call that queues one: play, stop, seek, load, loop, outputs, and the rest).</summary>
+    public long CommandsQueued => Interlocked.Read(ref _commandsQueued);
+
+    /// <summary>
+    /// Commands the playback thread has applied so far, and published the transport for. Once this reaches a reading of
+    /// <see cref="CommandsQueued"/> taken after a command was given, <see cref="ReadTransport"/> reflects that command.
+    /// </summary>
+    public long CommandsApplied => Interlocked.Read(ref _commandsApplied);
+
     public TimingSnapshot SnapshotStatistics() => Statistics.Snapshot();
 
     private void ReadAnchors(out TransportAnchor current, out TransportAnchor previous, out int version)
@@ -290,6 +301,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
             while (_commands.TryDequeue(out var command))
             {
                 Execute(command, now);
+                Interlocked.Increment(ref _commandsApplied);
             }
 
             while (_immediateSends.TryDequeue(out var immediate))
@@ -320,6 +332,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
 
     private void Enqueue(Command command)
     {
+        Interlocked.Increment(ref _commandsQueued);
         _commands.Enqueue(command);
         _workSignal.Set();
     }
