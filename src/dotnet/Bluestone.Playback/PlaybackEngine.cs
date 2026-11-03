@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Time;
 using Bluestone.Midi.Endpoints;
@@ -64,7 +65,8 @@ public sealed class PlaybackEngine : IDisposable
     private Cursor _scheduled;
     private MetronomeClick? _click;
     private bool _clickEnabled;
-    private TimedClick[] _countIn = [];
+    private ImmutableArray<CountInClick> _countIn = [];
+    private TimeSpan _countInStart;
     private int _countInIndex;
 
     // The immediate cursor's tick-to-time mapping, published for input timestamping (seqlock).
@@ -109,7 +111,7 @@ public sealed class PlaybackEngine : IDisposable
         lock (_wrapLock)
         {
             Volatile.Write(ref _latestPlan, plan);
-            Enqueue(new LoadCommand(plan, WrapChase(plan, _latestLoop)));
+            Enqueue(new LoadCommand(plan, WrapChase(plan, _latestLoop), StoppedChase(plan, Volatile.Read(ref _positionTick))));
         }
     }
 
@@ -117,7 +119,11 @@ public sealed class PlaybackEngine : IDisposable
     public void SetOutputs(IReadOnlyList<IMidiOutput?> outputs)
     {
         ArgumentNullException.ThrowIfNull(outputs);
-        Enqueue(new OutputsCommand([.. outputs]));
+        Enqueue(new OutputsCommand(
+            [.. outputs],
+            [.. outputs.Select(o => o?.Endpoint.Capabilities.HasFlag(EndpointCapabilities.ScheduledDelivery) == true)],
+            new bool[outputs.Count * ChannelsPerSlot],
+            StoppedChase(Volatile.Read(ref _latestPlan), Volatile.Read(ref _positionTick))));
     }
 
     /// <summary>
@@ -274,7 +280,8 @@ public sealed class PlaybackEngine : IDisposable
     {
         Volatile.Write(ref _positionTick, position.Value);
         Volatile.Write(ref _countInUntil, 0);
-        Enqueue(new SeekCommand(position.Value, ChaseState.Compute(Volatile.Read(ref _latestPlan), position.Value)));
+        var plan = Volatile.Read(ref _latestPlan);
+        Enqueue(new SeekCommand(position.Value, ChaseState.Compute(plan, position.Value), StoppedChase(plan, position.Value)));
     }
 
     /// <summary>Stops playback, releasing sounding notes and any held sustain pedal.</summary>
@@ -379,20 +386,20 @@ public sealed class PlaybackEngine : IDisposable
                 }
                 else
                 {
-                    ChaseWhileStopped();
+                    ChaseWhileStopped(load.StoppedChase);
                 }
 
                 break;
             case OutputsCommand outputs:
                 ReleaseAll(now);
                 _outputs = outputs.Outputs;
-                _slotScheduled = [.. outputs.Outputs.Select(o => o?.Endpoint.Capabilities.HasFlag(EndpointCapabilities.ScheduledDelivery) == true)];
-                _sustain = new bool[outputs.Outputs.Length * ChannelsPerSlot];
+                _slotScheduled = outputs.SlotScheduled;
+                _sustain = outputs.Sustain;
                 ResyncClicks();
                 _stoppedChase = [];
                 if (!_playing)
                 {
-                    ChaseWhileStopped();
+                    ChaseWhileStopped(outputs.StoppedChase);
                 }
 
                 break;
@@ -404,7 +411,8 @@ public sealed class PlaybackEngine : IDisposable
             case PlayCommand play:
                 var startAt = now + (play.CountIn?.Duration ?? TimeSpan.Zero);
                 Locate(play.Tick, play.Chase, now, startAt);
-                _countIn = play.CountIn is { } countIn ? [.. countIn.Clicks.Select(c => new TimedClick(now + c.Offset, c.Downbeat))] : [];
+                _countIn = play.CountIn?.Clicks ?? [];
+                _countInStart = now;
                 _countInIndex = 0;
                 _playing = true;
                 Volatile.Write(ref _state, (int)TransportState.Playing);
@@ -418,7 +426,7 @@ public sealed class PlaybackEngine : IDisposable
                 }
                 else
                 {
-                    ChaseWhileStopped();
+                    ChaseWhileStopped(seek.StoppedChase);
                 }
 
                 break;
@@ -462,29 +470,75 @@ public sealed class PlaybackEngine : IDisposable
     /// auditioning) hears each track's instrument without pressing play. Only channels whose state
     /// changed are resent; a changed channel's state is resent whole so bank select precedes its program.
     /// </summary>
-    private void ChaseWhileStopped()
+    /// <remarks>
+    /// <paramref name="stopped"/> comes from <see cref="StoppedChase"/>, computed by whoever gave the command, so this
+    /// thread only compares it with the last one and sends: it allocates nothing (ADR 0044).
+    /// </remarks>
+    private void ChaseWhileStopped(StoppedChaseState stopped)
     {
-        // Include events at the playhead: a program change at the very start sets the track's instrument.
-        // Pedals are left alone so a sustain held in the song does not latch notes played live.
-        // SysEx that hardware parameter automation chases is left for play: it is not channel state.
-        var chase = ChaseState.Compute(_plan, Volatile.Read(ref _positionTick) + 1)
-            .Where(c => c.Payload is null && (c.Message.Kind != ChannelMessageKind.ControlChange || c.Message.Data1 is < 64 or > 69))
-            .ToArray();
-        var previous = _stoppedChase.ToLookup(c => (c.Slot, c.Message.Channel.Index));
-        _stoppedChase = chase;
-        foreach (var channel in chase.GroupBy(c => (c.Slot, c.Message.Channel.Index)))
+        // A playhead moved since the command was given was moved by a later Seek or Play, which chases for itself.
+        if (stopped.Position != Volatile.Read(ref _positionTick))
         {
-            if (channel.SequenceEqual(previous[channel.Key]))
+            return;
+        }
+
+        var chase = stopped.Messages;
+        var previous = _stoppedChase;
+        _stoppedChase = chase;
+        for (var start = 0; start < chase.Length;)
+        {
+            var end = GroupEnd(chase, start);
+            var group = chase.AsSpan(start, end - start);
+            if (!group.SequenceEqual(GroupOf(previous, chase[start])))
             {
-                continue;
+                foreach (var message in group)
+                {
+                    SendChannel(message.Slot, message.Message, MidiTimestamp.Immediate);
+                }
             }
 
-            foreach (var message in channel)
-            {
-                SendChannel(message.Slot, message.Message, MidiTimestamp.Immediate);
-            }
+            start = end;
         }
+
+        static int GroupEnd(ChaseMessage[] messages, int start)
+        {
+            var end = start + 1;
+            while (end < messages.Length && SameChannel(messages[end], messages[start]))
+            {
+                end++;
+            }
+
+            return end;
+        }
+
+        static ReadOnlySpan<ChaseMessage> GroupOf(ChaseMessage[] messages, in ChaseMessage key)
+        {
+            for (var start = 0; start < messages.Length; start = GroupEnd(messages, start))
+            {
+                if (SameChannel(messages[start], key))
+                {
+                    return messages.AsSpan(start, GroupEnd(messages, start) - start);
+                }
+            }
+
+            return [];
+        }
+
+        static bool SameChannel(in ChaseMessage a, in ChaseMessage b) => a.Slot == b.Slot && a.Message.Channel == b.Message.Channel;
     }
+
+    /// <summary>
+    /// The state <see cref="ChaseWhileStopped"/> sends with the playhead at <paramref name="position"/>: events at the
+    /// playhead included (a program change at the very start sets the track's instrument), pedals left alone (so a
+    /// sustain held in the song does not latch notes played live), and no SysEx (that hardware parameter automation
+    /// chases is left for play: it is not channel state). Grouped by output and channel, in order of first appearance.
+    /// Computed by the caller, not on the playback thread.
+    /// </summary>
+    private static StoppedChaseState StoppedChase(PlaybackPlan plan, long position) =>
+        new(position, [.. ChaseState.Compute(plan, position + 1)
+            .Where(c => c.Payload is null && (c.Message.Kind != ChannelMessageKind.ControlChange || c.Message.Data1 is < 64 or > 69))
+            .GroupBy(c => (c.Slot, c.Message.Channel.Index))
+            .SelectMany(g => g)]);
 
     /// <summary>Moves both cursors so <paramref name="tick"/> plays at <paramref name="startAt"/> (later than now during a count-in).</summary>
     private void Locate(long tick, ChaseMessage[] chase, TimeSpan now, TimeSpan startAt)
@@ -562,7 +616,7 @@ public sealed class PlaybackEngine : IDisposable
             var release = NextRelease(scheduledClass, out var releaseTime);
             var clicks = ClicksIn(scheduledClass);
             var clickTime = clicks && _clickEnabled && !(looping && cursor.NextClick >= loop!.End.Value) ? TimeOf(in cursor, cursor.NextClick) : Never;
-            var countInTime = clicks && _countInIndex < _countIn.Length ? _countIn[_countInIndex].Time : Never;
+            var countInTime = clicks && _countInIndex < _countIn.Length ? _countInStart + _countIn[_countInIndex].Offset : Never;
 
             if (release >= 0 && releaseTime <= horizon && releaseTime <= eventTime && releaseTime <= wrapTime && releaseTime <= clickTime && releaseTime <= countInTime)
             {
@@ -882,7 +936,6 @@ public sealed class PlaybackEngine : IDisposable
     /// <remarks><see cref="LoopStart"/> and <see cref="LoopEnd"/> are the loop the cursor will wrap at, or both zero.</remarks>
     private readonly record struct Anchor(bool Playing, TimeSpan Time, TimeSpan SongTime, TempoMap? Tempo, long LoopStart, long LoopEnd);
 
-    private readonly record struct TimedClick(TimeSpan Time, bool Downbeat);
 
     private readonly record struct ImmediateMessage(IMidiOutput Output, ChannelMessage Message);
 
@@ -890,15 +943,19 @@ public sealed class PlaybackEngine : IDisposable
 
     private abstract record Command;
 
-    private sealed record LoadCommand(PlaybackPlan Plan, ChaseMessage[] WrapChase) : Command;
+    /// <summary>A stopped chase and the playhead it was computed for.</summary>
+    private sealed record StoppedChaseState(long Position, ChaseMessage[] Messages);
 
-    private sealed record OutputsCommand(IMidiOutput?[] Outputs) : Command;
+    private sealed record LoadCommand(PlaybackPlan Plan, ChaseMessage[] WrapChase, StoppedChaseState StoppedChase) : Command;
+
+    // Everything the playback thread needs for new outputs, made by the caller so that thread allocates nothing.
+    private sealed record OutputsCommand(IMidiOutput?[] Outputs, bool[] SlotScheduled, bool[] Sustain, StoppedChaseState StoppedChase) : Command;
 
     private sealed record PlayCommand(long Tick, ChaseMessage[] Chase, CountIn? CountIn) : Command;
 
     private sealed record MetronomeCommand(MetronomeClick? Click, bool Enabled) : Command;
 
-    private sealed record SeekCommand(long Tick, ChaseMessage[] Chase) : Command;
+    private sealed record SeekCommand(long Tick, ChaseMessage[] Chase, StoppedChaseState StoppedChase) : Command;
 
     private sealed record StopCommand : Command;
 
