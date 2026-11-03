@@ -61,14 +61,31 @@ fn range_tuple(range: &SupportedStreamConfigRange) -> Range {
 
 /// Every output device of the default host as a JSON array.
 pub(crate) fn devices_json() -> String {
+    devices_json_for(false)
+}
+
+/// Every input device of the default host as a JSON array, in the same shape as [`devices_json`].
+pub(crate) fn input_devices_json() -> String {
+    devices_json_for(true)
+}
+
+fn devices_json_for(input: bool) -> String {
     let host = cpal::default_host();
-    let default_id = host
-        .default_output_device()
-        .and_then(|d| d.id().ok())
-        .map(|id| id.to_string());
+    let default_id = if input {
+        host.default_input_device()
+    } else {
+        host.default_output_device()
+    }
+    .and_then(|d| d.id().ok())
+    .map(|id| id.to_string());
     let mut out = String::from("[");
     let mut first = true;
-    if let Ok(devices) = host.output_devices() {
+    let devices = if input {
+        host.input_devices().map(|d| d.collect::<Vec<_>>())
+    } else {
+        host.output_devices().map(|d| d.collect::<Vec<_>>())
+    };
+    if let Ok(devices) = devices {
         for device in devices {
             let Ok(id) = device.id() else { continue };
             let id = id.to_string();
@@ -76,12 +93,23 @@ pub(crate) fn devices_json() -> String {
                 .description()
                 .map(|d| d.name().to_string())
                 .unwrap_or_else(|_| id.clone());
-            let ranges: Vec<_> = device
-                .supported_output_configs()
-                .map(|configs| configs.map(|r| range_tuple(&r)).collect())
-                .unwrap_or_default();
+            let ranges: Vec<_> = if input {
+                device
+                    .supported_input_configs()
+                    .map(|configs| configs.map(|r| range_tuple(&r)).collect())
+                    .unwrap_or_default()
+            } else {
+                device
+                    .supported_output_configs()
+                    .map(|configs| configs.map(|r| range_tuple(&r)).collect())
+                    .unwrap_or_default()
+            };
             let caps = summarize(&ranges);
-            let default_config = device.default_output_config().ok();
+            let default_config = if input {
+                device.default_input_config().ok()
+            } else {
+                device.default_output_config().ok()
+            };
             if !first {
                 out.push(',');
             }
@@ -153,7 +181,8 @@ mod tests {
 
     #[test]
     fn devices_json_is_always_an_array() {
-        let json = devices_json();
-        assert!(json.starts_with('[') && json.ends_with(']'));
+        for json in [devices_json(), input_devices_json()] {
+            assert!(json.starts_with('[') && json.ends_with(']'));
+        }
     }
 }

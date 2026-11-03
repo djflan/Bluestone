@@ -8,19 +8,22 @@
 //! the caller's buffer when one is given. No Rust panic crosses the ABI (the workspace aborts on panic).
 
 mod devices;
+mod input;
 mod json;
 mod ring;
 mod stream;
 
 use std::ffi::{CStr, c_char, c_void};
 
+pub use input::{CaptureFn, CaptureInfo, InputStatus, InputStream};
 pub use stream::{
     BlockInfo, HISTOGRAM_BUCKET_NS, HISTOGRAM_BUCKETS, OutputStream, RenderFn, StreamRequest,
     StreamStatus,
 };
 
-/// Bump on any change to a function signature or a `#[repr(C)]` layout.
-pub const ABI_VERSION: u32 = 1;
+/// Bump on any change to a function signature or a `#[repr(C)]` layout, and when functions are added.
+/// 2: input devices and input streams.
+pub const ABI_VERSION: u32 = 2;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bluestone_audio_abi_version() -> u32 {
@@ -322,14 +325,163 @@ unsafe fn write_error(error: *mut u8, capacity: usize, message: &str) {
     }
 }
 
+/// Writes the input devices as a UTF-8 JSON array, as `bluestone_audio_devices_json` does for outputs.
+///
+/// # Safety
+/// As for `bluestone_audio_devices_json`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_input_devices_json(
+    buffer: *mut u8,
+    capacity: usize,
+) -> i64 {
+    let json = devices::input_devices_json();
+    let bytes = json.as_bytes();
+    if !buffer.is_null() && bytes.len() <= capacity {
+        // SAFETY: the caller guarantees `buffer` holds `capacity` bytes, and `bytes.len() <= capacity`.
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
+    }
+    i64::try_from(bytes.len()).unwrap_or(i64::MAX)
+}
+
+/// Opens an input stream (stopped) on `device_id`, or on the default input when it is null or empty. Each callback
+/// calls `capture` with the captured block. Returns null on failure, with the reason in `error`.
+///
+/// # Safety
+/// As for `bluestone_audio_open_output`; `capture` and `user_data` must stay valid until the stream is closed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_open_input(
+    device_id: *const c_char,
+    request: *const StreamRequest,
+    capture: Option<CaptureFn>,
+    user_data: *mut c_void,
+    error: *mut u8,
+    error_capacity: usize,
+) -> *mut InputStream {
+    // SAFETY: the caller guarantees `request` is null or valid.
+    let Some(request) = (unsafe { request.as_ref() }) else {
+        unsafe { write_error(error, error_capacity, "No stream request.") };
+        return std::ptr::null_mut();
+    };
+    if request.struct_size as usize != size_of::<StreamRequest>() {
+        unsafe {
+            write_error(
+                error,
+                error_capacity,
+                "The stream request has the wrong size.",
+            )
+        };
+        return std::ptr::null_mut();
+    }
+    let Some(capture) = capture else {
+        unsafe { write_error(error, error_capacity, "No capture function.") };
+        return std::ptr::null_mut();
+    };
+    // SAFETY: the caller guarantees a NUL-terminated string or null.
+    let id = match unsafe { device_id_from(device_id) } {
+        Ok(id) => id,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, message) };
+            return std::ptr::null_mut();
+        }
+    };
+    match InputStream::open(id, request, capture, user_data) {
+        Ok(stream) => Box::into_raw(Box::new(stream)),
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, &message) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Starts (or resumes) an input stream.
+///
+/// # Safety
+/// `stream` must be a live handle from `bluestone_audio_open_input` or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_input_start(
+    stream: *mut InputStream,
+    error: *mut u8,
+    error_capacity: usize,
+) -> i32 {
+    // SAFETY: the caller guarantees a live handle or null.
+    let Some(stream) = (unsafe { stream.as_ref() }) else {
+        unsafe { write_error(error, error_capacity, "No stream.") };
+        return -1;
+    };
+    match stream.start() {
+        Ok(()) => 0,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, &message) };
+            -1
+        }
+    }
+}
+
+/// Pauses an input stream.
+///
+/// # Safety
+/// `stream` must be a live handle from `bluestone_audio_open_input` or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_input_stop(
+    stream: *mut InputStream,
+    error: *mut u8,
+    error_capacity: usize,
+) -> i32 {
+    // SAFETY: the caller guarantees a live handle or null.
+    let Some(stream) = (unsafe { stream.as_ref() }) else {
+        unsafe { write_error(error, error_capacity, "No stream.") };
+        return -1;
+    };
+    match stream.stop() {
+        Ok(()) => 0,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, &message) };
+            -1
+        }
+    }
+}
+
+/// Fills `status` with the input stream's state. Returns 0, or -1 for a null handle or a wrongly sized struct.
+///
+/// # Safety
+/// `stream` must be a live handle or null; `status` must point to an `InputStatus` whose `struct_size` is set.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_input_status(
+    stream: *const InputStream,
+    status: *mut InputStatus,
+) -> i32 {
+    // SAFETY: the caller guarantees a live handle or null, and a valid status pointer or null.
+    let (Some(stream), Some(status)) = (unsafe { stream.as_ref() }, unsafe { status.as_mut() })
+    else {
+        return -1;
+    };
+    if status.struct_size as usize != size_of::<InputStatus>() {
+        return -1;
+    }
+    *status = stream.status();
+    0
+}
+
+/// Closes an input stream: after this returns, `capture` is never called again.
+///
+/// # Safety
+/// `stream` must be a live handle from `bluestone_audio_open_input` (closed once) or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_input_close(stream: *mut InputStream) {
+    if !stream.is_null() {
+        // SAFETY: the caller passes each handle once; it came from Box::into_raw.
+        drop(unsafe { Box::from_raw(stream) });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
-    fn the_abi_version_is_one() {
-        assert_eq!(bluestone_audio_abi_version(), 1);
+    fn the_abi_version_is_two() {
+        assert_eq!(bluestone_audio_abi_version(), 2);
     }
 
     #[test]

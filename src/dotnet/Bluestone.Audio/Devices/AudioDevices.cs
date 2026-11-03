@@ -33,7 +33,12 @@ public static class AudioDevices
     public static bool IsAvailable(out string? problem) => NativeMethods.TryCheck(out problem);
 
     /// <summary>The output devices, or none when the native library is unavailable.</summary>
-    public static unsafe ImmutableArray<AudioDeviceInfo> List()
+    public static unsafe ImmutableArray<AudioDeviceInfo> List() => List(&NativeMethods.DevicesJson);
+
+    /// <summary>The input devices, or none when the native library is unavailable.</summary>
+    public static unsafe ImmutableArray<AudioDeviceInfo> ListInputs() => List(&NativeMethods.InputDevicesJson);
+
+    private static unsafe ImmutableArray<AudioDeviceInfo> List(delegate*<byte*, nuint, long> json)
     {
         if (!NativeMethods.TryCheck(out _))
         {
@@ -43,12 +48,12 @@ public static class AudioDevices
         // The list can grow between the two calls; retry with the new length.
         for (var attempt = 0; attempt < 4; attempt++)
         {
-            var length = NativeMethods.DevicesJson(null, 0);
+            var length = json(null, 0);
             var buffer = new byte[length + 1024];
             long written;
             fixed (byte* pointer = buffer)
             {
-                written = NativeMethods.DevicesJson(pointer, (nuint)buffer.Length);
+                written = json(pointer, (nuint)buffer.Length);
             }
 
             if (written <= buffer.Length)

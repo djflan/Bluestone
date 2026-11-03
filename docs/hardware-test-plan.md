@@ -131,8 +131,10 @@ For hardware ground truth:
 1. **MIDI:** connect the interface's MIDI OUT to its MIDI IN, loop the demo for one minute to that port, and compare
    send and receive timestamps with a MIDI monitor. The status bar's *p95* and *late* values give a quick check.
 2. **Audio:** patch an output of the audio interface to an input, or install a virtual loopback device such as
-   BlackHole. Play a live note into a plugin instrument with a sharp attack, record the input, and compare the onset
-   with the key's timestamp. Do this at 64, 128, and 256 frames. The result should match the Audio window's
-   "Live notes heard after … ms" figure within one buffer.
+   BlackHole (`brew install blackhole-2ch`, then restart), and run
+   `$P --audio-loopback 60 --device "BlackHole 2ch"` (add `--input-device NAME` when the input is another device, and
+   `--queue 512` for render-ahead). It plays clicks on timestamped live notes and finds them in the captured input.
+   `loopback.model-error` should stay within 0.5 ms; through an interface, its median is the converters' latency the
+   device does not report. Repeat at 64, 128, and 256 frames.
 
 Report results in an issue with the JSON reports attached, so they can be added to ADR 0043.
