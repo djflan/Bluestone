@@ -13,13 +13,14 @@ public sealed class DependencyDirectionTests
         { "Bluestone.Profiles", ["Bluestone.Domain"] },
         { "Bluestone.Signal", ["Bluestone.Domain"] },
         { "Bluestone.Playback", ["Bluestone.Domain", "Bluestone.Midi", "Bluestone.Signal"] },
-        { "Bluestone.Application", ["Bluestone.Audio", "Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Plugins", "Bluestone.Plugins.Protocol", "Bluestone.Profiles", "Bluestone.Signal"] },
+        { "Bluestone.Application", ["Bluestone.Audio", "Bluestone.Domain", "Bluestone.Engine.Protocol", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Plugins", "Bluestone.Plugins.Protocol", "Bluestone.Profiles", "Bluestone.Signal"] },
         { "Bluestone.Infrastructure", ["Bluestone.Domain"] },
         { "Bluestone.Presentation", ["Bluestone.Application", "Bluestone.Audio", "Bluestone.Domain", "Bluestone.Infrastructure", "Bluestone.Midi", "Bluestone.Playback", "Bluestone.Plugins", "Bluestone.Profiles", "Bluestone.Signal"] },
         { "Bluestone.Plugins.Protocol", [] },
         { "Bluestone.Audio", ["Bluestone.Plugins", "Bluestone.Plugins.Protocol"] },
         { "Bluestone.Plugins", ["Bluestone.Plugins.Protocol"] },
         { "Bluestone.PluginWorker", ["Bluestone.Plugins.Protocol"] },
+        { "Bluestone.Engine.Protocol", [] },
     };
 
     [Theory]
@@ -56,6 +57,17 @@ public sealed class DependencyDirectionTests
         Assert.All(references, name => Assert.True(
             name is "System" or "mscorlib" or "netstandard" || name.StartsWith("System.", StringComparison.Ordinal),
             $"Bluestone.Plugins.Protocol must not reference {name}."));
+    }
+
+    [Fact]
+    public void EngineProtocol_ReferencesOnlyTheBaseClassLibrary_AndNotThePluginProtocol()
+    {
+        var references = Assembly.Load("Bluestone.Engine.Protocol").GetReferencedAssemblies().Select(r => r.Name ?? string.Empty);
+
+        // ADR 0044: the engine has its own protocol, similar to the plugin workers' but never shared with it.
+        Assert.All(references, name => Assert.True(
+            name is "System" or "mscorlib" or "netstandard" || name.StartsWith("System.", StringComparison.Ordinal),
+            $"Bluestone.Engine.Protocol must not reference {name}."));
     }
 
     [Fact]

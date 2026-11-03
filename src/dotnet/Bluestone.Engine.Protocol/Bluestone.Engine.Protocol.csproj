@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The contract between Bluestone and its engine process (ADR 0044): control-channel frames, messages, and the
+       handshake. Its own protocol, separate from the plugin workers'. BCL only. -->
+  <PropertyGroup>
+    <RootNamespace>Bluestone.Engine.Protocol</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bluestone.Tests.Unit" />
+    <InternalsVisibleTo Include="Bluestone.Tests.Integration" />
+  </ItemGroup>
+</Project>

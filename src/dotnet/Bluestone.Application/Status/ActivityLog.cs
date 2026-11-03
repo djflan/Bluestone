@@ -161,6 +161,13 @@ public sealed class RunningActivity : IDisposable
     /// <summary>Ends the activity successfully. <paramref name="summary"/> is what Messages records; by default the activity's text and duration.</summary>
     public void Complete(string? summary = null) => End(ActivityOutcome.Completed, summary);
 
+    /// <summary>Ends the activity having done its work, but with something the musician should know, which Messages records as a warning.</summary>
+    public void CompleteWithWarning(string summary)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(summary);
+        End(ActivityOutcome.Warning, summary);
+    }
+
     /// <summary>Ends the activity with a problem, which Messages records as an error.</summary>
     public void Fail(string problem)
     {
@@ -193,6 +200,9 @@ public enum ActivityOutcome
 {
     Completed,
     Failed,
+
+    /// <summary>Done, with a summary to read as a warning (<see cref="RunningActivity.CompleteWithWarning"/>).</summary>
+    Warning,
 }
 
 /// <summary>

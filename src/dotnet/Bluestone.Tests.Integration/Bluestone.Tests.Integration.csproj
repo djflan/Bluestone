@@ -22,6 +22,7 @@
     <ProjectReference Include="../Bluestone.Plugins.Protocol/Bluestone.Plugins.Protocol.csproj" />
     <!-- Built and copied beside the tests so they can launch real worker processes; never loaded in the test process. -->
     <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../Bluestone.Engine/Bluestone.Engine.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Bluestone.Presentation/Bluestone.Presentation.csproj" />
     <ProjectReference Include="../Bluestone.Profiles/Bluestone.Profiles.csproj" />
     <ProjectReference Include="../Bluestone.Signal/Bluestone.Signal.csproj" />

@@ -183,6 +183,31 @@ Each step lands separately and keeps the app working:
    hosted runners.
 10. Make the engine the only path; remove the in-process real-time path.
 
+## The engine host and supervisor (step 4)
+
+The skeleton is in place:
+
+- **`Bluestone.Engine.Protocol`** (BCL only, AOT-safe, and not the plugin protocol: an architecture test checks it
+  references nothing else) defines the messages: Hello, Welcome, Ready, Heartbeat (with the engine's collections,
+  pause time, allocations, working set, and JIT count), Ping, Pong, Shutdown, Fault, and test commands. Frames are a
+  length and a type, decoded strictly; random bytes decode or fail with a protocol error, nothing else.
+- **`Bluestone.Engine`**, given a pipe and a token, connects, says Hello, reports Ready, sends a heartbeat every
+  250 ms, answers pings, and stops on Shutdown or when Bluestone goes away. Test commands (crash, hang, fault) are
+  obeyed only with `--allow-test-commands`. With `--spike` it still runs the step-2 smoke test.
+- **`EngineSupervisor`** (Application) launches it on a pipe restricted to the current user, checks the handshake
+  (version, token, process id), and watches for each kind of stop above: the process ending, 1 s without a message, a
+  broken or invalid channel, and a reported fault. A stopped engine is killed if still running and replaced, with a
+  warning in Messages ("The engine stopped (…) and was restarted; playback is stopped."). After 3 stops in 60 s it
+  is left failed, with an error in Messages, until `RestartAsync`. Starting and restarting are activities on the
+  status line. Integration tests do each of these with real engine processes: killed, hung, faulted, missing, a crash
+  loop, and a clean shutdown that is not counted as a stop.
+- The desktop app starts the engine alongside the main window when `BLUESTONE_ENGINE=1`. It is opt-in because the
+  engine does nothing else yet. It becomes the default when MIDI moves in (step 5), and so does All Notes Off on
+  restart.
+
+Shared building blocks were copied, not extracted: the framing is about 300 lines and differs from the plugin
+protocol's (no request ids, its own limits), and the launcher is short. Copying keeps the two protocols independent.
+
 ## Spike: the engine's code compiled ahead of time (step 2)
 
 `src/dotnet/Bluestone.Engine` publishes a console host with NativeAOT. It references the ten assemblies the engine will
