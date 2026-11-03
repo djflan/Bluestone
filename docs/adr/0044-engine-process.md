@@ -453,8 +453,8 @@ window fall back and stay back until depth 1 is asked for again, and misses furt
 
 ## Probes against the engine (step 8)
 
-The tooling is in place; the measurement runs, in a quiet phase on this Mac and later on Windows and Linux, are still to
-do, and their results go into ADR 0043. `Bluestone.Benchmarks` takes `--engine` with `--jitter`, `--audio`, `--live`, and
+The engine meets every ADR 0043 target on macOS (results below); Windows and Linux are still to be measured.
+`Bluestone.Benchmarks` takes `--engine` with `--jitter`, `--audio`, `--live`, and
 `--audio-loopback` (`EngineProbes`): the probe process plays Bluestone's role, starting the engine with
 `EngineSupervisor` and talking to it through `EnginePlayback` and `EngineAudio`, exactly as the app composes them, and
 carries the `--pressure` load where the app's allocations would be. Reports use the same JSON format, `--repeat`, and
@@ -485,13 +485,26 @@ carries the `--pressure` load where the app's allocations would be. Reports use 
   supervisor raises every heartbeat (`TelemetryReceived`), so each engine report has its collections, every pause seen
   (judged against 1 ms), the allocation rate (mostly the sender thread's messages to Bluestone), and the JIT count.
 
-Smoke runs of 3 s each on a busy machine (load average about 5 on 18 cores; not measurements) worked end to end with the
-NativeAOT engine, `--pressure app`, at 128 frames: MIDI 1,216 messages, none late; audio no missing or late callbacks,
-xruns, or failed plugin blocks, master playing; live 17 keys, 5.0–7.2 ms from key to heard with the headset's 4.75 ms
-output latency; BlackHole loopback 17 keys, all captured, 4.5 ms median key to capture; no collections in the engine,
-0 JIT-compiled methods, 46–94 KB/s allocated.
+**Results (2026-11-03).** Apple M5 Max, macOS, NativeAOT engine, BlackHole 2ch at 48 kHz and 128 frames (2.67 ms),
+60 s per run, two runs of each probe at each load, quiet machine. `--pressure` is generated in the probe process, which
+plays Bluestone: under `app` it collected about 375 times a run with pauses up to 8.7 ms.
 
-**Not done:** the measurement runs themselves; Windows and Linux; a per-collection pause list from the engine (a
+| Probe | none | app | edit | Target |
+| ----- | ---: | --: | ---: | -----: |
+| MIDI lateness, max (23,104 events; 0 of 15,232 messages missing) | 0 ms | 0 ms | 0 ms | 2 ms |
+| Audio: missing or late callbacks, xruns, render faults | 0 | 0 | 0 | 0 |
+| Audio: longest render | 0.02 ms | 0.06 ms | 0.26 ms | 2.67 ms |
+| Live, Core MIDI keys: added latency, max | 0.03 ms | 0.04 ms | 0.04 ms | 2 ms |
+| Live, forwarded keys (computer keyboard): added, max | 0.06 ms | 0.31 ms | – | 2 ms |
+| Loopback through BlackHole: added, max (about 320 keys) | 0.38 ms | 0.38 ms | – | 2 ms |
+| Engine collections / JIT-compiled methods | 0 / 0 | 0 / 0 | 0 / 0 | pause ≤ 1 ms |
+
+The engine did not collect once in any run, so the sender thread's allocation (46–94 KB/s) is not a timing risk at
+this rate: the first collection would come after many minutes, and its pause is bounded by the engine's small heap.
+The first, uncorrected suite (keys forwarded from the probe, before the probe waited for the MIDI destination) had one
+key a block late under `app` and one run that never opened its destination; both are fixed in the probes above.
+
+**Not done:** Windows and Linux; a per-collection pause list from the engine (a
 heartbeat sees the latest collection of its 250 ms interval; the total counts every one); the native layer's longest
 render is kept from when the stream opened, so it includes the first callbacks.
 
