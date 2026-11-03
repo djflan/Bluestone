@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Bluestone.Plugins.Protocol;
 
 namespace Bluestone.Plugins.Workers;
@@ -56,6 +57,7 @@ internal static class WorkerLauncher
     }
 
     /// <summary>The worker beside this assembly: the app host if present, else the managed <c>.dll</c>.</summary>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000", Justification = "An empty location (single-file and NativeAOT) falls back to AppContext.BaseDirectory.")]
     public static string ResolveDefault()
     {
         var location = typeof(WorkerLauncher).Assembly.Location;

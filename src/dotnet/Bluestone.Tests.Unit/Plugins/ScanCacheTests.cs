@@ -80,6 +80,78 @@ public sealed class ScanCacheTests : IDisposable
     }
 
     [Fact]
+    public void FilesWrittenBeforeSourceGeneratedJson_StillLoad_AndSaveTheSame()
+    {
+        // Exactly what the reflection-based serializer wrote before the scan files moved to source-generated JSON.
+        File.WriteAllText(CachePath, """
+            {
+              "version": 1,
+              "entries": [
+                {
+                  "path": "/m/a.vst3",
+                  "size": 120,
+                  "lastWriteUtcTicks": 638000000000000000,
+                  "plugins": [
+                    {
+                      "format": "vst3",
+                      "moduleId": "acme.mod",
+                      "pluginId": "acme.verb",
+                      "displayName": "Verb",
+                      "vendor": "Acme",
+                      "kind": "AudioEffect",
+                      "version": "2.1"
+                    }
+                  ],
+                  "failureKind": null,
+                  "failureMessage": null
+                },
+                {
+                  "path": "/m/b.txt",
+                  "size": 3,
+                  "lastWriteUtcTicks": 1,
+                  "plugins": [],
+                  "failureKind": "Malformed",
+                  "failureMessage": "nope"
+                }
+              ]
+            }
+            """);
+        var quarantinePath = _directory.File(PluginScanner.QuarantineFileName);
+        File.WriteAllText(quarantinePath, """
+            {
+              "version": 1,
+              "entries": [
+                {
+                  "modulePath": "/m/crash.clap",
+                  "reason": "Crashed",
+                  "message": "boom",
+                  "quarantinedAt": "2026-11-03T10:00:00-06:00"
+                }
+              ]
+            }
+            """);
+        var cacheBefore = File.ReadAllText(CachePath);
+        var quarantineBefore = File.ReadAllText(quarantinePath);
+
+        var cache = ScanCache.Load(CachePath);
+        var quarantine = ScanQuarantine.Load(quarantinePath);
+
+        Assert.Empty(cache.Diagnostics);
+        Assert.True(cache.TryGet("/m/a.vst3", new ModuleFingerprint(120, 638_000_000_000_000_000), out var plugins, out _));
+        Assert.Equal([new PluginIdentity("vst3", "acme.mod", "acme.verb", "Verb", "Acme", PluginKind.AudioEffect, "2.1")], plugins);
+        Assert.True(cache.TryGet("/m/b.txt", new ModuleFingerprint(3, 1), out _, out var failure));
+        Assert.Equal(new ScanFailure(ScanFailureKind.Malformed, "nope"), failure);
+        Assert.Equal([new QuarantineEntry("/m/crash.clap", ScanFailureKind.Crashed, "boom", new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.FromHours(-6)))], quarantine.Entries);
+
+        cache.Save();
+        quarantine.Save();
+        Assert.Equal(Normalize(cacheBefore), Normalize(File.ReadAllText(CachePath)));
+        Assert.Equal(Normalize(quarantineBefore), Normalize(File.ReadAllText(quarantinePath)));
+
+        static string Normalize(string json) => json.ReplaceLineEndings("\n").Trim();
+    }
+
+    [Fact]
     public void TheQuarantineList_Persists()
     {
         var path = _directory.File(PluginScanner.QuarantineFileName);

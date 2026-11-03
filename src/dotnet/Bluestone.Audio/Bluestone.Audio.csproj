@@ -4,6 +4,7 @@
        See docs/adr/0032-audio-engine.md. -->
   <PropertyGroup>
     <RootNamespace>Bluestone.Audio</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

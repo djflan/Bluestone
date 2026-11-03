@@ -4,6 +4,7 @@
        in this process. See docs/plugin-hosting.md. -->
   <PropertyGroup>
     <RootNamespace>Bluestone.Plugins</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Bluestone.Tests.Unit" />

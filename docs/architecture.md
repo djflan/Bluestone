@@ -78,6 +78,10 @@ Bluestone.Platform.Alsa     Midi               ALSA adapter (Linux)
 Bluestone.Desktop           Presentation, Platform.Alsa, Platform.CoreMidi, Platform.Windows
                                                Avalonia views, platform selection; PluginWorker is built and copied
                                                beside it, never loaded into it
+Bluestone.Engine            Audio, Midi, Playback, Plugins, Plugins.Protocol, Signal, Platform.Alsa, Platform.CoreMidi,
+                            Platform.Windows
+                                               the engine process (ADR 0044), published with NativeAOT; today a spike
+                                               that checks the real-time assemblies run compiled ahead of time
 Bluestone.Benchmarks        Application, Audio, Infrastructure, Platform.CoreMidi, Platform.Windows, Playback, Profiles
                                                performance measurements and probes (ADR 0012)
 Bluestone.Tests.Unit        Application, Audio, Domain, Infrastructure, Midi, Playback, PluginWorker, Plugins,

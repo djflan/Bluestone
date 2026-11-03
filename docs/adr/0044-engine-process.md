@@ -1,7 +1,6 @@
 # 0044. A separate C# engine process for real-time work
 
-- Status: Proposed (to be accepted after the ahead-of-time compilation spike, step 2 of the migration below); applies
-  ADR 0043
+- Status: Accepted (after the ahead-of-time compilation spike, step 2 of the migration below); applies ADR 0043
 - Date: 2026-11-03
 
 ## Context
@@ -152,6 +151,44 @@ Each step lands separately and keeps the app working:
 9. CI: AOT publish on macOS, Windows, and Linux; allocation, equivalence, and crash-restart tests. No timing gates on
    hosted runners.
 10. Make the engine the only path; remove the in-process real-time path.
+
+## Spike: the engine's code compiled ahead of time (step 2)
+
+`src/dotnet/Bluestone.Engine` publishes a console host with NativeAOT. It references the ten assemblies the engine will
+own: Audio, Domain, Midi, Playback, Plugins, Plugins.Protocol, Signal, and the three platform adapters. All ten are
+rooted whole, so the trim and AOT analysis covers all of their code. The host compiles a 32,000-note plan, plays it on
+the real playback thread, renders the probes' 32-strip graph offline, lists audio devices through the Rust layer, and
+creates a Core MIDI client with a virtual port.
+
+- **Analysis:** three problems, all in Bluestone.Plugins and both now fixed. The scan cache and quarantine files used
+  reflection-based JSON; they now use source-generated JSON, which writes the same files (a test loads files written
+  by the old code and saves them unchanged). The worker launcher read `Assembly.Location`, which is empty in an AOT
+  binary; it already fell back to `AppContext.BaseDirectory`, so that warning is suppressed with the reason. Audio and
+  Plugins are now marked `IsAotCompatible`, like the other eight, so ordinary builds keep all ten trim- and AOT-safe.
+- **Result:** a 7.8 MB native binary, with `libbluestone_audio.dylib` beside it. It ran with **0 methods
+  JIT-compiled**.
+
+Apple M5 Max, macOS 27.2, .NET 10.0.300, 3 runs each (the first AOT run after publishing was slower from a cold disk
+cache and is not counted):
+
+| | NativeAOT | JIT (Release) |
+| --- | ---: | ---: |
+| Process start to `Main` | 6–12 ms | 25–34 ms |
+| Compile the 32,000-note plan | 10–13 ms | 36–38 ms |
+| First second of audio rendered offline | 23–26 ms | 72–74 ms |
+| Steady-state render, per 128-frame block | 31.4 µs | 30.3 µs |
+| Listing audio devices (Core Audio) | about 80 ms | — |
+| Creating the Core MIDI client and a virtual port | about 14 ms | — |
+| Methods JIT-compiled during the run | 0 | about 1,550 |
+
+Ahead-of-time code is about 4% slower than fully optimized JIT code in steady state, because it has no dynamic
+profile-guided optimization. That is about 1% of a 2.67 ms buffer. In return it never compiles while playing, which
+ADR 0043 found causes pauses of up to 3.5 ms. The engine could report Ready about 150 ms after launch, most of it
+opening devices.
+
+Not covered by the spike: the code still in Bluestone.Application that will move into the engine (live routes,
+`AudioPlayback`, parts of `PlaybackController`). It must stay AOT-safe as it moves; the analyzers check that once it
+is in an `IsAotCompatible` assembly.
 
 ## Consequences
 
