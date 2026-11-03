@@ -5,10 +5,12 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Bluestone.Tests.Unit" />
+    <InternalsVisibleTo Include="Bluestone.Tests.Integration" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
     <ProjectReference Include="../Bluestone.Domain/Bluestone.Domain.csproj" />
+    <ProjectReference Include="../Bluestone.Engine.Protocol/Bluestone.Engine.Protocol.csproj" />
     <ProjectReference Include="../Bluestone.Infrastructure/Bluestone.Infrastructure.csproj" />
     <ProjectReference Include="../Bluestone.Midi/Bluestone.Midi.csproj" />
     <ProjectReference Include="../Bluestone.Playback/Bluestone.Playback.csproj" />

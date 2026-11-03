@@ -68,20 +68,22 @@ Bluestone.Plugins           Plugins.Protocol   worker launch and supervision, cr
 Bluestone.PluginWorker      Plugins.Protocol   the worker executable that hosts plugins (a separate process)
 Bluestone.Audio             Plugins, Plugins.Protocol   render graph, mixer strips and meters, audio file decoding,
                                                sample-rate conversion, disk streaming, plugin nodes, device output
-Bluestone.Application       Audio, Domain, Infrastructure, Midi, Playback, Plugins, Profiles, Signal
+Bluestone.Application       Audio, Domain, Engine.Protocol, Infrastructure, Midi, Playback, Plugins, Profiles, Signal
                                                sessions, editing commands, recording, routing resolution, hardware
-                                               automation, live input, the plugin bridge, the project's audio graph
+                                               automation, live input, the plugin bridge, the project's audio graph,
+                                               the engine supervisor
 Bluestone.Presentation      Application        view models, no UI framework
 Bluestone.Platform.CoreMidi Midi               CoreMIDI adapter (macOS)
 Bluestone.Platform.Windows  Midi               WinMM adapter
 Bluestone.Platform.Alsa     Midi               ALSA adapter (Linux)
 Bluestone.Desktop           Presentation, Platform.Alsa, Platform.CoreMidi, Platform.Windows
-                                               Avalonia views, platform selection; PluginWorker is built and copied
+                                               Avalonia views, platform selection; PluginWorker and Engine are built and copied
                                                beside it, never loaded into it
-Bluestone.Engine            Audio, Midi, Playback, Plugins, Plugins.Protocol, Signal, Platform.Alsa, Platform.CoreMidi,
-                            Platform.Windows
-                                               the engine process (ADR 0044), published with NativeAOT; today a spike
-                                               that checks the real-time assemblies run compiled ahead of time
+Bluestone.Engine.Protocol   (none)             the engine process's control channel: frames, messages, handshake (ADR 0044)
+Bluestone.Engine            Audio, Engine.Protocol, Midi, Playback, Plugins, Plugins.Protocol, Signal, Platform.Alsa,
+                            Platform.CoreMidi, Platform.Windows
+                                               the engine process (ADR 0044), published with NativeAOT; started and
+                                               supervised by Application's EngineSupervisor, copied beside the app
 Bluestone.Benchmarks        Application, Audio, Infrastructure, Platform.CoreMidi, Platform.Windows, Playback, Profiles
                                                performance measurements and probes (ADR 0012)
 Bluestone.Tests.Unit        Application, Audio, Domain, Infrastructure, Midi, Playback, PluginWorker, Plugins,

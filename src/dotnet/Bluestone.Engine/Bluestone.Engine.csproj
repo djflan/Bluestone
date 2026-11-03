@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- ADR 0044, migration step 2: a spike of the engine process published with NativeAOT. It references the real-time
-       assemblies the engine will own and roots them whole, so the trim and AOT analysis covers all of their code, not
-       only what this smoke test calls. -->
+  <!-- The engine process (ADR 0044), published with NativeAOT. It references the real-time assemblies it will own and
+       roots them whole, so the trim and AOT analysis covers all of their code, not only what it calls today. Bluestone
+       starts it with a pipe and a token; given "spike" it runs the ahead-of-time smoke test (migration step 2). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
@@ -11,6 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
+    <ProjectReference Include="../Bluestone.Engine.Protocol/Bluestone.Engine.Protocol.csproj" />
     <ProjectReference Include="../Bluestone.Midi/Bluestone.Midi.csproj" />
     <ProjectReference Include="../Bluestone.Playback/Bluestone.Playback.csproj" />
     <ProjectReference Include="../Bluestone.Plugins/Bluestone.Plugins.csproj" />
@@ -23,6 +24,7 @@
   <ItemGroup>
     <TrimmerRootAssembly Include="Bluestone.Audio" />
     <TrimmerRootAssembly Include="Bluestone.Domain" />
+    <TrimmerRootAssembly Include="Bluestone.Engine.Protocol" />
     <TrimmerRootAssembly Include="Bluestone.Midi" />
     <TrimmerRootAssembly Include="Bluestone.Playback" />
     <TrimmerRootAssembly Include="Bluestone.Plugins" />

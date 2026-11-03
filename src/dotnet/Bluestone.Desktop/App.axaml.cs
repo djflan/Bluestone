@@ -1,6 +1,7 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Bluestone.Application.Audio;
+using Bluestone.Application.Engine;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Application.Status;
@@ -18,6 +19,7 @@ namespace Bluestone.Desktop;
 public partial class App : Avalonia.Application
 {
     private static AudioViewModel? _audio;
+    private static EngineSupervisor? _engine;
 
     /// <summary>Cancels start-up work that runs off the UI thread (the plugin scan) when Bluestone quits during start-up.</summary>
     private static readonly CancellationTokenSource StartupCancellation = new();
@@ -94,6 +96,14 @@ public partial class App : Avalonia.Application
             }
 
             _audio?.StartIfEnabled();
+
+            // The engine process (ADR 0044) starts alongside the window; editing does not wait for it. Opt-in until the
+            // engine owns MIDI and audio (migration steps 5 and 6): it does nothing else yet.
+            if (Environment.GetEnvironmentVariable("BLUESTONE_ENGINE") == "1")
+            {
+                _engine = new EngineSupervisor(new EngineSupervisorOptions(), viewModel.Activities);
+                _ = _engine.StartAsync();
+            }
 
             // A project or MIDI file named on the command line (or by the OS file association) opens at start.
             if (desktop.Args is [var path, ..] && MainViewModel.CanOpenFile(path))
@@ -238,6 +248,11 @@ public partial class App : Avalonia.Application
 
     private static async Task StopAsync(MainViewModel viewModel, IEnumerable<IMidiEndpointProvider> platformProviders, PluginHostManager plugins)
     {
+        if (_engine is { } engine)
+        {
+            await engine.DisposeAsync().ConfigureAwait(false);
+        }
+
         await viewModel.DisposeAsync().ConfigureAwait(false);
         await plugins.DisposeAsync().ConfigureAwait(false);
         foreach (var provider in platformProviders)

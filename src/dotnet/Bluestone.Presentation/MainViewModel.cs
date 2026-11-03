@@ -187,7 +187,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
         };
         Activities.Ended += (_, ended) => _dispatcher.Run(() => AddMessage(
-            ended.Outcome == ActivityOutcome.Failed ? MessageSeverity.Error : MessageSeverity.Info,
+            ended.Outcome switch
+            {
+                ActivityOutcome.Failed => MessageSeverity.Error,
+                ActivityOutcome.Warning => MessageSeverity.Warning,
+                _ => MessageSeverity.Info,
+            },
             ended.Activity.Source,
             EndedText(ended)));
 

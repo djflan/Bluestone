@@ -23,6 +23,8 @@
     <ProjectReference Include="../Bluestone.Presentation/Bluestone.Presentation.csproj" />
     <!-- Plugins run in this worker, a separate process copied beside the app; it is never loaded into the app. -->
     <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The engine process (ADR 0044), also copied beside the app and never loaded into it. -->
+    <ProjectReference Include="../Bluestone.Engine/Bluestone.Engine.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!-- Images built into the app (avares://Bluestone.Desktop/Assets/...), such as the splash artwork. -->
