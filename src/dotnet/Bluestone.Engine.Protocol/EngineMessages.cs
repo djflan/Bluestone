@@ -85,7 +85,11 @@ public sealed record Heartbeat(long Sequence, EngineTelemetry Telemetry) : Engin
 /// <param name="AllocatedBytes">Bytes allocated so far, all threads.</param>
 /// <param name="WorkingSetBytes">The process's working set.</param>
 /// <param name="JitCompiledMethods">Methods compiled at run time so far (0 for an ahead-of-time build).</param>
-public readonly record struct EngineTelemetry(int Collections, TimeSpan PauseTotal, long AllocatedBytes, long WorkingSetBytes, long JitCompiledMethods);
+/// <param name="LastPause">
+/// The pause of the latest collection, when one happened since the previous heartbeat (zero otherwise). With several
+/// collections in one interval only the latest is seen; <paramref name="PauseTotal"/> counts them all.
+/// </param>
+public readonly record struct EngineTelemetry(int Collections, TimeSpan PauseTotal, long AllocatedBytes, long WorkingSetBytes, long JitCompiledMethods, TimeSpan LastPause = default);
 
 /// <summary>Bluestone → engine: answer with <see cref="Pong"/> carrying the same id.</summary>
 public sealed record Ping(long Id) : EngineMessage

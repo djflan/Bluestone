@@ -3,7 +3,8 @@ using Bluestone.Benchmarks;
 
 // Timing probes (ADR 0043): each prints its metrics and writes a JSON report (--report DIR|FILE.json, default
 // TestResults/timing). Common options: [seconds] [--pressure none|app|churn|full] [--sched default|timer|promote|realtime]
-// [--repeat N] [--isolate]. Anything else runs the BenchmarkDotNet micro-benchmarks.
+// [--repeat N] [--isolate]. With --engine, --jitter, --audio, --live, and --audio-loopback measure the engine process
+// (EngineProbes). Anything else runs the BenchmarkDotNet micro-benchmarks.
 if (args is ["--midi-sink", var sinkFile, ..])
 {
     if (OperatingSystem.IsMacOS())
@@ -20,7 +21,15 @@ if (args is ["--compare", var before, var after, ..])
     return 0;
 }
 
-Action<ProbeOptions>? probe = args switch
+// --engine: the same measurements through the real engine process, with this process as Bluestone (ADR 0044 step 8).
+Action<ProbeOptions>? probe = args.Contains("--engine") ? args switch
+{
+    ["--jitter", ..] => EngineProbes.Jitter,
+    ["--audio", ..] => EngineProbes.Audio,
+    ["--live", ..] => EngineProbes.Live,
+    ["--audio-loopback", ..] => EngineProbes.Loopback,
+    _ => _ => Console.WriteLine("--engine works with --jitter, --audio, --live, and --audio-loopback."),
+} : args switch
 {
     ["--jitter", ..] => JitterProbe.Run,
     ["--live", ..] => LiveLatencyProbe.Run,

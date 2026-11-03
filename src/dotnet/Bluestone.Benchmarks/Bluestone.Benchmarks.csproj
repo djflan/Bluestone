@@ -17,6 +17,8 @@
     <ProjectReference Include="../Bluestone.Application/Bluestone.Application.csproj" />
     <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
     <ProjectReference Include="../Bluestone.Infrastructure/Bluestone.Infrastructure.csproj" />
+    <!-- Alsa only for the engine's JIT build copied beside the probes, which loads all three platform adapters. -->
+    <ProjectReference Include="../Bluestone.Platform.Alsa/Bluestone.Platform.Alsa.csproj" />
     <ProjectReference Include="../Bluestone.Platform.CoreMidi/Bluestone.Platform.CoreMidi.csproj" />
     <ProjectReference Include="../Bluestone.Platform.Windows/Bluestone.Platform.Windows.csproj" />
     <ProjectReference Include="../Bluestone.Playback/Bluestone.Playback.csproj" />
@@ -24,5 +26,7 @@
     <!-- The plugin pipeline probe launches real plugin workers; the worker is copied beside the probes, never loaded. -->
     <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Bluestone.Profiles/Bluestone.Profiles.csproj" />
+    <!-- The engine probes start the engine; its JIT build is copied beside the probes as a fallback to the NativeAOT one. -->
+    <ProjectReference Include="../Bluestone.Engine/Bluestone.Engine.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

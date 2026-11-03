@@ -6,6 +6,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Bluestone.Tests.Unit" />
     <InternalsVisibleTo Include="Bluestone.Tests.Integration" />
+    <!-- The engine probes wait for graphs as the integration tests do (ADR 0044 step 8). -->
+    <InternalsVisibleTo Include="Bluestone.Benchmarks" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />

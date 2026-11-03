@@ -150,13 +150,14 @@ internal static class EngineHost
     {
         using var timer = new PeriodicTimer(EngineLimits.HeartbeatInterval);
         var sequence = 0L;
+        var collection = GC.GetGCMemoryInfo(GCKind.Any).Index;
         try
         {
             do
             {
                 if (!hung())
                 {
-                    await channel.WriteAsync(new Heartbeat(sequence++, Telemetry()), stop).ConfigureAwait(false);
+                    await channel.WriteAsync(new Heartbeat(sequence++, Telemetry(ref collection)), stop).ConfigureAwait(false);
                 }
             }
             while (await timer.WaitForNextTickAsync(stop).ConfigureAwait(false));
@@ -167,10 +168,27 @@ internal static class EngineHost
         }
     }
 
-    private static EngineTelemetry Telemetry() => new(
-        GC.CollectionCount(0),
-        GC.GetTotalPauseDuration(),
-        GC.GetTotalAllocatedBytes(),
-        Environment.WorkingSet,
-        System.Runtime.JitInfo.GetCompiledMethodCount());
+    // The latest collection's pause, when there was one since the last heartbeat, so a probe can check every pause
+    // during playback against ADR 0043's 1 ms (one in an interval is seen; the total counts all of them).
+    private static EngineTelemetry Telemetry(ref long collection)
+    {
+        var latest = GC.GetGCMemoryInfo(GCKind.Any);
+        var pause = TimeSpan.Zero;
+        if (latest.Index != collection)
+        {
+            collection = latest.Index;
+            foreach (var part in latest.PauseDurations)
+            {
+                pause += part;
+            }
+        }
+
+        return new(
+            GC.CollectionCount(0),
+            GC.GetTotalPauseDuration(),
+            GC.GetTotalAllocatedBytes(),
+            Environment.WorkingSet,
+            System.Runtime.JitInfo.GetCompiledMethodCount(),
+            pause);
+    }
 }

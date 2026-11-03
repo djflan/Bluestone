@@ -8,7 +8,7 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 5;
+    public const int Version = 6;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;
@@ -167,6 +167,7 @@ public sealed partial class EngineChannel(Stream stream) : IDisposable
                 writer.Int64(heartbeat.Telemetry.AllocatedBytes);
                 writer.Int64(heartbeat.Telemetry.WorkingSetBytes);
                 writer.Int64(heartbeat.Telemetry.JitCompiledMethods);
+                writer.Int64(heartbeat.Telemetry.LastPause.Ticks);
                 break;
             case Ping ping:
                 writer.Int64(ping.Id);
@@ -202,7 +203,7 @@ public sealed partial class EngineChannel(Stream stream) : IDisposable
             EngineMessageType.Hello => new Hello(reader.Int32(), reader.String(), reader.Int32(), reader.Bool()),
             EngineMessageType.Welcome => new Welcome(reader.Int32()),
             EngineMessageType.Ready => new Ready(),
-            EngineMessageType.Heartbeat => new Heartbeat(reader.Int64(), new EngineTelemetry(reader.Int32(), TimeSpan.FromTicks(reader.NonNegative()), reader.NonNegative(), reader.NonNegative(), reader.NonNegative())),
+            EngineMessageType.Heartbeat => new Heartbeat(reader.Int64(), new EngineTelemetry(reader.Int32(), TimeSpan.FromTicks(reader.NonNegative()), reader.NonNegative(), reader.NonNegative(), reader.NonNegative(), TimeSpan.FromTicks(reader.NonNegative()))),
             EngineMessageType.Ping => new Ping(reader.Int64()),
             EngineMessageType.Pong => new Pong(reader.Int64()),
             EngineMessageType.Shutdown => new Shutdown(),

@@ -171,8 +171,8 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         }
     }
 
-    public AudioTelemetry? Telemetry => IsRunning && Volatile.Read(ref _meters).Counters is { } counters
-        ? new AudioTelemetry(counters.Callbacks, counters.Xruns, counters.Discontinuities, counters.LateRenders, counters.QueueUnderrunFrames, counters.RenderFaults, TimeSpan.FromTicks(counters.RenderMax), TimeSpan.FromTicks(counters.OutputLatency), counters.PluginFailedBlocks)
+    public AudioTelemetry? Telemetry => IsRunning && Volatile.Read(ref _meters) is { Counters: { } counters } meters
+        ? new AudioTelemetry(counters.Callbacks, counters.Xruns, counters.Discontinuities, counters.LateRenders, counters.QueueUnderrunFrames, counters.RenderFaults, TimeSpan.FromTicks(counters.RenderMax), TimeSpan.FromTicks(counters.OutputLatency), counters.PluginFailedBlocks, meters.Live.DeadlineMisses)
         : null;
 
     /// <summary>Live notes into plugin instruments, measured in the engine where they are heard (ADR 0044 step 7).</summary>
