@@ -159,6 +159,10 @@ $P --audio-loopback 60 --engine --pressure app --buffer 128          # BlackHole
 
 Run each with `--pressure none`, `app`, and `edit` (and `churn`/`full` for stress), at 64 and 128 frames, with
 `--repeat 3`. Every engine report also has the engine's collections, pauses (ADR 0043: none over 1 ms while playing),
-allocation rate, and JIT count (0 for the NativeAOT build).
+allocation rate, and JIT count (0 for the NativeAOT build), and the probe process's own collections and pauses
+(`probe.gc.*`), so an outlier on a path that crosses the probe can be attributed. `--live-input midi` (the default on
+macOS) plays the keys from a child process through a Core MIDI source the engine opens, as a keyboard;
+`--live-input forwarded` posts them from the probe, as the computer keyboard does, so a pause in the probe can delay a
+key. The MIDI probe misses if the engine dispatched fewer messages than the plan holds or reported a problem.
 
 Report results in an issue with the JSON reports attached, so they can be added to ADR 0043.

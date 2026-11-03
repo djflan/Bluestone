@@ -464,14 +464,23 @@ carries the `--pressure` load where the app's allocations would be. Reports use 
   JIT build copied beside the probes, reported as not the shipping configuration (`engine` in the settings, and the
   engine's JIT count).
 - **MIDI:** a dense plan (16 tracks) plays in the engine to a Core MIDI destination that a child process publishes and
-  the engine opens itself (scheduled delivery); the engine's own timing figures give the lateness. Without Core MIDI
-  the engine plays to an output forwarded to the probe.
+  the engine opens itself (scheduled delivery); the engine's own timing figures give the lateness. The probe waits
+  until the engine has the destination open (retrying, since a newly published endpoint can take a moment to appear),
+  and misses if the engine dispatched fewer messages than the plan holds in the window (`midi.engine.missing`) or
+  reported a problem. Without Core MIDI the engine plays to an output forwarded to the probe.
 - **Audio:** the device in direct mode at `--buffer`, with four looping clips on channels through a bus and the
   reference sine in a real worker playing notes, while the transport loops: missing and late callbacks, xruns, gaps,
   render faults, failed plugin blocks, the longest render against the period, and the master's peak (to show it played).
-- **Live:** keys posted here, as the computer keyboard's are, into the monitored reference sine at depth 1; the engine's
-  meter gives the count, average, shortest, and longest latency from each key's timestamp to when it is heard, and the
-  added latency against ADR 0043's 2 ms. With `--audio-loopback` the keys are heard through BlackHole and captured here.
+- **Live:** keys into the monitored reference sine at depth 1. `--live-input midi` (default on macOS) sends them from a
+  child process through a Core MIDI source the engine opens as an input, stamped at send, as a hardware keyboard's;
+  `--live-input forwarded` posts them from the probe, as the computer keyboard's are, so a collection in the UI process
+  delays them (the first quiet suite saw one key a block late under `--pressure app` this way). The engine's meter gives
+  the count, average, shortest, and longest latency from each key's timestamp to when it is heard, and the added latency
+  against ADR 0043's 2 ms: key to heard less the output latency and one period, so a key that adds nothing lands between
+  minus one period and zero (about −1 ms on average at 128 frames). With `--audio-loopback` the keys are heard through
+  BlackHole and captured here.
+- **The probe's collections:** every engine report also has the probe process's collections and pauses (`probe.gc.*`),
+  to attribute an outlier on a forwarded path.
 - **The engine's collections:** heartbeats now carry the latest collection's pause (protocol version 6), and the
   supervisor raises every heartbeat (`TelemetryReceived`), so each engine report has its collections, every pause seen
   (judged against 1 ms), the allocation rate (mostly the sender thread's messages to Bluestone), and the JIT count.

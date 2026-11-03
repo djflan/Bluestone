@@ -15,6 +15,16 @@ if (args is ["--midi-sink", var sinkFile, ..])
     return 0;
 }
 
+if (args is ["--midi-keys", ..])
+{
+    if (OperatingSystem.IsMacOS())
+    {
+        MidiKeys.Run();
+    }
+
+    return 0;
+}
+
 if (args is ["--compare", var before, var after, ..])
 {
     TimingReport.Compare(before, after);

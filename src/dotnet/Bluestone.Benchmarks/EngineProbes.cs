@@ -51,8 +51,10 @@ internal static class EngineProbes
 {
     private const int SampleRate = 48_000;
 
-    // The Core MIDI destination the sink publishes (MidiLoopbackProbe.SinkName).
+    // The Core MIDI destination the sink publishes (MidiLoopbackProbe.SinkName), and the source the key process publishes
+    // (MidiKeys.SourceName); named here because those types are macOS-only.
     private const string SinkName = "Bluestone Timing Sink";
+    private const string MidiKeysSource = "Bluestone Probe Keys";
     private static readonly PluginIdentity Sine = new("bluestone-reference", "bluestone.reference", "reference.sine", "Reference Sine", "Bluestone", PluginKind.Instrument, "1.0.0");
 
     /// <summary>MIDI playback in the engine: a dense plan to an output the engine opens itself.</summary>
@@ -63,12 +65,12 @@ internal static class EngineProbes
         var report = new TimingReport("engine-midi-dispatch", settings);
         report.Machine.WarnIfBusy();
         Console.WriteLine($"Engine MIDI dispatch ({build}): {options.Seconds} s; pressure {settings["pressure"]}");
-        var (_, plan) = JitterProbe.Prepare();
+        var (sequence, plan) = JitterProbe.Prepare();
 
         using var rig = Rig.Create(path, testAudio: false);
         rig.Start();
         using var sink = Sink.Open(report);
-        var output = sink.Endpoint is { } endpoint ? rig.Playback.OpenOutput(endpoint) : rig.Playback.Forward(new CountingOutput(EndpointCapabilities.None));
+        var output = OpenOutput(rig, sink, report);
         rig.Playback.SetOutputs([output]);
         rig.Playback.Load(plan);
         report.Settings["output"] = sink.Endpoint is null ? "forwarded to the probe (no Core MIDI)" : $"Core MIDI destination '{SinkName}', opened by the engine (scheduled delivery)";
@@ -104,6 +106,12 @@ internal static class EngineProbes
         }
 
         var stats = rig.Playback.SnapshotStatistics();
+
+        // Every message the plan holds for the time played must have gone out: a run that played nothing is not a pass.
+        var expected = AtLeast(sequence, TimeSpan.FromSeconds(options.Seconds) - TimeSpan.FromMilliseconds(500));
+        report.Add(new Metric("midi.engine.expected", "messages", expected));
+        report.Add(new Metric("midi.engine.missing", "messages", Math.Max(0, expected - stats.Dispatched), Target: 0));
+        report.Add(new Metric("midi.engine.problems", "problems", report.Notes.Count(n => n.StartsWith("The engine reported", StringComparison.Ordinal)), Target: 0));
         report.Add(new Metric("midi.engine.lateness", "ms",
             Distribution: Distribution.OfHistogram(stats.FineHistogram, TimingStatistics.FineBucketWidth.TotalMilliseconds, stats.MaxLateness.TotalMilliseconds),
             Target: Targets.MidiLatenessMs));
@@ -112,6 +120,58 @@ internal static class EngineProbes
         report.Add(new Metric("midi.engine.rate", "messages/s", stats.Dispatched / (double)options.Seconds));
         gc.AddTo(report);
         options.Finish(report);
+    }
+
+    // The engine opens the sink's destination itself; Core MIDI may not list it in the engine yet, so it is opened again
+    // until the engine has it (or reports why not).
+    private static IMidiOutput OpenOutput(Rig rig, Sink sink, TimingReport report)
+    {
+        if (sink.Endpoint is not { } endpoint)
+        {
+            return rig.Playback.Forward(new CountingOutput(EndpointCapabilities.None));
+        }
+
+        var problems = new List<string>();
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var output = rig.Playback.OpenOutput(endpoint);
+            Thread.Sleep(250);
+            problems.AddRange(rig.Playback.TakeProblems());
+            if (output.State == EndpointState.Open)
+            {
+                if (attempt > 0)
+                {
+                    report.Notes.Add($"The engine opened the destination at attempt {attempt + 1}.");
+                }
+
+                return output;
+            }
+
+            output.Dispose();
+        }
+
+        foreach (var problem in problems.Distinct())
+        {
+            report.Notes.Add($"The engine reported: {problem}");
+        }
+
+        throw new InvalidOperationException($"The engine could not open '{SinkName}': {string.Join("; ", problems.Distinct())}");
+    }
+
+    // Messages the sequence's notes send before `elapsed` has played: each note's on, and its off when it ends by then.
+    private static long AtLeast(Sequence sequence, TimeSpan elapsed)
+    {
+        var until = sequence.TempoMap.TickAt(elapsed).Value;
+        var count = 0L;
+        foreach (var track in sequence.Tracks)
+        {
+            foreach (var note in track.ArrangedEvents.OfType<NoteEvent>())
+            {
+                count += (note.Position.Value < until ? 1 : 0) + (note.EndPosition.Value < until ? 1 : 0);
+            }
+        }
+
+        return count;
     }
 
     /// <summary>The engine's audio device in direct mode with a realistic graph, while the transport plays.</summary>
@@ -201,47 +261,60 @@ internal static class EngineProbes
         settings["device"] = device;
         settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
         settings["queue"] = "0 (direct)";
-        settings["input"] = "forwarded from this process (as the computer keyboard)";
+        var keyInput = LiveInput(options);
+        settings["input"] = keyInput == "midi" ? "MIDI from another process through a Core MIDI source the engine opens (as a keyboard)" : "forwarded from this process (as the computer keyboard)";
         var report = new TimingReport("engine-live-latency", settings);
         report.Machine.WarnIfBusy();
         Console.WriteLine($"Engine live latency ({build}): {device}, {buffer} frames, direct, the monitored reference sine at depth 1; pressure {settings["pressure"]}; {options.Seconds} s");
 
         using var rig = Rig.Create(path, testAudio: false);
-        using var project = AudioProject.Create(rig, clips: 0, notes: false);
+        using var keys = KeySource.Create(keyInput);
+        using var project = AudioProject.Create(rig, clips: 0, notes: false, keys.Providers);
         rig.Start();
-        if (!project.Open(deviceId, buffer, report) || !project.Monitor())
+        if (!project.Open(deviceId, buffer, report) || !project.Monitor() || !keys.Connect(project))
         {
-            Console.WriteLine("The reference sine is not played at depth 1.");
+            Console.WriteLine("The reference sine is not played at depth 1, or the keys do not reach it.");
             return;
         }
 
         using var stop = new CancellationTokenSource();
         var threads = options.StartPressure(stop.Token);
         Thread.Sleep(threads.Count > 0 ? 1000 : 200);
-        var startNotes = project.Audio.LiveLatency.Count;
+        var startLive = project.Audio.LiveLatency;
         var startMisses = project.Telemetry().LiveDeadlineMisses;
         using var gc = new EngineGcWatch(rig.Supervisor);
-        var played = Keys(project, options.Seconds);
+        var played = keys.Play(project, options.Seconds);
         gc.Stop();
         Thread.Sleep(500);
         StopPressure(stop, threads);
 
         var live = project.Audio.LiveLatency;
         var telemetry = project.Telemetry();
+        if (startLive.Count > 0)
+        {
+            report.Notes.Add($"The engine's meter also holds {startLive.Count} warm-up keys (sent to check the input reaches the instrument); its shortest and longest include them.");
+        }
+
         var period = (double)buffer / SampleRate * 1000;
         var outputLatency = telemetry.OutputLatency.TotalMilliseconds;
         report.Add(new Metric("audio.period", "ms", period));
         report.Add(new Metric("audio.output-latency", "ms", outputLatency));
         report.Add(new Metric("live.played", "notes", played.Count));
-        report.Add(new Metric("live.measured", "notes", live.Count - startNotes));
-        report.Add(new Metric("live.total.average", "ms", live.Average.TotalMilliseconds));
+        report.Add(new Metric("live.measured", "notes", live.Count - startLive.Count));
+        // The average of this run's keys alone; the shortest and longest are the meter's (warm-up keys included).
+        var measured = Math.Max(1, live.Count - startLive.Count);
+        var average = ((live.Average.TotalMilliseconds * live.Count) - (startLive.Average.TotalMilliseconds * startLive.Count)) / measured;
+        report.Add(new Metric("live.total.average", "ms", average));
         report.Add(new Metric("live.total.min", "ms", live.Min.TotalMilliseconds));
         report.Add(new Metric("live.total.max", "ms", live.Max.TotalMilliseconds));
-        report.Add(new Metric("live.added.average", "ms", live.Average.TotalMilliseconds - outputLatency - period));
+        report.Add(new Metric("live.added.average", "ms", average - outputLatency - period));
         report.Add(new Metric("live.added.max", "ms", live.Max.TotalMilliseconds - outputLatency - period, Target: Targets.LiveAddedMs));
         report.Add(new Metric("live.depth1-misses", "blocks", telemetry.LiveDeadlineMisses - startMisses, Target: 0));
         report.Add(new Metric("audio.xruns", "xruns", telemetry.Xruns, Target: 0));
-        report.Notes.Add("The engine's meter keeps the count, average, shortest, and longest latency (from the key's timestamp, taken here, to when its block is heard); the forwarded path from this process is included.");
+        report.Notes.Add(keyInput == "midi"
+            ? "The engine's meter keeps the count, average, shortest, and longest latency, from the key's MIDI timestamp (set by the sending process) to when its block is heard: Core MIDI's hop to the engine's input is included."
+            : "The engine's meter keeps the count, average, shortest, and longest latency, from the key's timestamp (taken here) to when its block is heard: the forwarded path from this process, and any pause here, is included.");
+        report.Notes.Add(AddedNote);
         gc.AddTo(report);
         options.Finish(report);
     }
@@ -274,16 +347,19 @@ internal static class EngineProbes
         settings["input-device"] = input.Name;
         settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
         settings["queue"] = "0 (direct)";
+        var keyInput = LiveInput(options);
+        settings["input"] = keyInput == "midi" ? "MIDI from another process through a Core MIDI source the engine opens (as a keyboard)" : "forwarded from this process (as the computer keyboard)";
         var report = new TimingReport("engine-audio-loopback", settings);
         report.Machine.WarnIfBusy();
         Console.WriteLine($"Engine audio loopback ({build}): out {output.Name}, in {input.Name}; {buffer} frames, direct; pressure {settings["pressure"]}; {options.Seconds} s");
 
         using var rig = Rig.Create(path, testAudio: false);
-        using var project = AudioProject.Create(rig, clips: 0, notes: false);
+        using var keys = KeySource.Create(keyInput);
+        using var project = AudioProject.Create(rig, clips: 0, notes: false, keys.Providers);
         rig.Start();
-        if (!project.Open(output.Id, buffer, report) || !project.Monitor())
+        if (!project.Open(output.Id, buffer, report) || !project.Monitor() || !keys.Connect(project))
         {
-            Console.WriteLine("The reference sine is not played at depth 1.");
+            Console.WriteLine("The reference sine is not played at depth 1, or the keys do not reach it.");
             return;
         }
 
@@ -313,7 +389,7 @@ internal static class EngineProbes
         var threads = options.StartPressure(stop.Token);
         Thread.Sleep(threads.Count > 0 ? 1000 : 200);
         using var gc = new EngineGcWatch(rig.Supervisor);
-        var played = Keys(project, options.Seconds);
+        var played = keys.Play(project, options.Seconds);
         gc.Stop();
         Thread.Sleep(300);
         capture.Stop();
@@ -348,9 +424,27 @@ internal static class EngineProbes
         report.Add(new Metric("loopback.unmatched", "keys", unmatched, Target: 0));
         report.Add(new Metric("loopback.total", "ms", Distribution: Distribution.Of(totals)));
         report.Add(new Metric("loopback.added", "ms", Distribution: Distribution.Of(totals.Select(t => t - outputLatency - period)), Target: Targets.LiveAddedMs));
-        report.Notes.Add("total is from the key's timestamp (taken here) to when the onset entered the loopback input (the input's reported latency is already taken off the capture time); added also takes off the device's reported output latency and one buffer period, so it is negative when a key waits less than a whole period for its callback. The onset is the sine's first sample above 0.02, a few samples into its attack.");
+        report.Notes.Add(AddedNote);
+        report.Notes.Add("total is from the key's timestamp (taken where it was sent) to when the onset entered the loopback input (the input's reported latency is already taken off the capture time); added also takes off the device's reported output latency and one buffer period, so it is negative when a key waits less than a whole period for its callback. The onset is the sine's first sample above 0.02, a few samples into its attack.");
         gc.AddTo(report);
         options.Finish(report);
+    }
+
+    // What the added figures mean, for every live report.
+    private const string AddedNote =
+        "added = key-to-heard less the device's reported output latency and one buffer period (ADR 0043's definition). A key arrives at a random moment and waits for the next callback, between none and a whole period, half on average, so a key that adds nothing comes out between minus one period and zero, about minus half a period on average (-1.3 ms at 128 frames at 48 kHz). The target judges the largest: what Bluestone adds beyond the device and the buffer.";
+
+    // --live-input: MIDI from another process through a Core MIDI source (default on macOS), or forwarded from this one.
+    private static string LiveInput(ProbeOptions options)
+    {
+        var input = ProbeOptions.Option(options.Args, "--live-input") ?? (OperatingSystem.IsMacOS() ? "midi" : "forwarded");
+        return input switch
+        {
+            "midi" when OperatingSystem.IsMacOS() => "midi",
+            "midi" => throw new ArgumentException("--live-input midi needs Core MIDI (macOS); use --live-input forwarded."),
+            "forwarded" => "forwarded",
+            _ => throw new ArgumentException("--live-input is midi or forwarded."),
+        };
     }
 
     /// <summary>
@@ -430,6 +524,114 @@ internal static class EngineProbes
         }
 
         return times;
+    }
+
+    /// <summary>
+    /// Where the keys of the live probes come from: forwarded from this process (the computer keyboard's path), or a
+    /// child process's virtual Core MIDI source that the engine opens as an input (a MIDI keyboard's path).
+    /// </summary>
+    private sealed class KeySource : IDisposable
+    {
+        private readonly Process? _process;
+        private readonly IMidiEndpointProvider? _provider;
+        private EndpointDescriptor? _source;
+
+        private KeySource(Process? process, IMidiEndpointProvider? provider)
+        {
+            _process = process;
+            _provider = provider;
+        }
+
+        /// <summary>Endpoint providers the project lists (Core MIDI, for the source).</summary>
+        public IMidiEndpointProvider[] Providers => _provider is null ? [] : [_provider];
+
+        public static KeySource Create(string input)
+        {
+            if (input != "midi" || !OperatingSystem.IsMacOS())
+            {
+                return new KeySource(null, null);
+            }
+
+            var process = ProbeOptions.StartSelf(["--midi-keys"], redirect: true);
+            if (process.StandardOutput.ReadLine() != "ready")
+            {
+                throw new InvalidOperationException("The MIDI key process did not start.");
+            }
+
+            return new KeySource(process, new Platform.CoreMidi.CoreMidiProvider(SystemMonotonicClock.Instance, "Bluestone engine probe keys"));
+        }
+
+        /// <summary>Makes the engine open the source and play it on the thru track; checks that keys are heard.</summary>
+        public bool Connect(AudioProject project)
+        {
+            if (_provider is null)
+            {
+                return true;
+            }
+
+            for (var attempt = 0; attempt < 50 && _source is null; attempt++)
+            {
+                _source = _provider.GetEndpoints().FirstOrDefault(e => e.DisplayName == MidiKeysSource && e.Direction == EndpointDirection.Input);
+                Thread.Sleep(_source is null ? 100 : 0);
+            }
+
+            if (_source is not { } source)
+            {
+                Console.WriteLine($"Core MIDI source '{MidiKeysSource}' did not appear.");
+                return false;
+            }
+
+            project.Controller.SelectInputs([source.Id]);
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                project.Controller.RefreshAsync().GetAwaiter().GetResult();
+                var before = project.Audio.LiveLatency.Count;
+                Play(project, 1);
+                Thread.Sleep(300);
+                if (project.Audio.LiveLatency.Count > before)
+                {
+                    return true;
+                }
+            }
+
+            Console.WriteLine("Keys from the Core MIDI source did not reach the instrument in the engine.");
+            return false;
+        }
+
+        /// <summary>Plays keys for <paramref name="seconds"/>; returns when each went down, on the Stopwatch clock.</summary>
+        public List<long> Play(AudioProject project, int seconds)
+        {
+            if (_process is not { } process)
+            {
+                return Keys(project, seconds);
+            }
+
+            process.StandardInput.WriteLine(string.Create(CultureInfo.InvariantCulture, $"play {seconds}"));
+            process.StandardInput.Flush();
+            var times = new List<long>();
+            while (process.StandardOutput.ReadLine() is { } line && line != "done")
+            {
+                if (line.StartsWith("key ", StringComparison.Ordinal))
+                {
+                    times.Add(long.Parse(line[4..], CultureInfo.InvariantCulture));
+                }
+            }
+
+            return times;
+        }
+
+        public void Dispose()
+        {
+            if (_process is { } process)
+            {
+                process.StandardInput.WriteLine("stop");
+                process.StandardInput.Flush();
+                process.WaitForExit(5000);
+                process.Dispose();
+            }
+
+            _provider?.Dispose();
+        }
     }
 
     /// <summary>The engine and Bluestone's MIDI client, as the app composes them with BLUESTONE_ENGINE=1.</summary>
@@ -538,11 +740,11 @@ internal static class EngineProbes
         private readonly EndpointDirectory _endpoints;
         private readonly string _files;
 
-        private AudioProject(Rig rig, string files)
+        private AudioProject(Rig rig, string files, IMidiEndpointProvider[] providers)
         {
             _files = files;
             _plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(files, "plugins") });
-            _endpoints = new EndpointDirectory([]);
+            _endpoints = new EndpointDirectory(providers);
             Controller = new PlaybackController(Session, _endpoints, ProfileCatalog.Empty, rig.Playback);
             Devices = new PluginDeviceHost(_plugins, Session, [Sine], SampleRate, 256);
             Controller.UseDevices(Devices.Extend(DeviceCatalog.BuiltIn));
@@ -563,11 +765,11 @@ internal static class EngineProbes
 
         public TrackId Synth { get; private set; }
 
-        public static AudioProject Create(Rig rig, int clips, bool notes)
+        public static AudioProject Create(Rig rig, int clips, bool notes, params IMidiEndpointProvider[] providers)
         {
             var files = Path.Combine(Path.GetFullPath(ProbeOptions.DefaultReportDirectory), $"engine-probe-{Environment.ProcessId}");
             Directory.CreateDirectory(files);
-            var project = new AudioProject(rig, files);
+            var project = new AudioProject(rig, files, providers);
             project.Build(clips, notes);
             return project;
         }
@@ -703,6 +905,9 @@ internal static class EngineProbes
     private sealed class EngineGcWatch : IDisposable
     {
         private readonly EngineSupervisor _supervisor;
+
+        // This process, which plays Bluestone's role: a pause here delays what it forwards to the engine.
+        private readonly GcWatch _probe = new();
         private readonly Lock _gate = new();
         private readonly List<double> _pauses = [];
         private readonly long _started = Stopwatch.GetTimestamp();
@@ -749,9 +954,16 @@ internal static class EngineProbes
             {
                 report.Notes.Add($"The engine compiled {last.JitCompiledMethods} methods at run time: it is not the NativeAOT build.");
             }
+
+            _probe.AddTo(report, "probe");
+            report.Notes.Add("probe.gc.* are this process's collections and pauses (it plays Bluestone, and makes the --pressure load): a pause here delays what it forwards to the engine (computer-keyboard keys, commands), not what the engine does on its own.");
         }
 
-        public void Dispose() => _supervisor.TelemetryReceived -= OnTelemetry;
+        public void Dispose()
+        {
+            _supervisor.TelemetryReceived -= OnTelemetry;
+            _probe.Dispose();
+        }
 
         private void OnTelemetry(object? sender, EngineTelemetry telemetry)
         {
