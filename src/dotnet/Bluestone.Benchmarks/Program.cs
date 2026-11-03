@@ -27,6 +27,7 @@ Action<ProbeOptions>? probe = args switch
     ["--audio", ..] => AudioCallbackProbe.Run,
     ["--wake", ..] => WakeProbe.Run,
     ["--audio-loopback", ..] => AudioLoopbackProbe.Run,
+    ["--plugin-pipeline", ..] => PluginPipelineProbe.Run,
     ["--midi-loopback", ..] when OperatingSystem.IsMacOS() => MidiLoopbackProbe.Run,
     ["--midi-loopback", ..] => _ => Console.WriteLine("The MIDI loopback probe needs Core MIDI (macOS)."),
     _ => null,

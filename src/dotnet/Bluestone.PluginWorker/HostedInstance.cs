@@ -8,14 +8,15 @@ namespace Bluestone.PluginWorker;
 
 /// <summary>
 /// One plugin instance in the worker: the plugin, its exchange, and a dedicated processing thread that runs submitted
-/// blocks. The thread spins briefly when idle, then yields, then sleeps 1 ms (see docs/plugin-hosting.md for the CPU
-/// versus wake-up latency trade-off). Control calls and processing are serialized by a lock; the worker side may
+/// blocks. The thread spins briefly when idle, then pauses (a real-time 50 µs pause on macOS, a yield elsewhere), then
+/// sleeps 1 ms (see docs/plugin-hosting.md for the CPU versus wake-up latency trade-off). Control calls and processing are serialized by a lock; the worker side may
 /// block, the host side never does.
 /// </summary>
 internal sealed class HostedInstance : IDisposable
 {
     private static readonly long SpinTicks = Stopwatch.Frequency / 5000;   // 200 microseconds
     private static readonly long YieldTicks = Stopwatch.Frequency / 200;   // 5 milliseconds
+    private const int PauseMicroseconds = 50;
 
     private readonly Lock _gate = new();
     private readonly IHostedPlugin _plugin;
@@ -172,6 +173,9 @@ internal sealed class HostedInstance : IDisposable
 
     private void Run()
     {
+        var precise = Environment.GetEnvironmentVariable("BLUESTONE_WORKER_WAIT") != "yield"
+            && ProcessingThreadScheduling.HasPrecisePause
+            && ProcessingThreadScheduling.TryPromoteCurrentThread(TimeSpan.FromSeconds(_exchange.Options.MaxFrames / _sampleRate));
         var idleSince = 0L;
         while (!_stop && !_exchange.IsStopped)
         {
@@ -201,7 +205,14 @@ internal sealed class HostedInstance : IDisposable
             }
             else if (idle < YieldTicks)
             {
-                Thread.Yield();
+                if (precise)
+                {
+                    ProcessingThreadScheduling.Pause(PauseMicroseconds);
+                }
+                else
+                {
+                    Thread.Yield();
+                }
             }
             else
             {

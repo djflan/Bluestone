@@ -20,6 +20,9 @@
     <ProjectReference Include="../Bluestone.Platform.CoreMidi/Bluestone.Platform.CoreMidi.csproj" />
     <ProjectReference Include="../Bluestone.Platform.Windows/Bluestone.Platform.Windows.csproj" />
     <ProjectReference Include="../Bluestone.Playback/Bluestone.Playback.csproj" />
+    <ProjectReference Include="../Bluestone.Plugins/Bluestone.Plugins.csproj" />
+    <!-- The plugin pipeline probe launches real plugin workers; the worker is copied beside the probes, never loaded. -->
+    <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Bluestone.Profiles/Bluestone.Profiles.csproj" />
   </ItemGroup>
 </Project>
