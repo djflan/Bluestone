@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Bluestone.Plugins.Protocol;
 
 namespace Bluestone.Plugins.Scanning;
@@ -93,7 +94,7 @@ internal sealed class ScanCache
 
     public static ScanCache Load(string path)
     {
-        var (file, diagnostic) = JsonFile.Read<CacheFile>(path, "scan cache");
+        var (file, diagnostic) = JsonFile.Read(path, "scan cache", ScanJson.Default.CacheFile);
         var entries = new Dictionary<string, Entry>(PathComparer);
         if (file is not null && file.Version == FormatVersion)
         {
@@ -150,7 +151,7 @@ internal sealed class ScanCache
 
     public void Remove(string modulePath) => _entries.Remove(modulePath);
 
-    public void Save() => JsonFile.WriteAtomic(_path, new CacheFile { Version = FormatVersion, Entries = [.. _entries.Values] });
+    public void Save() => JsonFile.WriteAtomic(_path, new CacheFile { Version = FormatVersion, Entries = [.. _entries.Values] }, ScanJson.Default.CacheFile);
 
     internal static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
@@ -201,7 +202,7 @@ internal sealed class ScanQuarantine
 
     public static ScanQuarantine Load(string path)
     {
-        var (file, diagnostic) = JsonFile.Read<QuarantineFile>(path, "scan quarantine list");
+        var (file, diagnostic) = JsonFile.Read(path, "scan quarantine list", ScanJson.Default.QuarantineFile);
         var entries = new Dictionary<string, QuarantineEntry>(ScanCache.PathComparer);
         if (file is not null && file.Version == FormatVersion)
         {
@@ -227,7 +228,7 @@ internal sealed class ScanQuarantine
 
     public bool Remove(string modulePath) => _entries.Remove(modulePath);
 
-    public void Save() => JsonFile.WriteAtomic(_path, new QuarantineFile { Version = FormatVersion, Entries = [.. _entries.Values] });
+    public void Save() => JsonFile.WriteAtomic(_path, new QuarantineFile { Version = FormatVersion, Entries = [.. _entries.Values] }, ScanJson.Default.QuarantineFile);
 
     internal sealed class QuarantineFile
     {
@@ -268,17 +269,19 @@ internal sealed class PluginRecord
         new(Format ?? string.Empty, ModuleId ?? string.Empty, PluginId ?? string.Empty, DisplayName ?? string.Empty, Vendor ?? string.Empty, Kind, Version ?? string.Empty);
 }
 
+/// <summary>
+/// The scan cache and quarantine files' JSON, generated at compile time so plugin scanning works without reflection
+/// (trimming and NativeAOT, ADR 0044): camel-case names, enums as their names, indented.
+/// </summary>
+[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
+[JsonSerializable(typeof(ScanCache.CacheFile))]
+[JsonSerializable(typeof(ScanQuarantine.QuarantineFile))]
+internal sealed partial class ScanJson : JsonSerializerContext;
+
 internal static class JsonFile
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
     /// <summary>Reads a file; a missing file is (null, null), an unreadable one is (null, diagnostic).</summary>
-    public static (T? Value, string? Diagnostic) Read<T>(string path, string what)
+    public static (T? Value, string? Diagnostic) Read<T>(string path, string what, JsonTypeInfo<T> type)
         where T : class
     {
         try
@@ -288,7 +291,7 @@ internal static class JsonFile
                 return (null, null);
             }
 
-            var value = JsonSerializer.Deserialize<T>(File.ReadAllBytes(path), Options);
+            var value = JsonSerializer.Deserialize(File.ReadAllBytes(path), type);
             return value is null ? (null, $"The {what} '{path}' was empty; it was reset.") : (value, null);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
@@ -298,14 +301,14 @@ internal static class JsonFile
     }
 
     /// <summary>Writes to a temporary file beside the target and renames it over the target, so a reader never sees a partial file.</summary>
-    public static void WriteAtomic<T>(string path, T value)
+    public static void WriteAtomic<T>(string path, T value, JsonTypeInfo<T> type)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         Directory.CreateDirectory(directory);
         var temporary = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         try
         {
-            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(value, Options));
+            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(value, type));
             File.Move(temporary, path, overwrite: true);
         }
         finally

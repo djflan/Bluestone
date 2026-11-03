@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ADR 0044, migration step 2: a spike of the engine process published with NativeAOT. It references the real-time
+       assemblies the engine will own and roots them whole, so the trim and AOT analysis covers all of their code, not
+       only what this smoke test calls. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Bluestone.Engine</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bluestone.Audio/Bluestone.Audio.csproj" />
+    <ProjectReference Include="../Bluestone.Midi/Bluestone.Midi.csproj" />
+    <ProjectReference Include="../Bluestone.Playback/Bluestone.Playback.csproj" />
+    <ProjectReference Include="../Bluestone.Plugins/Bluestone.Plugins.csproj" />
+    <ProjectReference Include="../Bluestone.Plugins.Protocol/Bluestone.Plugins.Protocol.csproj" />
+    <ProjectReference Include="../Bluestone.Signal/Bluestone.Signal.csproj" />
+    <ProjectReference Include="../Bluestone.Platform.Alsa/Bluestone.Platform.Alsa.csproj" />
+    <ProjectReference Include="../Bluestone.Platform.CoreMidi/Bluestone.Platform.CoreMidi.csproj" />
+    <ProjectReference Include="../Bluestone.Platform.Windows/Bluestone.Platform.Windows.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Bluestone.Audio" />
+    <TrimmerRootAssembly Include="Bluestone.Domain" />
+    <TrimmerRootAssembly Include="Bluestone.Midi" />
+    <TrimmerRootAssembly Include="Bluestone.Playback" />
+    <TrimmerRootAssembly Include="Bluestone.Plugins" />
+    <TrimmerRootAssembly Include="Bluestone.Plugins.Protocol" />
+    <TrimmerRootAssembly Include="Bluestone.Signal" />
+    <TrimmerRootAssembly Include="Bluestone.Platform.Alsa" />
+    <TrimmerRootAssembly Include="Bluestone.Platform.CoreMidi" />
+    <TrimmerRootAssembly Include="Bluestone.Platform.Windows" />
+  </ItemGroup>
+</Project>
