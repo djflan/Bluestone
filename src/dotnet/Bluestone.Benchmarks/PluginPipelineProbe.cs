@@ -55,6 +55,10 @@ internal static class PluginPipelineProbe
             var durations = new double[blocks];
             var outcomes = new Dictionary<ProcessOutcome, int>();
             var lateness = new double[blocks];
+            var missed = new List<string>();
+            var warmUp = (int)Math.Ceiling(0.1 * SampleRate / frames);
+            var startupMisses = 0;
+            var steadyMisses = 0;
             var thread = new Thread(() =>
             {
                 options.ThreadSetup()?.Invoke();
@@ -93,6 +97,16 @@ internal static class PluginPipelineProbe
                     var outcome = instance.ProcessBlock(frames, [], output, events.AsSpan(0, input), outputEvents, new TransportState(position, 120, true));
                     durations[b] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                     outcomes[outcome.Outcome] = outcomes.GetValueOrDefault(outcome.Outcome) + 1;
+                    var miss = outcome.Outcome is not (ProcessOutcome.Processed or ProcessOutcome.Priming);
+                    if (miss)
+                    {
+                        _ = b < warmUp ? startupMisses++ : steadyMisses++;
+                    }
+
+                    if (miss && missed.Count < 20)
+                    {
+                        missed.Add($"{b} ({outcome.Outcome}, started {lateness[b]:0.###} ms late, call {durations[b]:0.###} ms)");
+                    }
                     position += frames;
                 }
             })
@@ -111,10 +125,16 @@ internal static class PluginPipelineProbe
             report.Add(new Metric("plugin.period", "ms", period.TotalMilliseconds));
             report.Add(new Metric("plugin.added-latency", "ms", (depth - 1) * period.TotalMilliseconds));
             report.Add(new Metric("plugin.processed", "blocks", processed));
-            report.Add(new Metric("plugin.not-processed", "blocks", blocks - processed - priming, Target: 0));
-            report.Add(new Metric("plugin.call", "ms", Distribution: Distribution.Of(durations), Target: period.TotalMilliseconds));
+            // A new instance's worker starts cold (asleep, untouched pages), so its first blocks are reported apart.
+            report.Add(new Metric("plugin.not-processed", "blocks", steadyMisses, Target: 0));
+            report.Add(new Metric("plugin.startup-not-processed", "blocks", startupMisses));
+            report.Add(new Metric("plugin.call", "ms", Distribution: Distribution.Of(durations[warmUp..]), Target: period.TotalMilliseconds));
             report.Add(new Metric("plugin.call-start-lateness", "ms", Distribution: Distribution.Of(lateness)));
             report.Notes.Add("outcomes: " + string.Join(", ", outcomes.Select(o => $"{o.Key} {o.Value}")));
+            if (missed.Count > 0)
+            {
+                report.Notes.Add("blocks not processed: " + string.Join("; ", missed));
+            }
             options.Finish(report);
         }
         finally

@@ -165,6 +165,29 @@ the next callback. Audio was therefore rendered for a song position one buffer p
 both modes agree with the loopback within 0.02 ms. BlackHole reports its latency correctly, so the clicks' total time
 from note to capture (3.8 ms median in callback mode) is the device's buffer and reported latency.
 
+### Plugin workers (added 2026-11-03)
+
+`--plugin-pipeline` drives the reference sine instrument in a real worker process from a real-time-paced thread,
+as the audio callback would, with notes arriving. It counts blocks that come back not processed (late: silence),
+leaving out the first 100 ms, when a new instance's worker is still cold, which it reports apart. 48 kHz, macOS,
+Apple silicon. The worker's processing thread used to wait for a block by spinning 200 µs and then calling
+`Thread.Yield`, at normal priority:
+
+| Worker wait | Depth | Block | Quiet, 120 s | Every core busy, 60 s |
+| ----------- | ----: | ----: | -----------: | --------------------: |
+| Yield (before) | 2 | 128 | 0 | 4,658 (21 %) |
+| Yield (before) | 1 | 128 | 0 | 15,906 (71 %) |
+| Yield (before) | 1 | 64 | 10 | 25,880 (58 %) |
+| Real-time, precise pause | 2 | 128 | 0 | 0 |
+| Real-time, precise pause | 1 | 128 | 0, 0 | 0 (call max 0.30 ms) |
+| Real-time, precise pause | 1 | 64 | 0, 0 | 0 (call max 0.57 ms) |
+
+("Every core busy": 18 shell busy-loops on 18 cores.) A worker at normal priority loses the CPU whenever anything
+else wants it, so even today's depth 2 dropped a fifth of its blocks under load. A real-time thread cannot poll by
+yielding: that would use its whole computation budget and the kernel would demote it. So it now waits in 50 µs
+`nanosleep` slices, blocked rather than computing. That costs about 30 µs of median wake-up at depth 1 and uses
+less CPU than yielding did.
+
 ## Decisions
 
 1. **The targets above are Bluestone's timing contract** and are judged by these probes. Release 1.0 Slice 0 takes them
@@ -194,7 +217,14 @@ from note to capture (3.8 ms median in callback mode) is the device's buffer and
      playback.
    - **No JIT compilation during playback.** The engine is published with NativeAOT, or runs with tiered compilation
      off, so code is never replaced while it plays.
-5. **Until the engine process exists**, the app keeps the render-ahead queues of ADRs 0032 and 0035. Audio is then
+6. **Plugin workers process on a real-time thread on macOS** (done here). `ProcessingThreadScheduling` puts each
+   instance's processing thread on the time-constraint policy (half the block period of computation per period) and
+   pauses it in 50 µs `nanosleep` slices between checks while blocks are arriving. `BLUESTONE_WORKER_WAIT=yield`
+   restores the old wait for comparison. With it, depth 1 delivered every block in 60 s with every core busy, at
+   64 and 128 frames. Instruments being played live therefore get a depth-1 exchange when live input moves into
+   the engine (ADR 0044 step 7), with the pipelined depth kept for playback, where it lets workers run in parallel.
+   Windows and Linux keep their wait until measured on their own hardware.
+7. **Until the engine process exists**, the app keeps the render-ahead queues of ADRs 0032 and 0035. Audio is then
    glitch-free under load, but live input carries the queue as latency. Immediate MIDI and thru can be late by a GC
    pause. Scheduled Core MIDI output, the macOS path to hardware, already meets its target in one process. The README
    states the claim with these limits.
@@ -202,8 +232,9 @@ from note to capture (3.8 ms median in callback mode) is the device's buffer and
 ## Consequences
 
 - A live plugin instrument adds its worker pipeline (ADR 0025: one engine block at depth 2, 2.67 ms at 128 frames) on
-  top of the figures above. That exceeds the 2 ms target whatever the language. Meeting it needs 64-frame blocks or a
-  depth-1 pipeline for instruments being played live; the offline `LiveInputPluginTests` measure that path exactly.
+  top of the figures above. That exceeds the 2 ms target whatever the language. Depth 1 adds nothing and, with real-time
+  workers, met its deadline in every measured block (decision 6). It takes effect for live-played instruments with
+  ADR 0044 step 7. Until then, the 2.67 ms stands.
 - The engine process adds an IPC boundary between the UI and the engine. It carries plans, graph snapshots, commands,
   and meters, but nothing per event or per sample on the real-time path, because MIDI devices and the audio device
   open in the engine process.

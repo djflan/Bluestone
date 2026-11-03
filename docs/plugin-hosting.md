@@ -255,12 +255,13 @@ inside the same callback while Bluestone spins; any scheduling hiccup becomes a 
 gives the worker a whole block period; larger depths tolerate more jitter for more latency. The tests prove ordering
 and correctness, not real-time performance under a real device.
 
-**Worker wake-up.** The processing thread polls for submitted blocks: after the last block it spins for 200 µs,
-then yields until 5 ms, then sleeps 1 ms between checks. While blocks keep arriving (block periods below about 5 ms)
-each active instance keeps roughly one core busy; idle instances cost little. In the sleep phase a new block waits up
-to about 1 ms on macOS and Linux and up to one timer tick (often 15.6 ms) on Windows. Depth 2 or more absorbs this
-for continuous playback; the first blocks after a pause may be late. A real wake-up primitive (futex, eventfd, a
-Windows event) would remove both costs; it is not built.
+**Worker wake-up.** The processing thread polls for submitted blocks. After the last block it spins for 200 µs,
+then pauses between checks until 5 ms have passed, then sleeps 1 ms between checks. On macOS the thread runs on the
+real-time time-constraint policy and pauses in 50 µs `nanosleep` slices, blocked rather than computing. Elsewhere it
+calls `Thread.Yield` at above-normal priority, which keeps roughly one core busy per active instance and loses
+blocks when every core is busy (ADR 0043, plugin workers). In the 1 ms sleep phase, a new block waits up to about 1 ms
+on macOS and Linux and up to one timer tick (often 15.6 ms) on Windows, so the first blocks after a pause may be late.
+A real wake-up primitive (futex, eventfd, a Windows event) would remove that; it is not built.
 
 ## Failure policies
 
