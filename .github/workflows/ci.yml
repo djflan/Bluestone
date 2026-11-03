@@ -67,6 +67,19 @@ jobs:
       - name: Test
         run: dotnet test src/dotnet/Bluestone.slnx --no-build --configuration Release --max-parallel-test-modules 1 --filter-not-class Bluestone.Tests.Integration.Platform.CoreMidiProviderTests
 
+      # The engine process ships with NativeAOT (ADR 0044): any trim or AOT warning fails, and the published binary
+      # must keep its input and thru path free of allocation. No timing gates here: hosted runners are not quiet.
+      - name: Publish the engine ahead of time
+        shell: bash
+        run: |
+          case "${{ runner.os }}-${{ runner.arch }}" in
+            Linux-X64) rid=linux-x64 ;; macOS-ARM64) rid=osx-arm64 ;; macOS-X64) rid=osx-x64 ;; Windows-X64) rid=win-x64 ;;
+            *) echo "No runtime identifier for ${{ runner.os }}-${{ runner.arch }}"; exit 1 ;;
+          esac
+          dotnet publish src/dotnet/Bluestone.Engine --configuration Release --runtime "$rid" --output engine-aot | tee aot.log
+          if grep -E "warning (IL|AOT)[0-9]+" aot.log; then echo "Trim or AOT warnings"; exit 1; fi
+          ./engine-aot/Bluestone.Engine --check-allocations
+
       - name: Check formatting
         if: matrix.os == 'ubuntu-latest'
         run: dotnet format src/dotnet/Bluestone.slnx --no-restore --verify-no-changes
