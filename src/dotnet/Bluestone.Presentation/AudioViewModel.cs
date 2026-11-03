@@ -25,6 +25,7 @@ public sealed partial class AudioViewModel : ObservableObject
     private static readonly int[] StandardRates = [44_100, 48_000, 88_200, 96_000];
     private readonly IAudioPlayback _audio;
     private readonly int _otherQueuedFrames;
+    private readonly int _otherLiveQueuedFrames;
     private readonly AudioSettingsStore _store;
     private readonly IUiDispatcher _dispatcher;
     private readonly Func<IReadOnlyList<AudioDeviceInfo>> _listDevices;
@@ -80,7 +81,8 @@ public sealed partial class AudioViewModel : ObservableObject
         // The queue shown is the one in use: the engine's own (0 by default, ADR 0044) when the engine renders.
         _queuedFrames = audio.RendersInEngine ? settings.EngineQueuedFrames : settings.QueuedFrames;
         _otherQueuedFrames = audio.RendersInEngine ? settings.QueuedFrames : settings.EngineQueuedFrames;
-        _liveQueuedFrames = settings.LiveQueuedFrames;
+        _liveQueuedFrames = audio.RendersInEngine ? settings.EngineLiveQueuedFrames : settings.LiveQueuedFrames;
+        _otherLiveQueuedFrames = audio.RendersInEngine ? settings.LiveQueuedFrames : settings.EngineLiveQueuedFrames;
         _lowLatencyMonitoring = settings.LowLatencyMonitoring;
         LoadDevices(settings.DeviceId);
         _audio.Changed += (_, _) => _dispatcher.Post(UpdateStatus);
@@ -115,8 +117,8 @@ public sealed partial class AudioViewModel : ObservableObject
 
     /// <summary>The settings as chosen in the view.</summary>
     public AudioSettings Settings => _audio.RendersInEngine
-        ? new(IsRunning, Device?.Id, SampleRate, BufferFrames, _otherQueuedFrames, LiveQueuedFrames, LowLatencyMonitoring) { EngineQueuedFrames = QueuedFrames }
-        : new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring) { EngineQueuedFrames = _otherQueuedFrames };
+        ? new(IsRunning, Device?.Id, SampleRate, BufferFrames, _otherQueuedFrames, _otherLiveQueuedFrames, LowLatencyMonitoring) { EngineQueuedFrames = QueuedFrames, EngineLiveQueuedFrames = LiveQueuedFrames }
+        : new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring) { EngineQueuedFrames = _otherQueuedFrames, EngineLiveQueuedFrames = _otherLiveQueuedFrames };
 
     /// <summary>Whether the saved settings say audio was on, so <see cref="StartIfEnabled"/> will open a device.</summary>
     public bool IsEnabledInSettings => _store.Load().Enabled;

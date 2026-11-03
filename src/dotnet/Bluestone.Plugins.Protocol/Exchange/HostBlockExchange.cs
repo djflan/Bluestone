@@ -285,7 +285,6 @@ public sealed class HostBlockExchange : IDisposable
             ref var state = ref _region.Int32At(slotOffset + ExchangeLayout.SlotStateOffset);
             ref var indexField = ref _region.Int64At(slotOffset + ExchangeLayout.SlotBlockIndexOffset);
             var deadline = 0L;
-            var spinner = default(SpinWait);
             while (true)
             {
                 var current = Volatile.Read(ref state);
@@ -331,7 +330,8 @@ public sealed class HostBlockExchange : IDisposable
                     return ExchangeStatus.NotReady;
                 }
 
-                spinner.SpinOnce(sleep1Threshold: -1);
+                // A bounded spin, never a yield: on the audio callback a yield can lose the CPU for longer than the wait.
+                Thread.SpinWait(20);
             }
 
             var slot = _region.Bytes(slotOffset, (int)_layout.SlotStride);

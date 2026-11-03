@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using Bluestone.Audio;
+using Bluestone.Audio.Plugins;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Time;
 using Bluestone.Engine.Protocol;
@@ -6,7 +8,9 @@ using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
 using Bluestone.Midi.Wire;
 using Bluestone.Playback;
+using Bluestone.Plugins;
 using Bluestone.Signal.Live;
+using ExchangeOptions = Bluestone.Plugins.Protocol.Exchange.ExchangeOptions;
 
 namespace Bluestone.Engine;
 
@@ -43,6 +47,9 @@ internal sealed class MidiEngine : IDisposable
     private readonly Lock _routes = new();
     private readonly Dictionary<int, EngineRoute> _routeById = [];
     private readonly Dictionary<Guid, EngineRoute> _routeByTrack = [];
+    private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
+    private IReadOnlyDictionary<Guid, (PluginNode Node, int DelayToMaster)> _instruments = new Dictionary<Guid, (PluginNode, int)>();
+    private readonly PluginRegistry _plugins;
     private Guid _thruTrack;
     private bool _hasThru;
     private readonly Thread? _liveThread;
@@ -73,9 +80,13 @@ internal sealed class MidiEngine : IDisposable
 
     /// <param name="restarted">Started after a crash: sweep every output when it opens.</param>
     /// <param name="startThreads">False to pump the playback engine and routes by hand (the allocation check).</param>
-    public MidiEngine(bool restarted, bool startThreads = true)
+    /// <param name="plugins">The plugin instances the engine drives, shared with the audio graph (plugin MIDI effects on routes).</param>
+    /// <param name="meter">Where live notes into plugin instruments are measured.</param>
+    public MidiEngine(bool restarted, bool startThreads = true, PluginRegistry? plugins = null, LiveMeter? meter = null)
     {
         _restarted = restarted;
+        _plugins = plugins ?? new PluginRegistry(restarted);
+        Meter = meter ?? new LiveMeter();
         Playback = new PlaybackEngine(_clock, _tempo);
         if (startThreads)
         {
@@ -86,6 +97,9 @@ internal sealed class MidiEngine : IDisposable
     }
 
     public PlaybackEngine Playback { get; }
+
+    /// <summary>Live notes into plugin instruments, measured where they are heard.</summary>
+    public LiveMeter Meter { get; }
 
     public OutboundRing Outbound { get; } = new();
 
@@ -154,12 +168,14 @@ internal sealed class MidiEngine : IDisposable
                     {
                         if (_routeById.Remove(remove.Route, out var removed))
                         {
-                            removed.ReleaseNow();
+                            Retire(removed);
                             if (_routeByTrack.TryGetValue(removed.Track, out var current) && ReferenceEquals(current, removed))
                             {
                                 _routeByTrack.Remove(removed.Track);
                             }
                         }
+
+                        UseRoutePlugins();
                     }
 
                     break;
@@ -170,8 +186,7 @@ internal sealed class MidiEngine : IDisposable
                         {
                             if (_routeById.TryGetValue(input.Route, out var target))
                             {
-                                target.Post(e);
-                                target.Pump(_clock.Now, Tempo());
+                                Play(target, e, TimeSpan.FromTicks(input.Timestamp));
                             }
                         }
                     }
@@ -285,7 +300,7 @@ internal sealed class MidiEngine : IDisposable
         {
             lock (_routes)
             {
-                Thru(input, message, e);
+                Thru(input, message, e, timestamp);
             }
         }
 
@@ -299,10 +314,52 @@ internal sealed class MidiEngine : IDisposable
         {
             var now = _clock.Now;
             var tempo = Tempo();
+            var stopped = StoppedTempo();
             foreach (var route in _routeById.Values)
             {
+                route.StoppedTempo = stopped;
                 route.Pump(now, tempo);
             }
+        }
+    }
+
+    /// <summary>
+    /// The plugin instruments of the audio graph playing now, by device, with the frames from each one's output to the
+    /// master; routes into them become their live sources (rendered in the device callback). Called by the audio thread
+    /// whenever it realizes a graph or the device closes.
+    /// </summary>
+    internal void UseInstruments(IReadOnlyDictionary<Guid, (PluginNode Node, int DelayToMaster)> instruments)
+    {
+        lock (_routes)
+        {
+            _instruments = instruments;
+            foreach (var route in _routeById.Values)
+            {
+                Bind(route);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Plays a channel message on <paramref name="track"/>'s route as input received at <paramref name="timestamp"/>
+    /// would be. Tests (<see cref="TestRender"/>) and the allocation check. Allocation-free.
+    /// </summary>
+    internal bool PostLive(Guid track, byte status, byte data1, byte data2, TimeSpan timestamp)
+    {
+        if (!LiveEvent.TryFromMidi(0, status, data1, data2, out var e))
+        {
+            return false;
+        }
+
+        lock (_routes)
+        {
+            if (!_routeByTrack.TryGetValue(track, out var route) || route.Released)
+            {
+                return false;
+            }
+
+            Play(route, e, timestamp);
+            return true;
         }
     }
 
@@ -326,6 +383,17 @@ internal sealed class MidiEngine : IDisposable
         }
 
         _inputs.Clear();
+        lock (_routes)
+        {
+            foreach (var route in _routeById.Values)
+            {
+                Retire(route);
+            }
+
+            _routeById.Clear();
+            _routeByTrack.Clear();
+        }
+
         Playback.Stop();
         if (_thread is not null)
         {
@@ -391,7 +459,53 @@ internal sealed class MidiEngine : IDisposable
     };
 
     private static bool IsFeedback(InputEntry input, EngineRoute route) =>
-        route.Output.Endpoint.Id.Provider == input.Provider && string.Equals(route.Output.Endpoint.DisplayName, input.Name, StringComparison.Ordinal);
+        route.Output is { } output && output.Endpoint.Id.Provider == input.Provider && string.Equals(output.Endpoint.DisplayName, input.Name, StringComparison.Ordinal);
+
+    // The plugin MIDI effect of a route: the registry's instance for the device, at depth 1 (it only ever plays live input).
+    private AttachedPluginInstance Effect(PluginStageSpec spec, List<EngineProblem> problems)
+    {
+        var shape = new ExchangeOptions(spec.MaxFrames, spec.InputChannels, spec.OutputChannels, spec.SlotCount, spec.EventCapacity, spec.ParameterCapacity);
+        var plane = spec.ExchangePath is { } path && Path.IsPathRooted(path) ? new PluginDataPlane(path, spec.Generation, shape) : null;
+        var link = new DescribedPluginLink(shape, spec.PipelineDepth, TimeSpan.FromTicks(spec.CollectWait), false, PipelineLatency.ReportedLatencyFrames(spec.LatencyFrames, spec.PipelineDepth, spec.MaxFrames), plane);
+        var messages = new List<string>();
+        var instance = _plugins.Attach(spec.Device, spec.Name, link, messages);
+        problems.AddRange(messages.Select(m => new EngineProblem(-1, m)));
+        return instance;
+    }
+
+    // Plays input on a route: at once to an output, at the next audio block into an instrument. Under _routes.
+    private void Play(EngineRoute route, in LiveEvent e, TimeSpan timestamp)
+    {
+        route.Post(e, timestamp);
+        if (route.Instrument is null)
+        {
+            route.Pump(_clock.Now, Tempo());
+        }
+        else
+        {
+            Meter.MarkInput(_clock.Now);
+        }
+    }
+
+    // A route into an instrument plays through that instrument's node in the graph, when it has one. Under _routes.
+    private void Bind(EngineRoute route)
+    {
+        if (route.Instrument is { } instrument)
+        {
+            var found = _instruments.TryGetValue(instrument, out var entry);
+            route.Bind(found ? entry.Node : null, found ? entry.DelayToMaster : 0, _players);
+        }
+    }
+
+    // Ends a route: an output's notes now, an instrument's at its next audio block. Under _routes.
+    private void Retire(EngineRoute route)
+    {
+        route.ReleaseNow();
+        route.Unbind(_players);
+    }
+
+    // The registry keeps the plugin effects that routes use. Under _routes.
+    private void UseRoutePlugins() => _plugins.Use(graph: false, _routeById.Values.SelectMany(r => r.PluginDevices));
 
     private void Open(OpenOutput open, List<EngineProblem> problems)
     {
@@ -486,27 +600,35 @@ internal sealed class MidiEngine : IDisposable
 
     private void SetRoute(SetRoute spec, List<EngineProblem> problems)
     {
-        if (!_outputs.TryGetValue(spec.Output, out var output))
+        IMidiOutput? output = null;
+        if (spec.Instrument is null)
         {
-            problems.Add(new EngineProblem(-1, "A live route's output is not open in the engine."));
-            return;
+            if (!_outputs.TryGetValue(spec.Output, out var entry))
+            {
+                problems.Add(new EngineProblem(-1, "A live route's output is not open in the engine."));
+                return;
+            }
+
+            output = entry.Output;
         }
 
-        var route = EngineRoute.Create(spec, output.Output, Playback, out var unknown);
         lock (_routes)
         {
+            var route = EngineRoute.Create(spec, output, Playback, Meter, effect => Effect(effect, problems), out var unknown);
             if (_routeById.Remove(spec.Route, out var previous))
             {
-                previous.ReleaseNow();
+                Retire(previous);
             }
 
             _routeById[spec.Route] = route;
             _routeByTrack[spec.Track] = route;
-        }
-
-        if (unknown is not null)
-        {
-            problems.Add(new EngineProblem(-1, $"The engine has no live processor for {unknown}; it passes events through."));
+            route.StoppedTempo = StoppedTempo();
+            Bind(route);
+            UseRoutePlugins();
+            if (unknown is not null)
+            {
+                problems.Add(new EngineProblem(-1, $"The engine has no live processor for {unknown}; it passes events through."));
+            }
         }
     }
 
@@ -544,7 +666,7 @@ internal sealed class MidiEngine : IDisposable
     }
 
     // Under _routes.
-    private void Thru(InputEntry input, ChannelMessage message, in LiveEvent e)
+    private void Thru(InputEntry input, ChannelMessage message, in LiveEvent e, TimeSpan timestamp)
     {
         var slot = (message.Channel.Index << 7) | message.Data1;
         if (message.IsNoteOff)
@@ -553,8 +675,7 @@ internal sealed class MidiEngine : IDisposable
             if (input.Held[slot] is { } holding)
             {
                 input.Held[slot] = null;
-                holding.Post(e);
-                holding.Pump(_clock.Now, Tempo());
+                Play(holding, e, timestamp);
             }
 
             return;
@@ -565,8 +686,7 @@ internal sealed class MidiEngine : IDisposable
             return;
         }
 
-        route.Post(e);
-        route.Pump(_clock.Now, Tempo());
+        Play(route, e, timestamp);
         if (message.IsNoteOn)
         {
             input.Held[slot] = route;
@@ -582,8 +702,7 @@ internal sealed class MidiEngine : IDisposable
                 if (input.Held[slot] is { } route)
                 {
                     input.Held[slot] = null;
-                    route.Post(LiveEvent.NoteOff(0, slot >> 7, slot & 127));
-                    route.Pump(_clock.Now, Tempo());
+                    Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
                 }
             }
         }
@@ -604,7 +723,9 @@ internal sealed class MidiEngine : IDisposable
     private double Tempo() =>
         Playback.TryGetSongTimeAt(_clock.Now, out var song)
             ? song.BeatsPerMinute
-            : Volatile.Read(ref _tempo).TempoAt(new Tick(Math.Max(0, Playback.Position.Value))).BeatsPerMinute;
+            : StoppedTempo();
+
+    private double StoppedTempo() => Volatile.Read(ref _tempo).TempoAt(new Tick(Math.Max(0, Playback.Position.Value))).BeatsPerMinute;
 
     private AnchorSpec Anchor(in TransportAnchor anchor)
     {

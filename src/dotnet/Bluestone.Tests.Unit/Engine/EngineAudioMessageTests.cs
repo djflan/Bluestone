@@ -27,6 +27,9 @@ public sealed class EngineAudioMessageTests
         new AudioStatus(new MeterSpec(0.5f, 0.25f, 0.1f, 0.05f), [new StripMeter(Strip, new MeterSpec(1f, 0f, 0.7f, 0f))], new AudioCounters(1000, 1, 2, 3, 4, 5, 6000, 70_000, 8, 256)),
         new AudioStatus(default, [], default),
         new TestRender(1, "/var/run/bluestone-engine-1/render.f32", 48_000, 128),
+        new TestRender(3, "/var/run/bluestone-engine-1/render.f32", 4096, 256, [new TestNote(Strip, 1024, TimeSpan.FromMilliseconds(5).Ticks, 0x90, 69, 127), new TestNote(Strip, 3000, 0, 0x80, 69, 64)]),
+        new SetAudio(4, true, null, 48_000, 128, 1024, 256, false, LiveQueuedFrames: 256),
+        new AudioStatus(default, [], new AudioCounters(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 512, LiveQueue: true), new LiveLatencySpec(3, 50_000, 40_000, 60_000, 2)),
         new TestRendered(1, null),
         new TestRendered(2, "No audio device is open."),
         new EngineProblem(-1, "Studio is not available. Playing through the system default output until it returns.", EngineProblemArea.Audio),
@@ -56,7 +59,7 @@ public sealed class EngineAudioMessageTests
     [Fact]
     public void MessagesWithoutArrays_AreEqualAfterARoundTrip()
     {
-        foreach (var message in All.Where(m => m is SetAudio or AudioDeviceStatus or LoadAudioGraph or TestRender or TestRendered))
+        foreach (var message in All.Where(m => m is SetAudio or AudioDeviceStatus or LoadAudioGraph or TestRendered))
         {
             Assert.Equal(message, EngineChannel.Decode(Encoded(message)));
         }
@@ -88,6 +91,11 @@ public sealed class EngineAudioMessageTests
         { new TestRender(1, "/r", 0, 128), "outside 1" },
         { new TestRender(1, "/r", 128, EngineLimits.MaxBufferFrames + 1), "outside 1" },
         { new EngineProblem(-1, "x", (EngineProblemArea)7), "Unknown problem area" },
+        { new SetAudio(1, true, null, 48_000, 128, 1024, 256, false, -1), "outside 0" },
+        { new TestRender(1, "/r", 128, 128, [new TestNote(Strip, 128, 0, 0x90, 60, 100)]), "outside 0" },
+        { new TestRender(1, "/r", 128, 128, [new TestNote(Strip, 0, 0, 0xF8, 60, 100)]), "status" },
+        { new TestRender(1, "/r", 128, 128, [new TestNote(Strip, 0, -1, 0x90, 60, 100)]), "cannot be negative" },
+        { new AudioStatus(default, [], default, new LiveLatencySpec(-1, 0, 0, 0, 0)), "cannot be negative" },
     };
 
     [Theory]

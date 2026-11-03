@@ -9,6 +9,12 @@ namespace Bluestone.Plugins;
 /// the engine process, which drives the same exchange file (ADR 0044). One audio thread; it never locks, allocates, does
 /// I/O, or throws for a plugin failure.
 /// </summary>
+/// <remarks>
+/// The depth can change between blocks (<see cref="SetPipelineDepth"/>; the engine plays a live-played instrument at
+/// depth 1, ADR 0043 decision 6). Going down, the block still in flight is never collected: the output moves one block
+/// earlier. Going up, the block already collected is not collected again: one block of silence, reported as priming.
+/// The worker does not take part; it processes whatever is submitted.
+/// </remarks>
 public sealed class PluginBlockPipeline
 {
     private readonly ParameterChange[] _pendingChanges;
@@ -18,6 +24,10 @@ public sealed class PluginBlockPipeline
     private readonly bool _bypass;
     private readonly int _inputChannels;
     private readonly int _maxBlockFrames;
+    private readonly int _historySlots;
+    private int _depth;
+    private int _requestedDepth;
+    private long _lastCollected = -1;
     private long _nextBlock;
     private int _pendingCount;
     private long _parameterChangesDropped;
@@ -28,7 +38,8 @@ public sealed class PluginBlockPipeline
     /// <param name="pipelineDepth">Blocks in flight, at least 1.</param>
     /// <param name="collectWait">How long a collect may spin for its block.</param>
     /// <param name="bypassOnFailure">Pass the delayed dry input through when the plugin cannot deliver (<see cref="FailurePolicy.BypassInput"/>).</param>
-    public PluginBlockPipeline(int maxBlockFrames, int inputChannels, int parameterChangeCapacity, int pipelineDepth, TimeSpan collectWait, bool bypassOnFailure)
+    /// <param name="maxPipelineDepth">The deepest the pipeline may be set to later; at least <paramref name="pipelineDepth"/>.</param>
+    public PluginBlockPipeline(int maxBlockFrames, int inputChannels, int parameterChangeCapacity, int pipelineDepth, TimeSpan collectWait, bool bypassOnFailure, int maxPipelineDepth = 0)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxBlockFrames, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(inputChannels);
@@ -36,18 +47,29 @@ public sealed class PluginBlockPipeline
         ArgumentOutOfRangeException.ThrowIfLessThan(pipelineDepth, 1);
         _maxBlockFrames = maxBlockFrames;
         _inputChannels = inputChannels;
-        PipelineDepth = pipelineDepth;
+        _depth = _requestedDepth = pipelineDepth;
+        MaxPipelineDepth = Math.Max(pipelineDepth, maxPipelineDepth);
         CollectWait = collectWait;
         _bypass = bypassOnFailure;
         _pendingChanges = new ParameterChange[parameterChangeCapacity];
-        var historyBlocks = bypassOnFailure ? pipelineDepth : 0;
+        _historySlots = MaxPipelineDepth;
+        var historyBlocks = bypassOnFailure ? _historySlots : 0;
         _inputHistory = new float[historyBlocks * inputChannels * maxBlockFrames];
         _historyBlock = new long[historyBlocks];
         _historyFrames = new int[historyBlocks];
         Array.Fill(_historyBlock, -1);
     }
 
-    public int PipelineDepth { get; }
+    /// <summary>The depth asked for; it takes effect at the next block. Any thread.</summary>
+    public int PipelineDepth => Volatile.Read(ref _requestedDepth);
+
+    public int MaxPipelineDepth { get; }
+
+    /// <summary>Collects wait no longer than the thread's <see cref="CollectBudget"/> allows (the engine's device callback).</summary>
+    public bool BoundedByCallback { get; init; }
+
+    /// <summary>Changes the depth from the next block (1 to <see cref="MaxPipelineDepth"/>). Any thread.</summary>
+    public void SetPipelineDepth(int depth) => Volatile.Write(ref _requestedDepth, Math.Clamp(depth, 1, MaxPipelineDepth));
 
     public TimeSpan CollectWait { get; }
 
@@ -68,12 +90,13 @@ public sealed class PluginBlockPipeline
         in TransportState transport)
     {
         var block = _nextBlock++;
+        _depth = Volatile.Read(ref _requestedDepth);
         if (_bypass)
         {
             RememberInput(block, frames, input);
         }
 
-        var collectIndex = block - (PipelineDepth - 1);
+        var collectIndex = block - (_depth - 1);
         if (exchange is null)
         {
             _pendingCount = 0;
@@ -87,13 +110,15 @@ public sealed class PluginBlockPipeline
             _pendingCount = 0;
         }
 
-        if (collectIndex < 0)
+        if (collectIndex < 0 || collectIndex <= _lastCollected)
         {
+            // Filling, or deeper than before: this block's output was delivered already.
             audio.Clear();
             return new BlockOutcome(ProcessOutcome.Priming, 0, false);
         }
 
-        var collected = exchange.TryCollect(collectIndex, CollectWait, audio, outputEvents, out var result);
+        _lastCollected = collectIndex;
+        var collected = exchange.TryCollect(collectIndex, BoundedByCallback ? CollectBudget.Bound(CollectWait) : CollectWait, audio, outputEvents, out var result);
         if (collected == ExchangeStatus.Ok && result.Frames == frames && result.Status is BlockStatus.Ok or BlockStatus.DeadlineMissed)
         {
             return new BlockOutcome(ProcessOutcome.Processed, result.OutputEventCount, false);
@@ -125,7 +150,7 @@ public sealed class PluginBlockPipeline
     {
         if (_bypass && collectIndex >= 0)
         {
-            var slot = (int)(collectIndex % PipelineDepth);
+            var slot = (int)(collectIndex % _historySlots);
             if (_historyBlock[slot] == collectIndex && _historyFrames[slot] == frames)
             {
                 _inputHistory.AsSpan(slot * _inputChannels * _maxBlockFrames, audio.Length).CopyTo(audio);
@@ -139,7 +164,7 @@ public sealed class PluginBlockPipeline
 
     private void RememberInput(long block, int frames, ReadOnlySpan<float> input)
     {
-        var slot = (int)(block % PipelineDepth);
+        var slot = (int)(block % _historySlots);
         input.CopyTo(_inputHistory.AsSpan(slot * _inputChannels * _maxBlockFrames, input.Length));
         _historyBlock[slot] = block;
         _historyFrames[slot] = frames;

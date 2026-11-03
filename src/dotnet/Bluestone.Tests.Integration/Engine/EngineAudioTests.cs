@@ -84,7 +84,10 @@ public sealed class EngineAudioTests
 
         // The plugin's worker and state survived; the new engine attached to the same exchange.
         Assert.Equal(PluginInstanceState.Running, rig.Devices.InstanceOf(rig.Synth)!.Status.State);
-        Assert.Equal(expected, await rig.RenderInEngineAsync());
+        var rendered = await rig.RenderInEngineAsync();
+        var same = expected.AsSpan().CommonPrefixLength(rendered);
+        Assert.True(same == expected.Length && rendered.Length == expected.Length,
+            $"The restarted engine's render differs from frame {same / 2} (block {same / 2 / Block}): expected {expected.ElementAtOrDefault(same)}, got {rendered.ElementAtOrDefault(same)}; telemetry {rig.Audio.Telemetry}.");
     }
 
     [Fact]

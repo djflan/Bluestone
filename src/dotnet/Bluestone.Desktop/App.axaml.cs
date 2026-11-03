@@ -161,7 +161,7 @@ public partial class App : Avalonia.Application
         PlaybackController playback;
 
         // MIDI playback, platform endpoints, live thru to external instruments, and audio run in the engine process
-        // (ADR 0044) when BLUESTONE_ENGINE=1. Opt-in until live input moves too (migration step 7); otherwise they run here.
+        // (ADR 0044) when BLUESTONE_ENGINE=1, live input included. Opt-in until measured (migration step 8); otherwise they run here.
         if (Environment.GetEnvironmentVariable("BLUESTONE_ENGINE") == "1")
         {
             _engine = new EngineSupervisor(new EngineSupervisorOptions(), activities);

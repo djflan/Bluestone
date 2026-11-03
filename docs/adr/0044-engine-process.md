@@ -206,7 +206,7 @@ With `BLUESTONE_ENGINE=1`, MIDI playback runs in the engine. It is still opt-in,
 **What stays in the UI:**
 
 - Live routes with a plugin MIDI effect, and routes to a plugin instrument. They still run in the UI, and their thru
-  to an engine output goes through the engine's playback thread.
+  to an engine output goes through the engine's playback thread. (Step 7 moved them into the engine; see below.)
 - Input from endpoints only the UI can reach. The UI decides the thru route as before; a route the engine runs gets
   the message over the control channel.
 - Recording. `MidiRecorder` places input on the timeline with the mirrored transport.
@@ -354,15 +354,102 @@ meters and figures mirrored, graphs described for the open stream, and their fil
 
 **Not done, or risky:**
 
-- Live input into plugin instruments and plugin MIDI effects, and the live render-ahead queue, in the engine (step 7).
-  Low-latency monitoring is described in the graph, but has nothing to monitor until then. In engine mode, live notes into a plugin instrument are not heard yet, and the Audio window's
-  live latency figure stays empty.
+- Live input into plugin instruments and plugin MIDI effects: done in step 7, below.
 - Recording audio input (not in the engine or the UI yet).
 - Not measured: callback timing, xruns, and collections in the engine under the UI's load (step 8). The direct-mode
   default rests on ADR 0043's isolated-process measurements.
 - Both processes map each exchange file. Only the engine submits and collects; Bluestone's handle must not be used for
   blocks in engine mode. Nothing enforces that beyond the engine path never rendering in the UI process.
-- Make the engine the default and enable the transport only when it is ready: after step 7.
+- Make the engine the default and enable the transport only when it is ready: after the probes (step 8).
+
+## Live input in the engine (step 7)
+
+With `BLUESTONE_ENGINE=1`, every live route runs in the engine, including those step 5 left in Bluestone: routes through
+plugin MIDI effects, and routes into plugin instruments, which are now rendered in the device callback. Without the
+variable, `LiveInput` runs them in Bluestone exactly as before.
+
+**What moved:**
+
+- **Routes into plugin instruments.** Bluestone sends the route (`SetRoute` with the instrument's device instead of an
+  output) and the engine's route (`EngineRoute`, a port of `LiveRunner`) becomes the live source of that instrument's
+  node in the realized graph (`LiveSourceSet`, as in Bluestone); the audio thread tells the routes about the nodes of
+  every graph it realizes. Input from the engine's own inputs (thru) and from inputs only Bluestone reaches (the
+  computer keyboard, the on-screen keyboard, auditioning: `RouteInput`, as in step 5) waits in a fixed queue under a lock
+  held only to copy an event, and goes into the next block the callback renders, at its first frame; generated events
+  (arpeggiator steps) land on their own frame. That is what `LiveInput` does in Bluestone: the latency is the time to
+  the next callback plus what follows, and the jitter is up to one device buffer. Placing input at a fixed delay after
+  its timestamp would remove the jitter at the cost of a buffer of latency; it was not done.
+- **Plugin MIDI effects.** A route's plugin effect stages (`PluginStageSpec`: the instance's exchange, as for graph
+  nodes) use the engine's handle on that exchange from the same `PluginRegistry` as the graph, so one exchange is never
+  driven through two handles. Bluestone re-sends the route when an effect's worker restarts. Effects play only live
+  input, so the engine runs them at depth 1: their output comes in the same block (Bluestone ran them at depth 2). To an
+  external output, a route with an effect runs fixed 64-frame blocks on the live thread, as in Bluestone.
+- **Depth 1 for the instrument being played live** (ADR 0043 decision 6). The instrument the monitored track plays (the
+  thru or recording track: `LiveInput.MonitoredInstrument`) is described with a depth-1 link
+  (`ProjectAudioGraph.LivePlayed`, with its latency at that depth), whether or not low-latency monitoring is on; every
+  other plugin stays at depth 2, which lets workers run in parallel during playback. The engine keeps the same
+  `AttachedPluginInstance` (and so the node, its notes, and its live source) and changes its depth at the next block
+  (`RequestPipelineDepth`); the pipeline submits and collects in the same call, with the bounded collect wait. The node
+  reports the new latency, so the graph realized from that description compensates for it: monitoring on, the
+  instrument and everything aligned with it move one block earlier; off, they move back. Going down drops the block in
+  flight; going up gives one block of silence (`PluginBlockPipeline`). The monitored instrument was chosen rather than
+  any instrument a route has played, so the depth does not flap as notes are auditioned on other tracks.
+- **The callback's collect budget.** Every plugin collect in the device callback waits at most what is left of one budget
+  for the block: 60% of the block's period (1.6 ms at 128 frames, 0.8 ms at 64, at 48 kHz; the share the
+  `--plugin-pipeline` probe allowed), set by the audio engine as a deadline on its rendering thread
+  (`CollectBudget`, `AudioEngine.CollectBudgetShare`) and shared by every plugin in the block: the instrument played
+  live, the MIDI effects on its route, and the depth-2 plugins too. However many workers are late, the callback cannot
+  wait past it; the instance's own collect wait (2 ms by default, longer than a 64-frame block) applies only where
+  there is no budget (the live thread, Bluestone's process, and the tests' offline render, which is not paced like a
+  device). `CollectBudgetTests` renders callbacks with three depth-1 plugins whose workers never answer, at 64 and 128
+  frames, and checks that a callback waits no longer than the budget in all.
+- **Missed depth-1 deadlines.** A block that is not back within the budget is silent (the failure policy), as any
+  late block. After 3 misses within 1,000 blocks (2.7–5.3 s at 128–256 frames) the instance falls back to depth 2 by
+  itself (`AttachedPluginInstance.FellBack`), and stays there until depth 1 is asked for again after another depth
+  (monitoring stops and starts), so a worker that cannot keep up costs one block of latency instead of repeated
+  dropouts. Its latency changes with it: the audio thread's once-a-second check sees the graph's latency is stale,
+  realizes the last graph again, and reports the fallback as an audio `EngineProblem` (status line and Messages).
+- **The live render-ahead queue.** The engine's live queue is a setting of its own (`AudioSettings.EngineLiveQueuedFrames`,
+  forwarded in `SetAudio`), 0 by default, which keeps the playback queue, itself 0 by default: live input is rendered
+  in the device callback. With a playback queue set, the engine switches to the live queue while live input reaches a
+  plugin instrument and back after 10 s of quiet, as `AudioPlayback` does.
+- **The live latency meter.** The route measures each note-on from its input timestamp to when its block is heard,
+  plus the effects', the instrument's, and the way to the master's latency, as `LiveRunner` does, in the engine
+  (`LiveMeter`). `AudioStatus` carries the count, average, shortest, and longest, the depth-1 misses, and whether the
+  live queue is in use; `EngineAudio.LiveLatency` and `IsLiveQueue` read them, so the Audio window shows the engine's
+  figures.
+
+**Protocol** version 5: `SetRoute` takes an instrument or an output (exactly one), and stages that are plugin effects;
+`SetAudio` the live queue; `AudioStatus` the live figures, the queue in use, and the depth-1 misses; and the test-only
+`TestRender` live notes, posted on a track's route just before a chosen callback with a chosen lead, so tests know
+exactly when a key was played relative to when its block is heard.
+
+**Real-time rules.** `--check-allocations` now also plays keys into a plugin instrument at depth 1, from the input path
+to the device callback, through an exchange a stand-in worker thread answers: the thread allocates nothing, in the JIT
+and NativeAOT builds, and the notes are heard and measured.
+
+**Tests.** In real engine processes with real workers: a key into the monitored reference sine is heard at the first
+frame of the next block (no pipeline block), and the engine's meter reports exactly the key's lead; not monitored, it is
+one block later and the meter says so; through the reference Transpose effect it is still heard in the same block,
+transposed; the graph's compensation follows monitoring on and off (a clip moves with the instrument); a route through
+a plugin effect to an external instrument runs in the engine; and after the engine is killed the new one plays the key
+at depth 1 again. Unit tests drive the depth changes and the fallback through an exchange answered by a stand-in worker:
+blocks at depth 1 come back in their own call, changing depth moves the output by one block, three misses within the
+window fall back and stay back until depth 1 is asked for again, and misses further apart do not.
+
+**Deviations:**
+
+- `EngineRoute` and `EnginePluginStage` are ports of `LiveRunner` and `PluginLiveStage` (the engine cannot reference
+  Bluestone.Application). The copies go when the in-process path does (step 10).
+- Plugin MIDI effects in the engine always run at depth 1 (Bluestone runs them at depth 2).
+- Depth 1 follows the monitored instrument, not every instrument a route reaches.
+
+**Not done, or risky:**
+
+- The fallback's re-realization and its `EngineProblem` are not covered by an engine-process test (provoking repeated
+  misses from a real worker is not deterministic); the fallback itself is unit-tested.
+- Two tracks whose routes go through the same plugin MIDI effect drive its exchange from both routes, as in Bluestone.
+- Not measured: live input latency and depth-1 misses through a real device under the UI's load (step 8).
 
 ## The engine host and supervisor (step 4)
 

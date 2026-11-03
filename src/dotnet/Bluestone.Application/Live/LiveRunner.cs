@@ -77,7 +77,7 @@ internal sealed class LiveRunner : ILiveEventSource
     public IMidiOutput? External => _external;
 
     /// <summary>Whether input posted now can be heard.</summary>
-    public bool CanPlay => Plan.Target == LiveTargetKind.External ? _external is not null : Node is not null;
+    public bool CanPlay => Plan.Target == LiveTargetKind.External ? _external is not null : IsRemote || Node is not null;
 
     public EndpointDescriptor? ExternalEndpoint => _external?.Endpoint;
 
@@ -100,6 +100,12 @@ internal sealed class LiveRunner : ILiveEventSource
             && context.Outputs.GetValueOrDefault(target.Id) is { } remoteOutput && remote.CanRun(plan, remoteOutput))
         {
             return new LiveRunner(plan, new LiveChain([], 1), context.Ppqn, remoteOutput, context.Engine, null, null, 0, 48_000) { IsRemote = true };
+        }
+
+        // Into a plugin instrument, the engine renders it in its device callback (step 7).
+        if (context.Remote is { } engine && plan.Target == LiveTargetKind.Software && engine.CanRun(plan, null))
+        {
+            return new LiveRunner(plan, new LiveChain([], 1), context.Ppqn, null, context.Engine, null, null, 0, 48_000) { IsRemote = true };
         }
 
         var stages = new List<(ILiveProcessor, EventClass)>();

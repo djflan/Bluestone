@@ -6,6 +6,7 @@ using Bluestone.Audio.Files;
 using Bluestone.Audio.Plugins;
 using Bluestone.Domain.Devices;
 using Bluestone.Engine.Protocol;
+using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol.Exchange;
 
 namespace Bluestone.Engine;
@@ -16,8 +17,10 @@ namespace Bluestone.Engine;
 /// playback thread would, and checks that the thread allocates nothing once warmed up (ADR 0044's rule for real-time
 /// threads). Then renders audio as the device callback does (step 6): a looping clip streamed from disk and a plugin
 /// whose worker is not running, into a strip, following the playing transport, while another thread reads, realizes, and
-/// swaps in a new graph; and checks that the rendering thread allocates nothing. Prints the bytes allocated by each; exits
-/// 0 when there were none, the notes came out transposed, and the clip was heard.
+/// swaps in a new graph; and checks that the rendering thread allocates nothing. Last (step 7), live notes go into a
+/// plugin instrument at depth 1, from the input path into the device callback, through a block exchange that a stand-in
+/// worker thread answers. Prints the bytes allocated by each; exits 0 when there were none, the notes came out
+/// transposed, the clip was heard, and the live notes were heard and measured.
 /// </summary>
 internal static class AllocationCheck
 {
@@ -30,7 +33,8 @@ internal static class AllocationCheck
     {
         var midi = RunMidi();
         var audio = RunAudio();
-        return midi && audio ? 0 : 1;
+        var live = RunLive();
+        return midi && audio && live ? 0 : 1;
     }
 
     private static bool RunMidi()
@@ -154,6 +158,110 @@ internal static class AllocationCheck
         finally
         {
             Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    private static bool RunLive()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"bluestone-engine-check-live-{Environment.ProcessId}");
+        Directory.CreateDirectory(folder);
+        var shape = new ExchangeOptions(Block, 0, 2);
+        var exchange = Path.Combine(folder, "synth.bsx");
+        using var worker = WorkerBlockExchange.Create(exchange, shape, 1);
+        using var stop = new CancellationTokenSource();
+        var answering = new Thread(() => Answer(worker, stop.Token)) { IsBackground = true, Name = "Stand-in plugin worker" };
+        answering.Start();
+        try
+        {
+            var plugins = new PluginRegistry(restarted: false);
+            var meter = new LiveMeter();
+            using var midi = new MidiEngine(restarted: false, startThreads: false, plugins, meter);
+            using var host = new AudioHost(midi.Playback, new TestAudioBackend(), restarted: false, test: false, startThread: false, plugins, meter)
+            {
+                InstrumentsChanged = midi.UseInstruments,
+            };
+            var synth = new Guid(4, 0, 0, [0, 0, 0, 0, 0, 0, 0, 4]);
+            var track = new Guid(5, 0, 0, [0, 0, 0, 0, 0, 0, 0, 5]);
+            var builder = new AudioGraphDescriptionBuilder();
+            var node = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, synth, "Synth")
+            {
+                Link = new DescribedPluginLink(shape, 1, TimeSpan.FromMilliseconds(2), false, 0, new PluginDataPlane(exchange, 1, shape)),
+            });
+            builder.ConnectToMaster(node);
+            var graph = Path.Combine(folder, "graph.bsgr");
+            File.WriteAllBytes(graph, AudioGraphImage.ToArray(builder.Build(0, [synth])));
+            host.Apply(new SetAudio(1, true, null, Rate, Block, 0, Block, false));
+            host.Apply(new LoadAudioGraph(1, graph, Rate, Block));
+            host.RunPending();
+            Apply(midi, new SetRoute(1, track, -1, 960 * 34, [], synth));
+            var engine = host.Engine ?? throw new InvalidOperationException("The test device did not open.");
+
+            var buffer = new float[Block * 2];
+            var frame = 0L;
+            var heard = 0;
+            Render(Callbacks);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            Render(Callbacks);
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            var live = meter.Read(plugins.DeadlineMisses);
+            Console.WriteLine($"live: allocated {allocated} bytes in {Callbacks} callbacks; {heard} blocks heard, {live.Notes} notes measured, {live.DeadlineMisses} depth-1 deadlines missed");
+            plugins.Dispose();
+            return allocated == 0 && heard > 0 && live.Notes > 0;
+
+            void Render(int callbacks)
+            {
+                for (var i = 0; i < callbacks; i++)
+                {
+                    // A key goes down every 40 callbacks and up 20 later, as from an input callback.
+                    if (i % 40 is 0 or 20)
+                    {
+                        midi.PostLive(track, i % 40 == 0 ? (byte)0x90 : (byte)0x80, 60, 100, Midi.Timing.SystemMonotonicClock.Instance.Now);
+                    }
+
+                    buffer.AsSpan().Clear();
+                    engine.Render(buffer, Block, 2, new AudioDeviceBlock(frame, Stopwatch.GetTimestamp(), TimeSpan.Zero, Rate, false));
+                    frame += Block;
+                    if (buffer[0] > 0.4f)
+                    {
+                        heard++;
+                    }
+
+                    Thread.Sleep(1);
+                }
+            }
+        }
+        finally
+        {
+            stop.Cancel();
+            answering.Join();
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    // A worker that answers every block at once: 0.5 on both channels while a note it was given sounds.
+    private static void Answer(WorkerBlockExchange exchange, CancellationToken stop)
+    {
+        var sounding = false;
+        var e = default(PluginEvent);
+        while (!stop.IsCancellationRequested)
+        {
+            if (!exchange.TryBeginBlock(out var block))
+            {
+                Thread.SpinWait(50);
+                continue;
+            }
+
+            for (var i = 0; i < block.InputEventCount; i++)
+            {
+                if (block.TryReadInputEvent(i, ref e) && e.Kind is PluginEventKind.NoteOn or PluginEventKind.NoteOff)
+                {
+                    sounding = e.Kind == PluginEventKind.NoteOn && e.Data2 > 0;
+                }
+            }
+
+            block.Output(0)[..block.Frames].Fill(sounding ? 0.5f : 0f);
+            block.Output(1)[..block.Frames].Fill(sounding ? 0.5f : 0f);
+            exchange.CompleteBlock(ref block, BlockStatus.Ok);
         }
     }
 

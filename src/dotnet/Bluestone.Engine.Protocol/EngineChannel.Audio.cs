@@ -18,6 +18,7 @@ public sealed partial class EngineChannel
                 writer.Int32(audio.QueuedFrames);
                 writer.Int32(audio.MaxBlockFrames);
                 writer.Bool(audio.TestTone);
+                writer.Int32(audio.LiveQueuedFrames);
                 break;
             case AudioDeviceStatus status:
                 writer.Int64(status.Request);
@@ -66,12 +67,31 @@ public sealed partial class EngineChannel
                 writer.Int64(counters.OutputLatency);
                 writer.Int64(counters.PluginFailedBlocks);
                 writer.Int32(counters.LatencyFrames);
+                writer.Int32(counters.QueuedFrames);
+                writer.Bool(counters.LiveQueue);
+                writer.Int64(status.Live.Notes);
+                writer.Int64(status.Live.Average);
+                writer.Int64(status.Live.Min);
+                writer.Int64(status.Live.Max);
+                writer.Int64(status.Live.DeadlineMisses);
                 break;
             case TestRender render:
                 writer.Int64(render.Id);
                 writer.String(render.Path);
                 writer.Int32(render.Frames);
                 writer.Int32(render.CallbackFrames);
+                var notes = render.Notes.IsDefault ? [] : render.Notes;
+                WriteCount(ref writer, notes.Length, EngineLimits.MaxTestNotes);
+                foreach (var note in notes)
+                {
+                    writer.Guid(note.Track);
+                    writer.Int32(note.Frame);
+                    writer.Int64(note.Lead);
+                    writer.Byte(note.Status);
+                    writer.Byte(note.Data1);
+                    writer.Byte(note.Data2);
+                }
+
                 break;
             case TestRendered rendered:
                 writer.Int64(rendered.Id);
@@ -97,7 +117,8 @@ public sealed partial class EngineChannel
                     reader.Int32In(0, EngineLimits.MaxBufferFrames),
                     reader.Int32In(0, EngineLimits.MaxQueuedFrames),
                     reader.Int32In(1, EngineLimits.MaxBufferFrames),
-                    reader.Bool());
+                    reader.Bool(),
+                    reader.Int32In(0, EngineLimits.MaxQueuedFrames));
             case EngineMessageType.AudioDeviceStatus:
                 {
                     var request = reader.NonNegative();
@@ -155,12 +176,36 @@ public sealed partial class EngineChannel
                         reader.NonNegative(),
                         reader.NonNegative(),
                         reader.NonNegative(),
-                        reader.Int32In(0, int.MaxValue));
-                    return new AudioStatus(master, strips.MoveToImmutable(), counters);
+                        reader.Int32In(0, int.MaxValue),
+                        reader.Int32In(0, EngineLimits.MaxQueuedFrames),
+                        reader.Bool());
+                    var live = new LiveLatencySpec(reader.NonNegative(), reader.Int64(), reader.Int64(), reader.Int64(), reader.NonNegative());
+                    return new AudioStatus(master, strips.MoveToImmutable(), counters, live);
                 }
 
             case EngineMessageType.TestRender:
-                return new TestRender(reader.NonNegative(), Name(ref reader), reader.Int32In(1, EngineLimits.MaxTestRenderFrames), reader.Int32In(1, EngineLimits.MaxBufferFrames));
+                {
+                    var id = reader.NonNegative();
+                    var path = Name(ref reader);
+                    var frames = reader.Int32In(1, EngineLimits.MaxTestRenderFrames);
+                    var callback = reader.Int32In(1, EngineLimits.MaxBufferFrames);
+                    var notes = ImmutableArray.CreateBuilder<TestNote>(reader.Count(EngineLimits.MaxTestNotes));
+                    for (var i = 0; i < notes.Capacity; i++)
+                    {
+                        var track = reader.Guid();
+                        var frame = reader.Int32In(0, frames - 1);
+                        var lead = reader.NonNegative();
+                        var status = reader.Byte();
+                        if (status is < 0x80 or > 0xEF)
+                        {
+                            throw new EngineProtocolException($"{status:X2} is not a channel message's status.");
+                        }
+
+                        notes.Add(new TestNote(track, frame, lead, status, reader.ByteUpTo(127), reader.ByteUpTo(127)));
+                    }
+
+                    return new TestRender(id, path, frames, callback, notes.MoveToImmutable());
+                }
             case EngineMessageType.TestRendered:
                 return new TestRendered(reader.NonNegative(), ReadOptionalName(ref reader));
             default:

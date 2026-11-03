@@ -110,16 +110,39 @@ public sealed record OutputSend(int Handle, ReadOnlyMemory<byte> Bytes) : Engine
 public readonly record struct RouteParameter(uint Id, uint Value);
 
 /// <summary>
-/// One stage of a live route: a built-in device by definition id with its parameters, or, with an empty
-/// <paramref name="Device"/>, a connection's forced <paramref name="Channel"/> (0–15; -1 for a device).
+/// A plugin MIDI effect on a live route (migration step 7): the device, and the block exchange of the worker running it
+/// now, which the engine attaches to (none while it is not running: events then pass through). Times are clock ticks.
 /// </summary>
-public sealed record RouteStageSpec(string Device, int Channel, ImmutableArray<RouteParameter> Parameters);
+/// <param name="Device">The device's id.</param>
+/// <param name="Name">For messages.</param>
+/// <param name="SampleRate">The rate the instance runs at.</param>
+/// <param name="MaxFrames">The exchange's shape: the largest block.</param>
+/// <param name="InputChannels">The exchange's audio inputs.</param>
+/// <param name="OutputChannels">The exchange's audio outputs.</param>
+/// <param name="SlotCount">The exchange's slots.</param>
+/// <param name="EventCapacity">Events per block.</param>
+/// <param name="ParameterCapacity">Parameter changes per block.</param>
+/// <param name="PipelineDepth">Blocks in flight (1: submitted and collected in the same block).</param>
+/// <param name="CollectWait">How long a collect may wait for its block.</param>
+/// <param name="LatencyFrames">The plugin's own latency.</param>
+/// <param name="ExchangePath">The running worker's exchange file, or null.</param>
+/// <param name="Generation">The exchange's generation.</param>
+public sealed record PluginStageSpec(Guid Device, string Name, int SampleRate, int MaxFrames, int InputChannels, int OutputChannels, int SlotCount, int EventCapacity, int ParameterCapacity, int PipelineDepth, long CollectWait, int LatencyFrames, string? ExchangePath, uint Generation);
+
+/// <summary>
+/// One stage of a live route: a built-in device by definition id with its parameters, a plugin MIDI effect
+/// (<paramref name="Plugin"/>), or, with an empty <paramref name="Device"/>, a connection's forced
+/// <paramref name="Channel"/> (0–15; -1 otherwise).
+/// </summary>
+public sealed record RouteStageSpec(string Device, int Channel, ImmutableArray<RouteParameter> Parameters, PluginStageSpec? Plugin = null);
 
 /// <summary>
 /// Bluestone → engine: run live route <paramref name="Route"/> for <paramref name="Track"/>: its stages, at
-/// <paramref name="Ppqn"/>, to the output under <paramref name="Output"/>. It replaces the track's earlier route for thru.
+/// <paramref name="Ppqn"/>, to the output under <paramref name="Output"/>, or (with <paramref name="Output"/> -1) into
+/// the plugin instrument <paramref name="Instrument"/> of the audio graph, rendered in the device callback. It replaces
+/// the route with the same id, and the track's earlier route for thru.
 /// </summary>
-public sealed record SetRoute(int Route, Guid Track, int Output, int Ppqn, ImmutableArray<RouteStageSpec> Stages) : EngineMessage
+public sealed record SetRoute(int Route, Guid Track, int Output, int Ppqn, ImmutableArray<RouteStageSpec> Stages, Guid? Instrument = null) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.SetRoute;
 }

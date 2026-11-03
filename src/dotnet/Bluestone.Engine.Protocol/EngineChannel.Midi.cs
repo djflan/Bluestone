@@ -103,6 +103,18 @@ public sealed partial class EngineChannel
                         writer.UInt32(parameter.Id);
                         writer.UInt32(parameter.Value);
                     }
+
+                    writer.Bool(stage.Plugin is not null);
+                    if (stage.Plugin is { } plugin)
+                    {
+                        WritePlugin(ref writer, plugin);
+                    }
+                }
+
+                writer.Bool(route.Instrument is not null);
+                if (route.Instrument is { } instrument)
+                {
+                    writer.Guid(instrument);
                 }
 
                 break;
@@ -270,28 +282,36 @@ public sealed partial class EngineChannel
                 {
                     var route = Handle(ref reader);
                     var track = reader.Guid();
-                    var output = Handle(ref reader);
+                    var output = reader.Int32In(-1, int.MaxValue);
                     var ppqn = reader.Int32In(1, 0x7FFF);
                     var stages = ImmutableArray.CreateBuilder<RouteStageSpec>(reader.Count(EngineLimits.MaxRouteStages));
                     for (var i = 0; i < stages.Capacity; i++)
                     {
                         var device = reader.String();
                         var channel = reader.Int32In(-1, 15);
-                        if ((device.Length == 0) != (channel >= 0))
-                        {
-                            throw new EngineProtocolException("A route stage is a device or a channel, not both or neither.");
-                        }
-
                         var parameters = ImmutableArray.CreateBuilder<RouteParameter>(reader.Count(EngineLimits.MaxStageParameters));
                         for (var p = 0; p < parameters.Capacity; p++)
                         {
                             parameters.Add(new RouteParameter(reader.UInt32(), reader.UInt32()));
                         }
 
-                        stages.Add(new RouteStageSpec(device, channel, parameters.MoveToImmutable()));
+                        var plugin = reader.Bool() ? ReadPlugin(ref reader) : null;
+                        var kinds = (device.Length > 0 ? 1 : 0) + (channel >= 0 ? 1 : 0) + (plugin is not null ? 1 : 0);
+                        if (kinds != 1)
+                        {
+                            throw new EngineProtocolException("A route stage is a device, a plugin, or a channel: exactly one.");
+                        }
+
+                        stages.Add(new RouteStageSpec(device, channel, parameters.MoveToImmutable(), plugin));
                     }
 
-                    return new SetRoute(route, track, output, ppqn, stages.MoveToImmutable());
+                    Guid? instrument = reader.Bool() ? reader.Guid() : null;
+                    if ((output < 0) != (instrument is not null))
+                    {
+                        throw new EngineProtocolException("A route plays to an output or into an instrument: exactly one.");
+                    }
+
+                    return new SetRoute(route, track, output, ppqn, stages.MoveToImmutable(), instrument);
                 }
 
             case EngineMessageType.RemoveRoute:
@@ -377,6 +397,43 @@ public sealed partial class EngineChannel
     }
 
     private static int Handle(ref Reader reader) => reader.Int32In(0, int.MaxValue);
+
+    private static void WritePlugin(ref Writer writer, PluginStageSpec plugin)
+    {
+        writer.Guid(plugin.Device);
+        writer.String(plugin.Name);
+        writer.Int32(plugin.SampleRate);
+        writer.Int32(plugin.MaxFrames);
+        writer.Int32(plugin.InputChannels);
+        writer.Int32(plugin.OutputChannels);
+        writer.Int32(plugin.SlotCount);
+        writer.Int32(plugin.EventCapacity);
+        writer.Int32(plugin.ParameterCapacity);
+        writer.Int32(plugin.PipelineDepth);
+        writer.Int64(plugin.CollectWait);
+        writer.Int32(plugin.LatencyFrames);
+        WriteOptional(ref writer, plugin.ExchangePath);
+        writer.UInt32(plugin.Generation);
+    }
+
+    // Shapes are checked again where the exchange is opened; here every number is kept within the protocol's limits.
+    private static PluginStageSpec ReadPlugin(ref Reader reader)
+    {
+        var device = reader.Guid();
+        var name = reader.String();
+        var rate = reader.Int32In(1, EngineLimits.MaxSampleRate);
+        var maxFrames = reader.Int32In(1, EngineLimits.MaxBufferFrames);
+        var inputs = reader.Int32In(0, 64);
+        var outputs = reader.Int32In(0, 64);
+        var slots = reader.Int32In(1, 64);
+        var events = reader.Int32In(0, 65_536);
+        var parameters = reader.Int32In(0, 65_536);
+        var depth = reader.Int32In(1, slots);
+        var wait = reader.NonNegative();
+        var latency = reader.Int32In(0, int.MaxValue);
+        var path = ReadOptionalName(ref reader);
+        return new PluginStageSpec(device, name, rate, maxFrames, inputs, outputs, slots, events, parameters, depth, wait, latency, path, reader.UInt32());
+    }
 
     private static string Name(ref Reader reader)
     {

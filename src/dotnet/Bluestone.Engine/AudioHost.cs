@@ -3,10 +3,10 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Bluestone.Audio;
 using Bluestone.Audio.Devices;
+using Bluestone.Audio.Plugins;
 using Bluestone.Engine.Protocol;
 using Bluestone.Playback;
 using Bluestone.Plugins;
-using Bluestone.Plugins.Protocol;
 
 namespace Bluestone.Engine;
 
@@ -36,16 +36,25 @@ internal sealed class AudioHost : IDisposable
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MeterInterval = TimeSpan.FromMilliseconds(33);
+
+    /// <summary>How long the live queue stays after the last live note before the playback queue comes back (ADR 0035).</summary>
+    private static readonly TimeSpan LiveHold = TimeSpan.FromSeconds(10);
     private const int MaxProblemLength = 400;
+
+    /// <summary>
+    /// The share of each block's period that all plugin collects in it may wait for together, as the --plugin-pipeline
+    /// probe allowed (ADR 0043): 1.6 ms at 128 frames, 0.8 ms at 64, at 48 kHz.
+    /// </summary>
+    internal const double CollectShare = 0.6;
 
     private readonly PlaybackEngine _playback;
     private readonly IAudioBackend _backend;
-    private readonly bool _restarted;
     private readonly bool _test;
     private readonly EngineTimeline _timeline;
     private readonly RendererSlot _slot = new();
     private readonly Lock _gate = new();
-    private readonly Dictionary<Guid, AttachedPluginInstance> _plugins = [];
+    private readonly PluginRegistry _plugins;
+    private readonly LiveMeter _meter;
     private readonly List<string> _attachProblems = [];
     private readonly Lock _queues = new();
     private readonly Queue<EngineMessage> _work = new();
@@ -67,6 +76,7 @@ internal sealed class AudioHost : IDisposable
     private string _devicesTried = string.Empty;
     private bool _statusChanged;
     private string? _reportedProblem;
+    private bool _liveQueue;
 
     // Under _queues.
     private long _newestGraph = -1;
@@ -77,11 +87,14 @@ internal sealed class AudioHost : IDisposable
     /// <param name="restarted">Started after a crash: sweep every plugin before its first block.</param>
     /// <param name="test">The backend is a test's stand-in that never calls back: graphs render only on <see cref="TestRender"/>.</param>
     /// <param name="startThread">False to work through <see cref="RunPending"/> by hand (tests and the allocation check).</param>
-    public AudioHost(PlaybackEngine playback, IAudioBackend backend, bool restarted, bool test, bool startThread = true)
+    /// <param name="plugins">The plugin instances the engine drives, shared with live routes.</param>
+    /// <param name="meter">Live notes into plugin instruments, measured by the routes; reported with the meters.</param>
+    public AudioHost(PlaybackEngine playback, IAudioBackend backend, bool restarted, bool test, bool startThread = true, PluginRegistry? plugins = null, LiveMeter? meter = null)
     {
+        _plugins = plugins ?? new PluginRegistry(restarted);
+        _meter = meter ?? new LiveMeter();
         _playback = playback;
         _backend = backend;
-        _restarted = restarted;
         _test = test;
         _timeline = new EngineTimeline(playback);
         if (startThread)
@@ -90,6 +103,16 @@ internal sealed class AudioHost : IDisposable
             _thread.Start();
         }
     }
+
+    /// <summary>
+    /// Raised on the audio thread, under its lock, with the plugin instruments of every graph it plays (by device, with
+    /// the frames from each one's output to the master), and with none when the device closes: live routes into them
+    /// become their live sources.
+    /// </summary>
+    public Action<IReadOnlyDictionary<Guid, (PluginNode Node, int DelayToMaster)>>? InstrumentsChanged { get; set; }
+
+    /// <summary>For tests: posts a channel message on a track's live route, as input received at the given time.</summary>
+    public Func<Guid, byte, byte, byte, TimeSpan, bool>? PostLive { get; set; }
 
     /// <summary>The engine rendering now, if a device is open.</summary>
     internal AudioEngine? Engine => Volatile.Read(ref _engine);
@@ -154,12 +177,6 @@ internal sealed class AudioHost : IDisposable
         lock (_gate)
         {
             Close();
-            foreach (var plugin in _plugins.Values)
-            {
-                plugin.Dispose();
-            }
-
-            _plugins.Clear();
         }
 
         _wake.Dispose();
@@ -178,6 +195,7 @@ internal sealed class AudioHost : IDisposable
                 meteredAt = Stopwatch.GetTimestamp();
                 lock (_gate)
                 {
+                    FollowLiveInput();
                     if (Meters() is { } meters)
                     {
                         lock (_queues)
@@ -195,6 +213,7 @@ internal sealed class AudioHost : IDisposable
                 {
                     Align();
                     CheckDevice();
+                    FallBack();
                     PostStatus();
                 }
             }
@@ -347,10 +366,15 @@ internal sealed class AudioHost : IDisposable
         Close();
         var rate = output.SampleRate;
         var block = Math.Clamp(wanted.BufferFrames, 32, Math.Max(32, wanted.MaxBlockFrames));
-        var engine = new AudioEngine(rate, block, streamFromDisk: !_test) { TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null };
+        var engine = new AudioEngine(rate, block, streamFromDisk: !_test)
+        {
+            TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null,
+            CollectBudgetShare = CollectShare,
+        };
         var device = Math.Max(wanted.BufferFrames, block);
         engine.Transport.Follow(_timeline, ToleranceFrames(rate, device, block));
         Volatile.Write(ref _realizer, new AudioGraphRealizer(rate, block, ProcessorFor));
+        _liveQueue = false;
         Volatile.Write(ref _engine, engine);
         _slot.Engine = engine;
         try
@@ -399,6 +423,7 @@ internal sealed class AudioHost : IDisposable
         _slot.Engine = null;
         Interlocked.Exchange(ref _engine, null)?.Dispose();
         Interlocked.Exchange(ref _realizer, null)?.Dispose();
+        InstrumentsChanged?.Invoke(new Dictionary<Guid, (PluginNode, int)>());
         _statusChanged = true;
     }
 
@@ -492,15 +517,17 @@ internal sealed class AudioHost : IDisposable
         _attachProblems.Clear();
         var realized = realizer.Realize(description);
         engine.Publish(realized.Graph);
-
-        // Instances the graph no longer has are let go; the old graph may still be in its last block, which then
-        // renders their failure policy.
-        foreach (var gone in _plugins.Keys.Where(key => !realizer.PluginNodes.ContainsKey(key)).ToList())
+        _plugins.Use(graph: true, realizer.PluginNodes.Keys);
+        var instruments = new Dictionary<Guid, (PluginNode, int)>();
+        foreach (var (key, node) in realizer.PluginNodes)
         {
-            _plugins.Remove(gone, out var plugin);
-            plugin!.Dispose();
+            if (realized.Graph.DelayToMasterOf(node) is { } delay)
+            {
+                instruments[key] = (node, delay);
+            }
         }
 
+        InstrumentsChanged?.Invoke(instruments);
         if (acknowledge)
         {
             var problems = realized.Problems.Concat(_attachProblems).Distinct().Take(EngineLimits.MaxGraphProblems).Select(Shorten);
@@ -508,40 +535,49 @@ internal sealed class AudioHost : IDisposable
         }
     }
 
-    // The realizer's plugin bridge: one attached instance per device, kept while its shape and pipeline stay the same, so
-    // the node keeps its note tracking; attached to the exchange the description names. Under _gate.
-    private AttachedPluginInstance? ProcessorFor(DescribedNode described)
+    // The realizer's plugin bridge: the registry's instance for the device, attached to the exchange the description
+    // names, at the depth it asks for (1 for an instrument played live), kept while its shape stays the same so the node
+    // keeps its note tracking. Under _gate.
+    private AttachedPluginInstance? ProcessorFor(DescribedNode described) =>
+        described.Link is { } link ? _plugins.Attach(described.Key, described.Name, link, _attachProblems) : null;
+
+    // An instrument that missed its depth-1 deadline too often fell back to depth 2: its latency changed, so the graph is
+    // realized again to compensate, and Bluestone is told. Any graph whose nodes' latency changed is realized again too.
+    // Under _gate.
+    private void FallBack()
     {
-        if (described.Link is not { } link)
+        foreach (var name in _plugins.TakeFallbacks())
         {
-            return null;
+            Post(new EngineProblem(-1, Shorten($"{name} missed its live deadline {AttachedPluginInstance.MissesToFallBack} times, so it plays one block later until it is monitored again."), EngineProblemArea.Audio));
         }
 
-        if (!_plugins.TryGetValue(described.Key, out var plugin) || plugin.Shape != link.Shape || plugin.PipelineDepth != link.PipelineDepth
-            || plugin.CollectWait != link.CollectWait || plugin.BypassOnFailure != link.BypassOnFailure)
+        if (_engine is { } engine && engine.Graph.IsLatencyStale && _lastGraph is { } last)
         {
-            plugin?.Dispose();
-            plugin = new AttachedPluginInstance(link.Shape, link.PipelineDepth, link.CollectWait, link.BypassOnFailure);
-            if (_restarted)
-            {
-                plugin.SweepBeforeNextBlock();
-            }
+            Realize(last.Load, last.Description, acknowledge: false);
+        }
+    }
 
-            _plugins[described.Key] = plugin;
+    // The smaller live queue while live input plays a plugin instrument, and the playback queue again after a quiet
+    // while (ADR 0035). Only when the device renders ahead. Under _gate.
+    private void FollowLiveInput()
+    {
+        if (_output is not { QueuedFrames: > 0 } output || _wanted is not { LiveQueuedFrames: > 0 } wanted || wanted.LiveQueuedFrames >= wanted.QueuedFrames)
+        {
+            return;
         }
 
-        plugin.ReportedLatencyFrames = link.LatencyFrames;
-        try
+        var last = _meter.LastInput;
+        var recent = last != 0 && Midi.Timing.SystemMonotonicClock.Instance.Now - TimeSpan.FromTicks(last) < LiveHold;
+        if (recent && !_liveQueue)
         {
-            plugin.Attach(link.DataPlane);
+            output.SetQueuedFrames(wanted.LiveQueuedFrames);
+            _liveQueue = true;
         }
-        catch (Exception ex) when (ex is ProtocolException or IOException or UnauthorizedAccessException)
+        else if (!recent && _liveQueue)
         {
-            plugin.Attach(null);
-            _attachProblems.Add($"{described.Name}: the engine could not reach its plugin ({ex.Message}), so it is silent.");
+            output.SetQueuedFrames(wanted.QueuedFrames);
+            _liveQueue = false;
         }
-
-        return plugin;
     }
 
     // Tests: the current graph from the song's start, through the device callback's render path. Under _gate.
@@ -559,11 +595,34 @@ internal sealed class AudioHost : IDisposable
 
         engine.Transport.Follow(null, 0);
         engine.Transport.Play(0);
+
+        // Offline is faster than real time and not paced like a device: collects wait their full collect wait, so the
+        // samples do not depend on how busy the machine is.
+        engine.CollectBudgetShare = 0;
         try
         {
             // Whole blocks, so the next render starts on a block boundary as this one did.
             var frames = (render.Frames + engine.BlockFrames - 1) / engine.BlockFrames * engine.BlockFrames;
-            var samples = new OfflineAudioDriver(engine).Render(frames, render.CallbackFrames);
+            var samples = new float[frames * 2];
+            var driver = new OfflineAudioDriver(engine) { StartTimestamp = Stopwatch.GetTimestamp() };
+            var notes = render.Notes.IsDefault ? [] : render.Notes;
+            for (var done = 0; done < frames; done += render.CallbackFrames)
+            {
+                var count = Math.Min(render.CallbackFrames, frames - done);
+
+                // Live input arriving just before this callback, its timestamp the given lead before the callback is heard.
+                foreach (var note in notes)
+                {
+                    if (note.Frame >= done && note.Frame < done + count)
+                    {
+                        var heard = Stopwatch.GetElapsedTime(0, driver.NextTimestamp);
+                        PostLive?.Invoke(note.Track, note.Status, note.Data1, note.Data2, heard - TimeSpan.FromTicks(note.Lead));
+                    }
+                }
+
+                driver.Render(samples.AsSpan(done * 2, count * 2), count);
+            }
+
             File.WriteAllBytes(render.Path, MemoryMarshal.AsBytes(samples.AsSpan(0, render.Frames * 2)).ToArray());
             return null;
         }
@@ -573,6 +632,7 @@ internal sealed class AudioHost : IDisposable
         }
         finally
         {
+            engine.CollectBudgetShare = CollectShare;
             engine.Transport.Stop();
             engine.Transport.Follow(_timeline, ToleranceFrames(engine.SampleRate, Math.Max(wanted.BufferFrames, engine.BlockFrames), engine.BlockFrames));
         }
@@ -634,8 +694,10 @@ internal sealed class AudioHost : IDisposable
             stream.RenderMax.Ticks,
             stream.OutputLatency.Ticks,
             failed,
-            graph.LatencyFrames);
-        return new AudioStatus(Meter(realizer.Master.Meter.Read()), strips.ToImmutable(), counters);
+            graph.LatencyFrames,
+            output.QueuedFrames,
+            _liveQueue);
+        return new AudioStatus(Meter(realizer.Master.Meter.Read()), strips.ToImmutable(), counters, _meter.Read(_plugins.DeadlineMisses));
     }
 
     private static MeterSpec Meter(MeterReading reading) => new(Level(reading.PeakLeft), Level(reading.PeakRight), Level(reading.RmsLeft), Level(reading.RmsRight));
