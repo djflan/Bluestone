@@ -105,6 +105,7 @@ public sealed class AudioViewModelTests : IDisposable
     [Fact]
     public void FirstRun_PrefersASIOWhenAnASIODeviceIsAvailable()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "The first-run ASIO preference applies only on Windows.");
         var devices = new[]
         {
             new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024),
