@@ -19,6 +19,7 @@ public sealed partial class EngineChannel
                 writer.Int32(audio.MaxBlockFrames);
                 writer.Bool(audio.TestTone);
                 writer.Int32(audio.LiveQueuedFrames);
+                WriteOptional(ref writer, audio.Host);
                 break;
             case AudioDeviceStatus status:
                 writer.Int64(status.Request);
@@ -29,6 +30,7 @@ public sealed partial class EngineChannel
                 writer.Int32(status.BlockFrames);
                 writer.Int32(status.QueuedFrames);
                 WriteOptional(ref writer, status.RenderThreadPolicy);
+                writer.Int32(status.DeviceBufferFrames);
                 break;
             case LoadAudioGraph load:
                 writer.Int64(load.GraphId);
@@ -118,7 +120,8 @@ public sealed partial class EngineChannel
                     reader.Int32In(0, EngineLimits.MaxQueuedFrames),
                     reader.Int32In(1, EngineLimits.MaxBufferFrames),
                     reader.Bool(),
-                    reader.Int32In(0, EngineLimits.MaxQueuedFrames));
+                    reader.Int32In(0, EngineLimits.MaxQueuedFrames),
+                    ReadOptionalName(ref reader));
             case EngineMessageType.AudioDeviceStatus:
                 {
                     var request = reader.NonNegative();
@@ -138,7 +141,8 @@ public sealed partial class EngineChannel
                         reader.Int32In(0, 1024),
                         reader.Int32In(0, EngineLimits.MaxBufferFrames),
                         reader.Int32In(0, EngineLimits.MaxQueuedFrames),
-                        ReadOptionalName(ref reader));
+                        ReadOptionalName(ref reader),
+                        reader.Int32In(0, EngineLimits.MaxDeviceBufferFrames));
                 }
 
             case EngineMessageType.LoadAudioGraph:

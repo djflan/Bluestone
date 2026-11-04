@@ -27,6 +27,7 @@ internal static class AudioCallbackProbe
         var buffers = (Option(args, "--buffers") ?? "64,128,256").Split(',').Select(b => int.Parse(b, CultureInfo.InvariantCulture)).ToArray();
         var strips = options.Int("--strips", 32);
         var queue = options.Int("--queue", 0);
+        var host = Option(args, "--host");
         if (!AudioDevices.IsAvailable(out var problem))
         {
             Console.WriteLine(problem);
@@ -45,16 +46,16 @@ internal static class AudioCallbackProbe
             var report = new TimingReport("audio-callback", settings);
             report.Machine.WarnIfBusy();
             Console.WriteLine($"Audio callback: {device}, {buffer} frames at {SampleRate} Hz, {strips} strips, {settings["mode"]}, pressure {settings["pressure"]}, {options.Seconds} s");
-            Measure(report, buffer, options, strips, queue, deviceId);
+            Measure(report, buffer, options, strips, queue, deviceId, host);
             options.Finish(report);
         }
     }
 
-    private static void Measure(TimingReport report, int buffer, ProbeOptions options, int strips, int queue, string? deviceId)
+    private static void Measure(TimingReport report, int buffer, ProbeOptions options, int strips, int queue, string? deviceId, string? host)
     {
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(Graph(buffer, strips));
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue, Host: host));
         output.Start();
         Thread.Sleep(500); // warm-up: tiering, first callbacks
         using var stop = new CancellationTokenSource();

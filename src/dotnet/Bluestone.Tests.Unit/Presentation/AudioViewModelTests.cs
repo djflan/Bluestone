@@ -74,7 +74,77 @@ public sealed class AudioViewModelTests : IDisposable
 
         vm.StopCommand.Execute(null);
 
-        Assert.Equal(new AudioSettings(false, "a", 48_000, 512, AudioSettings.DefaultQueuedFrames), Store.Load());
+        Assert.Equal(new AudioSettings(false, "a", 48_000, 512, AudioSettings.DefaultQueuedFrames) { Host = "CoreAudio" }, Store.Load());
+    }
+
+    [Fact]
+    public void HostSelection_FiltersDevicesAndIsSaved()
+    {
+        Store.Save(new AudioSettings { Host = "ASIO" });
+        var devices = new[]
+        {
+            new AudioDeviceInfo("asio-device", "Interface", "ASIO", true, 48_000, 2, [44_100, 48_000], [2], 32, 1024),
+            new AudioDeviceInfo("wasapi-device", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096),
+        };
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["ASIO", "WASAPI"]);
+
+        Assert.Equal("ASIO", vm.Host!.Name);
+        Assert.Contains(vm.Devices, device => device.Id == "asio-device");
+        Assert.DoesNotContain(vm.Devices, device => device.Id == "wasapi-device");
+
+        vm.Host = vm.Hosts.Single(host => host.Name == "WASAPI");
+        Assert.Contains(64, vm.BufferSizes);
+        Assert.Contains(4096, vm.BufferSizes);
+        vm.StopCommand.Execute(null);
+
+        Assert.Equal("WASAPI", Store.Load().Host);
+        Assert.Contains(vm.Devices, device => device.Id == "wasapi-device");
+        Assert.DoesNotContain(vm.Devices, device => device.Id == "asio-device");
+    }
+
+    [Fact]
+    public void FirstRun_PrefersASIOWhenAnASIODeviceIsAvailable()
+    {
+        var devices = new[]
+        {
+            new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024),
+            new AudioDeviceInfo("wasapi-device", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096),
+        };
+
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["ASIO", "WASAPI"]);
+
+        Assert.Equal("ASIO", vm.Host!.Name);
+    }
+
+    [Fact]
+    public void ExistingSystemDefaultSettings_StayOnWASAPIWhenASIOIsInstalled()
+    {
+        Store.Save(new AudioSettings());
+        var devices = new[]
+        {
+            new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024),
+            new AudioDeviceInfo("wasapi-device", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096),
+        };
+
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["ASIO", "WASAPI"]);
+
+        Assert.Equal("WASAPI", vm.Host!.Name);
+    }
+
+    [Fact]
+    public void ARememberedDevice_WithoutASavedHost_KeepsItsHost()
+    {
+        Store.Save(new AudioSettings(DeviceId: "wasapi:speakers"));
+        var devices = new[]
+        {
+            new AudioDeviceInfo("asio:interface", "Interface", "ASIO", true, 48_000, 2, [48_000], [2], 1024, 1024),
+            new AudioDeviceInfo("wasapi:speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096),
+        };
+
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["ASIO", "WASAPI"]);
+
+        Assert.Equal("WASAPI", vm.Host!.Name);
+        Assert.Equal("wasapi:speakers", vm.Device!.Id);
     }
 
     [Fact]
@@ -128,6 +198,8 @@ public sealed class AudioViewModelTests : IDisposable
 
         Assert.Equal(ActivityOutcome.Completed, ended?.Outcome);
         Assert.StartsWith("Audio is on:", ended?.Text, StringComparison.Ordinal);
+        Assert.Contains("960-frame device buffer", vm.Status, StringComparison.Ordinal);
+        Assert.Contains("256-frame render blocks", vm.Status, StringComparison.Ordinal);
         Assert.Empty(activities.Running);
     }
 

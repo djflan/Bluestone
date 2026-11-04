@@ -1,6 +1,6 @@
 # 0013. Windows playback timing: 1 ms timer resolution and MMCSS
 
-- Status: Accepted
+- Status: Accepted; native x64 measurements and precise waiting added by 0047
 - Date: 2026-10-04
 
 ## Context

@@ -76,8 +76,10 @@ internal static class PlatformProviders
     }
 
     /// <summary>
-    /// The playback thread's sub-millisecond sleep: <c>mach_wait_until</c> on macOS, where the real-time thread wakes
-    /// within about 0.1 ms (ADR 0043). Other platforms spin the final approach until measured.
+    /// The playback thread's sub-millisecond sleep: <c>mach_wait_until</c> on macOS and a high-resolution waitable
+    /// timer on Windows. Other platforms spin the final approach until measured.
     /// </summary>
-    public static Action<TimeSpan>? PlaybackPreciseSleep => OperatingSystem.IsMacOS() ? ThreadScheduling.SleepPrecisely : null;
+    public static Action<TimeSpan>? PlaybackPreciseSleep => OperatingSystem.IsMacOS()
+        ? ThreadScheduling.SleepPrecisely
+        : OperatingSystem.IsWindows() ? Bluestone.Platform.Windows.ThreadScheduling.SleepPrecisely : null;
 }

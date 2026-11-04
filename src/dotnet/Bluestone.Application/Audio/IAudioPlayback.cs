@@ -12,7 +12,11 @@ namespace Bluestone.Application.Audio;
 /// <param name="QueuedFrames">Frames rendered ahead of the device (0: rendered in the device callback).</param>
 /// <param name="RenderThreadPolicy">How the render-ahead thread is scheduled, in words; null in direct mode.</param>
 /// <param name="LatencyFrames">The playing graph's delay compensation.</param>
-public sealed record AudioStreamInfo(int SampleRate, int Channels, int BlockFrames, int QueuedFrames, string? RenderThreadPolicy, int LatencyFrames);
+public sealed record AudioStreamInfo(int SampleRate, int Channels, int BlockFrames, int QueuedFrames, string? RenderThreadPolicy, int LatencyFrames)
+{
+    /// <summary>The device callback's actual buffer size, or 0 until the device reports it.</summary>
+    public int DeviceBufferFrames { get; init; }
+}
 
 /// <summary>How the open audio stream has done since it opened.</summary>
 /// <param name="Callbacks">Device callbacks.</param>

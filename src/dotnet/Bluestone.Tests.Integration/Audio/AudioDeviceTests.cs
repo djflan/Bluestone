@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Bluestone.Application.Audio;
 using Bluestone.Application.Sessions;
 using Bluestone.Audio;
@@ -17,6 +18,13 @@ namespace Bluestone.Tests.Integration.Audio;
 public sealed class AudioDeviceTests
 {
     [Fact]
+    public void NativeInputStructs_MatchTheCAbi()
+    {
+        Assert.Equal(32, Marshal.SizeOf<NativeMethods.CaptureInfo>());
+        Assert.Equal(56, Marshal.SizeOf<NativeMethods.InputStatusData>());
+    }
+
+    [Fact]
     public void DeviceList_HasTheDefaultOutput_WithRatesAndChannels()
     {
         var devices = RequireDevices();
@@ -30,12 +38,65 @@ public sealed class AudioDeviceTests
     }
 
     [Fact]
+    public void HostList_IncludesEveryListedDeviceHost()
+    {
+        var hosts = AudioDevices.ListHosts();
+        var devices = RequireDevices();
+
+        Assert.NotEmpty(hosts);
+        Assert.All(devices, device => Assert.Contains(device.Host, hosts));
+    }
+
+    [Fact]
+    public void AsioDevice_RunsTheEngineCallbackWhenTheDriverIsInstalled()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "ASIO is available only on Windows.");
+        Assert.SkipUnless(AudioDevices.ListHosts().Contains("ASIO", StringComparer.Ordinal), "The audio library was built without ASIO support.");
+        var device = AudioDevices.List().FirstOrDefault(d => d.Host == "ASIO");
+        Assert.SkipUnless(device is not null, "No ASIO driver currently exposes an output device.");
+
+        using var engine = new AudioEngine(48_000, 256);
+        using var output = Open(engine, new AudioStreamRequest(device.Id, Host: "ASIO"));
+
+        output.Start();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (engine.Statistics.Callbacks < 20 && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(20);
+        }
+
+        output.Stop();
+        Assert.True(engine.Statistics.Callbacks >= 20, $"Only {engine.Statistics.Callbacks} ASIO callbacks arrived from {device.Name}.");
+        Assert.Contains(output.SampleRate, device.SampleRates);
+        Assert.True(output.Status.DeviceBufferFrames > 0);
+    }
+
+    [Fact]
+    public void AsioOutput_RemainsListedAndAllowsInputOnTheSameDriver()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "ASIO is available only on Windows.");
+        Assert.SkipUnless(AudioDevices.ListHosts().Contains("ASIO", StringComparer.Ordinal), "The audio library was built without ASIO support.");
+        var outputDevice = AudioDevices.List().FirstOrDefault(d => d.Host == "ASIO");
+        Assert.SkipUnless(outputDevice is not null, "No ASIO driver currently exposes an output device.");
+
+        using var engine = new AudioEngine(48_000, 256);
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(outputDevice.Id, 48_000, Host: "ASIO"));
+
+        Assert.Contains(AudioDevices.List(), device => device.Id == outputDevice.Id && device.Host == "ASIO");
+        var inputDevice = AudioDevices.ListInputs().FirstOrDefault(d => d.Host == "ASIO");
+        Assert.SkipUnless(inputDevice is not null, "The installed ASIO driver does not expose an input device.");
+        using var input = AudioInput.Open(static (ReadOnlySpan<float> samples, int frames, int channels, in AudioCaptureBlock block) => { }, inputDevice.Id, 48_000, host: "ASIO");
+        Assert.Equal(48_000, output.SampleRate);
+        Assert.Equal(48_000, input.SampleRate);
+    }
+
+    [Fact]
     public void DefaultDevice_RunsTheEngineCallback_AtTheRequestedRateAndBufferSize()
     {
         var device = RequireDevices().FirstOrDefault(d => d.IsDefault) ?? RequireDevices()[0];
         var rate = device.SampleRates.Contains(48_000) ? 48_000 : device.DefaultSampleRate;
         using var engine = new AudioEngine(rate, 256);
-        using var output = Open(engine, new AudioStreamRequest(device.Id, rate, 256));
+        using var output = Open(engine, new AudioStreamRequest(device.Id, rate, 256, Host: device.Host));
 
         output.Start();
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
@@ -51,6 +112,7 @@ public sealed class AudioDeviceTests
         Assert.Equal(rate, status.SampleRate);
         Assert.Equal(rate, output.SampleRate);
         Assert.True(status.LastBufferFrames > 0);
+        Assert.Equal(status.LastBufferFrames, status.DeviceBufferFrames);
         Assert.True(status.Frames >= status.Callbacks);
         Assert.Equal(0, engine.Statistics.Faults);
         Assert.Equal(0, output.RenderFaults);

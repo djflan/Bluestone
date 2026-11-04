@@ -1,6 +1,6 @@
 # 0032. Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport
 
-- Status: Accepted; amended by 0035 (latency) and 0043 (an engine process)
+- Status: Accepted; amended by 0035 (latency), 0043 (an engine process), and 0046 (Windows ASIO host)
 - Date: 2026-10-11
 
 ## Context
@@ -16,21 +16,22 @@ and in the worst case within the buffer period; garbage-collection pauses during
 
 ### Device layer (Rust, `native/crates/bluestone_audio`)
 
-- A `cdylib` with a C ABI (`bluestone_audio_abi_version()` = 1): list output devices as JSON (id, name, host,
-  default rate and channels, supported standard rates, channel counts, buffer range); open, start, stop, and close
-  an output stream for a device id (or the default) with a rate, buffer size in frames, and channel count; read a
-  status struct (state, rate, channels, buffer sizes seen, callbacks, frames, xruns the backend reported,
-  late-callback "discontinuities", output latency, the last device error such as a removed device, render-time
-  maximum, total, and late renders) and a render-time histogram (10 µs buckets).
+- A `cdylib` with a C ABI (`bluestone_audio_abi_version()` = 4): list input and output devices as JSON (id, name,
+  host, default rate and channels, supported standard rates, channel counts, buffer range); open, start, stop, and
+  close input and output streams; and read direction-specific status. Output status includes buffer sizes, callbacks,
+  frames, xruns, late-callback discontinuities, oversized blocks, output latency, device errors, render-time maximum,
+  total, late renders, and a 10 µs render-time histogram. Input status includes callbacks, frames, overruns,
+  oversized blocks, and reported input latency.
 - Two stream modes. **Direct:** each device callback calls a function pointer registered by .NET
   (`[UnmanagedCallersOnly]`) with the interleaved `f32` buffer, frames, channels, and block information (frame
   position, output latency, callback index). **Buffered:** the callback only copies from a single-producer,
   single-consumer ring that a dedicated .NET render thread fills; missing frames play as silence and are counted.
   The writer waits for space in native code (`std::thread::park_timeout`), so a .NET collection never holds it there.
-- The callback path does no allocation, locking, or logging: atomics, a conversion buffer allocated at open (for
-  devices without `f32`), and the copy. Render time is measured natively around the call into .NET, so it includes
+- The callback paths do no allocation, locking, or logging: atomics, conversion buffers allocated at open (for
+  devices without `f32`), and copies. Render time is measured natively around the call into .NET, so it includes
   entering the runtime and any wait for a collection to finish.
-- No input stream (recording audio is out of scope). Built and tested on macOS (Core Audio). CI builds and tests the
+- Input callbacks hand captured blocks and timestamps to .NET, count backend overruns, and drop oversized blocks
+  rather than writing past the conversion buffer. Built and tested on macOS (Core Audio). CI builds and tests the
   crate on Linux (ALSA; `libasound2-dev` is installed) and Windows (WASAPI); hosted runners have no audio device,
   so device tests there only check that a failed open reports a reason.
 

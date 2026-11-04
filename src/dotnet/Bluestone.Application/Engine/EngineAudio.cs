@@ -207,6 +207,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             {
                 return _link is not null && _status is { State: AudioDeviceState.Running or AudioDeviceState.Fallback } status
                     ? new AudioStreamInfo(status.SampleRate, status.Channels, status.BlockFrames, status.QueuedFrames, status.RenderThreadPolicy, _latencyFrames)
+                    {
+                        DeviceBufferFrames = status.DeviceBufferFrames,
+                    }
                     : null;
             }
         }
@@ -583,7 +586,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
     // Under _gate.
     private SetAudio SetAudio(AudioSettings settings) =>
-        new(++_request, true, settings.DeviceId, settings.SampleRate, settings.BufferFrames, settings.EngineQueuedFrames, _options.MaxBlockFrames, _testTone, settings.EngineLiveQueuedFrames);
+        new(++_request, true, settings.DeviceId, settings.SampleRate, settings.BufferFrames, settings.EngineQueuedFrames, _options.MaxBlockFrames, _testTone, settings.EngineLiveQueuedFrames, settings.Host);
 
     // A plugin in the graph that restarts (a new exchange) or reports a new latency is described again. Under _rebuild.
     private void Watch(AudioGraphDescription description)

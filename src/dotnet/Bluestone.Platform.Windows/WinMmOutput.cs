@@ -38,11 +38,30 @@ internal sealed unsafe class WinMmOutput : IMidiOutput
         _provider = provider;
         Endpoint = endpoint;
         _handle = handle;
-        _headers = (WinMm.MidiHeader*)NativeMemory.AllocZeroed(LongMessageSlots, HeaderSize);
-        for (var i = 0; i < LongMessageSlots; i++)
+        try
         {
-            _headers[i].Data = (byte*)NativeMemory.Alloc(InitialCapacity);
-            _capacities[i] = InitialCapacity;
+            _headers = (WinMm.MidiHeader*)NativeMemory.AllocZeroed(LongMessageSlots, HeaderSize);
+
+            for (var i = 0; i < LongMessageSlots; i++)
+            {
+                _headers[i].Data = (byte*)NativeMemory.Alloc(InitialCapacity);
+                _capacities[i] = InitialCapacity;
+            }
+        }
+        catch
+        {
+            if (_headers != null)
+            {
+                for (var i = 0; i < LongMessageSlots; i++)
+                {
+                    NativeMemory.Free(_headers[i].Data);
+                }
+
+                NativeMemory.Free(_headers);
+            }
+
+            _ = WinMm.midiOutClose(_handle);
+            throw;
         }
     }
 
@@ -51,6 +70,8 @@ internal sealed unsafe class WinMmOutput : IMidiOutput
     public EndpointState State => (EndpointState)Volatile.Read(ref _state);
 
     public event EventHandler<EndpointStateChangedEventArgs>? StateChanged;
+
+    public void MarkDisconnected() => Transition(EndpointState.Disconnected, "The WinMM endpoint was removed.");
 
     public SendResult Send(ReadOnlySpan<byte> message, MidiTimestamp timestamp)
     {

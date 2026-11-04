@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Platform.Windows;
 
@@ -32,6 +35,21 @@ public sealed class WinMmProviderTests
         return synth;
     }
 
+    private static (EndpointDescriptor Input, EndpointDescriptor Output) RequireLoopback(WinMmProvider provider)
+    {
+        var endpoints = provider.GetEndpoints()
+            .Where(e => e.DisplayName.Contains("Loopback", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Any(e => e.Direction == EndpointDirection.Input)
+                && group.Any(e => e.Direction == EndpointDirection.Output));
+        if (endpoints is null)
+        {
+            Assert.Skip("No WinMM MIDI loopback input and output are installed.");
+        }
+
+        return (endpoints.First(e => e.Direction == EndpointDirection.Input), endpoints.First(e => e.Direction == EndpointDirection.Output));
+    }
+
     private static async Task<IMidiOutput> OpenSoftwareSynthAsync(WinMmProvider provider)
     {
         var synth = RequireSoftwareSynth(provider);
@@ -48,12 +66,13 @@ public sealed class WinMmProviderTests
     }
 
     [Fact]
-    public void Provider_EnumeratesOutputsWithUniqueIds()
+    public void Provider_EnumeratesInputsAndOutputsWithUniqueIds()
     {
         RequireWindows();
         using var provider = new WinMmProvider();
 
         var endpoints = provider.GetEndpoints();
+        Assert.SkipUnless(endpoints.Any(e => e.Direction == EndpointDirection.Input), "No WinMM MIDI input devices are available.");
 
         foreach (var endpoint in endpoints)
         {
@@ -63,10 +82,11 @@ public sealed class WinMmProviderTests
         Assert.All(endpoints, e =>
         {
             Assert.Equal(WinMmProvider.ProviderId, e.Id.Provider);
-            Assert.Equal(EndpointDirection.Output, e.Direction);
             Assert.Equal(EndpointCapabilities.SystemExclusive, e.Capabilities);
         });
         Assert.Equal(endpoints.Count, endpoints.Select(e => e.Id).Distinct().Count());
+        Assert.Contains(endpoints, e => e.Direction == EndpointDirection.Input);
+        Assert.Contains(endpoints, e => e.Direction == EndpointDirection.Output);
     }
 
     [Fact]
@@ -80,13 +100,100 @@ public sealed class WinMmProviderTests
     }
 
     [Fact]
-    public async Task OpenInput_IsNotSupported()
+    public async Task OpenUnknownInput_Throws()
     {
         RequireWindows();
         using var provider = new WinMmProvider();
 
         await Assert.ThrowsAsync<EndpointUnavailableException>(
-            async () => await provider.OpenInputAsync(new EndpointId(WinMmProvider.ProviderId, "Any"), Ct));
+            async () => await provider.OpenInputAsync(new EndpointId(WinMmProvider.ProviderId, "input:No such device"), Ct));
+    }
+
+    [Fact]
+    public async Task Loopback_ReturnsShortAndSystemExclusiveMessagesWithTimestamps()
+    {
+        RequireWindows();
+        using var provider = new WinMmProvider();
+        var (inputEndpoint, outputEndpoint) = RequireLoopback(provider);
+        using var input = await provider.OpenInputAsync(inputEndpoint.Id, Ct);
+        using var output = await provider.OpenOutputAsync(outputEndpoint.Id, Ct);
+        var received = Channel.CreateUnbounded<(byte[] Message, TimeSpan Timestamp)>();
+        input.SetReceiver((message, timestamp) => received.Writer.TryWrite((message.ToArray(), timestamp)));
+
+        byte[] controlChange = [0xB0, 0x7B, 0x00];
+        byte[] systemExclusive = [0xF0, 0x7D, 0x01, 0x02, 0xF7];
+        Assert.Equal(SendResult.Sent, output.Send(controlChange, MidiTimestamp.Immediate));
+        var shortResult = await received.Reader.ReadAsync(Ct).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Ct);
+        Assert.Equal(controlChange, shortResult.Message);
+        Assert.True(shortResult.Timestamp > TimeSpan.Zero);
+
+        Assert.Equal(SendResult.Sent, output.Send(systemExclusive, MidiTimestamp.Immediate));
+        var longResult = await received.Reader.ReadAsync(Ct).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Ct);
+        Assert.Equal(systemExclusive, longResult.Message);
+        Assert.True(longResult.Timestamp >= shortResult.Timestamp);
+    }
+
+    [Fact]
+    public async Task Provider_RaisesEndpointsChangedWhenMidiServicesAddsAndRemovesALoopback()
+    {
+        RequireWindows();
+        var midi = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windows MIDI Services", "Tools", "midi.exe");
+        Assert.SkipUnless(File.Exists(midi), "Windows MIDI Services command-line tools are not installed.");
+
+        using var provider = new WinMmProvider();
+        using var changed = new ManualResetEventSlim();
+        provider.EndpointsChanged += (_, _) => changed.Set();
+        var name = $"BSHotplug{Guid.NewGuid():N}"[..31];
+        string? associationId = null;
+        var created = false;
+        try
+        {
+            var output = await RunMidiAsync(midi, $"basic-loopback create -n \"{name}\"");
+            created = true;
+            var match = Regex.Match(output, @"Association Id\s+\{(?<id>[0-9a-fA-F-]+)\}");
+            if (!match.Success)
+            {
+                var listing = await RunMidiAsync(midi, "basic-loopback list");
+                var entry = listing.Split('\n').FirstOrDefault(line => line.Contains(name, StringComparison.Ordinal));
+                match = Regex.Match(entry ?? string.Empty, @"\{(?<id>[0-9a-fA-F-]+)\}");
+            }
+
+            Assert.True(match.Success, $"Windows MIDI Services did not return the loopback association id for {name}: {output}");
+            associationId = match.Groups["id"].Value;
+            Assert.True(changed.Wait(TimeSpan.FromSeconds(10), Ct), "The provider did not report the added loopback.");
+            changed.Reset();
+            Assert.Contains(provider.GetEndpoints(), e => e.DisplayName == name);
+        }
+        finally
+        {
+            if (created && associationId is not null)
+            {
+                _ = await RunMidiAsync(midi, $"basic-loopback remove -i \"{{{associationId}}}\"");
+            }
+        }
+
+        Assert.True(changed.Wait(TimeSpan.FromSeconds(10), Ct), "The provider did not report the removed loopback.");
+        Assert.DoesNotContain(provider.GetEndpoints(), e => e.DisplayName == name);
+    }
+
+    private static async Task<string> RunMidiAsync(string executable, string arguments)
+    {
+        using var process = Process.Start(new ProcessStartInfo(executable, arguments)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        })!;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+        await process.WaitForExitAsync(timeout.Token);
+        var output = await stdout;
+        var error = await stderr;
+        Assert.True(process.ExitCode == 0, $"Windows MIDI Services failed: {error}");
+        return output;
     }
 
     [Fact]

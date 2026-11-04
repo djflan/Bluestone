@@ -56,8 +56,7 @@ These need an instrument whose MIDI OUT is connected to the interface's MIDI IN.
 
 ## Audio output
 
-Run these on each operating system: macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). Windows
-and Linux output is built and tested in CI but has not been heard. Audio settings are in
+Run these on each operating system: macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). ASIO probes below are historical results from an explicitly enabled local build; standard Windows builds are WASAPI-only pending licensing. Windows output has been exercised by silent callback probes but not listened to. Audio settings are in
 **Settings ▸ Audio** (⌘/Ctrl + ,; also **Window ▸ Audio Settings…** on macOS and **File ▸ Audio Settings…** on Windows and Linux).
 
 | # | Step | Expected |
@@ -79,7 +78,7 @@ Install at least one VST 3 and one CLAP instrument and effect in the default plu
 | 30 | Open **Plugins…** (Window menu on macOS, File menu elsewhere) | Installed plugins are listed with their kind, vendor, version, and module; modules that could not be read say why |
 | 31 | Drag a VST 3 instrument from the Browser into a track's Device View (or select it and press Return), play notes; repeat with CLAP | The instrument sounds through the master; the meters move |
 | 32 | Add a plugin audio effect after the instrument and turn one of its parameters | The effect is heard; the change is heard within a block |
-| 33 | Press **Open editor**; edit a control, resize the window, close it, open it again | The window appears at the plugin's size; edits change the sound; resizing and reopening work. Check Windows and Linux in particular: editors there have never been opened |
+| 33 | Press **Open editor**; edit a control, resize the window, close it, open it again | The window appears at the plugin's size; edits change the sound; resizing and reopening work. Windows editor lifecycle is covered by tests; hand-check sizing/focus and Linux in particular |
 | 33a | Open editors on two tracks, then select one track and the other; pin one editor and repeat | The editor of the track that is not selected hides and comes back without restarting its plugin; the pinned one stays. On Linux, check that the window manager unmaps and maps it |
 | 33b | Turn on an editor's keyboard button, then, with the pointer over the editor, press Space and play computer-keyboard notes (macOS, Windows) | Bluestone's transport and notes respond; no key sticks after the button is turned off or the editor is hidden or closed. On Linux the button is disabled and says why. On Windows with a non-US layout, notes follow the logical key, not its position (known gap) |
 | 34 | While playing, end the worker process (Activity Monitor, Task Manager, or `kill`) | Bluestone keeps running; the device shows **Crashed** and names the devices that went down with it; plugins in other workers keep playing |
@@ -116,10 +115,14 @@ first (the probes warn when the load average is high), build in Release, and run
 ```sh
 P="dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks --"
 $P --jitter 60 --pressure app          # MIDI dispatch lateness on the playback thread
-$P --midi-loopback 60 --pressure app   # end to end through Core MIDI, including live thru (macOS)
+$P --midi-loopback 60 --pressure app   # Core MIDI (macOS) or WinMM via Windows MIDI Services loopback (Windows)
 $P --audio 60 --pressure app --buffers 64,128 --queue 0
 $P --live 60 --pressure app --queue 0  # live MIDI to audio, rendering in the device callback
 ```
+
+On Windows, add `--host WASAPI` to select the shipped audio backend. ASIO probes require a separately licensed,
+explicitly ASIO-enabled local build (`-p:BluestoneAsio=true`, `CPAL_ASIO_DIR`, and LLVM/libclang); standard Windows
+CI and release builds remain WASAPI-only until the Steinberg agreement is signed.
 
 Add `--isolate` to run the probe in its own process while this one carries the load, and `--repeat 3` for repeated
 runs. Audio probes use the system default output unless `--device NAME` names one; name it, so a headset plugged in
@@ -161,8 +164,30 @@ Run each with `--pressure none`, `app`, and `edit` (and `churn`/`full` for stres
 `--repeat 3`. Every engine report also has the engine's collections, pauses (ADR 0043: none over 1 ms while playing),
 allocation rate, and JIT count (0 for the NativeAOT build), and the probe process's own collections and pauses
 (`probe.gc.*`), so an outlier on a path that crosses the probe can be attributed. `--live-input midi` (the default on
-macOS) plays the keys from a child process through a Core MIDI source the engine opens, as a keyboard;
+macOS and Windows) plays keys from a child process through a Core MIDI or WinMM input endpoint the engine opens, as a keyboard;
 `--live-input forwarded` posts them from the probe, as the computer keyboard does, so a pause in the probe can delay a
 key. The MIDI probe misses if the engine dispatched fewer messages than the plan holds or reported a problem.
 
 Report results in an issue with the JSON reports attached, so they can be added to ADR 0043.
+
+## Windows software-backed verification (2026-11-04)
+
+Native x64 Windows, with the Windows MIDI Services `Bluestone Loopback`, Realtek speakers, and, for the historical
+ASIO measurements, the Realtek ASIO driver in an explicitly enabled local build. No MIDI instrument or external RME
+interface was connected; the callback probes rendered silence.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| WinMM MIDI input and endpoint polling | Short messages and SysEx loop back; create/remove events arrive; provider tests pass | `WinMmProviderTests` |
+| MIDI loopback timing | 1,216 sent/received, no drops; immediate OS hop p50 0.077 ms; thru round trip p50 0.312 ms | `--midi-loopback 3 --pressure none` |
+| Playback dispatch | High-resolution wait p50 0.32 ms, p99 0.87 ms, max 0.902 ms; spin max 3.067 ms with 32 messages over 2 ms late | `--jitter 10 --pressure none --final sleep|spin` |
+| WASAPI buffered output | 501 callbacks, zero missing/late/xrun/gap/underrun events; reported output latency 31.958 ms | `--audio 5 --pressure none --host WASAPI --buffers 128 --queue 1024` |
+| ASIO output | Realtek ASIO default 960 frames (20 ms), zero missed/late/xrun/gap/underrun events | `--audio 5 --pressure none --host ASIO` |
+| ASIO device ownership | Output remains listed while open; input opens on the same driver | `AudioDeviceTests.AsioOutput_RemainsListedAndAllowsInputOnTheSameDriver` |
+| Engine live input | 27 notes measured; added latency 9.5 ms average, 16.8 ms maximum; above the 2 ms target | `--live 5 --engine --live-input midi --host WASAPI` |
+| Plugin-worker wait, depth 1 | At 128 frames: 0 steady misses; at 64 frames: timer 2 misses vs yield 19, so the 64-frame zero-miss target is not met | `--plugin-pipeline 5 --buffer 128` and `--plugin-pipeline 10 --buffer 64` |
+| Third-party plugins and editors | Surge XT and Airwindows CLAP processing pass; Pro-Q 3 and Surge XT editor lifecycle and workspace tests pass | `InstalledPluginTests`, `PluginEditorTests`, `PluginEditorWindowUiTests` |
+
+Still requiring a physical session: play and record a hardware instrument; check SysEx ordering on a synth; listen through
+the RME MADIface/ASIO path; measure its actual buffer and acoustic round trip; unplug/reconnect real MIDI and audio
+devices; hand-check editor resize/focus and multi-monitor recovery.

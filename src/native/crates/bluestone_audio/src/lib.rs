@@ -8,6 +8,7 @@
 //! the caller's buffer when one is given. No Rust panic crosses the ABI (the workspace aborts on panic).
 
 mod devices;
+mod host;
 mod input;
 mod json;
 mod ring;
@@ -22,8 +23,8 @@ pub use stream::{
 };
 
 /// Bump on any change to a function signature or a `#[repr(C)]` layout, and when functions are added.
-/// 2: input devices and input streams.
-pub const ABI_VERSION: u32 = 2;
+/// 2: input devices and input streams. 3: select audio hosts. 4: report the actual output buffer size.
+pub const ABI_VERSION: u32 = 4;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bluestone_audio_abi_version() -> u32 {
@@ -47,6 +48,21 @@ pub unsafe extern "C" fn bluestone_audio_devices_json(buffer: *mut u8, capacity:
     i64::try_from(bytes.len()).unwrap_or(i64::MAX)
 }
 
+/// Writes the available audio hosts as a UTF-8 JSON array into `buffer` and returns its full length.
+///
+/// # Safety
+/// As for `bluestone_audio_devices_json`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bluestone_audio_hosts_json(buffer: *mut u8, capacity: usize) -> i64 {
+    let json = host::names_json();
+    let bytes = json.as_bytes();
+    if !buffer.is_null() && bytes.len() <= capacity {
+        // SAFETY: the caller guarantees `buffer` holds `capacity` bytes, and `bytes.len() <= capacity`.
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
+    }
+    i64::try_from(bytes.len()).unwrap_or(i64::MAX)
+}
+
 /// Opens an output stream (stopped). `device_id` is a NUL-terminated UTF-8 id from the device list, or null
 /// or empty for the default output device. Returns null on failure, with the reason in `error`.
 ///
@@ -56,6 +72,7 @@ pub unsafe extern "C" fn bluestone_audio_devices_json(buffer: *mut u8, capacity:
 /// the stream is closed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bluestone_audio_open_output(
+    host_id: *const c_char,
     device_id: *const c_char,
     request: *const StreamRequest,
     render: Option<RenderFn>,
@@ -83,6 +100,13 @@ pub unsafe extern "C" fn bluestone_audio_open_output(
         return std::ptr::null_mut();
     };
     // SAFETY: the caller guarantees a NUL-terminated string or null.
+    let host_name = match unsafe { device_id_from(host_id) } {
+        Ok(name) => name,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, message) };
+            return std::ptr::null_mut();
+        }
+    };
     let id = match unsafe { device_id_from(device_id) } {
         Ok(id) => id,
         Err(message) => {
@@ -90,7 +114,7 @@ pub unsafe extern "C" fn bluestone_audio_open_output(
             return std::ptr::null_mut();
         }
     };
-    match OutputStream::open(id, request, render, user_data) {
+    match OutputStream::open(host_name, id, request, render, user_data) {
         Ok(stream) => Box::into_raw(Box::new(stream)),
         Err(message) => {
             unsafe { write_error(error, error_capacity, &message) };
@@ -107,6 +131,7 @@ pub unsafe extern "C" fn bluestone_audio_open_output(
 /// As for `bluestone_audio_open_output`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bluestone_audio_open_output_buffered(
+    host_id: *const c_char,
     device_id: *const c_char,
     request: *const StreamRequest,
     ring_frames: u32,
@@ -129,6 +154,13 @@ pub unsafe extern "C" fn bluestone_audio_open_output_buffered(
         return std::ptr::null_mut();
     }
     // SAFETY: as above.
+    let host_name = match unsafe { device_id_from(host_id) } {
+        Ok(name) => name,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, message) };
+            return std::ptr::null_mut();
+        }
+    };
     let id = match unsafe { device_id_from(device_id) } {
         Ok(id) => id,
         Err(message) => {
@@ -136,7 +168,7 @@ pub unsafe extern "C" fn bluestone_audio_open_output_buffered(
             return std::ptr::null_mut();
         }
     };
-    match OutputStream::open_buffered(id, request, ring_frames.max(1) as usize) {
+    match OutputStream::open_buffered(host_name, id, request, ring_frames.max(1) as usize) {
         Ok(stream) => Box::into_raw(Box::new(stream)),
         Err(message) => {
             unsafe { write_error(error, error_capacity, &message) };
@@ -303,7 +335,7 @@ unsafe fn device_id_from<'a>(device_id: *const c_char) -> Result<Option<&'a str>
     unsafe { CStr::from_ptr(device_id) }
         .to_str()
         .map(Some)
-        .map_err(|_| "The device id is not UTF-8.")
+        .map_err(|_| "The value is not UTF-8.")
 }
 
 /// Writes `message` as UTF-8 plus a terminating NUL, truncated on a character boundary to fit.
@@ -350,6 +382,7 @@ pub unsafe extern "C" fn bluestone_audio_input_devices_json(
 /// As for `bluestone_audio_open_output`; `capture` and `user_data` must stay valid until the stream is closed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bluestone_audio_open_input(
+    host_id: *const c_char,
     device_id: *const c_char,
     request: *const StreamRequest,
     capture: Option<CaptureFn>,
@@ -377,6 +410,13 @@ pub unsafe extern "C" fn bluestone_audio_open_input(
         return std::ptr::null_mut();
     };
     // SAFETY: the caller guarantees a NUL-terminated string or null.
+    let host_name = match unsafe { device_id_from(host_id) } {
+        Ok(name) => name,
+        Err(message) => {
+            unsafe { write_error(error, error_capacity, message) };
+            return std::ptr::null_mut();
+        }
+    };
     let id = match unsafe { device_id_from(device_id) } {
         Ok(id) => id,
         Err(message) => {
@@ -384,7 +424,7 @@ pub unsafe extern "C" fn bluestone_audio_open_input(
             return std::ptr::null_mut();
         }
     };
-    match InputStream::open(id, request, capture, user_data) {
+    match InputStream::open(host_name, id, request, capture, user_data) {
         Ok(stream) => Box::into_raw(Box::new(stream)),
         Err(message) => {
             unsafe { write_error(error, error_capacity, &message) };
@@ -480,8 +520,14 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
-    fn the_abi_version_is_two() {
-        assert_eq!(bluestone_audio_abi_version(), 2);
+    fn the_abi_version_is_four() {
+        assert_eq!(bluestone_audio_abi_version(), 4);
+    }
+
+    #[test]
+    fn input_struct_sizes_match_the_c_abi() {
+        assert_eq!(std::mem::size_of::<CaptureInfo>(), 32);
+        assert_eq!(std::mem::size_of::<InputStatus>(), 56);
     }
 
     #[test]
@@ -513,6 +559,7 @@ mod tests {
         let mut error = [0u8; 128];
         let stream = unsafe {
             bluestone_audio_open_output(
+                std::ptr::null(),
                 std::ptr::null(),
                 &request,
                 Some(count),
@@ -553,6 +600,7 @@ mod tests {
         let mut error = [0u8; 256];
         let stream = unsafe {
             bluestone_audio_open_output(
+                std::ptr::null(),
                 std::ptr::null(),
                 &request,
                 Some(count),

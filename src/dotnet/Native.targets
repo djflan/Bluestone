@@ -10,7 +10,9 @@
     <BluestoneCargoTargetDir>$(BluestoneNativeRoot)target/</BluestoneCargoTargetDir>
     <BluestoneCargoProfileDir Condition="'$(Configuration)' == 'Release'">release</BluestoneCargoProfileDir>
     <BluestoneCargoProfileDir Condition="'$(Configuration)' != 'Release'">debug</BluestoneCargoProfileDir>
-    <BluestoneCargoProfileArg Condition="'$(Configuration)' == 'Release'">--release</BluestoneCargoProfileArg>
+    <BluestoneAsioFeature Condition="'$(BluestoneAsio)' == 'true' and $([MSBuild]::IsOSPlatform('Windows')) and '$(MSBuildProjectName)' == 'Bluestone.Audio' and ('$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'win-x64') and '$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">--features bluestone_audio/asio</BluestoneAsioFeature>
+    <BluestoneCargoProfileArg Condition="'$(Configuration)' == 'Release'">--release $(BluestoneAsioFeature)</BluestoneCargoProfileArg>
+    <BluestoneCargoProfileArg Condition="'$(Configuration)' != 'Release'">$(BluestoneAsioFeature)</BluestoneCargoProfileArg>
     <BluestoneNativePrefix Condition="!$([MSBuild]::IsOSPlatform('Windows'))">lib</BluestoneNativePrefix>
     <BluestoneNativeExtension Condition="$([MSBuild]::IsOSPlatform('Windows'))">.dll</BluestoneNativeExtension>
     <BluestoneNativeExtension Condition="$([MSBuild]::IsOSPlatform('OSX'))">.dylib</BluestoneNativeExtension>
@@ -25,6 +27,7 @@
   </ItemGroup>
 
   <Target Name="BluestoneBuildRustCrates" BeforeTargets="PrepareForBuild" Condition="'@(RustCrate)' != ''">
+    <Error Condition="'$(BluestoneAsio)' == 'true' and $([MSBuild]::IsOSPlatform('Windows')) and ('$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'win-x64') and '$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' and '$(CPAL_ASIO_DIR)' == ''" Text="BluestoneAsio requires CPAL_ASIO_DIR to point to a separately obtained Steinberg ASIO SDK copy." />
     <Exec Command="cargo build --locked --manifest-path &quot;$(BluestoneNativeRoot)Cargo.toml&quot; $(BluestoneCargoProfileArg) @(RustCrate->'-p %(Identity)', ' ')"
           WorkingDirectory="$(BluestoneNativeRoot)" />
   </Target>

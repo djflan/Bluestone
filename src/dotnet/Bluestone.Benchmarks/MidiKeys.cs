@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
+using Bluestone.Midi.Endpoints;
+using Bluestone.Midi.Timing;
 
 namespace Bluestone.Benchmarks;
 
@@ -85,6 +87,58 @@ internal static unsafe class MidiKeys
         if (status != 0)
         {
             throw new InvalidOperationException($"{call} failed: {status}");
+        }
+    }
+}
+
+[SupportedOSPlatform("windows")]
+internal static class WinMmMidiKeys
+{
+    public const string SourceName = "Bluestone Loopback";
+
+    public static void Run()
+    {
+        using var provider = new Bluestone.Platform.Windows.WinMmProvider(SystemMonotonicClock.Instance);
+        var endpoint = provider.GetEndpoints().FirstOrDefault(e => e.Direction == EndpointDirection.Output && e.DisplayName == SourceName)
+            ?? throw new InvalidOperationException($"WinMM output '{SourceName}' is not available.");
+        using var output = provider.OpenOutputAsync(endpoint.Id).AsTask().GetAwaiter().GetResult();
+        Console.WriteLine("ready");
+        while (Console.ReadLine() is { } line)
+        {
+            var parts = line.Split(' ');
+            if (parts[0] == "play")
+            {
+                Play(output, int.Parse(parts[1], CultureInfo.InvariantCulture));
+                Console.WriteLine("done");
+            }
+            else if (parts[0] == "stop")
+            {
+                return;
+            }
+        }
+    }
+
+    private static void Play(IMidiOutput output, int seconds)
+    {
+        var random = new Random(8);
+        var until = Stopwatch.GetTimestamp() + (seconds * Stopwatch.Frequency);
+        while (Stopwatch.GetTimestamp() < until)
+        {
+            var note = (byte)(60 + random.Next(12));
+            var sent = Stopwatch.GetTimestamp();
+            RequireSent(output.Send([0x90, note, 127], MidiTimestamp.Immediate));
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"key {sent}"));
+            Thread.Sleep(40);
+            RequireSent(output.Send([0x80, note, 64], MidiTimestamp.Immediate));
+            Thread.Sleep(60 + random.Next(150));
+        }
+    }
+
+    private static void RequireSent(SendResult result)
+    {
+        if (result != SendResult.Sent)
+        {
+            throw new InvalidOperationException($"WinMM loopback send failed: {result}.");
         }
     }
 }

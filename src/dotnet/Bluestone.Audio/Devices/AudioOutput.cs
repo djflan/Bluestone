@@ -26,17 +26,18 @@ public interface IAudioRenderer
 }
 
 /// <summary>What to open. Zero means the device's default.</summary>
-/// <param name="DeviceId">An <see cref="AudioDeviceInfo.Id"/>, or null for the default output.</param>
+/// <param name="DeviceId">An <see cref="AudioDeviceInfo.Id"/>, or null for the selected host's default output.</param>
 /// <param name="SampleRate">In Hz.</param>
-/// <param name="BufferFrames">Frames per callback; the device may clamp it to its range.</param>
+/// <param name="BufferFrames">Frames per callback; the device may clamp it to its range, and ASIO uses the driver default.</param>
 /// <param name="Channels">Output channels; the engine writes left and right to the first two.</param>
+/// <param name="Host">The audio host, or null for the system default.</param>
 /// <param name="QueuedFrames">
 /// 0: the device callback calls the renderer directly (lowest latency; a .NET garbage collection that happens while
 /// a callback is due delays it). Above 0: buffered: a .NET render thread keeps this many frames queued ahead of the
 /// device, and the callback (native code) only copies them, so a collection shorter than the queue is not heard. The
 /// queue adds this many frames of latency. See ADR 0032.
 /// </param>
-public sealed record AudioStreamRequest(string? DeviceId = null, int SampleRate = 0, int BufferFrames = 0, int Channels = 0, int QueuedFrames = 0);
+public sealed record AudioStreamRequest(string? DeviceId = null, int SampleRate = 0, int BufferFrames = 0, int Channels = 0, int QueuedFrames = 0, string? Host = null);
 
 public enum AudioStreamState
 {
@@ -83,7 +84,11 @@ public sealed record AudioStreamStatus(
     long LateRenders,
     long QueueCapacity,
     long QueuedFrames,
-    long QueueUnderrunFrames);
+    long QueueUnderrunFrames)
+{
+    /// <summary>The device callback's actual buffer size, or 0 until the device reports it.</summary>
+    public int DeviceBufferFrames { get; init; }
+}
 
 public sealed class AudioDeviceException(string message) : Exception(message);
 
@@ -97,6 +102,8 @@ public sealed unsafe class AudioOutput : IAudioOutput
 {
     private const int ErrorCapacity = 512;
     private readonly IAudioRenderer _renderer;
+    private readonly ManualResetEventSlim _queuePrefilled = new(false);
+    private bool _asio;
     private GCHandle _self;
     private nint _handle;
     private long _renderFaults;
@@ -135,7 +142,12 @@ public sealed unsafe class AudioOutput : IAudioOutput
     public long RenderFaults => Interlocked.Read(ref _renderFaults);
 
     /// <exception cref="AudioDeviceException">The library is missing, or the device cannot be opened as asked.</exception>
-    public static AudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request)
+    public static AudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request) =>
+        request.Host?.Equals("ASIO", StringComparison.OrdinalIgnoreCase) == true
+            ? AsioThread.Invoke(() => OpenCore(renderer, request))
+            : OpenCore(renderer, request);
+
+    private static AudioOutput OpenCore(IAudioRenderer renderer, AudioStreamRequest request)
     {
         ArgumentNullException.ThrowIfNull(renderer);
         ArgumentNullException.ThrowIfNull(request);
@@ -144,30 +156,33 @@ public sealed unsafe class AudioOutput : IAudioOutput
             throw new AudioDeviceException(problem!);
         }
 
-        var stream = new AudioOutput(renderer);
+        var stream = new AudioOutput(renderer) { _asio = request.Host?.Equals("ASIO", StringComparison.OrdinalIgnoreCase) == true };
         stream._self = GCHandle.Alloc(stream);
         var native = new NativeMethods.StreamRequest
         {
             StructSize = (uint)sizeof(NativeMethods.StreamRequest),
             SampleRate = (uint)Math.Max(0, request.SampleRate),
-            BufferFrames = (uint)Math.Max(0, request.BufferFrames),
+            BufferFrames = (uint)Math.Max(0, request.Host?.Equals("ASIO", StringComparison.OrdinalIgnoreCase) == true ? 0 : request.BufferFrames),
             Channels = (uint)Math.Max(0, request.Channels),
         };
         var id = request.DeviceId is null ? null : System.Text.Encoding.UTF8.GetBytes(request.DeviceId + "\0");
+        var host = request.Host is null ? null : System.Text.Encoding.UTF8.GetBytes(request.Host + "\0");
         var error = stackalloc byte[ErrorCapacity];
         error[0] = 0;
         stream._queued = Math.Max(0, request.QueuedFrames);
         stream._openedQueue = stream._queued;
+        fixed (byte* hostPointer = host)
         fixed (byte* idPointer = id)
         {
             stream._handle = stream._queued == 0
-                ? NativeMethods.OpenOutput(idPointer, &native, &RenderCallback, GCHandle.ToIntPtr(stream._self), error, ErrorCapacity)
-                : NativeMethods.OpenOutputBuffered(idPointer, &native, (uint)(2 * stream._queued) + 8192, error, ErrorCapacity);
+            ? NativeMethods.OpenOutput(hostPointer, idPointer, &native, &RenderCallback, GCHandle.ToIntPtr(stream._self), error, ErrorCapacity)
+            : NativeMethods.OpenOutputBuffered(hostPointer, idPointer, &native, (uint)(2 * stream._queued) + 8192, error, ErrorCapacity);
         }
 
         if (stream._handle == 0)
         {
             stream._self.Free();
+            stream._queuePrefilled.Dispose();
             throw new AudioDeviceException(NativeMethods.ErrorText(new ReadOnlySpan<byte>(error, ErrorCapacity)));
         }
 
@@ -180,17 +195,53 @@ public sealed unsafe class AudioOutput : IAudioOutput
 
     public void Start()
     {
+        if (_asio)
+        {
+            AsioThread.Invoke(StartCore);
+            return;
+        }
+
+        StartCore();
+    }
+
+    private void StartCore()
+    {
         if (_queued > 0 && _renderThread is null)
         {
+            _queuePrefilled.Reset();
             _rendering = true;
             _renderThread = new Thread(RenderAhead) { IsBackground = true, Name = "Bluestone audio render", Priority = ThreadPriority.Highest };
             _renderThread.Start();
+            if (!_queuePrefilled.Wait(TimeSpan.FromMilliseconds(250)))
+            {
+                StopRenderThread();
+                throw new AudioDeviceException("The render-ahead queue could not be filled before starting the audio device.");
+            }
         }
 
-        Control(started: true);
+        try
+        {
+            Control(started: true);
+        }
+        catch
+        {
+            StopRenderThread();
+            throw;
+        }
     }
 
     public void Stop()
+    {
+        if (_asio)
+        {
+            AsioThread.Invoke(StopCore);
+            return;
+        }
+
+        StopCore();
+    }
+
+    private void StopCore()
     {
         Control(started: false);
         StopRenderThread();
@@ -228,7 +279,10 @@ public sealed unsafe class AudioOutput : IAudioOutput
                 (long)data.LateRenders,
                 (long)data.RingCapacity,
                 (long)data.RingFill,
-                (long)data.RingUnderrunFrames);
+                (long)data.RingUnderrunFrames)
+            {
+                DeviceBufferFrames = (int)Math.Min(data.DeviceBufferFrames, (uint)int.MaxValue),
+            };
         }
     }
 
@@ -274,6 +328,17 @@ public sealed unsafe class AudioOutput : IAudioOutput
 
     public void Dispose()
     {
+        if (_asio)
+        {
+            AsioThread.Invoke(DisposeCore);
+            return;
+        }
+
+        DisposeCore();
+    }
+
+    private void DisposeCore()
+    {
         if (_handle == 0)
         {
             return;
@@ -285,6 +350,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
         NativeMethods.Close(_handle);
         _handle = 0;
         _self.Free();
+        _queuePrefilled.Dispose();
     }
 
     private void Control(bool started)
@@ -331,6 +397,10 @@ public sealed unsafe class AudioOutput : IAudioOutput
         {
             // The target is read once per wake-up, so a change takes effect at the next one.
             var target = Volatile.Read(ref _queued);
+            if (!_queuePrefilled.IsSet)
+            {
+                target += _renderBlock;
+            }
             var queued = NativeMethods.RingWait(_handle, (uint)target, 2000);
             if (++checks % 256 == 0 || deviceFrames == 0)
             {
@@ -370,6 +440,11 @@ public sealed unsafe class AudioOutput : IAudioOutput
                         break;
                     }
                 }
+            }
+
+            if (queued >= target)
+            {
+                _queuePrefilled.Set();
             }
         }
     }

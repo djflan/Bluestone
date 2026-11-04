@@ -581,10 +581,11 @@ Deliberate for now, each with a known cost:
 ### Not verified on hardware
 
 Built and tested automatically where a test can reach, but not yet checked by a person on real devices (see
-[hardware-test-plan.md](hardware-test-plan.md)): audio output on Windows (WASAPI) and Linux (ALSA), which
-is built and tested in CI but has not been heard; unplugging an audio device (tested with a test backend);
-plugin editors on Windows and Linux; live input latency outside macOS; third-party plugins through the
-audio engine on a real device; the shipped XG parameter map on an XG instrument.
+[hardware-test-plan.md](hardware-test-plan.md)): listening to Windows WASAPI or Linux ALSA output; unplugging a
+physical audio device (tested with a test backend); Linux plugin editors and hand-checking Windows editor resize,
+focus, and multi-monitor behavior; physical Windows MIDI/hardware live-input latency (software loopback is measured,
+but misses the 2 ms live target); third-party plugins through the audio engine on a real device; the shipped XG
+parameter map on an XG instrument.
 
 ## Future compatibility notes
 

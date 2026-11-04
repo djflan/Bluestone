@@ -12,14 +12,26 @@ internal sealed class TestAudioBackend : IAudioBackend
 {
     public const string DeviceId = "test";
 
-    private static readonly AudioDeviceInfo Device = new(DeviceId, "Test output", "Test", true, 48_000, 2, [44_100, 48_000, 96_000], [2], 32, 8192);
+    private static readonly AudioDeviceInfo WasapiDevice = new(DeviceId, "Test WASAPI output", "WASAPI", true, 48_000, 2, [48_000], [2], 32, 8192);
+    private static readonly AudioDeviceInfo AsioDevice = new("asio-test", "Test ASIO output", "ASIO", false, 44_100, 2, [44_100], [2], 1024, 1024);
 
-    public IReadOnlyList<AudioDeviceInfo> ListDevices() => [Device];
+    public IReadOnlyList<AudioDeviceInfo> ListDevices() => [WasapiDevice, AsioDevice];
 
-    public IAudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request) =>
-        request.DeviceId is null or DeviceId
-            ? new Output(request.SampleRate > 0 ? request.SampleRate : Device.DefaultSampleRate, request.BufferFrames > 0 ? request.BufferFrames : 256, request.QueuedFrames)
-            : throw new AudioDeviceException($"There is no audio device \"{request.DeviceId}\" here.");
+    public IAudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request)
+    {
+        var hostDevice = request.Host == "ASIO" ? AsioDevice : WasapiDevice;
+        if (request.DeviceId is not null && request.DeviceId != hostDevice.Id)
+        {
+            throw new AudioDeviceException($"There is no audio device \"{request.DeviceId}\" here.");
+        }
+
+        if (request.SampleRate > 0 && !hostDevice.SampleRates.Contains(request.SampleRate))
+        {
+            throw new AudioDeviceException($"The {hostDevice.Host} host does not support {request.SampleRate} Hz.");
+        }
+
+        return new Output(request.SampleRate > 0 ? request.SampleRate : hostDevice.DefaultSampleRate, request.BufferFrames > 0 ? request.BufferFrames : 256, request.QueuedFrames);
+    }
 
     private sealed class Output(int rate, int buffer, int opened) : IAudioOutput
     {
@@ -38,7 +50,10 @@ internal sealed class TestAudioBackend : IAudioBackend
 
         public AudioStreamStatus Status => _disposed
             ? throw new ObjectDisposedException(nameof(Output))
-            : new AudioStreamStatus(AudioStreamState.Running, rate, 2, buffer, buffer, buffer, buffer, 0, 0, 0, 0, 0, TimeSpan.Zero, AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, _opened, 0, 0);
+            : new AudioStreamStatus(AudioStreamState.Running, rate, 2, buffer, buffer, buffer, buffer, 0, 0, 0, 0, 0, TimeSpan.Zero, AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, _opened, 0, 0)
+            {
+                DeviceBufferFrames = buffer,
+            };
 
         public void SetQueuedFrames(int frames)
         {

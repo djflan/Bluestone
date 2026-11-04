@@ -21,6 +21,10 @@ if (args is ["--midi-keys", ..])
     {
         MidiKeys.Run();
     }
+    else if (OperatingSystem.IsWindows())
+    {
+        WinMmMidiKeys.Run();
+    }
 
     return 0;
 }
@@ -48,7 +52,8 @@ Action<ProbeOptions>? probe = args.Contains("--engine") ? args switch
     ["--audio-loopback", ..] => AudioLoopbackProbe.Run,
     ["--plugin-pipeline", ..] => PluginPipelineProbe.Run,
     ["--midi-loopback", ..] when OperatingSystem.IsMacOS() => MidiLoopbackProbe.Run,
-    ["--midi-loopback", ..] => _ => Console.WriteLine("The MIDI loopback probe needs Core MIDI (macOS)."),
+    ["--midi-loopback", ..] when OperatingSystem.IsWindows() => WindowsMidiLoopbackProbe.Run,
+    ["--midi-loopback", ..] => _ => Console.WriteLine("The MIDI loopback probe needs Core MIDI (macOS) or WinMM and Windows MIDI Services (Windows)."),
     _ => null,
 };
 

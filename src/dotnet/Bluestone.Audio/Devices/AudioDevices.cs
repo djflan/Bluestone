@@ -6,7 +6,7 @@ namespace Bluestone.Audio.Devices;
 /// <summary>An audio output device as the operating system's audio service reports it.</summary>
 /// <param name="Id">Stable id (host and device), used to open it and to remember it in settings.</param>
 /// <param name="Name">Display name.</param>
-/// <param name="Host">The audio service: CoreAudio, WASAPI, ALSA.</param>
+/// <param name="Host">The audio service: CoreAudio, WASAPI, ASIO, ALSA.</param>
 /// <param name="IsDefault">The system's default output.</param>
 /// <param name="DefaultSampleRate">The device's current or preferred rate, in Hz (0 when unknown).</param>
 /// <param name="DefaultChannels">The device's preferred channel count (0 when unknown).</param>
@@ -33,10 +33,42 @@ public static class AudioDevices
     public static bool IsAvailable(out string? problem) => NativeMethods.TryCheck(out problem);
 
     /// <summary>The output devices, or none when the native library is unavailable.</summary>
-    public static unsafe ImmutableArray<AudioDeviceInfo> List() => List(&NativeMethods.DevicesJson);
+    public static unsafe ImmutableArray<AudioDeviceInfo> List() => AsioThread.Invoke(ListOutputs);
 
     /// <summary>The input devices, or none when the native library is unavailable.</summary>
-    public static unsafe ImmutableArray<AudioDeviceInfo> ListInputs() => List(&NativeMethods.InputDevicesJson);
+    public static unsafe ImmutableArray<AudioDeviceInfo> ListInputs() => AsioThread.Invoke(ListInputDevices);
+
+    private static unsafe ImmutableArray<AudioDeviceInfo> ListOutputs() => List(&NativeMethods.DevicesJson);
+
+    private static unsafe ImmutableArray<AudioDeviceInfo> ListInputDevices() => List(&NativeMethods.InputDevicesJson);
+
+    /// <summary>The audio hosts available in this build.</summary>
+    public static unsafe ImmutableArray<string> ListHosts()
+    {
+        if (!NativeMethods.TryCheck(out _))
+        {
+            return [];
+        }
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var length = NativeMethods.HostsJson(null, 0);
+            var buffer = new byte[length + 32];
+            long written;
+            fixed (byte* pointer = buffer)
+            {
+                written = NativeMethods.HostsJson(pointer, (nuint)buffer.Length);
+            }
+
+            if (written <= buffer.Length)
+            {
+                using var document = JsonDocument.Parse(buffer.AsMemory(0, (int)written));
+                return [.. document.RootElement.EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            }
+        }
+
+        return [];
+    }
 
     private static unsafe ImmutableArray<AudioDeviceInfo> List(delegate*<byte*, nuint, long> json)
     {

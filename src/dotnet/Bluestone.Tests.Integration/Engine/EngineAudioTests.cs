@@ -104,6 +104,19 @@ public sealed class EngineAudioTests
         Assert.Contains("is not available", rig.Audio.Problem, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ChangingOnlyTheHost_ReopensTheSelectedHostDefault()
+    {
+        await using var host = new PluginTestHost();
+        await using var rig = await Rig.StartAsync(host);
+
+        rig.Audio.Start(new AudioSettings(true, null, Rate, Block) { Host = "ASIO" });
+        await WaitUntilAsync(() => rig.Audio.Stream?.SampleRate == 44_100, Patience, "the ASIO default output");
+
+        rig.Audio.Start(new AudioSettings(true, null, Rate, Block) { Host = "WASAPI" });
+        await WaitUntilAsync(() => rig.Audio.Stream?.SampleRate == Rate, Patience, "the WASAPI default output");
+    }
+
     /// <summary>
     /// A project, the engine with its MIDI and audio clients, and two plugin bridges: one whose instance the engine drives,
     /// and one whose instance renders the same project in this process for comparison.
@@ -205,7 +218,7 @@ public sealed class EngineAudioTests
             Assert.Equal(EngineState.Ready, rig.Supervisor.State);
             rig.Audio.Start(new AudioSettings(true, null, Rate, Block));
             await WaitUntilAsync(() => rig.Audio.IsRunning, Patience, "the engine to open the audio device");
-            Assert.Equal(new AudioStreamInfo(Rate, 2, Block, 0, null, rig.Audio.Stream!.LatencyFrames), rig.Audio.Stream);
+            Assert.Equal(new AudioStreamInfo(Rate, 2, Block, 0, null, rig.Audio.Stream!.LatencyFrames) { DeviceBufferFrames = Block }, rig.Audio.Stream);
             await rig.WaitForANewGraphAsync();
             Assert.Empty(rig.Audio.GraphProblems);
             return rig;

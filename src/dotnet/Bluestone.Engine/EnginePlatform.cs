@@ -52,6 +52,8 @@ internal static class EnginePlatform
         }
     }
 
-    /// <summary>The playback thread's sub-millisecond sleep on macOS (ADR 0043).</summary>
-    public static Action<TimeSpan>? PlaybackPreciseSleep => OperatingSystem.IsMacOS() ? ThreadScheduling.SleepPrecisely : null;
+    /// <summary>The playback thread's sub-millisecond sleep on macOS and Windows (ADR 0043).</summary>
+    public static Action<TimeSpan>? PlaybackPreciseSleep => OperatingSystem.IsMacOS()
+        ? ThreadScheduling.SleepPrecisely
+        : OperatingSystem.IsWindows() ? Bluestone.Platform.Windows.ThreadScheduling.SleepPrecisely : null;
 }

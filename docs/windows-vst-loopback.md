@@ -21,6 +21,11 @@ messages and SysEx both pass through the loopback to a 32-bit host under emulati
 Bluestone has since also been run natively on Windows 11 Pro x64 (build 26200): playback, imported
 files with program changes, and the computer keyboard input with MIDI thru.
 
+On 2026-11-03, the WinMM MIDI 1.0 input/output loopback was also used for short-message and SysEx
+round-trip tests, endpoint create/remove polling, MIDI thru timing, and engine live-input timing. No
+physical MIDI instrument was connected; the recorded results and hardware checks still open are in
+[hardware-test-plan.md](hardware-test-plan.md).
+
 ## Why not loopMIDI
 
 loopMIDI (and rtpMIDI, LoopBe1 and similar) install a kernel driver. Their installer failed on ARM64
@@ -38,8 +43,8 @@ Windows, loopMIDI remains a working alternative.
 2. In **MIDI Settings**, create a **MIDI 1.0 loopback** endpoint. Its name does not matter.
 3. Start the VST host (SAVIHost for S-YXG50) and pick the loopback as its MIDI input under
    **Devices → MIDI**. Pick an audio output under **Devices → Wave**.
-4. Start Bluestone **after** the loopback exists (WinMM does not announce new ports, so Bluestone does not
-   see one added while it runs) and route the tracks to the loopback output.
+4. Route the tracks to the loopback output. WinMM endpoint changes are polled about once per second; refresh
+   the endpoint list if an application does not yet show the new port.
 5. Play. If the song has no XG reset, sending XG System On (`F0 43 10 4C 00 00 7E 00 F7`) first puts
    the synth in a known state.
 

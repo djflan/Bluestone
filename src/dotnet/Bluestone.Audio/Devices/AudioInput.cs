@@ -23,7 +23,11 @@ public readonly record struct AudioCaptureBlock(long FramePosition, long Callbac
 public delegate void AudioCaptureHandler(ReadOnlySpan<float> interleaved, int frames, int channels, in AudioCaptureBlock block);
 
 /// <summary>A snapshot of an input stream: rate, channels, counts, and the input latency the device reports.</summary>
-public readonly record struct AudioInputStatus(int SampleRate, int Channels, long Callbacks, long Frames, long Overruns, TimeSpan InputLatency);
+public readonly record struct AudioInputStatus(int SampleRate, int Channels, long Callbacks, long Frames, long Overruns, TimeSpan InputLatency)
+{
+    /// <summary>Captured blocks that were too large for the conversion buffer and were not delivered.</summary>
+    public long OversizedBlocks { get; init; }
+}
 
 /// <summary>
 /// An audio input stream on a device (through the <c>bluestone_audio</c> Rust crate): each captured block is handed to
@@ -36,6 +40,7 @@ public sealed unsafe class AudioInput : IDisposable
     private GCHandle _self;
     private nint _handle;
     private long _faults;
+    private bool _asio;
 
     private AudioInput(AudioCaptureHandler handler) => _handler = handler;
 
@@ -47,7 +52,12 @@ public sealed unsafe class AudioInput : IDisposable
     public long HandlerFaults => Interlocked.Read(ref _faults);
 
     /// <exception cref="AudioDeviceException">The library is missing, or the device cannot be opened as asked.</exception>
-    public static AudioInput Open(AudioCaptureHandler handler, string? deviceId, int sampleRate = 0, int bufferFrames = 0, int channels = 0)
+    public static AudioInput Open(AudioCaptureHandler handler, string? deviceId, int sampleRate = 0, int bufferFrames = 0, int channels = 0, string? host = null) =>
+        host?.Equals("ASIO", StringComparison.OrdinalIgnoreCase) == true
+            ? AsioThread.Invoke(() => OpenCore(handler, deviceId, sampleRate, bufferFrames, channels, host))
+            : OpenCore(handler, deviceId, sampleRate, bufferFrames, channels, host);
+
+    private static AudioInput OpenCore(AudioCaptureHandler handler, string? deviceId, int sampleRate, int bufferFrames, int channels, string? host)
     {
         ArgumentNullException.ThrowIfNull(handler);
         if (!NativeMethods.TryCheck(out var problem))
@@ -55,21 +65,23 @@ public sealed unsafe class AudioInput : IDisposable
             throw new AudioDeviceException(problem!);
         }
 
-        var stream = new AudioInput(handler);
+        var stream = new AudioInput(handler) { _asio = host?.Equals("ASIO", StringComparison.OrdinalIgnoreCase) == true };
         stream._self = GCHandle.Alloc(stream);
         var native = new NativeMethods.StreamRequest
         {
             StructSize = (uint)sizeof(NativeMethods.StreamRequest),
             SampleRate = (uint)Math.Max(0, sampleRate),
-            BufferFrames = (uint)Math.Max(0, bufferFrames),
+            BufferFrames = (uint)Math.Max(0, host?.Equals("ASIO", StringComparison.OrdinalIgnoreCase) == true ? 0 : bufferFrames),
             Channels = (uint)Math.Max(0, channels),
         };
         var id = deviceId is null ? null : System.Text.Encoding.UTF8.GetBytes(deviceId + "\0");
+        var hostId = host is null ? null : System.Text.Encoding.UTF8.GetBytes(host + "\0");
         var error = stackalloc byte[ErrorCapacity];
         error[0] = 0;
+        fixed (byte* hostPointer = hostId)
         fixed (byte* idPointer = id)
         {
-            stream._handle = NativeMethods.OpenInput(idPointer, &native, &CaptureCallback, GCHandle.ToIntPtr(stream._self), error, ErrorCapacity);
+            stream._handle = NativeMethods.OpenInput(hostPointer, idPointer, &native, &CaptureCallback, GCHandle.ToIntPtr(stream._self), error, ErrorCapacity);
         }
 
         if (stream._handle == 0)
@@ -94,18 +106,54 @@ public sealed unsafe class AudioInput : IDisposable
                 return default;
             }
 
-            return new AudioInputStatus((int)data.SampleRate, (int)data.Channels, (long)data.Callbacks, (long)data.Frames, (long)data.Overruns, TimeSpan.FromTicks(data.InputLatencyNanoseconds / 100));
+            return new AudioInputStatus((int)data.SampleRate, (int)data.Channels, (long)data.Callbacks, (long)data.Frames, (long)data.Overruns, TimeSpan.FromTicks(data.InputLatencyNanoseconds / 100))
+            {
+                OversizedBlocks = (long)data.OversizedBlocks,
+            };
         }
     }
 
     /// <exception cref="AudioDeviceException">The device refused.</exception>
-    public void Start() => Control(&NativeMethods.InputStart);
+    public void Start()
+    {
+        if (_asio)
+        {
+            AsioThread.Invoke(StartCore);
+            return;
+        }
+
+        StartCore();
+    }
+
+    private void StartCore() => Control(&NativeMethods.InputStart);
 
     /// <exception cref="AudioDeviceException">The device refused.</exception>
-    public void Stop() => Control(&NativeMethods.InputStop);
+    public void Stop()
+    {
+        if (_asio)
+        {
+            AsioThread.Invoke(StopCore);
+            return;
+        }
+
+        StopCore();
+    }
+
+    private void StopCore() => Control(&NativeMethods.InputStop);
 
     /// <summary>Closes the stream; the handler is never called after this returns.</summary>
     public void Dispose()
+    {
+        if (_asio)
+        {
+            AsioThread.Invoke(DisposeCore);
+            return;
+        }
+
+        DisposeCore();
+    }
+
+    private void DisposeCore()
     {
         if (_handle != 0)
         {

@@ -198,7 +198,7 @@ internal static class EngineProbes
         using var rig = Rig.Create(path, testAudio: false);
         using var project = AudioProject.Create(rig, clips: 4, notes: true);
         rig.Start();
-        if (!project.Open(deviceId, buffer, report))
+        if (!project.Open(deviceId, buffer, report, options.OutputHost()))
         {
             return;
         }
@@ -262,7 +262,9 @@ internal static class EngineProbes
         settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
         settings["queue"] = "0 (direct)";
         var keyInput = LiveInput(options);
-        settings["input"] = keyInput == "midi" ? "MIDI from another process through a Core MIDI source the engine opens (as a keyboard)" : "forwarded from this process (as the computer keyboard)";
+        settings["input"] = keyInput == "midi"
+            ? $"MIDI from another process through a {(OperatingSystem.IsWindows() ? "WinMM" : "Core MIDI")} input the engine opens"
+            : "forwarded from this process (as the computer keyboard)";
         var report = new TimingReport("engine-live-latency", settings);
         report.Machine.WarnIfBusy();
         Console.WriteLine($"Engine live latency ({build}): {device}, {buffer} frames, direct, the monitored reference sine at depth 1; pressure {settings["pressure"]}; {options.Seconds} s");
@@ -271,7 +273,7 @@ internal static class EngineProbes
         using var keys = KeySource.Create(keyInput);
         using var project = AudioProject.Create(rig, clips: 0, notes: false, keys.Providers);
         rig.Start();
-        if (!project.Open(deviceId, buffer, report) || !project.Monitor() || !keys.Connect(project))
+        if (!project.Open(deviceId, buffer, report, options.OutputHost()) || !project.Monitor() || !keys.Connect(project))
         {
             Console.WriteLine("The reference sine is not played at depth 1, or the keys do not reach it.");
             return;
@@ -309,10 +311,9 @@ internal static class EngineProbes
         report.Add(new Metric("live.total.max", "ms", live.Max.TotalMilliseconds));
         report.Add(new Metric("live.added.average", "ms", average - outputLatency - period));
         report.Add(new Metric("live.added.max", "ms", live.Max.TotalMilliseconds - outputLatency - period, Target: Targets.LiveAddedMs));
-        report.Add(new Metric("live.depth1-misses", "blocks", telemetry.LiveDeadlineMisses - startMisses, Target: 0));
         report.Add(new Metric("audio.xruns", "xruns", telemetry.Xruns, Target: 0));
         report.Notes.Add(keyInput == "midi"
-            ? "The engine's meter keeps the count, average, shortest, and longest latency, from the key's MIDI timestamp (set by the sending process) to when its block is heard: Core MIDI's hop to the engine's input is included."
+            ? $"The engine's meter keeps the count, average, shortest, and longest latency, from the key's MIDI timestamp (set by the sending process) to when its block is heard: {(OperatingSystem.IsWindows() ? "WinMM" : "Core MIDI")}'s hop to the engine's input is included."
             : "The engine's meter keeps the count, average, shortest, and longest latency, from the key's timestamp (taken here) to when its block is heard: the forwarded path from this process, and any pause here, is included.");
         report.Notes.Add(AddedNote);
         gc.AddTo(report);
@@ -329,11 +330,14 @@ internal static class EngineProbes
         }
 
         var buffer = options.Int("--buffer", 128);
-        var wanted = ProbeOptions.Option(options.Args, "--device") ?? "BlackHole 2ch";
-        var outputs = AudioDevices.List();
-        var inputs = AudioDevices.ListInputs();
-        var output = outputs.FirstOrDefault(d => d.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
-        var inputName = ProbeOptions.Option(options.Args, "--input-device") ?? wanted;
+        var host = options.OutputHost();
+        var wanted = ProbeOptions.Option(options.Args, "--device") ?? (host is null ? "BlackHole 2ch" : null);
+        var outputs = AudioDevices.List().Where(d => host is null || d.Host.Equals(host, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var inputs = AudioDevices.ListInputs().Where(d => host is null || d.Host.Equals(host, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var output = wanted is null
+            ? outputs.FirstOrDefault(d => d.IsDefault) ?? outputs.FirstOrDefault()
+            : outputs.FirstOrDefault(d => d.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+        var inputName = ProbeOptions.Option(options.Args, "--input-device") ?? output?.Name ?? string.Empty;
         var input = inputs.FirstOrDefault(d => d.Name.Equals(inputName, StringComparison.OrdinalIgnoreCase));
         if (output is null || input is null)
         {
@@ -348,7 +352,6 @@ internal static class EngineProbes
         settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
         settings["queue"] = "0 (direct)";
         var keyInput = LiveInput(options);
-        settings["input"] = keyInput == "midi" ? "MIDI from another process through a Core MIDI source the engine opens (as a keyboard)" : "forwarded from this process (as the computer keyboard)";
         var report = new TimingReport("engine-audio-loopback", settings);
         report.Machine.WarnIfBusy();
         Console.WriteLine($"Engine audio loopback ({build}): out {output.Name}, in {input.Name}; {buffer} frames, direct; pressure {settings["pressure"]}; {options.Seconds} s");
@@ -357,7 +360,7 @@ internal static class EngineProbes
         using var keys = KeySource.Create(keyInput);
         using var project = AudioProject.Create(rig, clips: 0, notes: false, keys.Providers);
         rig.Start();
-        if (!project.Open(output.Id, buffer, report) || !project.Monitor() || !keys.Connect(project))
+        if (!project.Open(output.Id, buffer, report, host) || !project.Monitor() || !keys.Connect(project))
         {
             Console.WriteLine("The reference sine is not played at depth 1, or the keys do not reach it.");
             return;
@@ -381,7 +384,8 @@ internal static class EngineProbes
             },
             input.Id,
             SampleRate,
-            buffer);
+            buffer,
+            host: host);
         capture.Start();
         Thread.Sleep(300);
 
@@ -416,10 +420,13 @@ internal static class EngineProbes
         var telemetry = project.Telemetry();
         var period = (double)buffer / SampleRate * 1000;
         var outputLatency = telemetry.OutputLatency.TotalMilliseconds;
-        var inputLatency = capture.Status.InputLatency.TotalMilliseconds;
+        var inputStatus = capture.Status;
+        var inputLatency = inputStatus.InputLatency.TotalMilliseconds;
         report.Add(new Metric("audio.period", "ms", period));
         report.Add(new Metric("audio.output-latency", "ms", outputLatency));
         report.Add(new Metric("audio.input-latency", "ms", inputLatency));
+        report.Add(new Metric("audio.input-overruns", "overruns", inputStatus.Overruns, Target: 0));
+        report.Add(new Metric("audio.input-oversized-blocks", "blocks", inputStatus.OversizedBlocks, Target: 0));
         report.Add(new Metric("loopback.keys", "keys", played.Count));
         report.Add(new Metric("loopback.unmatched", "keys", unmatched, Target: 0));
         report.Add(new Metric("loopback.total", "ms", Distribution: Distribution.Of(totals)));
@@ -437,11 +444,11 @@ internal static class EngineProbes
     // --live-input: MIDI from another process through a Core MIDI source (default on macOS), or forwarded from this one.
     private static string LiveInput(ProbeOptions options)
     {
-        var input = ProbeOptions.Option(options.Args, "--live-input") ?? (OperatingSystem.IsMacOS() ? "midi" : "forwarded");
+        var input = ProbeOptions.Option(options.Args, "--live-input") ?? (OperatingSystem.IsMacOS() || OperatingSystem.IsWindows() ? "midi" : "forwarded");
         return input switch
         {
-            "midi" when OperatingSystem.IsMacOS() => "midi",
-            "midi" => throw new ArgumentException("--live-input midi needs Core MIDI (macOS); use --live-input forwarded."),
+            "midi" when OperatingSystem.IsMacOS() || OperatingSystem.IsWindows() => "midi",
+            "midi" => throw new ArgumentException("--live-input midi needs Core MIDI or WinMM; use --live-input forwarded."),
             "forwarded" => "forwarded",
             _ => throw new ArgumentException("--live-input is midi or forwarded."),
         };
@@ -546,12 +553,12 @@ internal static class EngineProbes
             _provider = provider;
         }
 
-        /// <summary>Endpoint providers the project lists (Core MIDI, for the source).</summary>
+        /// <summary>Endpoint provider the project lists for the source.</summary>
         public IMidiEndpointProvider[] Providers => _provider is null ? [] : [_provider];
 
         public static KeySource Create(string input)
         {
-            if (input != "midi" || !OperatingSystem.IsMacOS())
+            if (input != "midi" || (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows()))
             {
                 return new KeySource(null, null);
             }
@@ -562,7 +569,10 @@ internal static class EngineProbes
                 throw new InvalidOperationException("The MIDI key process did not start.");
             }
 
-            return new KeySource(process, new Platform.CoreMidi.CoreMidiProvider(SystemMonotonicClock.Instance, "Bluestone engine probe keys"));
+            IMidiEndpointProvider provider = OperatingSystem.IsMacOS()
+                ? new Platform.CoreMidi.CoreMidiProvider(SystemMonotonicClock.Instance, "Bluestone engine probe keys")
+                : new Platform.Windows.WinMmProvider(SystemMonotonicClock.Instance);
+            return new KeySource(process, provider);
         }
 
         /// <summary>Makes the engine open the source and play it on the thru track; checks that keys are heard.</summary>
@@ -573,15 +583,16 @@ internal static class EngineProbes
                 return true;
             }
 
+            var sourceName = OperatingSystem.IsWindows() ? WinMmMidiKeys.SourceName : MidiKeysSource;
             for (var attempt = 0; attempt < 50 && _source is null; attempt++)
             {
-                _source = _provider.GetEndpoints().FirstOrDefault(e => e.DisplayName == MidiKeysSource && e.Direction == EndpointDirection.Input);
+                _source = _provider.GetEndpoints().FirstOrDefault(e => e.DisplayName == sourceName && e.Direction == EndpointDirection.Input);
                 Thread.Sleep(_source is null ? 100 : 0);
             }
 
             if (_source is not { } source)
             {
-                Console.WriteLine($"Core MIDI source '{MidiKeysSource}' did not appear.");
+                Console.WriteLine($"MIDI input '{sourceName}' did not appear.");
                 return false;
             }
 
@@ -598,7 +609,7 @@ internal static class EngineProbes
                 }
             }
 
-            Console.WriteLine("Keys from the Core MIDI source did not reach the instrument in the engine.");
+            Console.WriteLine("Keys from the MIDI input did not reach the instrument in the engine.");
             return false;
         }
 
@@ -779,11 +790,11 @@ internal static class EngineProbes
         }
 
         /// <summary>Opens the device in the engine, in direct mode, and waits for the graph to play; false (and a note) when it did not open.</summary>
-        public bool Open(string? deviceId, int buffer, TimingReport report)
+        public bool Open(string? deviceId, int buffer, TimingReport report, string? host)
         {
             Devices.SyncAsync(Session.Project).GetAwaiter().GetResult();
             Controller.RefreshAsync().GetAwaiter().GetResult();
-            Audio.Start(new AudioSettings(true, deviceId, SampleRate, buffer) { EngineQueuedFrames = 0 });
+            Audio.Start(new AudioSettings(true, deviceId, SampleRate, buffer) { EngineQueuedFrames = 0, Host = host });
             if (!Wait(() => Audio.IsRunning, TimeSpan.FromSeconds(10)))
             {
                 Console.WriteLine($"The engine did not open the device: {Audio.Problem}");

@@ -42,8 +42,9 @@ internal static class AudioLoopbackProbe
         }
 
         var (outputId, outputName) = options.OutputDevice();
+        var host = ProbeOptions.Option(options.Args, "--host");
         var inputName = ProbeOptions.Option(options.Args, "--input-device") ?? outputName;
-        var inputs = AudioDevices.ListInputs();
+        var inputs = AudioDevices.ListInputs().Where(d => host is null || d.Host.Equals(host, StringComparison.OrdinalIgnoreCase)).ToArray();
         var input = inputs.SingleOrDefault(d => d.Name.Equals(inputName, StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException($"No input device is called {inputName}. Inputs: {string.Join(", ", inputs.Select(d => d.Name))}.");
         var settings = options.BaseSettings();
@@ -63,8 +64,8 @@ internal static class AudioLoopbackProbe
         var builder = new AudioGraphBuilder();
         builder.ConnectToMaster(builder.AddNode(click));
         engine.Publish(builder.Build(buffer, new MixerStripState()));
-        using var capture = AudioInput.Open(onsets.Capture, input.Id, SampleRate, buffer);
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: outputId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
+        using var capture = AudioInput.Open(onsets.Capture, input.Id, SampleRate, buffer, host: host);
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: outputId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue, Host: host));
         capture.Start();
         output.Start();
         Thread.Sleep(500);
@@ -131,6 +132,7 @@ internal static class AudioLoopbackProbe
         report.Add(new Metric("loopback.total", "ms", Distribution: Distribution.Of(totals)));
         report.Add(new Metric("audio.xruns", "xruns", outputStatus.Xruns, Target: 0));
         report.Add(new Metric("audio.input-overruns", "overruns", inputStatus.Overruns, Target: 0));
+        report.Add(new Metric("audio.input-oversized-blocks", "blocks", inputStatus.OversizedBlocks, Target: 0));
         report.Notes.Add("model-error is capture time less the model's heard time; its spread is how much the model's timing varies, its median the offset it does not account for.");
         options.Finish(report);
     }

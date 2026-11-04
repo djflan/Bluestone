@@ -53,6 +53,18 @@ public sealed class MidiStreamParserTests
     }
 
     [Fact]
+    public void Reset_DropsIncompleteMessageAndAcceptsTheNextStream()
+    {
+        var parser = new MidiStreamParser();
+        parser.Feed([0xF0, 0x43, 0x10], _ => { });
+
+        parser.Reset();
+
+        Assert.Equal(1, parser.DroppedMessages);
+        Assert.Equal(["903C64"], Parse(parser, [0x90, 0x3C, 0x64]));
+    }
+
+    [Fact]
     public void OversizedSysEx_IsDroppedButParsingRecovers()
     {
         var parser = new MidiStreamParser(maxSysExLength: 4);

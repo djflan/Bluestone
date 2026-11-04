@@ -72,6 +72,8 @@ pub struct StreamStatus {
     pub channels: u32,
     /// The buffer size the stream was opened with (0 when the device chose).
     pub requested_buffer_frames: u32,
+    /// The device's actual buffer size, queried when the stream opens (0 when unavailable).
+    pub device_buffer_frames: u32,
     pub last_buffer_frames: u32,
     pub min_buffer_frames: u32,
     pub max_buffer_frames: u32,
@@ -87,7 +89,7 @@ pub struct StreamStatus {
     /// 0 none, 1 device not available, 2 stream invalidated, 3 device changed, 4 backend, 5 other.
     pub last_error: u32,
     pub errors: u32,
-    /// The device's sample format: 0 f32, 1 i16, 2 i32, 3 u16.
+    /// The device's sample format: 0 f32, 1 i16, 2 i32, 3 u16, 4 f64, 5 i8, 6 u8, 7 i24, 8 u24, 9 u32, 10 i64, 11 u64.
     pub sample_format: u32,
     pub reserved: u32,
     /// Longest call of the render function, in nanoseconds, measured around the call (so it includes entering
@@ -256,18 +258,21 @@ pub struct OutputStream {
     sample_rate: u32,
     channels: u32,
     requested_frames: u32,
+    device_frames: u32,
     format: u32,
+    _host_guard: crate::host::AsioStreamGuard,
 }
 
 impl OutputStream {
     /// Opens a stream whose callback calls `render` (direct mode).
     pub fn open(
+        host_name: Option<&str>,
         device_id: Option<&str>,
         request: &StreamRequest,
         render: RenderFn,
         user_data: *mut c_void,
     ) -> Result<OutputStream, String> {
-        Self::open_with(device_id, request, |_| Source::Direct {
+        Self::open_with(host_name, device_id, request, |_| Source::Direct {
             render,
             user: UserData(user_data),
         })
@@ -275,11 +280,12 @@ impl OutputStream {
 
     /// Opens a stream whose callback copies from a ring of `ring_frames` frames (buffered mode).
     pub fn open_buffered(
+        host_name: Option<&str>,
         device_id: Option<&str>,
         request: &StreamRequest,
         ring_frames: usize,
     ) -> Result<OutputStream, String> {
-        Self::open_with(device_id, request, |channels| {
+        Self::open_with(host_name, device_id, request, |channels| {
             Source::Buffered(Arc::new(Ring::new(ring_frames, channels)))
         })
     }
@@ -289,22 +295,33 @@ impl OutputStream {
     }
 
     fn open_with(
+        host_name: Option<&str>,
         device_id: Option<&str>,
         request: &StreamRequest,
         source: impl FnOnce(usize) -> Source,
     ) -> Result<OutputStream, String> {
-        let host = cpal::default_host();
+        let host = crate::host::select(host_name)?;
+        let is_asio = host_name.is_some_and(|name| name.eq_ignore_ascii_case("ASIO"));
         let device = match device_id {
             Some(id) if !id.is_empty() => {
                 let parsed = id
                     .parse()
                     .map_err(|e| format!("Not a device id: {id} ({e})"))?;
-                host.device_by_id(&parsed)
-                    .ok_or_else(|| format!("The audio device {id} is not available."))?
+                (if is_asio {
+                    crate::host::cached_asio_device(id, false)
+                } else {
+                    None
+                })
+                .or_else(|| host.device_by_id(&parsed))
+                .ok_or_else(|| format!("The audio device {id} is not available."))?
             }
-            _ => host
-                .default_output_device()
-                .ok_or_else(|| "There is no default audio output device.".to_string())?,
+            _ => (if is_asio {
+                crate::host::cached_asio_default(false)
+            } else {
+                None
+            })
+            .or_else(|| host.default_output_device())
+            .ok_or_else(|| "There is no default audio output device.".to_string())?,
         };
         let (config, format, buffer_range) = choose_config(&device, request)?;
         let shared = Arc::new(Shared {
@@ -325,6 +342,20 @@ impl OutputStream {
         };
         let stream = match format {
             SampleFormat::F32 => build_f32(&device, config, source, Arc::clone(&shared))?,
+            SampleFormat::F64 => build_converted::<f64>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
+            SampleFormat::I8 => build_converted::<i8>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
             SampleFormat::I16 => build_converted::<i16>(
                 &device,
                 config,
@@ -339,7 +370,49 @@ impl OutputStream {
                 Arc::clone(&shared),
                 capacity_frames,
             )?,
+            SampleFormat::I24 => build_converted::<cpal::I24>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
+            SampleFormat::I64 => build_converted::<i64>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
+            SampleFormat::U8 => build_converted::<u8>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
             SampleFormat::U16 => build_converted::<u16>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
+            SampleFormat::U24 => build_converted::<cpal::U24>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
+            SampleFormat::U32 => build_converted::<u32>(
+                &device,
+                config,
+                source,
+                Arc::clone(&shared),
+                capacity_frames,
+            )?,
+            SampleFormat::U64 => build_converted::<u64>(
                 &device,
                 config,
                 source,
@@ -348,6 +421,11 @@ impl OutputStream {
             )?,
             other => return Err(format!("Unsupported sample format {other:?}.")),
         };
+        let device_frames = stream.buffer_size().unwrap_or(0);
+        if device_frames > 0 {
+            shared.min_frames.store(device_frames, Ordering::Relaxed);
+            shared.max_frames.store(device_frames, Ordering::Relaxed);
+        }
         Ok(OutputStream {
             stream,
             ring,
@@ -358,12 +436,23 @@ impl OutputStream {
                 BufferSize::Fixed(n) => n,
                 BufferSize::Default => 0,
             },
+            device_frames,
             format: match format {
                 SampleFormat::F32 => 0,
                 SampleFormat::I16 => 1,
                 SampleFormat::I32 => 2,
-                _ => 3,
+                SampleFormat::U16 => 3,
+                SampleFormat::F64 => 4,
+                SampleFormat::I8 => 5,
+                SampleFormat::U8 => 6,
+                SampleFormat::I24 => 7,
+                SampleFormat::U24 => 8,
+                SampleFormat::U32 => 9,
+                SampleFormat::I64 => 10,
+                SampleFormat::U64 => 11,
+                _ => 12,
             },
+            _host_guard: crate::host::AsioStreamGuard::new(host_name),
         })
     }
 
@@ -403,6 +492,7 @@ impl OutputStream {
             sample_rate: self.sample_rate,
             channels: self.channels,
             requested_buffer_frames: self.requested_frames,
+            device_buffer_frames: self.device_frames,
             last_buffer_frames: s.last_frames.load(Ordering::Relaxed),
             min_buffer_frames: if min == u32::MAX { 0 } else { min },
             max_buffer_frames: s.max_frames.load(Ordering::Relaxed),
@@ -544,19 +634,33 @@ fn choose_config(device: &Device, request: &StreamRequest) -> Result<Chosen, Str
     let default = device
         .default_output_config()
         .map_err(|e| format!("The device has no default output configuration: {e}"))?;
-    let rate = if request.sample_rate == 0 {
-        default.sample_rate()
-    } else {
-        request.sample_rate
-    };
     let channels = if request.channels == 0 {
         u32::from(default.channels())
     } else {
         request.channels
     };
-    let ranges: Vec<_> = device
+    let supported: Vec<_> = device
         .supported_output_configs()
         .map_err(|e| format!("The device's configurations cannot be read: {e}"))?
+        .collect();
+    let rate_ranges: Vec<_> = supported
+        .iter()
+        .map(|r| {
+            (
+                r.min_sample_rate(),
+                r.max_sample_rate(),
+                u32::from(r.channels()),
+            )
+        })
+        .collect();
+    let rate = crate::host::resolve_sample_rate(
+        request.sample_rate,
+        default.sample_rate(),
+        channels,
+        &rate_ranges,
+    )?;
+    let ranges: Vec<_> = supported
+        .into_iter()
         .filter(|r| {
             u32::from(r.channels()) == channels
                 && r.min_sample_rate() <= rate
@@ -566,8 +670,16 @@ fn choose_config(device: &Device, request: &StreamRequest) -> Result<Chosen, Str
     let preference = [
         SampleFormat::F32,
         SampleFormat::I32,
+        SampleFormat::F64,
+        SampleFormat::I24,
         SampleFormat::I16,
+        SampleFormat::U24,
+        SampleFormat::U32,
         SampleFormat::U16,
+        SampleFormat::I64,
+        SampleFormat::U64,
+        SampleFormat::I8,
+        SampleFormat::U8,
     ];
     let range = preference
         .iter()
@@ -623,7 +735,7 @@ mod tests {
     #[test]
     fn the_status_struct_has_a_stable_size() {
         // The .NET side checks this size; change both together and bump the ABI version.
-        assert_eq!(size_of::<StreamStatus>(), 144);
+        assert_eq!(size_of::<StreamStatus>(), 152);
         assert_eq!(size_of::<BlockInfo>(), 32);
         assert_eq!(size_of::<StreamRequest>(), 16);
     }

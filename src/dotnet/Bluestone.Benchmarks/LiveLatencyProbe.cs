@@ -44,7 +44,7 @@ internal static class LiveLatencyProbe
         var probe = new ProbeNode((options.Seconds + 2) * 250);
         using var engine = new AudioEngine(SampleRate, buffer);
         engine.Publish(AudioCallbackProbe.Graph(buffer, 32, probe));
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue));
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue, Host: ProbeOptions.Option(options.Args, "--host")));
         output.Start();
         Thread.Sleep(500);
         report.Notes.Add($"render thread: {(queue == 0 ? "the device callback" : output.RenderThreadPolicy)}");

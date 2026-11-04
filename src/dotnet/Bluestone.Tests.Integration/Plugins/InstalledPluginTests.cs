@@ -21,6 +21,17 @@ public sealed class InstalledPluginTests
     public static TheoryData<string, string, string, string> Installed()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (OperatingSystem.IsWindows())
+        {
+            var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles);
+            var clap = Path.Combine(common, "CLAP");
+            return new()
+            {
+                { "clap", Path.Combine(clap, "Airwindows (with BaconPaul and members of the Surge Synth Team)", "Airwindows Consolidated.clap"), "Airwindows Consolidated", "" },
+                { "clap", Path.Combine(clap, "Surge Synth Team", "Surge XT.clap"), "Surge XT", "" },
+            };
+        }
+
         return new()
         {
             // The Legend HZ's first parameter is its mod wheel, which the processor resets.

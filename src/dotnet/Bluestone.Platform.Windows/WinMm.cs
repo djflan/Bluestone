@@ -14,12 +14,28 @@ internal static unsafe partial class WinMm
     public const uint NotReady = 67;
     public const uint NoDevice = 68;
     public const uint CallbackNull = 0;
+    public const uint CallbackFunction = 0x00030000;
+    public const uint MidiData = 0x03C3;
+    public const uint MidiLongData = 0x03C4;
+    public const uint MidiError = 0x03C5;
+    public const uint MidiLongError = 0x03C6;
 
     /// <summary>MOD_MIDIPORT: a hardware MIDI port.</summary>
     public const ushort TechnologyMidiPort = 1;
 
     /// <summary>MOD_SWSYNTH: a software synthesizer such as the Microsoft GS Wavetable Synth.</summary>
     public const ushort TechnologySoftwareSynth = 7;
+
+    /// <summary>MIDICAPSW.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MidiInCaps
+    {
+        public ushort ManufacturerId;
+        public ushort ProductId;
+        public uint DriverVersion;
+        public fixed char Name[32];
+        public uint Support;
+    }
 
     /// <summary>MIDIOUTCAPSW.</summary>
     [StructLayout(LayoutKind.Sequential)]
@@ -83,4 +99,34 @@ internal static unsafe partial class WinMm
 
     [LibraryImport("winmm.dll")]
     public static partial uint midiOutClose(IntPtr handle);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInGetNumDevs();
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInGetDevCapsW(nuint deviceId, MidiInCaps* caps, uint size);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInOpen(out IntPtr handle, uint deviceId, delegate* unmanaged<IntPtr, uint, nuint, nuint, nuint, void> callback, nuint instance, uint flags);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInPrepareHeader(IntPtr handle, MidiHeader* header, uint size);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInAddBuffer(IntPtr handle, MidiHeader* header, uint size);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInStart(IntPtr handle);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInStop(IntPtr handle);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInReset(IntPtr handle);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInUnprepareHeader(IntPtr handle, MidiHeader* header, uint size);
+
+    [LibraryImport("winmm.dll")]
+    public static partial uint midiInClose(IntPtr handle);
 }

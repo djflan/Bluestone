@@ -21,21 +21,21 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | Routing model, format 4, migrations, chain presets, commands, inspector | Done, tested |
 | Group tracks: mute/solo reach members, joining routes into the group, folding saved (ADR 0030) | Done, tested; headless UI test |
 | Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; XG map unverified on hardware |
-| Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, mixer with sends, clip gain and fades, meters, device-loss fallback, one transport (ADR 0032) | Done, tested with an offline driver and the real default device; heard on macOS only |
-| Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS |
-| Engine process: MIDI playback, endpoints, live input and thru, the audio device rendering in the callback, the graph, clips, meters, and the plugin data plane in a NativeAOT C# process with its own protocol and supervisor; depth 1 for the monitored plugin instrument; real-time plugin worker threads on macOS (ADRs 0043, 0044) | Done; the default on macOS, where the `--engine` probes met their targets (scheduled MIDI dispatch, audio in the callback, live input from Core MIDI, loopback); MIDI arrival, immediate output, and thru not yet measured through the engine; opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux until measured on native hardware |
-| Third-party plugins: VST 3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins as VST 3 and CLAP; installed plugins tested on macOS |
+| Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, mixer with sends, clip gain and fades, meters, device-loss fallback, one transport (ADR 0032) | Done; Core Audio heard on macOS; WASAPI tested on Windows; ASIO was tested locally but is excluded from standard Windows builds pending licensing; output was not listened to |
+| Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS and through Windows WinMM software loopback (Windows result misses target) |
+| Engine process: MIDI playback, endpoints, live input and thru, the audio device rendering in the callback, the graph, clips, meters, and the plugin data plane in a NativeAOT C# process with its own protocol and supervisor; depth 1 for the monitored plugin instrument; real-time plugin worker threads (ADRs 0043, 0044) | Done; default on macOS. Windows x64 WinMM live input and WASAPI were measured through software loopback; live added latency missed target, so remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux |
+| Third-party plugins: VST 3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins on all platforms; installed CLAP processing and Pro-Q 3/Surge XT editors tested on native Windows and macOS |
 | Plugin hosting modes: together, by manufacturer, by plugin (default), individually; per-plugin override; crash blast radius and counts (ADR 0034) | Done, tested with real workers |
 | UI: Plugins view (rescan, quarantine retry, hosting), Mixer console, Audio Settings, editor button, group menu, instrument parameter lanes | Done; view-model and headless UI tests; the app launched as a smoke test only |
 | Device-centric workspace: design tokens, semantic regions and rails, dockable/detachable Browser, multiple follow/lock Device Views with per-view presentation, drag-and-drop insertion and reordering, local layout persistence with monitor recovery (ADR 0036); parallel signal bundle in chains (ADR 0037) | Done; view-model and headless UI tests with frames at 1280×800 and 1920×1080; the real app launched under Xvfb; not checked on real multiple monitors |
-| Interaction polish: arranger loop kept while off, clip loops on note and audio clips with Consolidate, format 5 (ADR 0039); ruler drag zoom and scroll, Zoom to Fit/Selection/Loop; drag to replace a device; floating editors that follow the selection, pin, and send keys to Bluestone (ADR 0040) | Done; unit, view-model, and headless UI tests; editor hiding and key forwarding checked on macOS only ([worklog](worklogs/bitwig-interaction-polish.md)) |
+| Interaction polish: arranger loop kept while off, clip loops on note and audio clips with Consolidate, format 5 (ADR 0039); ruler drag zoom and scroll, Zoom to Fit/Selection/Loop; drag to replace a device; floating editors that follow the selection, pin, and send keys to Bluestone (ADR 0040) | Done; unit, view-model, and headless UI tests; editor lifecycle and key routing checked on macOS and native Windows ([worklog](worklogs/bitwig-interaction-polish.md)) |
 | Headless UI tests: Device View, Browser, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
 | Acceptance scenarios 1–15 | All have tests: tables in [architecture.md](architecture.md#acceptance-scenarios-and-their-tests) and [plugin-hosting.md](plugin-hosting.md#acceptance-scenarios) |
 | Rust | Two cdylib crates (`bluestone_audio`, `bluestone_plugin_host`) plus test plugins, each with a measured or native-ABI reason (ADRs 0032, 0033) |
 
 ## 2. Build environment
 
-Use the README commands on a machine with the .NET SDK from `global.json` (10.0.300 or a later 10.0 feature band) and
+Use the README commands on a machine with the .NET SDK from `global.json` (10.0.403 or a later 10.0 feature band) and
 a Rust toolchain (`cargo`; the hosted CI runners have one). `dotnet build` builds the Rust crates through
 `src/dotnet/Native.targets` (`cargo build --locked`; after changing Rust dependencies run `cargo build` in
 `src/native/` once). Linux needs `libasound2-dev`. One test project, one namespace:
@@ -156,12 +156,10 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 
 ## 6. Not verified
 
-- Real MIDI hardware, and the XG parameter map against a real XG instrument.
-- Audio output heard on Windows and Linux (CI has no audio devices); unplugging a real device (device loss is tested
-  with a test backend).
-- Plugin editors on Windows and Linux (they build, and CI runs the rest of the plugin path there); closing or
-  resizing an editor by hand; hiding and showing editors and sending their keys to Bluestone on Windows (compiled
-  and linted only), and editor hiding under a Linux window manager.
+- Real MIDI hardware and the XG parameter map against an XG instrument; Windows MIDI input timing is measured only through a Windows MIDI Services software loopback.
+- Audio output heard on Windows and Linux (Windows WASAPI callbacks run but output was not listened to; ASIO was measured in a local build and is currently excluded from standard builds); unplugging a real device (device loss is tested with a test backend).
+- Plugin editors on Linux and hand-checking Windows editor resize/focus/multi-monitor behavior; Windows editor lifecycle, follow/pin, and key-routing tests pass with installed plugins.
+- ASIO on an external audio interface: the installed Realtek ASIO driver was exercised, but the RME MADIface was not connected; the acoustic round trip is unmeasured.
 - A third-party MIDI effect plugin (none installed: Scaler 3 and Melody Sauce 3 report as instruments); third-party
   plugins live and delay-compensated through the audio engine on a real device (reference and test plugins only).
 - The acoustic round trip of live input (no loopback recording); measured numbers include the device's reported
@@ -176,8 +174,8 @@ This is the backlog captured before ADR 0041 redefined the product direction. It
 known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) for execution order and acceptance gates.
 
 1. **Audio engine:** importing audio files as clips (today they come only from project files), audio input and recording, compressed formats (FLAC, MP3, Ogg), send and fader automation,
-   real-time-priority verification on Windows and Linux.
-2. **Plugins:** editors verified on Windows and Linux, embedded (not floating) editors, second-architecture workers
+   real-device timing and recovery verification on Windows and Linux.
+2. **Plugins:** editors verified on Linux, embedded (not floating) editors, second-architecture workers
    (Rosetta), SysEx to native plugins, note expressions, a protocol message for a worker-side idle-handler failure
    (today it is logged to standard error and that instance's notifications stop). The full list is in
    [plugin-hosting.md](plugin-hosting.md#not-done).

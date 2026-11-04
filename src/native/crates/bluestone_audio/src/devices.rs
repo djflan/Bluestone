@@ -59,96 +59,135 @@ fn range_tuple(range: &SupportedStreamConfigRange) -> Range {
     )
 }
 
-/// Every output device of the default host as a JSON array.
+/// Every output device of every available host as a JSON array.
 pub(crate) fn devices_json() -> String {
     devices_json_for(false)
 }
 
-/// Every input device of the default host as a JSON array, in the same shape as [`devices_json`].
+/// Every input device of every available host as a JSON array, in the same shape as [`devices_json`].
 pub(crate) fn input_devices_json() -> String {
     devices_json_for(true)
 }
 
 fn devices_json_for(input: bool) -> String {
-    let host = cpal::default_host();
-    let default_id = if input {
-        host.default_input_device()
-    } else {
-        host.default_output_device()
-    }
-    .and_then(|d| d.id().ok())
-    .map(|id| id.to_string());
+    let default_host_id = cpal::default_host().id();
     let mut out = String::from("[");
     let mut first = true;
-    let devices = if input {
-        host.input_devices().map(|d| d.collect::<Vec<_>>())
-    } else {
-        host.output_devices().map(|d| d.collect::<Vec<_>>())
-    };
-    if let Ok(devices) = devices {
-        for device in devices {
-            let Ok(id) = device.id() else { continue };
-            let id = id.to_string();
-            let name = device
-                .description()
-                .map(|d| d.name().to_string())
-                .unwrap_or_else(|_| id.clone());
-            let ranges: Vec<_> = if input {
-                device
-                    .supported_input_configs()
-                    .map(|configs| configs.map(|r| range_tuple(&r)).collect())
-                    .unwrap_or_default()
+    for host_id in cpal::available_hosts() {
+        let Ok(host) = cpal::host_from_id(host_id) else {
+            continue;
+        };
+        let is_asio = host_id.name().eq_ignore_ascii_case("ASIO");
+        let default_id = if is_asio && crate::host::asio_stream_is_active() {
+            crate::host::cached_asio_default(input)
+                .and_then(|device| device.id().ok())
+                .map(|id| id.to_string())
+        } else if !is_asio && host_id == default_host_id {
+            if input {
+                host.default_input_device()
             } else {
-                device
-                    .supported_output_configs()
-                    .map(|configs| configs.map(|r| range_tuple(&r)).collect())
-                    .unwrap_or_default()
-            };
-            let caps = summarize(&ranges);
-            let default_config = if input {
-                device.default_input_config().ok()
-            } else {
-                device.default_output_config().ok()
-            };
-            if !first {
-                out.push(',');
+                host.default_output_device()
             }
-            first = false;
-            out.push_str("{\"id\":");
-            json::string(&mut out, &id);
-            out.push_str(",\"name\":");
-            json::string(&mut out, &name);
-            out.push_str(",\"host\":");
-            json::string(&mut out, host.id().name());
-            out.push_str(",\"isDefault\":");
-            out.push_str(if default_id.as_deref() == Some(id.as_str()) {
-                "true"
+            .and_then(|device| device.id().ok())
+            .map(|id| id.to_string())
+        } else {
+            None
+        };
+        let devices = if is_asio && crate::host::asio_stream_is_active() {
+            crate::host::cached_asio_devices(input)
+        } else if is_asio {
+            let Ok(all) = host.devices() else {
+                continue;
+            };
+            let all = all.collect::<Vec<_>>();
+            let inputs = all
+                .iter()
+                .filter(|device| device.supports_input())
+                .cloned()
+                .collect::<Vec<_>>();
+            let outputs = all
+                .iter()
+                .filter(|device| device.supports_output())
+                .cloned()
+                .collect::<Vec<_>>();
+            crate::host::remember_asio_devices(true, &inputs);
+            crate::host::remember_asio_devices(false, &outputs);
+            Some(if input { inputs } else { outputs })
+        } else {
+            let listed = if input {
+                host.input_devices()
+                    .map(|devices| devices.collect::<Vec<_>>())
             } else {
-                "false"
-            });
-            out.push_str(",\"defaultSampleRate\":");
-            out.push_str(
-                &default_config
-                    .as_ref()
-                    .map_or(0, |c| c.sample_rate())
-                    .to_string(),
-            );
-            out.push_str(",\"defaultChannels\":");
-            out.push_str(
-                &default_config
-                    .as_ref()
-                    .map_or(0, |c| u32::from(c.channels()))
-                    .to_string(),
-            );
-            out.push_str(",\"sampleRates\":");
-            json::numbers(&mut out, &caps.sample_rates);
-            out.push_str(",\"channelCounts\":");
-            json::numbers(&mut out, &caps.channel_counts);
-            out.push_str(",\"minBufferFrames\":");
-            out.push_str(&caps.min_buffer_frames.unwrap_or(0).to_string());
-            out.push_str(",\"maxBufferFrames\":");
-            out.push_str(&caps.max_buffer_frames.unwrap_or(0).to_string());
-            out.push('}');
+                host.output_devices()
+                    .map(|devices| devices.collect::<Vec<_>>())
+            };
+            listed.ok()
+        };
+        if let Some(devices) = devices {
+            for device in devices {
+                let Ok(id) = device.id() else { continue };
+                let id = id.to_string();
+                let name = device
+                    .description()
+                    .map(|d| d.name().to_string())
+                    .unwrap_or_else(|_| id.clone());
+                let ranges: Vec<_> = if input {
+                    device
+                        .supported_input_configs()
+                        .map(|configs| configs.map(|r| range_tuple(&r)).collect())
+                        .unwrap_or_default()
+                } else {
+                    device
+                        .supported_output_configs()
+                        .map(|configs| configs.map(|r| range_tuple(&r)).collect())
+                        .unwrap_or_default()
+                };
+                let caps = summarize(&ranges);
+                let default_config = if input {
+                    device.default_input_config().ok()
+                } else {
+                    device.default_output_config().ok()
+                };
+                if !first {
+                    out.push(',');
+                }
+                first = false;
+                out.push_str("{\"id\":");
+                json::string(&mut out, &id);
+                out.push_str(",\"name\":");
+                json::string(&mut out, &name);
+                out.push_str(",\"host\":");
+                json::string(&mut out, host_id.name());
+                out.push_str(",\"isDefault\":");
+                out.push_str(if default_id.as_deref() == Some(id.as_str()) {
+                    "true"
+                } else {
+                    "false"
+                });
+                out.push_str(",\"defaultSampleRate\":");
+                out.push_str(
+                    &default_config
+                        .as_ref()
+                        .map_or(0, |c| c.sample_rate())
+                        .to_string(),
+                );
+                out.push_str(",\"defaultChannels\":");
+                out.push_str(
+                    &default_config
+                        .as_ref()
+                        .map_or(0, |c| u32::from(c.channels()))
+                        .to_string(),
+                );
+                out.push_str(",\"sampleRates\":");
+                json::numbers(&mut out, &caps.sample_rates);
+                out.push_str(",\"channelCounts\":");
+                json::numbers(&mut out, &caps.channel_counts);
+                out.push_str(",\"minBufferFrames\":");
+                out.push_str(&caps.min_buffer_frames.unwrap_or(0).to_string());
+                out.push_str(",\"maxBufferFrames\":");
+                out.push_str(&caps.max_buffer_frames.unwrap_or(0).to_string());
+                out.push('}');
+            }
         }
     }
     out.push(']');
