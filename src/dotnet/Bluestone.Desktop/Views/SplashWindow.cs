@@ -18,7 +18,8 @@ internal sealed class SplashWindow : Window
     public const string NonAffiliationNotice =
         "Bluestone is an independent open-source project and is not affiliated with, authorized, sponsored, or endorsed by the owners " +
         "of the products, formats, or standards it names. Product names and trademarks belong to their respective owners and are used " +
-        "only to identify products and describe compatibility. VST is a registered trademark of Steinberg Media Technologies GmbH.";
+        "only to identify products and describe compatibility. VST is a registered trademark and ASIO is a trademark of Steinberg " +
+        "Media Technologies GmbH.";
 
     public const string Summary =
         "A device-centric digital audio workstation built for tight timing and accuracy, where hardware instruments, " +

@@ -4,6 +4,7 @@ using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Mixing;
+using Bluestone.Midi.Timing;
 using Bluestone.Plugins;
 
 namespace Bluestone.Application.Audio;
@@ -27,6 +28,7 @@ public sealed class AudioPlayback : IAudioPlayback
     public static readonly TimeSpan LiveHold = TimeSpan.FromSeconds(10);
 
     private static readonly TimeSpan DefaultCheckInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan AsioRetryInterval = TimeSpan.FromSeconds(5);
     private readonly PlaybackController _playback;
     private readonly ProjectSession _session;
     private readonly Func<DeviceId, PluginInstance?> _instances;
@@ -34,6 +36,7 @@ public sealed class AudioPlayback : IAudioPlayback
     private readonly IAudioBackend _backend;
     private readonly Func<int, Task>? _prepareSampleRate;
     private readonly TimeSpan _checkInterval;
+    private readonly IMonotonicClock _clock;
     private readonly Lock _gate = new();
     private readonly Lock _control = new();
     private readonly EngineSlot _slot = new();
@@ -47,6 +50,7 @@ public sealed class AudioPlayback : IAudioPlayback
     private string _devicesTried = string.Empty;
     private bool _testTone;
     private TimeSpan _liveSince;
+    private TimeSpan _nextAsioRetry;
 
     /// <param name="playback">The MIDI playback controller whose transport the audio follows.</param>
     /// <param name="session">The project.</param>
@@ -58,6 +62,7 @@ public sealed class AudioPlayback : IAudioPlayback
     /// other rate); the graph is rebuilt when it completes.
     /// </param>
     /// <param name="checkInterval">How often the device is checked (and the transport aligned); infinite for tests that call <see cref="CheckDevice"/>.</param>
+    /// <param name="clock">The monotonic clock used for retry deadlines; tests may provide a virtual clock.</param>
     public AudioPlayback(
         PlaybackController playback,
         ProjectSession session,
@@ -65,7 +70,8 @@ public sealed class AudioPlayback : IAudioPlayback
         int maxBlockFrames = 256,
         IAudioBackend? backend = null,
         Func<int, Task>? prepareSampleRate = null,
-        TimeSpan? checkInterval = null)
+        TimeSpan? checkInterval = null,
+        IMonotonicClock? clock = null)
     {
         _playback = playback ?? throw new ArgumentNullException(nameof(playback));
         _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -74,6 +80,7 @@ public sealed class AudioPlayback : IAudioPlayback
         _backend = backend ?? SystemAudioBackend.Instance;
         _prepareSampleRate = prepareSampleRate;
         _checkInterval = checkInterval ?? DefaultCheckInterval;
+        _clock = clock ?? SystemMonotonicClock.Instance;
         _playback.Refreshed += (_, _) => _ = Task.Run(Rebuild);
         _playback.Live.MonitoredInstrumentChanged += (_, _) =>
         {
@@ -117,6 +124,9 @@ public sealed class AudioPlayback : IAudioPlayback
     public AudioStreamInfo? Stream =>
         _output is { } output && _engine is { } engine
             ? new AudioStreamInfo(output.SampleRate, output.Channels, engine.BlockFrames, output.QueuedFrames, output.RenderThreadPolicy, engine.Graph.LatencyFrames)
+            {
+                DeviceBufferFrames = output.Status.DeviceBufferFrames,
+            }
             : null;
 
     public AudioTelemetry? Telemetry
@@ -175,6 +185,7 @@ public sealed class AudioPlayback : IAudioPlayback
             _wantedName = null;
             _waitingReason = null;
             IsOnFallback = false;
+            _nextAsioRetry = TimeSpan.Zero;
             _check ??= new Timer(_ => Tick(), null, _checkInterval, _checkInterval);
             return Recover(null);
         }
@@ -192,6 +203,7 @@ public sealed class AudioPlayback : IAudioPlayback
             Close();
             Problem = null;
             IsOnFallback = false;
+            _nextAsioRetry = TimeSpan.Zero;
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
@@ -220,7 +232,26 @@ public sealed class AudioPlayback : IAudioPlayback
             }
 
             // Waiting: try again only when the devices present have changed. On the stand-in: once the chosen one is back.
-            if ((_output is null && DeviceList() != _devicesTried) || (IsOnFallback && Listed(wanted.DeviceId)))
+            if (wanted.Host == "ASIO" && (_output is null || IsOnFallback) && _clock.Now >= _nextAsioRetry)
+            {
+                if (WantedDeviceListed(wanted))
+                {
+                    Recover(null);
+                }
+                else
+                {
+                    _nextAsioRetry = _clock.Now + AsioRetryInterval;
+                    if (_output is null && DeviceList() != _devicesTried)
+                    {
+                        Recover(null);
+                    }
+                }
+
+                return;
+            }
+
+            if ((_output is null && wanted.Host != "ASIO" && DeviceList() != _devicesTried)
+                || (IsOnFallback && wanted.Host != "ASIO" && wanted.DeviceId is not null && Listed(wanted.DeviceId)))
             {
                 Recover(null);
             }
@@ -275,15 +306,43 @@ public sealed class AudioPlayback : IAudioPlayback
             _waitingReason = null;
             Problem = null;
             IsOnFallback = false;
+            _nextAsioRetry = TimeSpan.Zero;
         }
-        else if (wanted.DeviceId is not null && (IsOnFallback || TryOpen(wanted, null, out _)))
+        else if (wanted.Host == "ASIO" && _output is not null && IsOnFallback)
         {
+            _nextAsioRetry = _clock.Now + AsioRetryInterval;
             _waitingReason = null;
-            Problem = $"{Name(wanted.DeviceId)} is not available ({problem}). Playing through the system default output until it returns.";
+            var unavailable = wanted.DeviceId is null ? "ASIO" : Name(wanted.DeviceId);
+            Problem = $"{unavailable} is not available ({problem}). Continuing on the fallback output until it returns.";
+            IsOnFallback = true;
+        }
+        else if (wanted.Host == "ASIO" && TryOpen(wanted with { Host = "WASAPI" }, null, out _))
+        {
+            _nextAsioRetry = _clock.Now + AsioRetryInterval;
+            _waitingReason = null;
+            var unavailable = wanted.DeviceId is null ? "ASIO" : Name(wanted.DeviceId);
+            Problem = $"{unavailable} is not available ({problem}). Playing through WASAPI until it returns.";
+            IsOnFallback = true;
+        }
+        else if (wanted.Host != "ASIO" && wanted.DeviceId is not null && (IsOnFallback && _output is not null || TryOpen(wanted, null, out _)))
+        {
+            if (wanted.Host == "ASIO")
+            {
+                _nextAsioRetry = _clock.Now + AsioRetryInterval;
+            }
+
+            _waitingReason = null;
+            var fallback = wanted.Host == "ASIO" ? "the ASIO default output" : "the system default output";
+            Problem = $"{Name(wanted.DeviceId)} is not available ({problem}). Playing through {fallback} until it returns.";
             IsOnFallback = true;
         }
         else if (_output is null)
         {
+            if (wanted.Host == "ASIO")
+            {
+                _nextAsioRetry = _clock.Now + AsioRetryInterval;
+            }
+
             _waitingReason = lost ?? _waitingReason ?? problem;
             Problem = $"{_waitingReason} Audio starts by itself when the device is available, or choose another device.";
             IsOnFallback = false;
@@ -303,7 +362,7 @@ public sealed class AudioPlayback : IAudioPlayback
         }
 
         IAudioOutput output;
-        var request = new AudioStreamRequest(deviceId, settings.SampleRate, settings.BufferFrames, QueuedFrames: settings.QueuedFrames);
+        var request = new AudioStreamRequest(deviceId, settings.SampleRate, settings.BufferFrames, QueuedFrames: settings.QueuedFrames, Host: settings.Host);
         try
         {
             output = Open(request);
@@ -319,7 +378,7 @@ public sealed class AudioPlayback : IAudioPlayback
         var rate = output.SampleRate;
         var block = Math.Clamp(settings.BufferFrames, 32, _maxBlockFrames);
         var engine = new AudioEngine(rate, block) { TestTone = _testTone ? new ToneNode(440, 0.125) : null };
-        var device = Math.Max(settings.BufferFrames, block);
+        var device = Math.Max(Math.Max(settings.BufferFrames, output.Status.MaxBufferFrames), block);
         engine.Transport.Follow(new PlaybackTimeline(_playback.Transport), toleranceFrames: Math.Max(rate / 100, 2 * (device + block)));
         lock (_gate)
         {
@@ -468,6 +527,17 @@ public sealed class AudioPlayback : IAudioPlayback
     {
         var devices = _backend.ListDevices();
         return deviceId is null ? devices.Count > 0 : devices.Any(d => d.Id == deviceId);
+    }
+
+    private bool WantedDeviceListed(AudioSettings settings)
+    {
+        var devices = _backend.ListDevices();
+        if (settings.Host is { } host)
+        {
+            devices = devices.Where(d => d.Host.Equals(host, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+
+        return settings.DeviceId is null ? devices.Count > 0 : devices.Any(d => d.Id == settings.DeviceId);
     }
 
     private string Name(string? deviceId) =>

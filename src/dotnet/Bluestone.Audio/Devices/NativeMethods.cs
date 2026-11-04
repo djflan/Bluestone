@@ -8,7 +8,7 @@ namespace Bluestone.Audio.Devices;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    public const uint AbiVersion = 2;
+    public const uint AbiVersion = 4;
     public const uint FlagDiscontinuity = 1;
     public const int HistogramBuckets = 2001;
     public const int HistogramBucketMicroseconds = 10;
@@ -20,8 +20,12 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "bluestone_audio_devices_json")]
     public static partial long DevicesJson(byte* buffer, nuint capacity);
 
+    [LibraryImport(Library, EntryPoint = "bluestone_audio_hosts_json")]
+    public static partial long HostsJson(byte* buffer, nuint capacity);
+
     [LibraryImport(Library, EntryPoint = "bluestone_audio_open_output")]
     public static partial nint OpenOutput(
+        byte* hostId,
         byte* deviceId,
         StreamRequest* request,
         delegate* unmanaged[Cdecl]<nint, float*, uint, uint, BlockInfo*, void> render,
@@ -30,7 +34,7 @@ internal static unsafe partial class NativeMethods
         nuint errorCapacity);
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_open_output_buffered")]
-    public static partial nint OpenOutputBuffered(byte* deviceId, StreamRequest* request, uint ringFrames, byte* error, nuint errorCapacity);
+    public static partial nint OpenOutputBuffered(byte* hostId, byte* deviceId, StreamRequest* request, uint ringFrames, byte* error, nuint errorCapacity);
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_ring_write")]
     public static partial long RingWrite(nint stream, float* samples, uint frames);
@@ -59,6 +63,7 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "bluestone_audio_open_input")]
     public static partial nint OpenInput(
+        byte* hostId,
         byte* deviceId,
         StreamRequest* request,
         delegate* unmanaged[Cdecl]<nint, float*, uint, uint, CaptureInfo*, void> capture,
@@ -129,6 +134,7 @@ internal static unsafe partial class NativeMethods
         public uint SampleRate;
         public uint Channels;
         public uint RequestedBufferFrames;
+        public uint DeviceBufferFrames;
         public uint LastBufferFrames;
         public uint MinBufferFrames;
         public uint MaxBufferFrames;

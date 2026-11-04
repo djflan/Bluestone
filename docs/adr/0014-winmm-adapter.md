@@ -1,6 +1,6 @@
 # 0014. Windows WinMM output adapter in managed code
 
-- Status: Accepted
+- Status: Accepted; input and endpoint polling amended by 0045
 - Date: 2026-10-04
 
 ## Context
@@ -48,3 +48,8 @@ when due is now usable.
   the UI thread in a tight loop.
 - Integration tests open only software synthesizers and never send a sounding message, in line
   with the rule that unattended tests do not send to hardware.
+
+## Amendment: input and endpoint changes (ADR 0045)
+
+WinMM input and endpoint-change polling were added in ADR 0045. The original decision to use WinMM for output remains;
+the Windows MIDI Services adapter and virtual Bluestone output remain deferred.

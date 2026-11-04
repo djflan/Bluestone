@@ -5,9 +5,9 @@ namespace Bluestone.Application.Audio;
 
 /// <summary>The audio output the user chose. Saved per user, not per project.</summary>
 /// <param name="Enabled">Open the device when Bluestone starts.</param>
-/// <param name="DeviceId">An audio device id, or null for the system's default output.</param>
+/// <param name="DeviceId">An audio device id, or null for the selected host's default output.</param>
 /// <param name="SampleRate">In Hz.</param>
-/// <param name="BufferFrames">Frames per device callback.</param>
+/// <param name="BufferFrames">Requested frames per device callback; ASIO uses the driver's default.</param>
 /// <param name="QueuedFrames">
 /// Frames rendered ahead of the device by Bluestone's render thread (0: render in the device callback). Absorbs .NET
 /// garbage-collection pauses at the cost of this much latency; ADR 0032 has the measurements behind the default.
@@ -30,6 +30,9 @@ public sealed record AudioSettings(
     int LiveQueuedFrames = AudioSettings.DefaultLiveQueuedFrames,
     bool LowLatencyMonitoring = false)
 {
+    /// <summary>The selected audio host, or null for the system default.</summary>
+    public string? Host { get; init; }
+
     public const int DefaultQueuedFrames = 1024;
 
     /// <summary>

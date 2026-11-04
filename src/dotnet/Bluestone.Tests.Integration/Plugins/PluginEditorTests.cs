@@ -5,8 +5,8 @@ using static Bluestone.Tests.Integration.Plugins.PluginTestHost;
 namespace Bluestone.Tests.Integration.Plugins;
 
 /// <summary>
-/// Plugin editors in their worker's window, with installed plugins that have one, on a Mac with a desktop session
-/// (skipped elsewhere and on CI, whose runners have no plugins and no display). The editor opens and closes on request;
+/// Plugin editors in their worker's window, with installed plugins that have one, on macOS or Windows with a desktop session
+/// (skipped on CI, whose runners have no plugins and no display). The editor opens and closes on request;
 /// when its worker is killed the window goes with the process, the instance reports a crash, and after a restart the
 /// editor opens again.
 /// </summary>
@@ -16,6 +16,16 @@ public sealed class PluginEditorTests
     public static TheoryData<string, string, string> WithEditors()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (OperatingSystem.IsWindows())
+        {
+            var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles);
+            return new()
+            {
+                { "vst3", Path.Combine(common, "VST3", "FabFilter Pro-Q 3.vst3"), "Pro-Q 3" },
+                { "clap", Path.Combine(common, "CLAP", "Surge Synth Team", "Surge XT.clap"), "Surge XT" },
+            };
+        }
+
         return new()
         {
             { "vst3", "/Library/Audio/Plug-Ins/VST3/DPA_Reverside.vst3", "REVERSIDE" },
@@ -27,9 +37,9 @@ public sealed class PluginEditorTests
     [MemberData(nameof(WithEditors))]
     public async Task AnEditor_OpensAndCloses_DiesWithItsWorker_AndOpensAgainAfterARestart(string format, string modulePath, string name)
     {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Editor windows are verified on macOS only.");
+        Assert.SkipUnless(OperatingSystem.IsMacOS() || OperatingSystem.IsWindows(), "Editor windows are verified on macOS and Windows only.");
         Assert.SkipWhen(Environment.GetEnvironmentVariable("CI") == "true", "CI runners have no plugins and no desktop session.");
-        Assert.SkipUnless(Directory.Exists(modulePath), $"{name} ({format}) is not installed at {modulePath}.");
+        Assert.SkipUnless(Directory.Exists(modulePath) || File.Exists(modulePath), $"{name} ({format}) is not installed at {modulePath}.");
         await using var host = new PluginTestHost();
         using var scanner = new PluginScanner(new PluginScannerOptions(Path.Combine(host.Directory, "scan")) { ScanTimeout = TimeSpan.FromSeconds(60) });
         var plugin = (await scanner.RescanAsync(modulePath, ignoreQuarantine: true, Ct)).Plugins.Single(p => p.DisplayName == name);
@@ -59,9 +69,9 @@ public sealed class PluginEditorTests
     [MemberData(nameof(WithEditors))]
     public async Task AnEditor_HidesAndShowsAgain_AndSendsItsKeysToTheHostWhenAsked_ThroughARestart(string format, string modulePath, string name)
     {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Editor windows are verified on macOS only.");
+        Assert.SkipUnless(OperatingSystem.IsMacOS() || OperatingSystem.IsWindows(), "Editor windows are verified on macOS and Windows only.");
         Assert.SkipWhen(Environment.GetEnvironmentVariable("CI") == "true", "CI runners have no plugins and no desktop session.");
-        Assert.SkipUnless(Directory.Exists(modulePath), $"{name} ({format}) is not installed at {modulePath}.");
+        Assert.SkipUnless(Directory.Exists(modulePath) || File.Exists(modulePath), $"{name} ({format}) is not installed at {modulePath}.");
         await using var host = new PluginTestHost();
         using var scanner = new PluginScanner(new PluginScannerOptions(Path.Combine(host.Directory, "scan")) { ScanTimeout = TimeSpan.FromSeconds(60) });
         var plugin = (await scanner.RescanAsync(modulePath, ignoreQuarantine: true, Ct)).Plugins.Single(p => p.DisplayName == name);
@@ -78,7 +88,7 @@ public sealed class PluginEditorTests
 
         // CLAP editors embedded in a worker window can route keys; a floating CLAP editor (its own window) cannot.
         var routed = await instance.SetEditorKeyboardAsync(true, Ct);
-        Assert.True(routed || format == "clap", "A VST3 editor in a worker window must route its keys on macOS.");
+        Assert.True(routed || format == "clap", "A VST3 editor in a worker window must route its keys.");
         Assert.True(await instance.SetEditorKeyboardAsync(false, Ct) || !routed);
 
         KillProcess(instance.WorkerProcessId!.Value);

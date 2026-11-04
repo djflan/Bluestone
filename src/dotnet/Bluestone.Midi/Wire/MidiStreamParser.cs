@@ -30,6 +30,21 @@ public sealed class MidiStreamParser
     /// <summary>Messages discarded because they were malformed or too large.</summary>
     public long DroppedMessages { get; private set; }
 
+    public void Reset()
+    {
+        if (_inSysEx || _messageLength > 0)
+        {
+            DroppedMessages++;
+        }
+
+        _sysExLength = 0;
+        _inSysEx = false;
+        _sysExOverflow = false;
+        _runningStatus = 0;
+        _messageLength = 0;
+        _expected = 0;
+    }
+
     public void Feed(ReadOnlySpan<byte> bytes, MidiMessageHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);

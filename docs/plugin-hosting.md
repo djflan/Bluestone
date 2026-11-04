@@ -22,11 +22,12 @@ compensation, editor windows, hosting modes, and crash recovery work for both. W
 | CI (Linux x64, macOS arm64, Windows x64) | Reference plugins; Bluestone's test plugins as VST 3 and CLAP (`NativePluginTests`, `ThirdPartyPluginDeviceTests`) | Everything in [Tests](#tests) except editors: scan, kinds, parameters, sample-accurate parameter changes, events, rendering into the plan, state, corrupt state, kill and restart, project save and reopen, an editor refused for a plugin without one |
 | macOS arm64, by hand and in tests | The Legend HZ, REVERSIDE (VST 3); Airwindows Consolidated, Surge XT (CLAP) (`InstalledPluginTests`) | Scan, load, audio out (a note for instruments, a sine through effects), a parameter set and state captured, worker killed while processing: Crashed, silence, restart restores the parameter and audio |
 | macOS arm64, in tests | REVERSIDE (VST 3), Airwindows Consolidated (CLAP) (`PluginEditorTests`, `PluginEditorWindowUiTests`) | Editor opens, closes, opens again; worker killed with the editor open; editor opens again after restart; hidden and shown again; keys routed to the host and back; an editor following the selected track unless pinned |
+| Windows x64, native desktop and in tests | Surge XT, Airwindows Consolidated (CLAP); Pro-Q 3 (VST 3) (`InstalledPluginTests`, `PluginEditorTests`, `PluginEditorWindowUiTests`) | CLAP processing, state and worker recovery; editors open/close, hide/show, route keys, survive follow/pin and reopen after worker restart |
 | macOS arm64, development probe | The Legend HZ (VST 3), Airwindows Consolidated (CLAP) | Editor windows appear at the plugin's size (checked through the window list, not by eye); Airwindows sent parameter edits from its editor |
 | macOS arm64, app and probe | SuperClassic, Scaler 3, Scaler 3 Audio, Melody Sauce 3 (VST 3) | Scanned by the app at start; loaded, processed, and saved by the probe; not covered by tests |
 
-`InstalledPluginTests` and `PluginEditorTests` skip with a reason when a plugin is missing, and the editor tests also
-skip on CI and outside macOS. The CLAP test subjects, Airwindows Consolidated (MIT) and Surge XT 1.3.4 (GPL-3.0), were
+`InstalledPluginTests` and `PluginEditorTests` skip with a reason when a plugin is missing, and editor tests skip on CI,
+which has no plugins or interactive desktop. The CLAP test subjects, Airwindows Consolidated (MIT) and Surge XT 1.3.4 (GPL-3.0), were
 installed from their GitHub releases into `~/Library/Audio/Plug-Ins/CLAP`; neither is part of Bluestone. What was not
 verified is listed under [Not done](#not-done).
 
@@ -271,17 +272,18 @@ Pipeline latency at 48 kHz (the plugin's own latency and both processes' schedul
 | 512 frames (10.7 ms) | 512 frames, 10.7 ms | 1024 frames, 21.3 ms |
 
 Depth 1 adds no pipeline latency, but the worker's wake-up, the plugin's processing, and the hand-back must all fit
-inside the same callback while Bluestone spins; any scheduling hiccup becomes a late block and silence. Depth 2
+inside the same callback; any scheduling hiccup becomes a late block and silence. Depth 2
 gives the worker a whole block period; larger depths tolerate more jitter for more latency. The tests prove ordering
 and correctness, not real-time performance under a real device.
 
 **Worker wake-up.** The processing thread polls for submitted blocks. After the last block it spins for 200 µs,
 then pauses between checks until 5 ms have passed, then sleeps 1 ms between checks. On macOS the thread runs on the
-real-time time-constraint policy and pauses in 50 µs `nanosleep` slices, blocked rather than computing. Elsewhere it
-calls `Thread.Yield` at above-normal priority, which keeps roughly one core busy per active instance and loses
-blocks when every core is busy (ADR 0043, plugin workers). In the 1 ms sleep phase, a new block waits up to about 1 ms
-on macOS and Linux and up to one timer tick (often 15.6 ms) on Windows, so the first blocks after a pause may be late.
-A real wake-up primitive (futex, eventfd, a Windows event) would remove that; it is not built.
+real-time time-constraint policy and pauses in 50 µs `nanosleep` slices, blocked rather than computing. On Windows it
+registers with MMCSS and uses a high-resolution waitable timer; elsewhere it calls `Thread.Yield` at above-normal
+priority. On this Windows x64 machine at depth 1, the timer had no steady-state misses at 128 frames; at 64 frames it
+missed 2 blocks versus 19 with `Thread.Yield`, so the 64-frame zero-miss target is not met. These are short, no-pressure
+runs with the reference plugin. In the 1 ms sleep phase, a new block waits up to about 1 ms on macOS and Linux and up to
+one timer tick (often 15.6 ms) on Windows, so the first blocks after a pause may be late.
 
 ## Failure policies
 
@@ -502,7 +504,7 @@ toggle beside **Open editor**.
 | Platform | Hide and show | Keys to Bluestone |
 | -------- | ------------- | ----------------- |
 | macOS | `orderOut` / `orderFrontRegardless`; a window whose screen is gone is centred on the main screen | Yes: key events for the window are taken in the worker's pump (verified with REVERSIDE and an embedded CLAP editor) |
-| Windows | `SW_HIDE` / `SW_SHOWNOACTIVATE`; a window on a missing monitor moves near the primary monitor's corner | Yes: `WM_KEY*`/`WM_SYSKEY*` for the window and its children are taken in the worker's pump (compiled and linted; not run on Windows) |
+| Windows | `SW_HIDE` / `SW_SHOWNOACTIVATE`; a window on a missing monitor moves near the primary monitor's corner | Yes: `WM_KEY*`/`WM_SYSKEY*` for the window and its children are taken in the worker's pump (tested with Pro-Q 3 and Surge XT on native Windows) |
 | Linux (X11) | Unmap / map (the window manager places it) | No: a plugin's view usually reads input on its own X connection, which the worker cannot intercept. The toggle is disabled and says so |
 
 A CLAP editor that floats in its own window is hidden and shown through the plugin (`show`/`hide`) and cannot route
@@ -636,7 +638,7 @@ copies of one plugin share a worker and go down together, which `HostingModeProc
 | The Plugins view and Device View: listing, progress, retry, hosting choices, a shared crash, Host individually | `PluginsViewModelTests`, `PluginDeviceStripTests`, `PluginsViewTests` (headless, with the mouse) |
 | The bridge: save, reopen, kill, restart, automation still valid, a missing plugin, removing a device, rate changes | `PluginDeviceHostTests` |
 | VST 3 and CLAP through the test plugins: scan, process, state, render, crash and restart, project devices, edits both ways | `NativePluginTests`, `ThirdPartyPluginDeviceTests` |
-| Installed VST 3 and CLAP plugins; editors (macOS) | `InstalledPluginTests`, `PluginEditorTests` |
+| Installed VST 3 and CLAP plugins; editors (macOS and Windows) | `InstalledPluginTests`, `PluginEditorTests`, `PluginEditorWindowUiTests` |
 | Plugin MIDI effects in the plan: transposition, automation, taps, killed and hung workers | `PluginMidiInThePlanTests`, `ChainRunnerTests.AnOutOfProcessDevice_*` |
 | Plugins in the audio engine: pitch through a mixer strip, connected audio, a killed worker, release on locate, zero allocation, instrument tracks | `AudioPluginTests`, `SoftwareInstrumentAudioTests` |
 | Live input through a plugin MIDI effect and instrument at the measured latency; killed workers leave no hanging note | `LiveInputPluginTests` |
@@ -647,8 +649,7 @@ copies of one plugin share a worker and go down together, which `HostingModeProc
 
 Not verified:
 
-- Editors on Windows and Linux (the code builds and the rest of the plugin path runs in CI; no window was opened
-  there); closing or resizing an editor window by hand; changing a hosting mode with an editor open.
+- Editors on Linux (the code builds and the rest of the plugin path runs in CI; no window was opened there); hand-checking editor resize/focus and multi-monitor recovery on Windows; changing a hosting mode with an editor open.
 - Plugin MIDI output from a third-party MIDI effect (none installed: Scaler 3 and Melody Sauce 3 are instruments that
   also put out MIDI, which Bluestone does not route from an instrument).
 - Third-party plugins live, delay-compensated, or played through the audio engine on a real audio device (those tests

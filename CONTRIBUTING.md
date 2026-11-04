@@ -22,7 +22,7 @@ In particular:
 
 ## Development setup
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (see `global.json` for the required feature band) and a stable [Rust toolchain](https://rustup.rs) (Rust 1.85 or later; `dotnet build` builds the crates in `src/native/` with `cargo`). On Linux, also install `libasound2-dev` (ALSA, for audio output). Then from the repository root:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (see `global.json` for the required feature band) and Rust 1.88 or later (Rust 2024 edition; `dotnet build` builds the crates in `src/native/` with `cargo`). On Linux, also install `libasound2-dev` (ALSA, for audio output). Standard Windows builds, CI, and releases use WASAPI only while ASIO licensing is pending. Do not enable the ASIO feature until the required Steinberg agreement is signed. For an ASIO development build after signing, install LLVM with `libclang`, obtain Steinberg ASIO SDK 2.3.4, set `CPAL_ASIO_DIR`, and explicitly pass `-p:BluestoneAsio=true`; always set the SDK path because `asio-sys` otherwise downloads its own copy. The SDK is not committed and uses Steinberg's proprietary licence, not GPLv3. Windows ARM64 builds use WASAPI only. Then from the repository root:
 
 ```sh
 dotnet restore src/dotnet/Bluestone.slnx

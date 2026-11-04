@@ -84,28 +84,40 @@ pub struct InputStream {
     shared: Arc<Shared>,
     sample_rate: u32,
     channels: u32,
+    _host_guard: crate::host::AsioStreamGuard,
 }
 
 impl InputStream {
     /// Opens a stopped input stream on `device_id` (an id from the input device list), or on the default input.
     pub fn open(
+        host_name: Option<&str>,
         device_id: Option<&str>,
         request: &StreamRequest,
         capture: CaptureFn,
         user_data: *mut c_void,
     ) -> Result<InputStream, String> {
-        let host = cpal::default_host();
+        let host = crate::host::select(host_name)?;
+        let is_asio = host_name.is_some_and(|name| name.eq_ignore_ascii_case("ASIO"));
         let device = match device_id {
             Some(id) if !id.is_empty() => {
                 let parsed = id
                     .parse()
                     .map_err(|e| format!("Not a device id: {id} ({e})"))?;
-                host.device_by_id(&parsed)
-                    .ok_or_else(|| format!("The audio device {id} is not available."))?
+                (if is_asio {
+                    crate::host::cached_asio_device(id, true)
+                } else {
+                    None
+                })
+                .or_else(|| host.device_by_id(&parsed))
+                .ok_or_else(|| format!("The audio device {id} is not available."))?
             }
-            _ => host
-                .default_input_device()
-                .ok_or_else(|| "There is no default audio input device.".to_string())?,
+            _ => (if is_asio {
+                crate::host::cached_asio_default(true)
+            } else {
+                None
+            })
+            .or_else(|| host.default_input_device())
+            .ok_or_else(|| "There is no default audio input device.".to_string())?,
         };
         let (config, format, buffer_range) = choose_input_config(&device, request)?;
         let shared = Arc::new(Shared::default());
@@ -123,14 +135,38 @@ impl InputStream {
             SampleFormat::F32 => {
                 build::<f32>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
             }
+            SampleFormat::F64 => {
+                build::<f64>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
+            SampleFormat::I8 => {
+                build::<i8>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
             SampleFormat::I16 => {
                 build::<i16>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
+            SampleFormat::I24 => {
+                build::<cpal::I24>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
             }
             SampleFormat::I32 => {
                 build::<i32>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
             }
+            SampleFormat::I64 => {
+                build::<i64>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
+            SampleFormat::U8 => {
+                build::<u8>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
             SampleFormat::U16 => {
                 build::<u16>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
+            SampleFormat::U24 => {
+                build::<cpal::U24>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
+            SampleFormat::U32 => {
+                build::<u32>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
+            }
+            SampleFormat::U64 => {
+                build::<u64>(&device, config, sink, Arc::clone(&shared), capacity_frames)?
             }
             other => return Err(format!("Unsupported sample format {other:?}.")),
         };
@@ -139,6 +175,7 @@ impl InputStream {
             shared,
             sample_rate: config.sample_rate,
             channels,
+            _host_guard: crate::host::AsioStreamGuard::new(host_name),
         })
     }
 
@@ -254,19 +291,33 @@ fn choose_input_config(device: &Device, request: &StreamRequest) -> Result<Chose
     let default = device
         .default_input_config()
         .map_err(|e| format!("The device has no default input configuration: {e}"))?;
-    let rate = if request.sample_rate == 0 {
-        default.sample_rate()
-    } else {
-        request.sample_rate
-    };
     let channels = if request.channels == 0 {
         u32::from(default.channels())
     } else {
         request.channels
     };
-    let ranges: Vec<_> = device
+    let supported: Vec<_> = device
         .supported_input_configs()
         .map_err(|e| format!("The device's configurations cannot be read: {e}"))?
+        .collect();
+    let rate_ranges: Vec<_> = supported
+        .iter()
+        .map(|r| {
+            (
+                r.min_sample_rate(),
+                r.max_sample_rate(),
+                u32::from(r.channels()),
+            )
+        })
+        .collect();
+    let rate = crate::host::resolve_sample_rate(
+        request.sample_rate,
+        default.sample_rate(),
+        channels,
+        &rate_ranges,
+    )?;
+    let ranges: Vec<_> = supported
+        .into_iter()
         .filter(|r| {
             u32::from(r.channels()) == channels
                 && r.min_sample_rate() <= rate
@@ -276,8 +327,16 @@ fn choose_input_config(device: &Device, request: &StreamRequest) -> Result<Chose
     let preference = [
         SampleFormat::F32,
         SampleFormat::I32,
+        SampleFormat::F64,
+        SampleFormat::I24,
         SampleFormat::I16,
+        SampleFormat::U24,
+        SampleFormat::U32,
         SampleFormat::U16,
+        SampleFormat::I64,
+        SampleFormat::U64,
+        SampleFormat::I8,
+        SampleFormat::U8,
     ];
     let range = preference
         .iter()
@@ -330,6 +389,7 @@ mod tests {
             channels: 0,
         };
         let result = InputStream::open(
+            None,
             Some("no-such-device"),
             &request,
             ignore,

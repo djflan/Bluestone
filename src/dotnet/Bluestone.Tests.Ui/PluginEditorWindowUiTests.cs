@@ -14,22 +14,30 @@ namespace Bluestone.Tests.Ui;
 
 /// <summary>
 /// A real plugin editor (an installed VST3, in its worker) following the selected track, pinned, and sending its keys to
-/// Bluestone, with the device panel's pin and keyboard toggles. Runs on macOS desktops where the plugin is installed.
+/// Bluestone, with the device panel's pin and keyboard toggles. Runs on macOS and Windows desktops where the plugin is installed.
 /// </summary>
 public sealed class PluginEditorWindowUiTests
 {
-    private const string ModulePath = "/Library/Audio/Plug-Ins/VST3/DPA_Reverside.vst3";
-    private const string Name = "REVERSIDE";
+    private static (string ModulePath, string Name) InstalledPlugin()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return (Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles), "VST3", "FabFilter Pro-Q 3.vst3"), "Pro-Q 3");
+        }
+
+        return ("/Library/Audio/Plug-Ins/VST3/DPA_Reverside.vst3", "REVERSIDE");
+    }
 
     [Fact]
     public Task AnEditor_FollowsTheSelectedTrack_UnlessPinned_AndItsPanelShowsPinAndKeyboard() => HeadlessApp.RunAsync(async () =>
     {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Editor windows are verified on macOS only.");
+        Assert.SkipUnless(OperatingSystem.IsMacOS() || OperatingSystem.IsWindows(), "Editor windows are verified on macOS and Windows only.");
         Assert.SkipWhen(Environment.GetEnvironmentVariable("CI") == "true", "CI runners have no plugins and no desktop session.");
-        Assert.SkipUnless(Directory.Exists(ModulePath), $"{Name} is not installed at {ModulePath}.");
+        var (modulePath, name) = InstalledPlugin();
+        Assert.SkipUnless(Directory.Exists(modulePath) || File.Exists(modulePath), $"{name} is not installed at {modulePath}.");
         var directory = Path.Combine(AppContext.BaseDirectory, "plugin-data", Guid.NewGuid().ToString("N"));
         using var scanner = new PluginScanner(new PluginScannerOptions(Path.Combine(directory, "scan")) { ScanTimeout = TimeSpan.FromSeconds(60) });
-        var plugin = (await scanner.RescanAsync(ModulePath, ignoreQuarantine: true, TestContext.Current.CancellationToken)).Plugins.Single(p => p.DisplayName == Name);
+        var plugin = (await scanner.RescanAsync(modulePath, ignoreQuarantine: true, TestContext.Current.CancellationToken)).Plugins.Single(p => p.DisplayName == name);
         await using var manager = new PluginHostManager(new PluginHostOptions { DataDirectory = directory, RequestTimeout = TimeSpan.FromSeconds(30) });
         var session = new ProjectSession();
         session.Execute(ProjectCommands.AddTrack(Bluestone.Domain.Sequencing.Track.Create("Vocal", Bluestone.Domain.Sequencing.TrackRole.Hybrid)));
@@ -38,7 +46,7 @@ public sealed class PluginEditorWindowUiTests
         await using var app = await AppUnderTest.OpenAsync(session, s =>
         {
             host = new PluginDeviceHost(manager, s, [plugin]);
-            host.SetAvailable([plugin], ImmutableDictionary<PluginIdentity, string>.Empty.Add(plugin, ModulePath));
+            host.SetAvailable([plugin], ImmutableDictionary<PluginIdentity, string>.Empty.Add(plugin, modulePath));
             return host;
         });
         app.Window.Width = 1440;

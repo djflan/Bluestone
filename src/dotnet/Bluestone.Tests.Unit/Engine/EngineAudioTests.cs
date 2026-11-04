@@ -53,19 +53,19 @@ public sealed class EngineAudioTests : IAsyncDisposable
         var link = new RecordingLink();
         Client.Connected(link, restarted: false);
 
-        Assert.False(_audio.Start(new AudioSettings(true, "studio", 48_000, 128, QueuedFrames: 1024) { EngineQueuedFrames = 0 }));
+        Assert.False(_audio.Start(new AudioSettings(true, "studio", 48_000, 128, QueuedFrames: 1024) { EngineQueuedFrames = 0, Host = "ASIO" }));
         var sent = Assert.IsType<SetAudio>(Assert.Single(link.Sent));
-        Assert.Equal(new SetAudio(sent.Request, true, "studio", 48_000, 128, 0, 256, false), sent);
+        Assert.Equal(new SetAudio(sent.Request, true, "studio", 48_000, 128, 0, 256, false, Host: "ASIO"), sent);
         Assert.True(_audio.IsStarting);
         Assert.False(_audio.IsWaitingForDevice);
         Assert.True(_audio.RendersInEngine);
 
-        Client.Received(link, new AudioDeviceStatus(sent.Request, AudioDeviceState.Running, null, 48_000, 2, 128, 0, null));
+        Client.Received(link, new AudioDeviceStatus(sent.Request, AudioDeviceState.Running, null, 48_000, 2, 128, 0, null, DeviceBufferFrames: 128));
 
         Assert.False(_audio.IsStarting);
         Assert.True(_audio.IsRunning);
         Assert.False(_audio.IsWaitingForDevice);
-        Assert.Equal(new AudioStreamInfo(48_000, 2, 128, 0, null, 0), _audio.Stream);
+        Assert.Equal(new AudioStreamInfo(48_000, 2, 128, 0, null, 0) { DeviceBufferFrames = 128 }, _audio.Stream);
         Assert.Null(_audio.Problem);
 
         _audio.TestTone = true;

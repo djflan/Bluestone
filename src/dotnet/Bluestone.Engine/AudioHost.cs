@@ -36,15 +36,13 @@ internal sealed class AudioHost : IDisposable
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MeterInterval = TimeSpan.FromMilliseconds(33);
+    private const long AsioRetryIntervalMilliseconds = 5000;
 
     /// <summary>How long the live queue stays after the last live note before the playback queue comes back (ADR 0035).</summary>
     private static readonly TimeSpan LiveHold = TimeSpan.FromSeconds(10);
     private const int MaxProblemLength = 400;
 
-    /// <summary>
-    /// The share of each block's period that all plugin collects in it may wait for together, as the --plugin-pipeline
-    /// probe allowed (ADR 0043): 1.6 ms at 128 frames, 0.8 ms at 64, at 48 kHz.
-    /// </summary>
+    /// <summary>The plugin-pipeline probe's render-thread collect budget share (ADR 0043).</summary>
     internal const double CollectShare = 0.6;
 
     private readonly PlaybackEngine _playback;
@@ -73,6 +71,7 @@ internal sealed class AudioHost : IDisposable
     private string? _waitingReason;
     private string? _wantedName;
     private bool _onFallback;
+    private long _nextAsioRetryMilliseconds;
     private string _devicesTried = string.Empty;
     private bool _statusChanged;
     private string? _reportedProblem;
@@ -292,11 +291,12 @@ internal sealed class AudioHost : IDisposable
             _problem = null;
             _waitingReason = null;
             _onFallback = false;
+            _nextAsioRetryMilliseconds = 0;
             return;
         }
 
         if (previous is { Enabled: true } && previous.DeviceId == audio.DeviceId && previous.SampleRate == audio.SampleRate && previous.BufferFrames == audio.BufferFrames
-            && previous.QueuedFrames == audio.QueuedFrames && previous.MaxBlockFrames == audio.MaxBlockFrames)
+            && previous.QueuedFrames == audio.QueuedFrames && previous.MaxBlockFrames == audio.MaxBlockFrames && previous.Host == audio.Host)
         {
             if (_engine is { } engine)
             {
@@ -310,6 +310,7 @@ internal sealed class AudioHost : IDisposable
         _wantedName = null;
         _waitingReason = null;
         _onFallback = false;
+        _nextAsioRetryMilliseconds = 0;
         Recover(null);
     }
 
@@ -325,15 +326,43 @@ internal sealed class AudioHost : IDisposable
             _waitingReason = null;
             _problem = null;
             _onFallback = false;
+            _nextAsioRetryMilliseconds = 0;
         }
-        else if (wanted.DeviceId is not null && (_onFallback || TryOpen(wanted, null, out _)))
+        else if (wanted.Host == "ASIO" && _output is not null && _onFallback)
         {
+            _nextAsioRetryMilliseconds = Environment.TickCount64 + AsioRetryIntervalMilliseconds;
             _waitingReason = null;
-            _problem = $"{Name(wanted.DeviceId)} is not available ({problem}). Playing through the system default output until it returns.";
+            var unavailable = wanted.DeviceId is null ? "ASIO" : Name(wanted.DeviceId);
+            _problem = $"{unavailable} is not available ({problem}). Continuing on the fallback output until it returns.";
+            _onFallback = true;
+        }
+        else if (wanted.Host == "ASIO" && TryOpen(wanted with { Host = "WASAPI" }, null, out _))
+        {
+            _nextAsioRetryMilliseconds = Environment.TickCount64 + AsioRetryIntervalMilliseconds;
+            _waitingReason = null;
+            var unavailable = wanted.DeviceId is null ? "ASIO" : Name(wanted.DeviceId);
+            _problem = $"{unavailable} is not available ({problem}). Playing through WASAPI until it returns.";
+            _onFallback = true;
+        }
+        else if (wanted.Host != "ASIO" && wanted.DeviceId is not null && (_onFallback && _output is not null || TryOpen(wanted, null, out _)))
+        {
+            if (wanted.Host == "ASIO")
+            {
+                _nextAsioRetryMilliseconds = Environment.TickCount64 + AsioRetryIntervalMilliseconds;
+            }
+
+            _waitingReason = null;
+            var fallback = wanted.Host == "ASIO" ? "the ASIO default output" : "the system default output";
+            _problem = $"{Name(wanted.DeviceId)} is not available ({problem}). Playing through {fallback} until it returns.";
             _onFallback = true;
         }
         else if (_output is null)
         {
+            if (wanted.Host == "ASIO")
+            {
+                _nextAsioRetryMilliseconds = Environment.TickCount64 + AsioRetryIntervalMilliseconds;
+            }
+
             _waitingReason = lost ?? _waitingReason ?? problem;
             _problem = $"{_waitingReason} Audio starts by itself when the device is available, or choose another device.";
             _onFallback = false;
@@ -351,7 +380,7 @@ internal sealed class AudioHost : IDisposable
         }
 
         IAudioOutput output;
-        var request = new AudioStreamRequest(deviceId, wanted.SampleRate, wanted.BufferFrames, QueuedFrames: wanted.QueuedFrames);
+        var request = new AudioStreamRequest(deviceId, wanted.SampleRate, wanted.BufferFrames, QueuedFrames: wanted.QueuedFrames, Host: wanted.Host);
         try
         {
             output = Open(request);
@@ -371,7 +400,7 @@ internal sealed class AudioHost : IDisposable
             TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null,
             CollectBudgetShare = CollectShare,
         };
-        var device = Math.Max(wanted.BufferFrames, block);
+        var device = Math.Max(Math.Max(wanted.BufferFrames, output.Status.MaxBufferFrames), block);
         engine.Transport.Follow(_timeline, ToleranceFrames(rate, device, block));
         Volatile.Write(ref _realizer, new AudioGraphRealizer(rate, block, ProcessorFor));
         _liveQueue = false;
@@ -444,7 +473,26 @@ internal sealed class AudioHost : IDisposable
             return;
         }
 
-        if ((_output is null && DeviceList() != _devicesTried) || (_onFallback && Listed(wanted.DeviceId)))
+        if (wanted.Host == "ASIO" && (_output is null || _onFallback) && Environment.TickCount64 >= _nextAsioRetryMilliseconds)
+        {
+            if (WantedDeviceListed(wanted))
+            {
+                Recover(null);
+            }
+            else
+            {
+                _nextAsioRetryMilliseconds = Environment.TickCount64 + AsioRetryIntervalMilliseconds;
+                if (_output is null && DeviceList() != _devicesTried)
+                {
+                    Recover(null);
+                }
+            }
+
+            return;
+        }
+
+        if ((_output is null && wanted.Host != "ASIO" && DeviceList() != _devicesTried)
+            || (_onFallback && wanted.Host != "ASIO" && wanted.DeviceId is not null && Listed(wanted.DeviceId)))
         {
             Recover(null);
         }
@@ -646,7 +694,7 @@ internal sealed class AudioHost : IDisposable
             : AudioDeviceState.Off;
         var problem = _problem is null ? null : Shorten(_problem);
         return _output is { } output && _engine is { } engine
-            ? new AudioDeviceStatus(_wanted?.Request ?? 0, state, problem, output.SampleRate, output.Channels, engine.BlockFrames, output.QueuedFrames, output.RenderThreadPolicy)
+            ? new AudioDeviceStatus(_wanted?.Request ?? 0, state, problem, output.SampleRate, output.Channels, engine.BlockFrames, output.QueuedFrames, output.RenderThreadPolicy, output.Status.DeviceBufferFrames)
             : new AudioDeviceStatus(_wanted?.Request ?? 0, state, problem, 0, 0, 0, 0, null);
     }
 
@@ -722,6 +770,17 @@ internal sealed class AudioHost : IDisposable
     {
         var devices = _backend.ListDevices();
         return deviceId is null ? devices.Count > 0 : devices.Any(d => d.Id == deviceId);
+    }
+
+    private bool WantedDeviceListed(SetAudio settings)
+    {
+        var devices = _backend.ListDevices();
+        if (settings.Host is { } host)
+        {
+            devices = devices.Where(d => d.Host.Equals(host, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+
+        return settings.DeviceId is null ? devices.Count > 0 : devices.Any(d => d.Id == settings.DeviceId);
     }
 
     private string Name(string? deviceId) =>

@@ -35,7 +35,7 @@ Read the full [product vision](docs/product-vision.md), the public [roadmap](doc
 - A piano roll with velocity and controller lanes, an event list, track automation, zooming, snapping, and keyboard editing.
 - MIDI recording with count-in, metronome, punch, cycle recording, MIDI thru, and computer-keyboard input.
 - Standard MIDI File import and export with diagnostics for anything that cannot be carried over.
-- Core MIDI, WinMM, and ALSA MIDI output; Core MIDI input on macOS; lossless SysEx preservation; and a built-in MIDI monitor.
+- Core MIDI, WinMM, and ALSA MIDI output; Core MIDI and WinMM input; lossless SysEx preservation; and a built-in MIDI monitor.
 - Data-defined hardware profiles for voices, banks, controllers, initialization, and parameters translated to CC, RPN, NRPN, or SysEx.
 
 ### Devices and routing
@@ -78,7 +78,7 @@ The current alpha does not yet provide:
 - a unified hardware-instrument device combining MIDI or CV output, audio return, profile, and latency correction;
 - compressed audio playback;
 - complete mixer, send, and device-automation drawing;
-- MIDI input on Windows and Linux;
+- MIDI input on Linux;
 - a clip and scene launcher;
 - a full modulation or generative environment;
 - MIDI 2.0, MPE, or broad per-note expression; or
@@ -104,12 +104,12 @@ The clip/scene launcher, full modulation system, large first-party device catalo
 
 ## Platform status
 
-macOS is the current development and physically tested platform. Windows and Linux builds run in CI, but hosted runners have no audio devices or installed third-party plugins.
+macOS is the current development platform. Windows x64 has also been built and tested on a native desktop, including software MIDI loopback, WASAPI output, installed plugins, and plugin editors. ASIO was tested only in an explicitly enabled local build and is excluded from standard Windows CI and releases pending licensing. No physical MIDI instrument or external audio interface was connected for those checks. Hosted Windows and Linux CI runners have no audio devices or installed third-party plugins.
 
 | Platform | MIDI | Audio output | Plugins |
 | -------- | ---- | ------------ | ------- |
 | macOS, Apple silicon | Core MIDI output and timestamped input; hardware, IAC, network, and Bluestone virtual ports | Core Audio heard and measured | Installed VST 3 and CLAP plugins tested, including editors |
-| Windows, x64 in CI and ARM64 by hand | WinMM output with SysEx; computer keyboard input | WASAPI built and automatically tested; not yet heard as part of the current verification record | Bluestone test plugins in CI; third-party editors not physically verified |
+| Windows x64, native and CI; ARM64 build | WinMM output and input with SysEx; Windows MIDI Services loopback; computer keyboard input | WASAPI is built in standard Windows builds; ASIO was tested locally at its 960-frame/20 ms driver default but is excluded from standard builds pending licensing; audio not listened to, external RME not connected | Surge XT and Airwindows CLAP processing pass; Pro-Q 3 and Surge XT editors pass lifecycle and workspace tests; no physical MIDI instrument |
 | Linux, x64 in CI | ALSA sequencer output with SysEx and a virtual port; computer keyboard input | ALSA built and automatically tested; not yet heard as part of the current verification record | Bluestone test plugins in CI; third-party editors not physically verified |
 
 The Release 1.0 work begins by converting this into an explicit supported, experimental, and deferred matrix with measurable timing and latency gates.
@@ -121,13 +121,13 @@ Timing targets, the probes that judge them, and current measurements are in [ADR
 - played live notes from a Core MIDI input within the device's reported output latency plus one buffer period, plus at most 0.04 ms;
 - did not collect garbage or compile code once.
 
-A loopback capture agrees with the heard-time model within 0.4 ms. MIDI arrival at the receiver, immediate MIDI output, and MIDI thru have been measured only with the real-time work in the application process (within 0.3 ms), not yet through the engine. Keys from the computer keyboard pass through the application process first, so a garbage collection there can delay them (0.31 ms at most in the same runs). On Windows and Linux the engine process is opt-in (`BLUESTONE_ENGINE=1`) until it is measured on native hardware there.
+A loopback capture agrees with the heard-time model within 0.4 ms. MIDI arrival at the receiver, immediate MIDI output, and MIDI thru have been measured through the engine only on macOS. On native x64 Windows, the high-resolution waitable timer measured 0.32 ms p50 and 0.87 ms p99 immediate WinMM dispatch lateness (0.902 ms max); spinning had a 3.067 ms maximum and 32 messages over 2 ms late. A Windows MIDI Services software loopback measured 0.077 ms median WinMM OS hop and 0.312 ms median thru round trip, with no dropped messages. Engine live input over that loopback averaged 9.5 ms added latency and peaked at 16.8 ms, above the 2 ms target, so the engine remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux. These software-loopback measurements do not establish physical-device clock accuracy or acoustic latency.
 
 ## Build and run
 
 Bluestone is a C#/.NET application by default. Rust is reserved for measured real-time constraints and native interfaces, with small, versioned boundaries between the two. See [ADR 0026](docs/adr/0026-native-technology-policy.md) for the language policy.
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) required by `global.json` and a stable Rust toolchain supporting edition 2024. Linux also needs the ALSA development files. From the repository root:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) required by `global.json` and Rust 1.88 or later. Linux also needs the ALSA development files. Standard Windows builds, CI, and releases use WASAPI only while ASIO licensing is pending. Do not enable the ASIO feature until the required Steinberg agreement is signed. For an explicitly enabled ASIO development build after signing, install LLVM with `libclang`, obtain ASIO SDK 2.3.4, set `CPAL_ASIO_DIR`, and pass `-p:BluestoneAsio=true`; always set the SDK path because `asio-sys` otherwise downloads its own copy. Windows ARM64 remains WASAPI-only. From the repository root:
 
 ```sh
 dotnet restore src/dotnet/Bluestone.slnx

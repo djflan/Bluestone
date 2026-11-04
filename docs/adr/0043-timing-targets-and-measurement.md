@@ -1,7 +1,7 @@
 # 0043. Timing targets, how they are measured, and how C# meets them
 
 - Status: Accepted; amends 0012 (playback thread's final approach), 0026 (no Rust render path), 0032 and 0035 (where
-  the real-time work runs)
+  the real-time work runs); Windows measurements are recorded in 0047
 - Date: 2026-11-03
 
 ## Context

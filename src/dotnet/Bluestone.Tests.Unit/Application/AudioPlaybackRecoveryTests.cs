@@ -25,7 +25,7 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
     {
         var session = new ProjectSession();
         _playback = new PlaybackController(session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
-        _audio = new AudioPlayback(_playback, session, _ => null, backend: _backend, prepareSampleRate: Prepare, checkInterval: Timeout.InfiniteTimeSpan);
+        _audio = new AudioPlayback(_playback, session, _ => null, backend: _backend, prepareSampleRate: Prepare, checkInterval: Timeout.InfiniteTimeSpan, clock: _clock);
     }
 
     public async ValueTask DisposeAsync()
@@ -96,6 +96,165 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         Assert.True(_audio.IsRunning);
         Assert.False(_audio.IsWaitingForDevice);
         Assert.Null(_audio.Problem);
+    }
+
+    [Fact]
+    public void ASIOOpenFailure_FallsBackToWASAPI()
+    {
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+
+        Assert.True(_audio.Start(new AudioSettings(true) { Host = "ASIO" }));
+
+        Assert.Equal("ASIO", _backend.Requests[0].Host);
+        Assert.Equal("WASAPI", _backend.Requests[^1].Host);
+        Assert.True(_audio.IsOnFallback);
+        Assert.Contains("Playing through WASAPI", _audio.Problem, StringComparison.Ordinal);
+
+        var attempts = _backend.Attempts;
+        _audio.CheckDevice();
+        Assert.Equal(attempts, _backend.Attempts);
+    }
+
+    [Fact]
+    public void ASIOWithoutADevice_UsesTheBoundedRetryInterval()
+    {
+        Assert.False(_audio.Start(new AudioSettings(true) { Host = "ASIO" }));
+        var lists = _backend.ListCalls;
+        var attempts = _backend.Attempts;
+
+        _audio.CheckDevice();
+
+        Assert.Equal(lists, _backend.ListCalls);
+        Assert.Equal(attempts, _backend.Attempts);
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _audio.CheckDevice();
+        Assert.Equal(lists + 2, _backend.ListCalls);
+        Assert.Equal(attempts, _backend.Attempts);
+        _audio.CheckDevice();
+        Assert.Equal(lists + 2, _backend.ListCalls);
+
+        _backend.Devices.Add(new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024));
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _audio.CheckDevice();
+
+        Assert.True(_audio.IsRunning);
+        Assert.Equal("ASIO", _backend.Requests[^1].Host);
+    }
+
+    [Fact]
+    public void ASIOWaiting_OpensWASAPIWhenItAppears()
+    {
+        Assert.False(_audio.Start(new AudioSettings(true) { Host = "ASIO" }));
+        var attempts = _backend.Attempts;
+
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        _audio.CheckDevice();
+
+        Assert.True(_audio.IsRunning);
+        Assert.True(_audio.IsOnFallback);
+        Assert.Equal("WASAPI", _backend.Requests[^1].Host);
+        Assert.True(_backend.Attempts > attempts);
+    }
+
+    [Fact]
+    public void ASIOFallback_DoesNotReopenWASAPIUntilTheASIODeviceReturns()
+    {
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        Assert.True(_audio.Start(new AudioSettings(true) { Host = "ASIO" }));
+        var attempts = _backend.Attempts;
+
+        _audio.CheckDevice();
+
+        Assert.Equal(attempts, _backend.Attempts);
+        Assert.True(_audio.IsOnFallback);
+        _backend.Devices.Add(new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024));
+        _audio.CheckDevice();
+
+        Assert.Equal(attempts, _backend.Attempts);
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _audio.CheckDevice();
+        Assert.Equal("ASIO", _backend.Requests[^1].Host);
+        Assert.False(_audio.IsOnFallback);
+        var requests = _backend.Requests.Count;
+        var opens = _backend.Attempts;
+        _clock.Advance(TimeSpan.FromSeconds(10));
+        _audio.CheckDevice();
+
+        Assert.Equal(requests, _backend.Requests.Count);
+        Assert.Equal(opens, _backend.Attempts);
+    }
+
+    [Fact]
+    public void ASIODefaultDevice_ReturnsFromWASAPIFallbackWhenTheDriverAppears()
+    {
+        var asio = new AudioDeviceInfo("asio", "Interface", "ASIO", true, 48_000, 2, [48_000], [2], 1024, 1024);
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        Assert.True(_audio.Start(new AudioSettings(true) { Host = "ASIO" }));
+        Assert.True(_audio.IsOnFallback);
+
+        _backend.Devices.Add(asio);
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _audio.CheckDevice();
+
+        Assert.False(_audio.IsOnFallback);
+        Assert.Equal("asio", _backend.Opened[^1].Device);
+        Assert.Equal("ASIO", _backend.Requests[^1].Host);
+        var requests = _backend.Requests.Count;
+        _clock.Advance(TimeSpan.FromSeconds(10));
+        _audio.CheckDevice();
+        Assert.Equal(requests, _backend.Requests.Count);
+    }
+
+    [Fact]
+    public void MissingASIODevice_UsesTheASIODefaultAndWaitsBeforeRetrying()
+    {
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+
+        Assert.True(_audio.Start(new AudioSettings(true, "missing-asio-device") { Host = "ASIO" }));
+
+        Assert.True(_audio.IsOnFallback);
+        Assert.Equal("WASAPI", _backend.Requests[^1].Host);
+        Assert.Null(_backend.Requests[^1].DeviceId);
+        Assert.Contains("Playing through WASAPI", _audio.Problem, StringComparison.Ordinal);
+        var attempts = _backend.Attempts;
+
+        _audio.CheckDevice();
+        Assert.Equal(attempts, _backend.Attempts);
+    }
+
+    [Fact]
+    public void FailedASIORetryAndWASAPIStarts_WaitWithoutReportingFallbackPlayback()
+    {
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        Assert.True(_audio.Start(new AudioSettings(true, "asio-device") { Host = "ASIO" }));
+        Assert.True(_audio.IsOnFallback);
+
+        _backend.Devices.Add(new AudioDeviceInfo("asio-device", "Interface", "ASIO", true, 48_000, 2, [48_000], [2], 1024, 1024));
+        _backend.StartFailHost = "*";
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _audio.CheckDevice();
+
+        Assert.False(_audio.IsRunning);
+        Assert.False(_audio.IsOnFallback);
+        Assert.True(_audio.IsWaitingForDevice);
+    }
+
+    [Fact]
+    public void ASIOStartFailure_RestoresTheWASAPIFallback()
+    {
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        Assert.True(_audio.Start(new AudioSettings(true, "asio-device") { Host = "ASIO" }));
+        Assert.True(_audio.IsOnFallback);
+
+        _backend.Devices.Add(new AudioDeviceInfo("asio-device", "Interface", "ASIO", true, 48_000, 2, [48_000], [2], 1024, 1024));
+        _backend.StartFailHost = "ASIO";
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _audio.CheckDevice();
+
+        Assert.True(_audio.IsRunning);
+        Assert.True(_audio.IsOnFallback);
+        Assert.Equal("WASAPI", _backend.Requests[^1].Host);
     }
 
     [Fact]
@@ -191,20 +350,38 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         public List<FakeOutput> Opened { get; } = [];
 
+        public List<AudioStreamRequest> Requests { get; } = [];
+
         public int Attempts { get; private set; }
 
-        public IReadOnlyList<AudioDeviceInfo> ListDevices() => [.. Devices];
+        public int ListCalls { get; private set; }
+
+        public string? StartFailHost { get; set; }
+
+        public IReadOnlyList<AudioDeviceInfo> ListDevices()
+        {
+            ListCalls++;
+            return [.. Devices];
+        }
 
         public IAudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request)
         {
             Attempts++;
-            var device = request.DeviceId is null ? Devices.FirstOrDefault(d => d.IsDefault) : Devices.FirstOrDefault(d => d.Id == request.DeviceId);
+            Requests.Add(request);
+            var hostDevices = Devices.Where(d => request.Host is null || d.Host == request.Host).ToArray();
+            var device = request.DeviceId is null
+                ? hostDevices.FirstOrDefault(d => d.IsDefault) ?? hostDevices.FirstOrDefault()
+                : hostDevices.FirstOrDefault(d => d.Id == request.DeviceId);
             if (device is null)
             {
                 throw new AudioDeviceException("The device is not connected.");
             }
 
-            var output = new FakeOutput(device.Id, device.DefaultSampleRate) { QueuedFrames = request.QueuedFrames };
+            var output = new FakeOutput(device.Id, device.DefaultSampleRate)
+            {
+                QueuedFrames = request.QueuedFrames,
+                StartFails = StartFailHost is not null && (StartFailHost == "*" || StartFailHost == request.Host),
+            };
             Opened.Add(output);
             return output;
         }
@@ -218,6 +395,8 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         public int Disposals { get; private set; }
 
+        public bool StartFails { get; set; }
+
         public int SampleRate => rate;
 
         public int Channels => 2;
@@ -230,10 +409,17 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         public AudioStreamStatus Status => Disposals > 0
             ? throw new ObjectDisposedException(nameof(FakeOutput))
-            : new AudioStreamStatus(Failed ? AudioStreamState.Failed : AudioStreamState.Running, rate, 2, 256, 256, 256, 256, 0, 0, 0, 0, 0, TimeSpan.Zero, Failed ? AudioStreamError.DeviceNotAvailable : AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, 0, 0, 0);
+            : new AudioStreamStatus(Failed ? AudioStreamState.Failed : AudioStreamState.Running, rate, 2, 256, 256, 256, 256, 0, 0, 0, 0, 0, TimeSpan.Zero, Failed ? AudioStreamError.DeviceNotAvailable : AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, 0, 0, 0)
+            {
+                DeviceBufferFrames = 960,
+            };
 
         public void Start()
         {
+            if (StartFails)
+            {
+                throw new AudioDeviceException("The device refused to start.");
+            }
         }
 
         public void Dispose() => Disposals++;

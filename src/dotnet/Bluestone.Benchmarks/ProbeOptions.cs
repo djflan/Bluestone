@@ -6,7 +6,7 @@ namespace Bluestone.Benchmarks;
 /// <summary>
 /// Options shared by the timing probes (ADR 0043):
 /// <c>[seconds] [--pressure none|app|edit|churn|full] [--sched default|timer|promote|realtime] [--report DIR|FILE.json]
-/// [--repeat N] [--isolate] [--device NAME]</c>.
+/// [--repeat N] [--isolate] [--host WASAPI|ASIO] [--device NAME]</c>.
 /// </summary>
 /// <remarks>
 /// <c>--isolate</c> is the "separate engine process" experiment: the probe runs again as a child process with no
@@ -41,6 +41,8 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
 
     public int Int(string name, int fallback) => int.Parse(Option(Args, name) ?? fallback.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 
+    public string? OutputHost() => Option(Args, "--host");
+
     /// <summary>
     /// The output device named by <c>--device</c> (exact name, or a unique part of it, ignoring case), or the system
     /// default without it. Naming the device keeps a measurement series on one device even if the default changes, for
@@ -49,9 +51,21 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
     public (string? Id, string Name) OutputDevice()
     {
         var devices = Bluestone.Audio.Devices.AudioDevices.List();
+        var host = Option(Args, "--host");
+        if (host is not null)
+        {
+            devices = [.. devices.Where(d => d.Host.Equals(host, StringComparison.OrdinalIgnoreCase))];
+            if (devices.IsEmpty)
+            {
+                throw new ArgumentException($"--host {host} has no output devices. Hosts: {string.Join(", ", Bluestone.Audio.Devices.AudioDevices.ListHosts())}.");
+            }
+        }
+
         if (Option(Args, "--device") is not { } wanted)
         {
-            return (null, devices.FirstOrDefault(d => d.IsDefault)?.Name ?? "default");
+            var defaultName = devices.FirstOrDefault(d => d.IsDefault)?.Name
+                ?? (host is null ? "default" : devices[0].Name);
+            return (null, defaultName);
         }
 
         var matches = devices.Where(d => d.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -62,7 +76,7 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
 
         return matches.Count == 1
             ? (matches[0].Id, matches[0].Name)
-            : throw new ArgumentException($"--device {wanted} matches {(matches.Count == 0 ? "no" : "more than one")} output device. Devices: {string.Join(", ", devices.Select(d => d.Name))}.");
+            : throw new ArgumentException($"--device {wanted} matches {(matches.Count == 0 ? "no" : "more than one")} output device. Devices: {string.Join(", ", devices.Select(d => $"{d.Name} ({d.Host})"))}.");
     }
 
     /// <summary>Settings every report carries.</summary>
@@ -73,6 +87,7 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
         ["isolation"] = PressureElsewhere is null ? "in-process" : "process",
         ["scheduling"] = Scheduling,
         ["final-approach"] = PreciseSleep() is null ? "spin" : "precise sleep",
+        ["host"] = Option(Args, "--host") ?? "system default",
     };
 
     /// <summary>Starts the pressure threads for <see cref="Pressure"/>; cancel the token and join them to stop.</summary>
@@ -181,11 +196,20 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
     };
 
     /// <summary>
-    /// The playback thread's final approach to a due time: <c>--final sleep</c> (default, as the app does on macOS) uses
-    /// the platform's precise sleep, <c>--final spin</c> spins as before ADR 0043.
+    /// The playback thread's final approach to a due time: <c>--final sleep</c> uses the platform's precise sleep,
+    /// <c>--final spin</c> spins as before ADR 0043.
     /// </summary>
-    public Action<TimeSpan>? PreciseSleep() =>
-        (Option(Args, "--final") ?? "sleep") == "sleep" && OperatingSystem.IsMacOS() ? Bluestone.Platform.CoreMidi.ThreadScheduling.SleepPrecisely : null;
+    public Action<TimeSpan>? PreciseSleep()
+    {
+        if ((Option(Args, "--final") ?? "sleep") != "sleep")
+        {
+            return null;
+        }
+
+        return OperatingSystem.IsMacOS()
+            ? Bluestone.Platform.CoreMidi.ThreadScheduling.SleepPrecisely
+            : OperatingSystem.IsWindows() ? Bluestone.Platform.Windows.ThreadScheduling.SleepPrecisely : null;
+    }
 
     /// <summary>Prints and writes the report.</summary>
     public void Finish(TimingReport report)

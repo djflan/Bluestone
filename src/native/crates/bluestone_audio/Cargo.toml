@@ -2,6 +2,7 @@
 name = "bluestone_audio"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Audio device output for Bluestone through cpal, behind a small versioned C ABI."
@@ -9,6 +10,9 @@ description = "Audio device output for Bluestone through cpal, behind a small ve
 [lib]
 name = "bluestone_audio"
 crate-type = ["cdylib", "rlib"]
+
+[features]
+asio = ["cpal/asio"]
 
 [dependencies]
 cpal = "0.18.2"

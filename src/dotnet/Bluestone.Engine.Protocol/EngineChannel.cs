@@ -8,7 +8,7 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 6;
+    public const int Version = 9;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;
@@ -49,6 +49,9 @@ public static class EngineLimits
     public const int MaxSampleRate = 768_000;
 
     public const int MaxBufferFrames = 8192;
+
+    /// <summary>The largest device buffer reported by an audio driver.</summary>
+    public const int MaxDeviceBufferFrames = int.MaxValue;
 
     public const int MaxQueuedFrames = 65_536;
 

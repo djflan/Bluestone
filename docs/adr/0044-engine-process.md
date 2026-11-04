@@ -155,8 +155,8 @@ round of commands.
   and ReadyToRun is used.
 - **Collections are reported:** the engine counts every collection and its pause. A probe fails on any pause longer
   than 1 ms during playback.
-- Thread policies as today: the macOS real-time policy for the playback thread and render threads, and MMCSS plus a
-  1 ms timer on Windows (ADRs 0012, 0013, 0043).
+- Thread policies as today: the macOS real-time policy for the playback thread and render threads, and MMCSS, a 1 ms
+  timer-resolution request, and a high-resolution final wait on Windows (ADRs 0012, 0013, 0043, 0047).
 
 ### Start-up
 
@@ -192,7 +192,8 @@ With `BLUESTONE_ENGINE=1`, MIDI playback runs in the engine. It is still opt-in,
 **What moved:**
 
 - **Playback.** The engine runs `PlaybackEngine` on its own playback thread, with the macOS real-time policy and
-  precise sleep, or MMCSS and a 1 ms timer on Windows. It plays plans; it never compiles them.
+  precise sleep, or MMCSS, a 1 ms timer-resolution request, and a high-resolution final wait on Windows. It plays
+  plans; it never compiles them.
 - **Outputs.** The engine opens the operating system's endpoints itself (CoreMIDI, WinMM, or ALSA, chosen as the UI
   chooses them). Endpoints only the UI can reach are forwarded: the monitor and test buses, the computer keyboard, and
   the UI's own virtual ports such as "Bluestone Out". The engine plays to them through a forwarding output, which

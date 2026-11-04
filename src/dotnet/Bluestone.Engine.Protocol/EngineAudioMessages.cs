@@ -10,17 +10,18 @@ namespace Bluestone.Engine.Protocol;
 /// <summary>Bluestone → engine: the audio output to open, or none. Sent again whenever anything here changes.</summary>
 /// <param name="Request">Increases with every message; the engine echoes it in <see cref="AudioDeviceStatus"/>.</param>
 /// <param name="Enabled">Open a device; false closes it and stops waiting for it.</param>
-/// <param name="DeviceId">The device, or null for the system's default output.</param>
+/// <param name="DeviceId">The device, or null for the selected host's default output.</param>
 /// <param name="SampleRate">In Hz; 0 for the device's own.</param>
-/// <param name="BufferFrames">Frames per device callback; 0 for the device's own.</param>
+/// <param name="BufferFrames">Frames per callback; 0 for the device or ASIO driver's default.</param>
 /// <param name="QueuedFrames">Frames rendered ahead of the device (0: render in the device callback).</param>
 /// <param name="MaxBlockFrames">The largest block plugins accept; the engine renders blocks no larger.</param>
 /// <param name="TestTone">A 440 Hz tone at −18 dBFS after the master.</param>
+/// <param name="Host">The selected audio host, or null for the system default.</param>
 /// <param name="LiveQueuedFrames">
 /// The smaller render-ahead queue used while live input plays a plugin instrument, when <paramref name="QueuedFrames"/>
 /// is above 0; 0 keeps <paramref name="QueuedFrames"/> (ADR 0035).
 /// </param>
-public sealed record SetAudio(long Request, bool Enabled, string? DeviceId, int SampleRate, int BufferFrames, int QueuedFrames, int MaxBlockFrames, bool TestTone, int LiveQueuedFrames = 0) : EngineMessage
+public sealed record SetAudio(long Request, bool Enabled, string? DeviceId, int SampleRate, int BufferFrames, int QueuedFrames, int MaxBlockFrames, bool TestTone, int LiveQueuedFrames = 0, string? Host = null) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.SetAudio;
 }
@@ -46,7 +47,16 @@ public enum AudioDeviceState : byte
 /// The figures describe the open stream (zero when none is open); <paramref name="Problem"/> says why the chosen device is
 /// not the one playing. A graph must be described at this rate and block size to play.
 /// </summary>
-public sealed record AudioDeviceStatus(long Request, AudioDeviceState State, string? Problem, int SampleRate, int Channels, int BlockFrames, int QueuedFrames, string? RenderThreadPolicy) : EngineMessage
+/// <param name="Request">The latest audio request sent by Bluestone.</param>
+/// <param name="State">Whether the engine has opened or is waiting for a device.</param>
+/// <param name="Problem">Why the requested output is unavailable or has fallen back, if applicable.</param>
+/// <param name="SampleRate">The opened stream's sample rate.</param>
+/// <param name="Channels">The opened stream's channel count.</param>
+/// <param name="BlockFrames">The graph block size.</param>
+/// <param name="QueuedFrames">The current render-ahead queue.</param>
+/// <param name="RenderThreadPolicy">The render thread policy, if applicable.</param>
+/// <param name="DeviceBufferFrames">The device callback size, as reported by the audio backend (0 when none is open).</param>
+public sealed record AudioDeviceStatus(long Request, AudioDeviceState State, string? Problem, int SampleRate, int Channels, int BlockFrames, int QueuedFrames, string? RenderThreadPolicy, int DeviceBufferFrames = 0) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.AudioDeviceStatus;
 }

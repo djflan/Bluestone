@@ -58,9 +58,9 @@ shape the design:
   their downbeats; swing delays every second grid line.
 
 ## Consequences
-- Recording works wherever an adapter implements `IMidiInput`: Core MIDI today. WinMM and ALSA
-  inputs still need implementing (and testing on their platforms) before recording works on
-  Windows and Linux. The computer keyboard input works on every platform.
+- Recording works wherever an adapter implements `IMidiInput`: Core MIDI on macOS and WinMM on
+  Windows (ADR 0045); ALSA input remains to be implemented and tested. The computer keyboard input
+  works on every platform.
 - Record-path latency is not compensated. A measured offset per input can be added later as a
   constant applied before `TryGetTickAt`.
 - Arming is view state, not saved. Metronome, count-in, and take-mode settings are not saved either;
