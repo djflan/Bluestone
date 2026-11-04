@@ -75,15 +75,18 @@ internal sealed class GcWatch : IDisposable
     private readonly TimeSpan _paused = GC.GetTotalPauseDuration();
     private readonly GcPauseListener _listener = new();
 
-    public void AddTo(TimingReport report)
+    /// <param name="report">Where the metrics go.</param>
+    /// <param name="prefix">Before every metric's name: <c>gc</c> and <c>process</c> by default (this process measured), or one prefix for all.</param>
+    public void AddTo(TimingReport report, string? prefix = null)
     {
-        report.Add(new Metric("gc.gen0", "collections", GC.CollectionCount(0) - _gen0));
-        report.Add(new Metric("gc.gen1", "collections", GC.CollectionCount(1) - _gen1));
-        report.Add(new Metric("gc.gen2", "collections", GC.CollectionCount(2) - _gen2));
-        report.Add(new Metric("gc.pause-total", "ms", (GC.GetTotalPauseDuration() - _paused).TotalMilliseconds));
-        report.Add(new Metric("gc.pause", "ms", Distribution: Distribution.Of(_listener.Pauses.Select(p => p.TotalMilliseconds))));
-        report.Add(new Metric("process.working-set", "MB", Environment.WorkingSet / 1048576.0));
-        report.Add(new Metric("gc.committed", "MB", GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0));
+        var gc = prefix is null ? "gc" : $"{prefix}.gc";
+        report.Add(new Metric($"{gc}.gen0", "collections", GC.CollectionCount(0) - _gen0));
+        report.Add(new Metric($"{gc}.gen1", "collections", GC.CollectionCount(1) - _gen1));
+        report.Add(new Metric($"{gc}.gen2", "collections", GC.CollectionCount(2) - _gen2));
+        report.Add(new Metric($"{gc}.pause-total", "ms", (GC.GetTotalPauseDuration() - _paused).TotalMilliseconds));
+        report.Add(new Metric($"{gc}.pause", "ms", Distribution: Distribution.Of(_listener.Pauses.Select(p => p.TotalMilliseconds))));
+        report.Add(new Metric(prefix is null ? "process.working-set" : $"{prefix}.working-set", "MB", Environment.WorkingSet / 1048576.0));
+        report.Add(new Metric($"{gc}.committed", "MB", GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0));
     }
 
     public void Dispose() => _listener.Dispose();

@@ -126,6 +126,9 @@ public sealed class EngineSupervisor : IAsyncDisposable
     /// <summary>The running engine's process id, if one is running.</summary>
     public int? ProcessId => Volatile.Read(ref _session)?.ProcessId;
 
+    /// <summary>Raised with every heartbeat's figures, on the channel's reading thread (measurement: every collection's pause).</summary>
+    public event EventHandler<EngineTelemetry>? TelemetryReceived;
+
     /// <summary>The figures in the running engine's last heartbeat.</summary>
     public EngineTelemetry? Telemetry => Volatile.Read(ref _session)?.Telemetry;
 
@@ -670,6 +673,8 @@ public sealed class EngineSupervisor : IAsyncDisposable
             {
                 _telemetry = heartbeat.Telemetry;
             }
+
+            _owner.TelemetryReceived?.Invoke(_owner, heartbeat.Telemetry);
         }
 
         // Called once, by whichever watcher notices first; the engine is killed if still running, then replaced.

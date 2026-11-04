@@ -451,6 +451,63 @@ window fall back and stay back until depth 1 is asked for again, and misses furt
 - Two tracks whose routes go through the same plugin MIDI effect drive its exchange from both routes, as in Bluestone.
 - Not measured: live input latency and depth-1 misses through a real device under the UI's load (step 8).
 
+## Probes against the engine (step 8)
+
+The engine meets every ADR 0043 target on macOS (results below); Windows and Linux are still to be measured.
+`Bluestone.Benchmarks` takes `--engine` with `--jitter`, `--audio`, `--live`, and
+`--audio-loopback` (`EngineProbes`): the probe process plays Bluestone's role, starting the engine with
+`EngineSupervisor` and talking to it through `EnginePlayback` and `EngineAudio`, exactly as the app composes them, and
+carries the `--pressure` load where the app's allocations would be. Reports use the same JSON format, `--repeat`, and
+`--compare`; the commands are in the [hardware test plan](../hardware-test-plan.md).
+
+- **Which engine:** `--engine-path`, else the NativeAOT build published to `src/dotnet/artifacts/engine-aot`, else the
+  JIT build copied beside the probes, reported as not the shipping configuration (`engine` in the settings, and the
+  engine's JIT count).
+- **MIDI:** a dense plan (16 tracks) plays in the engine to a Core MIDI destination that a child process publishes and
+  the engine opens itself (scheduled delivery); the engine's own timing figures give the lateness. The probe waits
+  until the engine has the destination open (retrying, since a newly published endpoint can take a moment to appear),
+  and misses if the engine dispatched fewer messages than the plan holds in the window (`midi.engine.missing`) or
+  reported a problem. Without Core MIDI the engine plays to an output forwarded to the probe.
+- **Audio:** the device in direct mode at `--buffer`, with four looping clips on channels through a bus and the
+  reference sine in a real worker playing notes, while the transport loops: missing and late callbacks, xruns, gaps,
+  render faults, failed plugin blocks, the longest render against the period, and the master's peak (to show it played).
+- **Live:** keys into the monitored reference sine at depth 1. `--live-input midi` (default on macOS) sends them from a
+  child process through a Core MIDI source the engine opens as an input, stamped at send, as a hardware keyboard's;
+  `--live-input forwarded` posts them from the probe, as the computer keyboard's are, so a collection in the UI process
+  delays them (the first quiet suite saw one key a block late under `--pressure app` this way). The engine's meter gives
+  the count, average, shortest, and longest latency from each key's timestamp to when it is heard, and the added latency
+  against ADR 0043's 2 ms: key to heard less the output latency and one period, so a key that adds nothing lands between
+  minus one period and zero (about −1 ms on average at 128 frames). With `--audio-loopback` the keys are heard through
+  BlackHole and captured here.
+- **The probe's collections:** every engine report also has the probe process's collections and pauses (`probe.gc.*`),
+  to attribute an outlier on a forwarded path.
+- **The engine's collections:** heartbeats now carry the latest collection's pause (protocol version 6), and the
+  supervisor raises every heartbeat (`TelemetryReceived`), so each engine report has its collections, every pause seen
+  (judged against 1 ms), the allocation rate (mostly the sender thread's messages to Bluestone), and the JIT count.
+
+**Results (2026-11-03).** Apple M5 Max, macOS, NativeAOT engine, BlackHole 2ch at 48 kHz and 128 frames (2.67 ms),
+60 s per run, two runs of each probe at each load, quiet machine. `--pressure` is generated in the probe process, which
+plays Bluestone: under `app` it collected about 375 times a run with pauses up to 8.7 ms.
+
+| Probe | none | app | edit | Target |
+| ----- | ---: | --: | ---: | -----: |
+| MIDI lateness, max (23,104 events; 0 of 15,232 messages missing) | 0 ms | 0 ms | 0 ms | 2 ms |
+| Audio: missing or late callbacks, xruns, render faults | 0 | 0 | 0 | 0 |
+| Audio: longest render | 0.02 ms | 0.06 ms | 0.26 ms | 2.67 ms |
+| Live, Core MIDI keys: added latency, max | 0.03 ms | 0.04 ms | 0.04 ms | 2 ms |
+| Live, forwarded keys (computer keyboard): added, max | 0.06 ms | 0.31 ms | – | 2 ms |
+| Loopback through BlackHole: added, max (about 320 keys) | 0.38 ms | 0.38 ms | – | 2 ms |
+| Engine collections / JIT-compiled methods | 0 / 0 | 0 / 0 | 0 / 0 | pause ≤ 1 ms |
+
+The engine did not collect once in any run, so the sender thread's allocation (46–94 KB/s) is not a timing risk at
+this rate: the first collection would come after many minutes, and its pause is bounded by the engine's small heap.
+The first, uncorrected suite (keys forwarded from the probe, before the probe waited for the MIDI destination) had one
+key a block late under `app` and one run that never opened its destination; both are fixed in the probes above.
+
+**Not done:** Windows and Linux; a per-collection pause list from the engine (a
+heartbeat sees the latest collection of its 250 ms interval; the total counts every one); the native layer's longest
+render is kept from when the stream opened, so it includes the first callbacks.
+
 ## The engine host and supervisor (step 4)
 
 The skeleton is in place:

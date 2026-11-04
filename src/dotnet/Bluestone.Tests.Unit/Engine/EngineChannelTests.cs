@@ -12,7 +12,7 @@ public sealed class EngineChannelTests
         new Hello(EngineLimits.Version, "0123456789ABCDEF", 4242, Restarted: true),
         new Welcome(EngineLimits.Version),
         new Ready(),
-        new Heartbeat(17, new EngineTelemetry(3, TimeSpan.FromMilliseconds(2.5), 123_456_789, 98_765_432, 0)),
+        new Heartbeat(17, new EngineTelemetry(3, TimeSpan.FromMilliseconds(2.5), 123_456_789, 98_765_432, 0, TimeSpan.FromMilliseconds(0.4))),
         new Ping(-5),
         new Pong(long.MaxValue),
         new Shutdown(),

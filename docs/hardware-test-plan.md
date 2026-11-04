@@ -137,4 +137,32 @@ For hardware ground truth:
    `loopback.model-error` should stay within 0.5 ms; through an interface, its median is the converters' latency the
    device does not report. Repeat at 64, 128, and 256 frames.
 
+### Through the engine process (ADR 0044 step 8)
+
+The same measurements through the real `Bluestone.Engine`, started as the app starts it, with the probe process playing
+Bluestone's role and carrying the `--pressure` load. Publish the NativeAOT engine first, to the place the probes look:
+
+```sh
+dotnet publish src/dotnet/Bluestone.Engine -c Release -r osx-arm64 -o src/dotnet/artifacts/engine-aot
+```
+
+(`src/dotnet/artifacts/` is ignored by git; `--engine-path PATH` names another build. Without either, the probes use
+the JIT build copied beside them and say that it is not the shipping configuration.) Put the seconds right after the
+probe's name:
+
+```sh
+$P --jitter 60 --engine --pressure app                     # MIDI dispatch in the engine, to a Core MIDI destination it opens
+$P --audio 60 --engine --pressure app --buffer 128 --device "NAME"   # direct mode; clips, a bus, the reference sine in a worker
+$P --live 60 --engine --pressure app --buffer 128 --device "NAME"    # keys into the monitored sine at depth 1, the engine's meter
+$P --audio-loopback 60 --engine --pressure app --buffer 128          # BlackHole 2ch by default; skipped if it is missing
+```
+
+Run each with `--pressure none`, `app`, and `edit` (and `churn`/`full` for stress), at 64 and 128 frames, with
+`--repeat 3`. Every engine report also has the engine's collections, pauses (ADR 0043: none over 1 ms while playing),
+allocation rate, and JIT count (0 for the NativeAOT build), and the probe process's own collections and pauses
+(`probe.gc.*`), so an outlier on a path that crosses the probe can be attributed. `--live-input midi` (the default on
+macOS) plays the keys from a child process through a Core MIDI source the engine opens, as a keyboard;
+`--live-input forwarded` posts them from the probe, as the computer keyboard does, so a pause in the probe can delay a
+key. The MIDI probe misses if the engine dispatched fewer messages than the plan holds or reported a problem.
+
 Report results in an issue with the JSON reports attached, so they can be added to ADR 0043.
