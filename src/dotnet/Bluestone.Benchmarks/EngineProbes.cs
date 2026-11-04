@@ -463,7 +463,7 @@ internal static class EngineProbes
             }
 
             return File.Exists(full)
-                ? (full, full.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || File.Exists(Path.Combine(Path.GetDirectoryName(full)!, "Bluestone.Engine.dll")) ? "JIT" : "NativeAOT")
+                ? (full, full.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? "JIT" : "NativeAOT")
                 : throw new ArgumentException($"--engine-path: there is no engine at {full}.");
         }
 
@@ -950,6 +950,12 @@ internal static class EngineProbes
             report.Add(new Metric("engine.jit-methods", "methods", last.JitCompiledMethods));
             report.Notes.Add("engine.gc.pause has one entry per heartbeat (every 250 ms) that saw a collection: the latest collection's pause; pause-total counts every collection. "
                 + "engine.allocated is mostly the engine's sender thread (status, meters, and MIDI messages for Bluestone; ADR 0044), not its real-time threads.");
+            // What the engine reports is the truth: a NativeAOT engine compiles nothing at run time, a JIT one always does.
+            if (_last is not null)
+            {
+                report.Settings["engine"] = last.JitCompiledMethods == 0 ? "NativeAOT" : "JIT";
+            }
+
             if (last.JitCompiledMethods > 0)
             {
                 report.Notes.Add($"The engine compiled {last.JitCompiledMethods} methods at run time: it is not the NativeAOT build.");

@@ -160,9 +160,10 @@ public partial class App : Avalonia.Application
         var activities = new ActivityLog();
         PlaybackController playback;
 
-        // MIDI playback, platform endpoints, live thru to external instruments, and audio run in the engine process
-        // (ADR 0044) when BLUESTONE_ENGINE=1, live input included. Opt-in until measured (migration step 8); otherwise they run here.
-        if (Environment.GetEnvironmentVariable("BLUESTONE_ENGINE") == "1")
+        // MIDI playback, platform endpoints, live input and thru, and audio run in the engine process (ADR 0044), by
+        // default where it has been measured against ADR 0043's targets (macOS). BLUESTONE_ENGINE=0 runs them here instead,
+        // and BLUESTONE_ENGINE=1 uses the engine on any platform.
+        if (UseEngineProcess(Environment.GetEnvironmentVariable("BLUESTONE_ENGINE")))
         {
             _engine = new EngineSupervisor(new EngineSupervisorOptions(), activities);
             _enginePlayback = new EnginePlayback(_engine, new EnginePlaybackOptions { IsEngineEndpoint = PlatformProviders.IsEngineEndpoint });
@@ -201,6 +202,14 @@ public partial class App : Avalonia.Application
 
         return viewModel;
     }
+
+    /// <summary>Whether the real-time work runs in the engine process: <paramref name="setting"/> "0" or "1", else by platform.</summary>
+    internal static bool UseEngineProcess(string? setting) => setting switch
+    {
+        "0" => false,
+        "1" => true,
+        _ => OperatingSystem.IsMacOS(),
+    };
 
     /// <summary>
     /// The audio engine (ADR 0032): off until the user starts it or the saved settings say it was on. With the engine

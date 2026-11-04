@@ -7,6 +7,9 @@
     <IsPackable>false</IsPackable>
     <RootNamespace>Bluestone.Engine</RootNamespace>
     <PublishAot>true</PublishAot>
+    <!-- A JIT build of the engine (development) compiles each method once, fully optimized: no tier-up during playback
+         (ADR 0043). The shipped engine is NativeAOT and has no JIT at all. -->
+    <TieredCompilation>false</TieredCompilation>
     <InvariantGlobalization>true</InvariantGlobalization>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>

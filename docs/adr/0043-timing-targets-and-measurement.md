@@ -142,6 +142,13 @@ threads.
 
 The same effect explains the baseline's 2.86 ms immediate outlier with no load.
 
+Re-measured later on the current code (precise final approach, decision 3) on a quiet machine, `--jitter 30`, 5 cold
+starts each: the default reached at most 0.038 ms, `DOTNET_TieredCompilation=0` 0.082 ms, and `DOTNET_TieredPGO=0`
+0.131 ms. Turning tiered compilation off did not slow the engine's start-up (main entered at 35–43 ms, against 27–36 ms;
+one second rendered in 1.18–1.19 s, against 1.23–1.25 s). The earlier 3.5 ms pauses, taken while other work
+shared the machine, did not reappear. No interim setting was needed in the application. The engine ships with NativeAOT
+and has no JIT; a JIT build of the engine, for development, runs with tiered compilation off (ADR 0044 step 10).
+
 ### Audio loopback (added 2026-11-03)
 
 `--audio-loopback` plays a single-sample click on a timestamped live note, as a live route would. The output device
@@ -200,8 +207,8 @@ less CPU than yielding did.
    (`PlatformProviders.PlaybackPreciseSleep`). Spinning used the real-time thread's computation budget and produced
    rare multi-millisecond lateness. It also left commands and `SendNow` waiting for up to 1.5 ms. Windows and Linux
    keep spinning until measured on their own hardware.
-4. **The real-time work moves into a C# engine process** (to be built; this ADR records the decision and its
-   evidence). The UI process will always allocate: a plan compile is 8–100 MB and opening a project about 1 GB
+4. **The real-time work moves into a C# engine process** (built in ADR 0044, where its measurements are; this
+   ADR records the decision and its evidence). The UI process will always allocate: a plan compile is 8–100 MB and opening a project about 1 GB
    (ADR 0012). Any collection in a process stops every managed thread in it, and no GC setting kept those pauses
    under 2 ms. The engine process owns the audio stream with rendering in the device callback, the playback engine and
    thread, MIDI input and output, live routes, and the connection to plugin workers. It must keep these rules, each
@@ -224,25 +231,25 @@ less CPU than yielding did.
    64 and 128 frames. Instruments being played live therefore get a depth-1 exchange when live input moves into
    the engine (ADR 0044 step 7), with the pipelined depth kept for playback, where it lets workers run in parallel.
    Windows and Linux keep their wait until measured on their own hardware.
-7. **Until the engine process exists**, the app keeps the render-ahead queues of ADRs 0032 and 0035. Audio is then
-   glitch-free under load, but live input carries the queue as latency. Immediate MIDI and thru can be late by a GC
-   pause. Scheduled Core MIDI output, the macOS path to hardware, already meets its target in one process. The README
-   states the claim with these limits.
+7. **The engine process exists** (ADR 0044) and meets every target above on macOS, where it is the default: audio is
+   rendered in the device callback and live input adds nothing beyond the device. On Windows and Linux the app keeps
+   the render-ahead queues of ADRs 0032 and 0035 until the engine is measured there. Under those queues audio is
+   glitch-free under load, but live input carries the queue as latency, and immediate MIDI and thru can be late by a
+   collection in the application process.
 
 ## Consequences
 
 - A live plugin instrument adds its worker pipeline (ADR 0025: one engine block at depth 2, 2.67 ms at 128 frames) on
   top of the figures above. That exceeds the 2 ms target whatever the language. Depth 1 adds nothing and, with real-time
-  workers, met its deadline in every measured block (decision 6). It takes effect for live-played instruments with
-  ADR 0044 step 7. Until then, the 2.67 ms stands.
+  workers, met its deadline in every measured block (decision 6). It applies to live-played instruments in the engine
+  (ADR 0044 step 7), where measured added latency was at most 0.04 ms.
 - The engine process adds an IPC boundary between the UI and the engine. It carries plans, graph snapshots, commands,
   and meters, but nothing per event or per sample on the real-time path, because MIDI devices and the audio device
   open in the engine process.
 - The live figures use the engine's heard-time model, built on the device's reported output latency. The audio
   loopback below confirms that model on a virtual device; an interface with OUT patched to IN also measures its
   converters, which the device may not report.
-- The application process still uses tiered compilation, so the first seconds of playback after start-up can see
-  a JIT suspension of up to about 3.5 ms. Turning tiered compilation off for the whole application would slow UI
-  start-up; that trade-off was not measured, and the engine process removes it.
+- The application process still uses tiered compilation. With the engine process it does no real-time work, and the
+  re-measurement found no JIT pause over 0.14 ms on the in-process path either.
 - All numbers come from one Mac with a synthetic load. Rerun the probes on other machines, and on Windows and Linux
   when their adapters gain precise waits, before changing a target or a default.

@@ -181,7 +181,8 @@ Each step lands separately and keeps the app working:
 8. Probes against the real engine (`--engine`), with the load in the UI process. These must meet ADR 0043's targets.
 9. CI: AOT publish on macOS, Windows, and Linux; allocation, equivalence, and crash-restart tests. No timing gates on
    hosted runners.
-10. Make the engine the only path; remove the in-process real-time path.
+10. Make the engine the default where it meets the targets (done for macOS; see "The engine by default (step 10)"). The
+    in-process path stays as the fallback and as the default on Windows and Linux until they are measured.
 
 ## MIDI in the engine (step 5)
 
@@ -508,6 +509,25 @@ key a block late under `app` and one run that never opened its destination; both
 heartbeat sees the latest collection of its 250 ms interval; the total counts every one); the native layer's longest
 render is kept from when the stream opened, so it includes the first callbacks.
 
+## The engine by default (step 10)
+
+The engine met every ADR 0043 target on macOS (step 8), so it is the default there. `App.UseEngineProcess` reads
+`BLUESTONE_ENGINE`: `0` keeps the real-time work in Bluestone's process, `1` uses the engine on any platform, and
+anything else gives the platform default, which is the engine on macOS and the in-process path on Windows and Linux.
+Those platforms switch once the probes have run on native hardware (the Windows PC first, Linux later).
+
+- **The shipped engine is NativeAOT.** The release workflow publishes `Bluestone.Engine` ahead of time into the
+  application's folder, over the JIT engine copied there by the app's publish. The launcher prefers the native
+  executable, and the app's own publish had not included one at all. CI publishes the engine with NativeAOT on every
+  OS and fails on any trim or AOT warning (step 9).
+- **A JIT engine (development builds) has tiered compilation off,** so it never replaces code while it plays. It
+  compiles each method once, fully optimized. A quiet re-measurement on current code found no JIT pause over 0.14 ms
+  with any setting (ADR 0043).
+- **The in-process path is kept, not removed.** It is the fallback (`BLUESTONE_ENGINE=0`) and the default off macOS.
+  Removing it, and the copies of `LiveRunner` and `PluginLiveStage` the engine carries (step 7), waits until the
+  engine is the default everywhere.
+- The probes report which engine ran from the engine's own JIT count (0 for NativeAOT), not from its path.
+
 ## The engine host and supervisor (step 4)
 
 The skeleton is in place:
@@ -526,8 +546,7 @@ The skeleton is in place:
   is left failed, with an error in Messages, until `RestartAsync`. Starting and restarting are activities on the
   status line. Integration tests do each of these with real engine processes: killed, hung, faulted, missing, a crash
   loop, and a clean shutdown that is not counted as a stop.
-- The desktop app starts the engine alongside the main window when `BLUESTONE_ENGINE=1`. It stays opt-in after step 5
-  (see above) until audio moves too.
+- The desktop app starts the engine alongside the main window when the engine is in use (step 10: by default on macOS).
 
 Shared building blocks were copied, not extracted: the framing is about 300 lines and differs from the plugin
 protocol's (no request ids, its own limits), and the launcher is short. Copying keeps the two protocols independent.

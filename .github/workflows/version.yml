@@ -142,6 +142,11 @@ jobs:
       - name: Publish
         run: dotnet publish src/dotnet/Bluestone.Desktop --configuration Release --runtime ${{ matrix.rid }} --self-contained --output publish/Bluestone
 
+      # The engine process ships as NativeAOT (ADR 0044): published over the JIT engine the app's publish copied, so the
+      # launcher finds the native executable beside Bluestone.
+      - name: Publish the engine ahead of time
+        run: dotnet publish src/dotnet/Bluestone.Engine --configuration Release --runtime ${{ matrix.rid }} --output publish/Bluestone
+
       - name: Package (zip, macOS)
         if: runner.os == 'macOS'
         working-directory: publish
