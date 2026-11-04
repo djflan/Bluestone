@@ -51,7 +51,9 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     private readonly List<(long Id, string Path)> _planFiles = [];
     private readonly Dictionary<long, TempoMap> _tempos = [];
     private readonly List<string> _problems = [];
+    private readonly EngineSupervisor _supervisor;
     private IEngineLink? _link;
+    private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _nextHandle;
     private long _nextPlan;
     private SetSlots _slots = new([]);
@@ -71,6 +73,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     public EnginePlayback(EngineSupervisor supervisor, EnginePlaybackOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(supervisor);
+        _supervisor = supervisor;
         _options = options ?? new EnginePlaybackOptions();
         _planDirectory = _options.PlanDirectory ?? Path.Combine(Path.GetTempPath(), $"bluestone-engine-{Environment.ProcessId}");
         supervisor.Attach(this);
@@ -78,6 +81,9 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
 
     /// <summary>Raised (on the engine's reading thread) after the engine reports its transport.</summary>
     public event EventHandler? TransportChanged;
+
+    /// <summary>The connected engine stopped (it crashed, hung, or was shut down); the transport is stopped. Any thread.</summary>
+    public event EventHandler? EngineLost;
 
     /// <summary>Whether an engine is connected now.</summary>
     public bool IsConnected
@@ -92,6 +98,34 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     }
 
     public IMonotonicClock Clock => SystemMonotonicClock.Instance;
+
+    /// <summary>Starts the engine again if the supervisor gave up on it (<see cref="EngineState.Failed"/>); otherwise nothing.</summary>
+    public void RestartIfFailed()
+    {
+        if (_supervisor.State == EngineState.Failed)
+        {
+            _ = _supervisor.RestartAsync();
+        }
+    }
+
+    public async Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        Task ready;
+        lock (_gate)
+        {
+            ready = _ready.Task;
+        }
+
+        try
+        {
+            await ready.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
 
     public TransportState State => Volatile.Read(ref _mirror).State;
 
@@ -150,7 +184,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         Send(_slots = new SetSlots([.. outputs.Select(o => o is IEngineEndpoint e ? e.Handle : -1)]));
     }
 
-    public void Play(Tick? from = null, CountIn? countIn = null)
+    public bool Play(Tick? from = null, CountIn? countIn = null)
     {
         if (from is { } start)
         {
@@ -161,7 +195,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         var spec = countIn is null ? null : new CountInSpec(countIn.Duration.Ticks, [.. countIn.Clicks.Select(c => new CountInClickSpec(c.Offset.Ticks, c.Downbeat))]);
         lock (_gate)
         {
-            _link?.Send(new TransportPlay(from?.Value ?? -1, spec, ++_transportSequence));
+            return _link?.Send(new TransportPlay(from?.Value ?? -1, spec, ++_transportSequence)) == true;
         }
     }
 
@@ -262,6 +296,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         lock (_gate)
         {
             _link = null;
+            NotReady();
             _planFiles.Clear();
         }
 
@@ -307,6 +342,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
 
             // The transport stays stopped where it was (ADR 0044).
             link.Send(new TransportSeek(Interlocked.Read(ref _position), ++_transportSequence));
+            _ready.TrySetResult();
         }
 
         TransportChanged?.Invoke(this, EventArgs.Empty);
@@ -414,10 +450,21 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
             }
 
             _link = null;
+            NotReady();
             Volatile.Write(ref _mirror, Mirror.Stopped(_mirror.LoopWraps));
         }
 
         TransportChanged?.Invoke(this, EventArgs.Empty);
+        EngineLost?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Under _gate: later WhenReadyAsync calls wait for the next engine.
+    private void NotReady()
+    {
+        if (_ready.Task.IsCompleted)
+        {
+            _ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
     }
 
     // The engine runs routes through built-in live devices, forced channels, and plugin MIDI effects, to an output it

@@ -82,10 +82,11 @@ Bluestone.Desktop           Presentation, Platform.Alsa, Platform.CoreMidi, Plat
 Bluestone.Engine.Protocol   (none)             the engine process's control channel: frames, messages, handshake (ADR 0044)
 Bluestone.Engine            Audio, Engine.Protocol, Midi, Playback, Plugins, Plugins.Protocol, Signal, Platform.Alsa,
                             Platform.CoreMidi, Platform.Windows
-                                               the engine process (ADR 0044), published with NativeAOT; started and
-                                               supervised by Application's EngineSupervisor, copied beside the app; runs
-                                               MIDI playback, MIDI endpoints, live thru, the audio device, the audio
-                                               graph, clips, meters, and the plugin data plane when BLUESTONE_ENGINE=1
+                                               the engine process (ADR 0044), shipped with NativeAOT; started and
+                                               supervised by Application's EngineSupervisor; runs MIDI playback, MIDI
+                                               endpoints, live input and thru, the audio device, the audio graph,
+                                               clips, meters, and the plugin data plane (by default on macOS;
+                                               BLUESTONE_ENGINE=0/1 overrides)
 Bluestone.Benchmarks        Application, Audio, Infrastructure, Platform.CoreMidi, Platform.Windows, Playback, Profiles
                                                performance measurements and probes (ADR 0012)
 Bluestone.Tests.Unit        Application, Audio, Domain, Infrastructure, Midi, Playback, PluginWorker, Plugins,
@@ -445,7 +446,7 @@ audio engine follows (`IAudioTimeline`), so audio and external MIDI stay in time
 the device, falls back to the default output when the chosen one disappears, and waits for a device when
 none can open.
 
-With the engine process (`BLUESTONE_ENGINE=1`, ADR 0044) the device, the render, clip streaming, and the
+With the engine process (the default on macOS, `BLUESTONE_ENGINE=1` elsewhere, ADR 0044) the device, the render, clip streaming, and the
 plugin data plane run in `Bluestone.Engine` (`AudioHost`), rendering in the device callback by default.
 Bluestone describes the graph (`ProjectAudioGraph.Describe`) for the stream the engine opened and hands it
 over as an `AudioGraphImage` file, with each plugin instance's block exchange; the engine realizes it off

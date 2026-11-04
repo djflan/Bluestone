@@ -243,8 +243,8 @@ internal sealed class SplashWindow : Window
             HorizontalAlignment = HorizontalAlignment.Left,
             Children =
             {
-                Layer(new SolidColorBrush(Color.Parse("#2F7BFF")), blur: 18, opacity: 0.7),
-                Layer(new SolidColorBrush(Color.Parse("#7DB8FF")), blur: 5, opacity: 0.7),
+                Layer(new SolidColorBrush(Color.Parse("#2F7BFF")), blur: 8, opacity: 0.5),
+                Layer(new SolidColorBrush(Color.Parse("#7DB8FF")), blur: 2, opacity: 0.25),
                 Layer(Brushes.White, blur: 0, opacity: 1),
             },
         };

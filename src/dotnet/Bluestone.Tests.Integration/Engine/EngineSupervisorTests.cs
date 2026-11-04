@@ -1,6 +1,10 @@
 using Bluestone.Application.Engine;
+using Bluestone.Application.Sessions;
 using Bluestone.Application.Status;
 using Bluestone.Engine.Protocol;
+using Bluestone.Midi.Endpoints;
+using Bluestone.Playback;
+using Bluestone.Profiles;
 using static Bluestone.Tests.Integration.Plugins.PluginTestHost;
 
 namespace Bluestone.Tests.Integration.Engine;
@@ -112,6 +116,23 @@ public sealed class EngineSupervisorTests
 
         Assert.Equal(EngineState.Ready, engine.State);
         Assert.True(await engine.PingAsync(TimeSpan.FromSeconds(5)) < TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Play_RestartsAnEngineThatWasLeftFailed()
+    {
+        await using var engine = new EngineSupervisor(new EngineSupervisorOptions { AllowTestCommands = true, RestartLimit = 1 }, new ActivityLog());
+        using var playback = new EnginePlayback(engine);
+        using var directory = new EndpointDirectory([]);
+        await using var controller = new PlaybackController(new ProjectSession(), directory, ProfileCatalog.Empty, playback, startLiveThread: false);
+        await engine.StartAsync();
+        await engine.SendTestAsync(TestAction.Crash);
+        await WaitUntilAsync(() => engine.State == EngineState.Failed, Patience, "the engine to be left failed");
+
+        await controller.PlayAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(EngineState.Ready, engine.State);
+        await WaitUntilAsync(() => playback.State == TransportState.Playing, Patience, "the restarted engine to play");
     }
 
     [Fact]

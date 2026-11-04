@@ -10,6 +10,7 @@ Bluestone is usable alpha software for musicians who enjoy adopting new creative
 - device chains with built-in note processors, VST 3 and CLAP instruments and effects, shared racks, and flexible event and audio routing;
 - out-of-process plugin hosting with scanning, quarantine, crash recovery, saved state, hosting modes, and floating editors;
 - audio playback for WAVE and AIFF clips, a mixer with buses and sends, meters, plugin delay compensation, and one transport for MIDI and audio;
+- on macOS, real-time audio, MIDI, and live input in a separate C# engine process, so editing never delays them, measured against published timing targets ([ADR 0043](adr/0043-timing-targets-and-measurement.md), [ADR 0044](adr/0044-engine-process.md));
 - external MIDI output, data-defined hardware profiles, SysEx preservation and interpretation, hardware-parameter automation, and project rebinding when an endpoint changes; and
 - a device-centric desktop workspace with a Browser, Device Views, inspector, arranger, mixer, and saved local layouts.
 
@@ -23,7 +24,7 @@ The next phase makes one complete workflow dependable:
 
 ### 1. Core audio production
 
-- Move real-time audio, MIDI, and live input into a separate C# engine process, so editing in the application can never delay them, and then render live input in the device callback ([ADR 0043](adr/0043-timing-targets-and-measurement.md), [ADR 0044](adr/0044-engine-process.md)).
+- Measure MIDI arrival, immediate output, and thru through the engine process, and measure the engine on Windows and Linux hardware so it can be the default there, as it is on macOS ([ADR 0044](adr/0044-engine-process.md)).
 - Select and use audio inputs without disrupting the existing output path.
 - Record audio with accurate placement, input monitoring, punch, loop takes, and failure-safe file handling.
 - Import common audio files from the Browser and operating system.

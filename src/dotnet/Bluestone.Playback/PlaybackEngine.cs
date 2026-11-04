@@ -134,13 +134,14 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     /// controller state. With <paramref name="countIn"/>, the transport first waits out the count-in,
     /// sounding its clicks on the metronome (if one is set), then plays.
     /// </summary>
-    public void Play(Tick? from = null, CountIn? countIn = null)
+    public bool Play(Tick? from = null, CountIn? countIn = null)
     {
         var tick = from ?? Position;
         Volatile.Write(ref _positionTick, tick.Value);
         Volatile.Write(ref _countInUntil, countIn is null ? 0 : (_clock.Now + countIn.Duration).Ticks);
 
         Enqueue(new PlayCommand(tick.Value, ChaseState.Compute(Volatile.Read(ref _latestPlan), tick.Value), countIn));
+        return true;
     }
 
     /// <summary>How many times playback has wrapped from the loop's end to its start, ever. Compare two readings to tell whether a pass looped.</summary>
@@ -148,6 +149,9 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
 
     /// <summary>True while a count-in requested by <see cref="Play"/> is still running.</summary>
     public bool IsCountingIn => State == TransportState.Playing && _clock.Now.Ticks < Volatile.Read(ref _countInUntil);
+
+    /// <summary>Always ready: commands take effect at once.</summary>
+    public Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default) => Task.FromResult(true);
 
     /// <summary>
     /// Sets the metronome's sound and output slot, or <see langword="null"/> for none. Clicks sound on

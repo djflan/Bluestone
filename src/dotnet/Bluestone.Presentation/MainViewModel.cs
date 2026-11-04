@@ -142,6 +142,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Keyboard?.RefreshChannel();
         });
         _endpoints.EndpointsChanged += (_, _) => _dispatcher.Post(() => _ = RefreshAsync());
+        _playback.RecordingInterrupted += (_, _) => _dispatcher.Post(() =>
+        {
+            if (_playback.Recorder.IsRecording)
+            {
+                AddMessage(MessageSeverity.Warning, "Record", "The audio engine stopped while recording, so recording ended there.");
+                ReportTake(_playback.FinishRecording());
+            }
+        });
         if (_plugins is not null)
         {
             EditorWindows = new PluginEditorWindows(this, _plugins, _dispatcher);
@@ -1097,6 +1105,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else
         {
+            // A Play or Record still waiting for the engine does not start after this.
+            _playback.CancelPendingStarts();
             SeekTo(0);
         }
     }
@@ -1131,7 +1141,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var options = new RecordOptions(IsCountInEnabled ? CountInBars : 0, IsReplaceRecording);
         await RunAsync("Record", () => _playback.RecordAsync(target.Id, options));
         ApplyThru();
-        IsRecording = true;
+        IsRecording = _playback.Recorder.IsRecording;
     }
 
     /// <summary>Arms <paramref name="track"/> for recording, or disarms it if it is armed.</summary>
