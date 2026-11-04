@@ -38,6 +38,7 @@ verified is listed under [Not done](#not-done).
 | `Bluestone.Plugins.Protocol` | both | BCL only | Control-plane frames and messages, the handshake, the memory-mapped block exchange |
 | `Bluestone.Plugins` | Bluestone | Protocol | Worker launching and supervision, instance lifecycle and recovery, the real-time processing API, scanning |
 | `Bluestone.Application/Plugins` | Bluestone | Plugins | `PluginLibrary`, `PluginDeviceHost`, `PluginEventRenderer`, `PluginHostingSettings`: the bridge to the project |
+| `Bluestone.Engine` | engine | Plugins, Protocol | With the engine process (ADR 0044), drives the data plane through its own handle on each exchange; Bluestone keeps the control plane ([Data plane](#data-plane)) |
 | `Bluestone.PluginWorker` | worker | Protocol, `bluestone_plugin_host` | Instance-host mode and scan mode; the reference plugins; `NativePlugin` over the Rust host |
 | `src/native/crates/bluestone_plugin_host` | worker | (Rust) `vst3`, `clap-sys` | Loads VST 3 and CLAP modules: instances, parameters, state, processing, host callbacks, editor windows; C ABI version 1 |
 | `src/native/crates/bluestone_test_plugins` | tests only | (Rust) `vst3`, `clap-sys` | Test Gain, Test Sine, Test Transpose as a `.vst3` bundle and a `.clap` module, packaged by `src/dotnet/NativeTestPlugins.targets` |
@@ -58,6 +59,10 @@ PluginHostManager                                  Bluestone.PluginWorker --mode
 PluginScanner                                      Bluestone.PluginWorker --mode scan --pipe NAME
   one scanner process per module                     ModuleScanner (reads one module, then exits)
 ```
+
+The diagram shows the in-process data plane. With the engine process, the engine opens the mapped file and processes
+blocks, while `PluginHostManager` in Bluestone keeps the pipe, supervision, and recovery (see
+[A second handle](#data-plane)).
 
 Launching a worker:
 

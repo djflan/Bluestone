@@ -102,6 +102,20 @@ to a branch, pull request, or worklog; “Complete” must link to the final han
 | 11. Native device contract | Not started | — | — |
 | 12. Release hardening | Not started | — | — |
 
+#### Groundwork already in place
+
+Some work that predates this plan feeds the slices below. None of it meets a slice's acceptance scenarios, so the statuses above are unchanged. Start from this work rather than rebuilding it.
+
+- **Slice 0:** [ADR 0043](adr/0043-timing-targets-and-measurement.md) sets timing targets for MIDI, live input, and the audio stream, with macOS measurements. [ADR 0044](adr/0044-engine-process.md) and [ADR 0047](adr/0047-windows-precise-wait-and-measurements.md) record engine and Windows software-loopback results. The probes are in [Bluestone.Benchmarks](../src/dotnet/Bluestone.Benchmarks/). The [README](../README.md#platform-status) platform table is the starting point for the support matrix. There is no acceptance project, visual-review matrix, or project-format policy yet.
+- **Slice 1:** Track roles, mixer channels, sends, groups, and default master routing exist ([ADRs 0021](adr/0021-track-roles.md), [0023](adr/0023-signal-routing-model.md), [0030](adr/0030-group-tracks.md), [0038](adr/0038-daw-first-tracks-and-settings.md)); the slice's ownership ADR consolidates and amends them rather than starting from nothing.
+- **Slice 2:** The native audio crate can capture from an input device, but only the loopback probes and device tests use it. Nothing in the application selects or monitors an audio input.
+- **Slice 3:** MIDI recording, punch, and loop takes exist ([ADR 0017](adr/0017-recording-and-note-editing.md)). Audio recording does not.
+- **Slice 4:** WAVE and AIFF clips play, loop, stream, and take gain and fades ([ADR 0032](adr/0032-audio-engine.md)). There is no import workflow.
+- **Slice 6:** An offline audio driver renders the graph in virtual time without a device, through the same path as the device callback, for tests and measurement. There is no user-facing mix or stem export.
+- **Slice 7:** Hardware profiles, rebinding, SysEx, and hardware-parameter automation exist ([ADRs 0007](adr/0007-device-profile-format.md), [0008](adr/0008-routing-and-rebinding.md), [0031](adr/0031-hardware-parameter-automation.md)). The unified device and the audio return do not.
+- **Slice 8:** Plugin delay compensation and live-input latency handling exist ([ADR 0035](adr/0035-live-input-and-delay-compensation.md)). Hardware round-trip measurement, clock, and external effects do not.
+- **Slice 10:** The arranger, clip loops, piano roll, event list, and automation lanes exist ([ADR 0039](adr/0039-arranger-and-clip-loops.md)); the cross-editor consistency pass has not been done.
+
 ## Slice 0: release contract and baselines
 
 ### Outcome
