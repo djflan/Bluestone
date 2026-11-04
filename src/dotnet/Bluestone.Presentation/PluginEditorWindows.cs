@@ -119,7 +119,7 @@ public sealed class PluginEditorWindows
 
         Want(device, state, true);
         // A window that was opened again, or newly, shows its header once told.
-        state.HeaderShown = null;
+        ForgetHeader(state);
         state.NoHeader = false;
         SyncHeaders();
         _owner.RefreshDevicePanels();
@@ -255,13 +255,16 @@ public sealed class PluginEditorWindows
             while (state.HeaderShown != state.HeaderWanted && !state.NoHeader && IsOpen(device))
             {
                 var header = state.HeaderWanted;
+                var generation = state.HeaderGeneration;
                 if (await _host.SetEditorHeaderAsync(device, header))
                 {
-                    state.HeaderShown = header;
+                    // Forgotten meanwhile (a click flipped a button), so what the window shows is unknown again.
+                    state.HeaderShown = generation == state.HeaderGeneration ? header : null;
                 }
-                else
+                else if (generation == state.HeaderGeneration)
                 {
-                    // A window the plugin owns has no header; it is not asked again until the editor is reopened.
+                    // A window the plugin owns has no header; it is not asked again until the editor is reopened. A
+                    // failure for a window that has since closed or been reopened says nothing about the new one.
                     state.NoHeader = true;
                 }
             }
@@ -281,7 +284,7 @@ public sealed class PluginEditorWindows
             return;
         }
 
-        State(device).HeaderShown = null;
+        ForgetHeader(State(device));
         switch (button)
         {
             case PluginEditorButton.Bypass:
@@ -296,6 +299,13 @@ public sealed class PluginEditorWindows
         }
 
         SyncHeaders();
+    }
+
+    // What the window shows is no longer known; the next sync sends the header even if it looks unchanged.
+    private static void ForgetHeader(EditorState state)
+    {
+        state.HeaderShown = null;
+        state.HeaderGeneration++;
     }
 
     private void OnKey(DeviceId device, PluginEditorKey key)
@@ -329,7 +339,7 @@ public sealed class PluginEditorWindows
             ReleaseHeld(state);
             state.Applied = true;
             state.Wanted = true;
-            state.HeaderShown = null;
+            ForgetHeader(state);
             state.NoHeader = false;
         }
         else if (IsOpen(device))
@@ -383,6 +393,9 @@ public sealed class PluginEditorWindows
         public PluginEditorHeader HeaderWanted { get; set; }
 
         public bool HeaderBusy { get; set; }
+
+        /// <summary>Counts <see cref="ForgetHeader"/> calls, so a request in flight does not record a header the window may not show.</summary>
+        public int HeaderGeneration { get; set; }
 
         /// <summary>The window is the plugin's own and has no header.</summary>
         public bool NoHeader { get; set; }

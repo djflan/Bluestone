@@ -289,6 +289,47 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AClickWhileAHeaderIsOnItsWay_IsStillUndoneInTheWindow()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        _host.Follow = false;
+        await _windows.OpenAsync(a);
+        var hold = new TaskCompletionSource();
+        _host.HeaderHold = hold;
+        _session.Execute(DeviceCommands.SetBypassed(a, true, TestDevices.Lookup));
+        _windows.SyncHeaders();
+        var requests = _host.HeaderRequests;
+
+        // Refused (no pin while editors do not follow), while the bypass's header is still on its way.
+        _host.Click(a, PluginEditorButton.Pin, true);
+        hold.SetResult();
+        await _host.Settled();
+
+        Assert.Equal(requests + 1, _host.HeaderRequests);
+        Assert.Equal(new PluginEditorHeader(PluginEditorButtonState.On, PluginEditorButtonState.Hidden, Keys(false)), _host.Headers[a]);
+    }
+
+    [Fact]
+    public async Task AHeaderThatFailsForAClosedWindow_DoesNotKeepTheReopenedOneWithoutItsHeader()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        await _windows.OpenAsync(a);
+        var hold = new TaskCompletionSource();
+        _host.HeaderHold = hold;
+        _windows.SetPinned(a, true);
+
+        // The window goes (its worker with it) and a new one opens while the old window's header is still on its way.
+        _host.Close(a);
+        await _windows.OpenAsync(a);
+        hold.SetResult();
+        await _host.Settled();
+
+        Assert.Equal(PluginEditorButtonState.On, _host.Headers[a].Pin);
+    }
+
+    [Fact]
     public async Task AWindowWithoutAHeader_IsNotAskedAgain_UntilTheEditorIsReopened()
     {
         var a = DeviceOn(0);
@@ -329,6 +370,7 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
     private sealed class FakeEditorHost : IPluginEditorHost
     {
         private readonly HashSet<DeviceId> _open = [];
+        private readonly Dictionary<DeviceId, int> _windows = [];
         private Task _pending = Task.CompletedTask;
 
         public Dictionary<DeviceId, bool> Visible { get; } = [];
@@ -358,16 +400,28 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
         /// <summary>False for a window the plugin owns, which has no header.</summary>
         public bool HasHeader { get; set; } = true;
 
-        public Task<bool> SetEditorHeaderAsync(DeviceId device, PluginEditorHeader header, CancellationToken cancellationToken = default)
+        public TaskCompletionSource? HeaderHold { get; set; }
+
+        public async Task<bool> SetEditorHeaderAsync(DeviceId device, PluginEditorHeader header, CancellationToken cancellationToken = default)
         {
             HeaderRequests++;
-            if (!_open.Contains(device) || !HasHeader)
+            var window = _open.Contains(device) ? _windows[device] : 0;
+            var hold = HeaderHold;
+            HeaderHold = null;
+            if (hold is not null)
             {
-                return Task.FromResult(false);
+                _pending = hold.Task;
+                await hold.Task;
+            }
+
+            // The window the request was for: one that closed meanwhile cannot show it, even if another has opened.
+            if (window == 0 || !_open.Contains(device) || _windows[device] != window || !HasHeader)
+            {
+                return false;
             }
 
             Headers[device] = header;
-            return Task.FromResult(true);
+            return true;
         }
 
         public void Click(DeviceId device, PluginEditorButton button, bool on) => EditorButtonClicked?.Invoke(this, (device, button, on));
@@ -380,6 +434,7 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
         {
             if (_open.Add(device))
             {
+                _windows[device] = _windows.GetValueOrDefault(device) + 1;
                 Visible[device] = true;
                 KeysToHost[device] = false;
             }
