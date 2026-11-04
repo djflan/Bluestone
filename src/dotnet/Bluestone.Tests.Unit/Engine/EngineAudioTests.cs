@@ -202,7 +202,7 @@ public sealed class EngineAudioTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ItIsReady_WhenAudioIsOff_OrTheDeviceIsOpenAndTheEngineAnsweredTheGraph_OrNoDeviceCanOpen()
+    public async Task ItIsReady_WhenAudioIsOff_OrTheDeviceIsOpenAndTheEngineAppliedItsGraph_OrNoDeviceCanOpen()
     {
         var ct = TestContext.Current.CancellationToken;
         var shortWait = TimeSpan.FromMilliseconds(30);
@@ -229,7 +229,22 @@ public sealed class EngineAudioTests : IAsyncDisposable
         Client.Received(second, new AudioDeviceStatus(resent.Request, AudioDeviceState.Running, null, 48_000, 2, 128, 0, null));
         Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
         await WaitUntilAsync(() => second.Sent.OfType<LoadAudioGraph>().Any());
-        Client.Received(second, new AudioGraphLoaded(second.Sent.OfType<LoadAudioGraph>().Last().GraphId, false, 0, ["Not applied."]));
+
+        // A graph the engine could not load does not count, and the Audio window says why.
+        Client.Received(second, new AudioGraphLoaded(second.Sent.OfType<LoadAudioGraph>().Last().GraphId, false, 0, ["The engine could not read the audio graph."]));
+        Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
+        Assert.Contains("The engine could not read the audio graph.", _audio.GraphProblems);
+        _audio.Rebuild();
+        Client.Received(second, new AudioGraphLoaded(second.Sent.OfType<LoadAudioGraph>().Last().GraphId, true, 0, []));
+        Assert.True(await _audio.WhenReadyAsync(shortWait, ct));
+
+        // Another stream on the same engine (a new buffer size): the graph built for the old one does not count.
+        var stale = second.Sent.OfType<LoadAudioGraph>().Last().GraphId;
+        Client.Received(second, new AudioDeviceStatus(resent.Request, AudioDeviceState.Running, null, 48_000, 2, 256, 0, null));
+        Client.Received(second, new AudioGraphLoaded(stale, true, 0, []));
+        Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
+        await WaitUntilAsync(() => second.Sent.OfType<LoadAudioGraph>().Last().GraphId > stale);
+        Client.Received(second, new AudioGraphLoaded(second.Sent.OfType<LoadAudioGraph>().Last().GraphId, true, 0, []));
         Assert.True(await _audio.WhenReadyAsync(shortWait, ct));
 
         // No device can open: MIDI plays without audio rather than waiting for it.

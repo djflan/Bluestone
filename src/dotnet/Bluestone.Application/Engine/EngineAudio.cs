@@ -46,7 +46,8 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private IEngineLink? _link;
     private IEngineLink? _graphLink;
     private AudioSettings? _wanted;
-    private long _answeredGraph; // the newest graph this engine (link) has answered, applied or not; 0 for none yet
+    private long _answeredGraph; // the newest graph this engine (link) applied for the current stream; 0 for none yet
+    private long _firstGraphOfStream; // graphs described before this id were for an earlier stream or engine
     private bool _testTone;
     private long _request;
     private long _startRequest;
@@ -131,9 +132,16 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
     public bool IsWaitingForDevice => _wanted is not null && !IsRunning && !IsStarting;
 
+    // Under _gate: only a graph described from now on (for the new stream or engine) makes audio ready again.
+    private void ForgetAnsweredGraphs()
+    {
+        _answeredGraph = 0;
+        _firstGraphOfStream = Interlocked.Read(ref _nextGraph) + 1;
+    }
+
     /// <summary>
     /// True once audio can follow the transport, false after <paramref name="timeout"/>: audio is off; or the engine has
-    /// opened the device and answered every graph described so far; or it found no device to open (MIDI plays without
+    /// opened the device and applied the newest graph described for that stream; or it found no device to open (MIDI plays without
     /// audio, and the Audio window says why). Waited for before Play and Record so playback never starts ahead of it.
     /// </summary>
     public async Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -401,7 +409,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _link = link;
             _status = null;
             _graphLink = null;
-            _answeredGraph = 0;
+            ForgetAnsweredGraphs();
             Volatile.Write(ref _meters, Meters.None);
             if (_wanted is { } wanted)
             {
@@ -465,7 +473,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _link = null;
             _status = null;
             _graphLink = null;
-            _answeredGraph = 0;
+            ForgetAnsweredGraphs();
             Volatile.Write(ref _meters, Meters.None);
             renders = [.. _renders.Values];
             _renders.Clear();
@@ -501,6 +509,12 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
                 _preparedRate = status.SampleRate;
                 prepare = status.SampleRate;
             }
+
+            if (describe || prepare is not null)
+            {
+                // A graph is about to be described for this stream; until the engine applies it, audio is not ready.
+                ForgetAnsweredGraphs();
+            }
         }
 
         if (prepare is { } rate)
@@ -523,13 +537,16 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         {
             stale = [.. _graphFiles.Where(g => g.Id < loaded.GraphId).Select(g => g.Path)];
             _graphFiles.RemoveAll(g => g.Id < loaded.GraphId);
-            if (ReferenceEquals(link, _link))
+            if (ReferenceEquals(link, _link) && !loaded.Applied && !loaded.Problems.IsEmpty)
             {
-                _answeredGraph = Math.Max(_answeredGraph, loaded.GraphId);
+                // The engine could not load it (and keeps playing the previous graph): say why.
+                changed = !loaded.Problems.SequenceEqual(_engineProblems);
+                _engineProblems = loaded.Problems;
             }
 
-            if (ReferenceEquals(link, _link) && loaded.Applied)
+            if (ReferenceEquals(link, _link) && loaded.Applied && loaded.GraphId >= _firstGraphOfStream)
             {
+                _answeredGraph = Math.Max(_answeredGraph, loaded.GraphId);
                 PlayingGraph = loaded.GraphId;
                 _latencyFrames = loaded.LatencyFrames;
                 changed = !loaded.Problems.SequenceEqual(_engineProblems);

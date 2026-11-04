@@ -298,10 +298,14 @@ public sealed class PlaybackController : IAsyncDisposable
         // An engine the supervisor gave up on (it failed to start, or crashed too often) is started again on request.
         _remote?.RestartIfFailed();
         var started = Stopwatch.GetTimestamp();
-        if (!await Transport.WhenReadyAsync(EngineReadyWait, cancellationToken).ConfigureAwait(false)
-            || (AudioReady is { } audio && !await audio(Remaining(), cancellationToken).ConfigureAwait(false)))
+        if (!await Transport.WhenReadyAsync(EngineReadyWait, cancellationToken).ConfigureAwait(false))
         {
             throw EngineNotReady();
+        }
+
+        if (AudioReady is { } audio && !await audio(Remaining(), cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The audio engine has not loaded this project's audio yet. If this persists, the Audio window shows why.");
         }
 
         TimeSpan Remaining()
