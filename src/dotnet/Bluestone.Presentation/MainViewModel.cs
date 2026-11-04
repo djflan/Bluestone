@@ -142,6 +142,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Keyboard?.RefreshChannel();
         });
         _endpoints.EndpointsChanged += (_, _) => _dispatcher.Post(() => _ = RefreshAsync());
+        _playback.RecordingInterrupted += (_, _) => _dispatcher.Post(() =>
+        {
+            if (_playback.Recorder.IsRecording)
+            {
+                ReportTake(_playback.FinishRecording());
+                AddMessage(MessageSeverity.Warning, "Record", "The audio engine stopped while recording. The take so far was kept; the engine is restarting.");
+            }
+        });
         if (_plugins is not null)
         {
             EditorWindows = new PluginEditorWindows(this, _plugins, _dispatcher);

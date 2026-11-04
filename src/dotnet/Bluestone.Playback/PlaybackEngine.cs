@@ -134,13 +134,14 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     /// controller state. With <paramref name="countIn"/>, the transport first waits out the count-in,
     /// sounding its clicks on the metronome (if one is set), then plays.
     /// </summary>
-    public void Play(Tick? from = null, CountIn? countIn = null)
+    public bool Play(Tick? from = null, CountIn? countIn = null)
     {
         var tick = from ?? Position;
         Volatile.Write(ref _positionTick, tick.Value);
         Volatile.Write(ref _countInUntil, countIn is null ? 0 : (_clock.Now + countIn.Duration).Ticks);
 
         Enqueue(new PlayCommand(tick.Value, ChaseState.Compute(Volatile.Read(ref _latestPlan), tick.Value), countIn));
+        return true;
     }
 
     /// <summary>How many times playback has wrapped from the loop's end to its start, ever. Compare two readings to tell whether a pass looped.</summary>

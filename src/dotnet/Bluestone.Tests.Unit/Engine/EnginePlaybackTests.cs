@@ -224,14 +224,58 @@ public sealed class EnginePlaybackTests : IAsyncDisposable
         Assert.False(controller.Recorder.IsRecording);
     }
 
+    [Fact]
+    public async Task Stop_CancelsAPlayStillWaitingForTheEngine()
+    {
+        using var directory = new EndpointDirectory([]);
+        await using var controller = new PlaybackController(new ProjectSession(), directory, ProfileCatalog.Empty, _playback, startLiveThread: false);
+        var play = controller.PlayAsync(cancellationToken: TestContext.Current.CancellationToken);
+        controller.Stop();
+        var link = new RecordingLink();
+        Client.Connected(link, restarted: false);
+        await play;
+        Assert.DoesNotContain(link.Sent, m => m is TransportPlay);
+    }
+
+    [Fact]
+    public async Task Record_WhenTheEngineDoesNotTakeThePlay_FailsAndRecordsNothing()
+    {
+        using var directory = new EndpointDirectory([]);
+        await using var controller = new PlaybackController(new ProjectSession(), directory, ProfileCatalog.Empty, _playback, startLiveThread: false);
+        Client.Connected(new RecordingLink { Accepts = false }, restarted: false);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.RecordAsync(TrackId.New(), cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(controller.Recorder.IsRecording);
+    }
+
+    [Fact]
+    public async Task LosingTheEngineWhileRecording_SaysSo()
+    {
+        using var directory = new EndpointDirectory([]);
+        await using var controller = new PlaybackController(new ProjectSession(), directory, ProfileCatalog.Empty, _playback, startLiveThread: false);
+        var interrupted = 0;
+        controller.RecordingInterrupted += (_, _) => interrupted++;
+        var link = new RecordingLink();
+        Client.Connected(link, restarted: false);
+        await controller.RecordAsync(TrackId.New(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(controller.Recorder.IsRecording);
+        Assert.Contains(link.Sent, m => m is TransportPlay);
+
+        Client.Disconnected(link);
+        Assert.Equal(1, interrupted);
+        Assert.NotNull(controller.FinishRecording());
+        Assert.False(controller.Recorder.IsRecording);
+    }
+
     private sealed class RecordingLink : IEngineLink
     {
         public List<EngineMessage> Sent { get; } = [];
 
+        public bool Accepts { get; init; } = true;
+
         public bool Send(EngineMessage message)
         {
             Sent.Add(message);
-            return true;
+            return Accepts;
         }
     }
 }

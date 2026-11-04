@@ -46,7 +46,8 @@ public interface IPlaybackTransport
 
     void SetOutputs(IReadOnlyList<IMidiOutput?> outputs);
 
-    void Play(Tick? from = null, CountIn? countIn = null);
+    /// <returns>Whether the command was accepted: always in process; false with the engine process when no engine is connected.</returns>
+    bool Play(Tick? from = null, CountIn? countIn = null);
 
     [SuppressMessage("Naming", "CA1716", Justification = "PlaybackEngine's name; Bluestone is C# only.")]
     void Stop();

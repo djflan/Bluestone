@@ -80,6 +80,9 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     /// <summary>Raised (on the engine's reading thread) after the engine reports its transport.</summary>
     public event EventHandler? TransportChanged;
 
+    /// <summary>The connected engine stopped (it crashed, hung, or was shut down); the transport is stopped. Any thread.</summary>
+    public event EventHandler? EngineLost;
+
     /// <summary>Whether an engine is connected now.</summary>
     public bool IsConnected
     {
@@ -170,7 +173,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         Send(_slots = new SetSlots([.. outputs.Select(o => o is IEngineEndpoint e ? e.Handle : -1)]));
     }
 
-    public void Play(Tick? from = null, CountIn? countIn = null)
+    public bool Play(Tick? from = null, CountIn? countIn = null)
     {
         if (from is { } start)
         {
@@ -181,7 +184,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         var spec = countIn is null ? null : new CountInSpec(countIn.Duration.Ticks, [.. countIn.Clicks.Select(c => new CountInClickSpec(c.Offset.Ticks, c.Downbeat))]);
         lock (_gate)
         {
-            _link?.Send(new TransportPlay(from?.Value ?? -1, spec, ++_transportSequence));
+            return _link?.Send(new TransportPlay(from?.Value ?? -1, spec, ++_transportSequence)) == true;
         }
     }
 
@@ -441,6 +444,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         }
 
         TransportChanged?.Invoke(this, EventArgs.Empty);
+        EngineLost?.Invoke(this, EventArgs.Empty);
     }
 
     // Under _gate: later WhenReadyAsync calls wait for the next engine.

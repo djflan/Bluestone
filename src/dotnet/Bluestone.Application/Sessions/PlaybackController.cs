@@ -58,6 +58,7 @@ public sealed class PlaybackController : IAsyncDisposable
     private readonly PlaybackThread? _thread;
     private readonly PlaybackEngine? _local;
     private readonly EnginePlayback? _remote;
+    private long _startRequests;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<EndpointId, IMidiOutput> _open = [];
 
@@ -116,6 +117,13 @@ public sealed class PlaybackController : IAsyncDisposable
         Transport = engine;
         Live = new LiveInput(engine, _clock, engine);
         Recorder = new MidiRecorder(engine, Live);
+        engine.EngineLost += (_, _) =>
+        {
+            if (Recorder.IsRecording)
+            {
+                RecordingInterrupted?.Invoke(this, EventArgs.Empty);
+            }
+        };
         if (startLiveThread)
         {
             Live.Start();
@@ -164,6 +172,12 @@ public sealed class PlaybackController : IAsyncDisposable
 
     /// <summary>Raised after <see cref="Routing"/> or the prepared plan changes.</summary>
     public event EventHandler? Refreshed;
+
+    /// <summary>
+    /// The engine process stopped while a take was being recorded: the transport is stopped and input is no longer
+    /// captured. Finish the take (<see cref="FinishRecording"/>) on the thread that edits the project. Any thread.
+    /// </summary>
+    public event EventHandler? RecordingInterrupted;
 
     public void UseProfiles(ProfileCatalog profiles) => Profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
 
@@ -248,17 +262,28 @@ public sealed class PlaybackController : IAsyncDisposable
     /// <exception cref="InvalidOperationException">The engine process is not ready (starting or restarting).</exception>
     public async Task PlayAsync(Tick? from = null, CancellationToken cancellationToken = default)
     {
+        var request = Interlocked.Read(ref _startRequests);
         await EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
-        Transport.Play(from);
+        if (Interlocked.Read(ref _startRequests) != request)
+        {
+            return;
+        }
+
+        if (!Transport.Play(from))
+        {
+            throw EngineNotReady();
+        }
     }
+
+    private static InvalidOperationException EngineNotReady() => new("The audio engine is not ready yet. Try again in a moment.");
 
     // A command given while the engine is starting or restarting would be dropped, and Record would believe it had started.
     private async Task EnsureReadyAsync(CancellationToken cancellationToken)
     {
         if (!await Transport.WhenReadyAsync(EngineReadyWait, cancellationToken).ConfigureAwait(false))
         {
-            throw new InvalidOperationException("The audio engine is not ready yet. Try again in a moment.");
+            throw EngineNotReady();
         }
     }
 
@@ -271,6 +296,8 @@ public sealed class PlaybackController : IAsyncDisposable
     /// <summary>Stops playback. A take being recorded is finished and added to its track first.</summary>
     public RecordedTake? Stop()
     {
+        // The latest transport command wins: a Play or Record still waiting for the engine does not start after this.
+        Interlocked.Increment(ref _startRequests);
         var take = FinishRecording();
         Transport.Stop();
         return take;
@@ -307,6 +334,7 @@ public sealed class PlaybackController : IAsyncDisposable
     /// <exception cref="InvalidOperationException">The engine process is not ready (starting or restarting).</exception>
     public async Task RecordAsync(TrackId track, RecordOptions? options = null, CancellationToken cancellationToken = default)
     {
+        var request = Interlocked.Read(ref _startRequests);
         await EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
         _recordOptions = options ?? new RecordOptions();
         _takeWraps = Transport.LoopWraps;
@@ -319,13 +347,25 @@ public sealed class PlaybackController : IAsyncDisposable
         }
 
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        if (Interlocked.Read(ref _startRequests) != request)
+        {
+            return;
+        }
+
         var from = Transport.Position;
         var sequence = _session.Project.Sequence;
         var countIn = _recordOptions.CountInBars > 0 ? CountIn.Bars(sequence.TempoMap, sequence.MeterMap, from, _recordOptions.CountInBars) : null;
         Recorder.Start(track, from);
         ApplyMetronome();
         ApplyThru();
-        Transport.Play(from, countIn);
+        if (!Transport.Play(from, countIn))
+        {
+            // The engine went away after it was ready: nothing was played, so nothing is recorded.
+            _ = Recorder.Stop(from, null);
+            ApplyMetronome();
+            ApplyThru();
+            throw EngineNotReady();
+        }
     }
 
     /// <summary>
