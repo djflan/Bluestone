@@ -1,7 +1,8 @@
 name: CI
 
 # Pull requests only: main is protected and takes changes only through pull requests that pass these checks, so the
-# merged commit is not tested again. Run it by hand (workflow_dispatch) to check main.
+# merged commit is not tested again. Run it by hand (workflow_dispatch) to check main. Documentation-only pull requests
+# skip the build and tests (see the changes job).
 on:
   pull_request:
   workflow_dispatch:
@@ -18,8 +19,40 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  # Decides whether the change can affect the build or tests. A pull request that only touches documentation (files
+  # nothing builds or reads) skips the work below; the required checks still report, as passed.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(git diff --name-only "$BASE...$HEAD")
+          echo "$files"
+          # Documentation only: Markdown anywhere, docs/, skills, issue templates, funding, licence. Nothing builds,
+          # packs, or tests these (checked: no test or project reads a .md file).
+          others=$(echo "$files" | grep -vE '\.md$|^docs/|^\.github/skills/|^\.github/ISSUE_TEMPLATE/|^\.github/FUNDING\.yml$|^LICENSE' || true)
+          if [ -z "$others" ]; then
+            echo "Documentation only: build and test are skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Build and test (${{ matrix.os }})
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -27,37 +60,43 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.code == 'true'
 
       - uses: actions/setup-dotnet@v6
+        if: needs.changes.outputs.code == 'true'
         with:
           global-json-file: global.json
 
       # cpal's ALSA backend links libasound.
       - name: Install ALSA development files
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.changes.outputs.code == 'true' && (matrix.os == 'ubuntu-latest')
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       # Rust is preinstalled on the hosted runners; print the versions so a missing toolchain fails here.
       - name: Rust toolchain
+        if: needs.changes.outputs.code == 'true'
         run: |
           cargo --version
           rustc --version
 
       - name: Test native crates
+        if: needs.changes.outputs.code == 'true'
         working-directory: src/native
         run: cargo test --locked
 
       - name: Check native formatting and lints
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.changes.outputs.code == 'true' && (matrix.os == 'ubuntu-latest')
         working-directory: src/native
         run: |
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
 
       - name: Restore
+        if: needs.changes.outputs.code == 'true'
         run: dotnet restore src/dotnet/Bluestone.slnx
 
       - name: Build
+        if: needs.changes.outputs.code == 'true'
         run: dotnet build src/dotnet/Bluestone.slnx --no-restore --configuration Release
 
       # One test assembly at a time: the integration tests measure real-time delivery, which the other assemblies'
@@ -65,11 +104,13 @@ jobs:
       # CoreMIDI on hosted macOS runners is unreliable (the MIDI server may not start and virtual
       # ports can time out), so those tests run only on developer machines.
       - name: Test
+        if: needs.changes.outputs.code == 'true'
         run: dotnet test src/dotnet/Bluestone.slnx --no-build --configuration Release --max-parallel-test-modules 1 --filter-not-class Bluestone.Tests.Integration.Platform.CoreMidiProviderTests
 
       # The engine process ships with NativeAOT (ADR 0044): any trim or AOT warning fails, and the published binary
       # must keep its input and thru path free of allocation. No timing gates here: hosted runners are not quiet.
       - name: Publish the engine ahead of time
+        if: needs.changes.outputs.code == 'true'
         shell: bash
         run: |
           case "${{ runner.os }}-${{ runner.arch }}" in
@@ -81,5 +122,5 @@ jobs:
           ./engine-aot/Bluestone.Engine --check-allocations
 
       - name: Check formatting
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.changes.outputs.code == 'true' && (matrix.os == 'ubuntu-latest')
         run: dotnet format src/dotnet/Bluestone.slnx --no-restore --verify-no-changes
