@@ -231,8 +231,11 @@ less CPU than yielding did.
    64 and 128 frames. Instruments being played live therefore get a depth-1 exchange when live input moves into
    the engine (ADR 0044 step 7), with the pipelined depth kept for playback, where it lets workers run in parallel.
    Windows and Linux keep their wait until measured on their own hardware.
-7. **The engine process exists** (ADR 0044) and meets every target above on macOS, where it is the default: audio is
-   rendered in the device callback and live input adds nothing beyond the device. On Windows and Linux the app keeps
+7. **The engine process exists** (ADR 0044) and is the default on macOS, where it met every target its probes measure:
+   audio rendered in the device callback with no xruns, scheduled MIDI dispatched by its send-ahead deadline, and live
+   notes from a Core MIDI input heard within the device's output latency plus one buffer period, plus at most 0.04 ms.
+   MIDI arrival, immediate output, and thru have loopback measurements only in process (above), not yet through the
+   engine. On Windows and Linux the app keeps
    the render-ahead queues of ADRs 0032 and 0035 until the engine is measured there. Under those queues audio is
    glitch-free under load, but live input carries the queue as latency, and immediate MIDI and thru can be late by a
    collection in the application process.
@@ -242,7 +245,8 @@ less CPU than yielding did.
 - A live plugin instrument adds its worker pipeline (ADR 0025: one engine block at depth 2, 2.67 ms at 128 frames) on
   top of the figures above. That exceeds the 2 ms target whatever the language. Depth 1 adds nothing and, with real-time
   workers, met its deadline in every measured block (decision 6). It applies to live-played instruments in the engine
-  (ADR 0044 step 7), where measured added latency was at most 0.04 ms.
+  (ADR 0044 step 7), where a Core MIDI key was heard within the output latency plus one buffer period, plus at most
+  0.04 ms.
 - The engine process adds an IPC boundary between the UI and the engine. It carries plans, graph snapshots, commands,
   and meters, but nothing per event or per sample on the real-time path, because MIDI devices and the audio device
   open in the engine process.

@@ -149,6 +149,9 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     /// <summary>True while a count-in requested by <see cref="Play"/> is still running.</summary>
     public bool IsCountingIn => State == TransportState.Playing && _clock.Now.Ticks < Volatile.Read(ref _countInUntil);
 
+    /// <summary>Always ready: commands take effect at once.</summary>
+    public Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
     /// <summary>
     /// Sets the metronome's sound and output slot, or <see langword="null"/> for none. Clicks sound on
     /// every beat while playing when <paramref name="enabled"/>; count-in clicks sound whenever a

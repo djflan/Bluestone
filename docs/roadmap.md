@@ -24,7 +24,7 @@ The next phase makes one complete workflow dependable:
 
 ### 1. Core audio production
 
-- Measure the engine process on Windows and Linux hardware and make it the default there, as it is on macOS ([ADR 0044](adr/0044-engine-process.md)).
+- Measure MIDI arrival, immediate output, and thru through the engine process, and measure the engine on Windows and Linux hardware so it can be the default there, as it is on macOS ([ADR 0044](adr/0044-engine-process.md)).
 - Select and use audio inputs without disrupting the existing output path.
 - Record audio with accurate placement, input monitoring, punch, loop takes, and failure-safe file handling.
 - Import common audio files from the Browser and operating system.

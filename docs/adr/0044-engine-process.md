@@ -454,7 +454,9 @@ window fall back and stay back until depth 1 is asked for again, and misses furt
 
 ## Probes against the engine (step 8)
 
-The engine meets every ADR 0043 target on macOS (results below); Windows and Linux are still to be measured.
+The engine meets every target these probes measure on macOS (results below); Windows and Linux are still to be
+measured. The MIDI probe judges the engine's dispatch against Core MIDI's send-ahead deadline, not arrival at the
+receiver; arrival, immediate output, and thru are measured by `--midi-loopback`, which does not take `--engine` yet.
 `Bluestone.Benchmarks` takes `--engine` with `--jitter`, `--audio`, `--live`, and
 `--audio-loopback` (`EngineProbes`): the probe process plays Bluestone's role, starting the engine with
 `EngineSupervisor` and talking to it through `EnginePlayback` and `EngineAudio`, exactly as the app composes them, and
@@ -492,7 +494,7 @@ plays Bluestone: under `app` it collected about 375 times a run with pauses up t
 
 | Probe | none | app | edit | Target |
 | ----- | ---: | --: | ---: | -----: |
-| MIDI lateness, max (23,104 events; 0 of 15,232 messages missing) | 0 ms | 0 ms | 0 ms | 2 ms |
+| MIDI dispatch after its send-ahead deadline, max (23,104 events; 0 of 15,232 messages missing) | 0 ms | 0 ms | 0 ms | 2 ms |
 | Audio: missing or late callbacks, xruns, render faults | 0 | 0 | 0 | 0 |
 | Audio: longest render | 0.02 ms | 0.06 ms | 0.26 ms | 2.67 ms |
 | Live, Core MIDI keys: added latency, max | 0.03 ms | 0.04 ms | 0.04 ms | 2 ms |
@@ -505,13 +507,16 @@ this rate: the first collection would come after many minutes, and its pause is 
 The first, uncorrected suite (keys forwarded from the probe, before the probe waited for the MIDI destination) had one
 key a block late under `app` and one run that never opened its destination; both are fixed in the probes above.
 
-**Not done:** Windows and Linux; a per-collection pause list from the engine (a
+**Not done:** `--midi-loopback --engine` (arrival, immediate output, and thru through the engine); Windows and Linux; a per-collection pause list from the engine (a
 heartbeat sees the latest collection of its 250 ms interval; the total counts every one); the native layer's longest
 render is kept from when the stream opened, so it includes the first callbacks.
 
 ## The engine by default (step 10)
 
-The engine met every ADR 0043 target on macOS (step 8), so it is the default there. `App.UseEngineProcess` reads
+On macOS the engine met every ADR 0043 target its probes measure (step 8): audio in the callback, scheduled MIDI
+dispatched by its send-ahead deadline, live input from Core MIDI, and the loopback. So it is the default there. MIDI
+arrival at the receiver, immediate output, and thru were measured in process (ADR 0043) but not yet through the
+engine; that loopback probe does not take `--engine` yet. `App.UseEngineProcess` reads
 `BLUESTONE_ENGINE`: `0` keeps the real-time work in Bluestone's process, `1` uses the engine on any platform, and
 anything else gives the platform default, which is the engine on macOS and the in-process path on Windows and Linux.
 Those platforms switch once the probes have run on native hardware (the Windows PC first, Linux later).

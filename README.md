@@ -117,11 +117,11 @@ The Release 1.0 work begins by converting this into an explicit supported, exper
 Timing targets, the probes that judge them, and current measurements are in [ADR 0043](docs/adr/0043-timing-targets-and-measurement.md). On macOS the real-time work (audio rendered in the device callback, MIDI playback and thru, live input, and the plugin data plane) runs in a separate C# engine process compiled ahead of time with NativeAOT ([ADR 0044](docs/adr/0044-engine-process.md)). Measured on an Apple silicon Mac at 128 frames (2.7 ms), with the application process collecting garbage hundreds of times a minute, the engine:
 - had no xruns;
 - rendered in at most 0.26 ms;
-- played every MIDI message on time;
-- added at most 0.04 ms to live notes beyond the device's own latency;
+- dispatched every scheduled MIDI message by its Core MIDI send-ahead deadline;
+- played live notes from a Core MIDI input within the device's reported output latency plus one buffer period, plus at most 0.04 ms;
 - did not collect garbage or compile code once.
 
-A loopback capture agrees with the heard-time model within 0.4 ms. On Windows and Linux the engine process is opt-in (`BLUESTONE_ENGINE=1`) until it is measured on native hardware there.
+A loopback capture agrees with the heard-time model within 0.4 ms. MIDI arrival at the receiver, immediate MIDI output, and MIDI thru have been measured only with the real-time work in the application process (within 0.3 ms), not yet through the engine. Keys from the computer keyboard pass through the application process first, so a garbage collection there can delay them (0.31 ms at most in the same runs). On Windows and Linux the engine process is opt-in (`BLUESTONE_ENGINE=1`) until it is measured on native hardware there.
 
 ## Build and run
 

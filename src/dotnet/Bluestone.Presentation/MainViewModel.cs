@@ -1131,7 +1131,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var options = new RecordOptions(IsCountInEnabled ? CountInBars : 0, IsReplaceRecording);
         await RunAsync("Record", () => _playback.RecordAsync(target.Id, options));
         ApplyThru();
-        IsRecording = true;
+        IsRecording = _playback.Recorder.IsRecording;
     }
 
     /// <summary>Arms <paramref name="track"/> for recording, or disarms it if it is armed.</summary>

@@ -1,9 +1,13 @@
 using Bluestone.Application.Engine;
+using Bluestone.Application.Sessions;
 using Bluestone.Application.Status;
+using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
 using Bluestone.Engine.Protocol;
+using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
 using Bluestone.Playback;
+using Bluestone.Profiles;
 
 namespace Bluestone.Tests.Unit.Engine;
 
@@ -184,6 +188,41 @@ public sealed class EnginePlaybackTests : IAsyncDisposable
     // As the engine reports an anchor: plan 1 is the only plan loaded.
     private static AnchorSpec Anchor(TransportAnchor anchor, TempoMap tempo) =>
         new(anchor.Playing, anchor.Time.Ticks, anchor.SongTime.Ticks, ReferenceEquals(anchor.Tempo, tempo) ? 1 : -1, anchor.LoopStart, anchor.LoopEnd);
+
+    [Fact]
+    public async Task ItIsReady_OnlyWhileAnEngineIsConnected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        Assert.False(await _playback.WhenReadyAsync(TimeSpan.FromMilliseconds(20), ct));
+
+        var waiting = _playback.WhenReadyAsync(TimeSpan.FromSeconds(30), ct);
+        var link = new RecordingLink();
+        Client.Connected(link, restarted: false);
+        Assert.True(await waiting);
+        Assert.True(await _playback.WhenReadyAsync(TimeSpan.Zero, ct));
+
+        // A crashed engine: commands would be dropped until the next one is connected.
+        Client.Disconnected(link);
+        Assert.False(await _playback.WhenReadyAsync(TimeSpan.FromMilliseconds(20), ct));
+        Client.Connected(new RecordingLink(), restarted: true);
+        Assert.True(await _playback.WhenReadyAsync(TimeSpan.Zero, ct));
+    }
+
+    [Fact]
+    public async Task PlayAndRecord_WhileNoEngineIsReady_FailWithAMessage_AndRecordNothing()
+    {
+        using var directory = new EndpointDirectory([]);
+        var session = new ProjectSession();
+        await using var controller = new PlaybackController(session, directory, ProfileCatalog.Empty, _playback, startLiveThread: false)
+        {
+            EngineReadyWait = TimeSpan.FromMilliseconds(20),
+        };
+        var track = TrackId.New();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.PlayAsync(cancellationToken: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.RecordAsync(track, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(controller.Recorder.IsRecording);
+    }
 
     private sealed class RecordingLink : IEngineLink
     {

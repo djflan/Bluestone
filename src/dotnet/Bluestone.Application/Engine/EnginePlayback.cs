@@ -52,6 +52,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     private readonly Dictionary<long, TempoMap> _tempos = [];
     private readonly List<string> _problems = [];
     private IEngineLink? _link;
+    private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _nextHandle;
     private long _nextPlan;
     private SetSlots _slots = new([]);
@@ -92,6 +93,25 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     }
 
     public IMonotonicClock Clock => SystemMonotonicClock.Instance;
+
+    public async Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        Task ready;
+        lock (_gate)
+        {
+            ready = _ready.Task;
+        }
+
+        try
+        {
+            await ready.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
 
     public TransportState State => Volatile.Read(ref _mirror).State;
 
@@ -262,6 +282,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
         lock (_gate)
         {
             _link = null;
+            NotReady();
             _planFiles.Clear();
         }
 
@@ -307,6 +328,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
 
             // The transport stays stopped where it was (ADR 0044).
             link.Send(new TransportSeek(Interlocked.Read(ref _position), ++_transportSequence));
+            _ready.TrySetResult();
         }
 
         TransportChanged?.Invoke(this, EventArgs.Empty);
@@ -414,10 +436,20 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
             }
 
             _link = null;
+            NotReady();
             Volatile.Write(ref _mirror, Mirror.Stopped(_mirror.LoopWraps));
         }
 
         TransportChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Under _gate: later WhenReadyAsync calls wait for the next engine.
+    private void NotReady()
+    {
+        if (_ready.Task.IsCompleted)
+        {
+            _ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
     }
 
     // The engine runs routes through built-in live devices, forced channels, and plugin MIDI effects, to an output it

@@ -242,10 +242,24 @@ public sealed class PlaybackController : IAsyncDisposable
         Refreshed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>How long Play and Record wait for the engine process to be ready before they give up.</summary>
+    public TimeSpan EngineReadyWait { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <exception cref="InvalidOperationException">The engine process is not ready (starting or restarting).</exception>
     public async Task PlayAsync(Tick? from = null, CancellationToken cancellationToken = default)
     {
+        await EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
         Transport.Play(from);
+    }
+
+    // A command given while the engine is starting or restarting would be dropped, and Record would believe it had started.
+    private async Task EnsureReadyAsync(CancellationToken cancellationToken)
+    {
+        if (!await Transport.WhenReadyAsync(EngineReadyWait, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The audio engine is not ready yet. Try again in a moment.");
+        }
     }
 
     // Whether compiling the plan will ask a device outside Bluestone's process (a plugin MIDI effect in its worker).
@@ -290,8 +304,10 @@ public sealed class PlaybackController : IAsyncDisposable
     /// Starts recording into <paramref name="track"/>. While playing, recording punches in at the
     /// playhead; from a stop, playback starts at the playhead after the count-in.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The engine process is not ready (starting or restarting).</exception>
     public async Task RecordAsync(TrackId track, RecordOptions? options = null, CancellationToken cancellationToken = default)
     {
+        await EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
         _recordOptions = options ?? new RecordOptions();
         _takeWraps = Transport.LoopWraps;
         if (Transport.State == TransportState.Playing)

@@ -27,6 +27,12 @@ public interface IPlaybackTransport
     /// <summary>True while a count-in requested by <see cref="Play"/> is still running.</summary>
     bool IsCountingIn { get; }
 
+    /// <summary>
+    /// True once commands take effect, false after <paramref name="timeout"/>: at once in process; with the engine process,
+    /// when an engine is connected (it may be starting, or restarting after a crash).
+    /// </summary>
+    Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default);
+
     /// <summary>The dispatch timing figures so far.</summary>
     TimingSnapshot SnapshotStatistics();
 

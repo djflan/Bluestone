@@ -447,6 +447,10 @@ internal static class EngineProbes
         };
     }
 
+    // An executable may be NativeAOT or a JIT app host; the engine's own JIT count settles it once it reports (a run that
+    // ends before then keeps this label).
+    private const string Unconfirmed = "unconfirmed";
+
     /// <summary>
     /// The engine to measure: <c>--engine-path</c>, else the NativeAOT build in <c>src/dotnet/artifacts/engine-aot</c>,
     /// else the JIT build beside the probes (with a printed note).
@@ -463,7 +467,7 @@ internal static class EngineProbes
             }
 
             return File.Exists(full)
-                ? (full, full.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? "JIT" : "NativeAOT")
+                ? (full, full.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? "JIT" : Unconfirmed)
                 : throw new ArgumentException($"--engine-path: there is no engine at {full}.");
         }
 
@@ -472,7 +476,7 @@ internal static class EngineProbes
             var published = Path.Combine(directory.FullName, "src", "dotnet", "artifacts", "engine-aot", name);
             if (File.Exists(published))
             {
-                return (published, "NativeAOT");
+                return (published, Unconfirmed);
             }
         }
 
