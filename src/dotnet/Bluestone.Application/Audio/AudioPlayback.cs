@@ -241,6 +241,10 @@ public sealed class AudioPlayback : IAudioPlayback
                 else
                 {
                     _nextAsioRetry = _clock.Now + AsioRetryInterval;
+                    if (_output is null && DeviceList() != _devicesTried)
+                    {
+                        Recover(null);
+                    }
                 }
 
                 return;

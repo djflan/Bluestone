@@ -18,6 +18,13 @@ namespace Bluestone.Tests.Integration.Audio;
 public sealed class AudioDeviceTests
 {
     [Fact]
+    public void BufferedQueue_IsNotShorterThanTheDeviceCallback()
+    {
+        Assert.Equal(960, AudioOutput.ClampBufferedQueue(512, 960, 262_144));
+        Assert.Equal(2048, AudioOutput.ClampBufferedQueue(2048, 960, 262_144));
+    }
+
+    [Fact]
     public void NativeInputStructs_MatchTheCAbi()
     {
         Assert.Equal(32, Marshal.SizeOf<NativeMethods.CaptureInfo>());

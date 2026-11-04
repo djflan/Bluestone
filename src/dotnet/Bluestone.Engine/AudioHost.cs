@@ -482,6 +482,10 @@ internal sealed class AudioHost : IDisposable
             else
             {
                 _nextAsioRetryMilliseconds = Environment.TickCount64 + AsioRetryIntervalMilliseconds;
+                if (_output is null && DeviceList() != _devicesTried)
+                {
+                    Recover(null);
+                }
             }
 
             return;

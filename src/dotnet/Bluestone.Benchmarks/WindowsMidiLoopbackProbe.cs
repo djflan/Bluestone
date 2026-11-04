@@ -47,12 +47,13 @@ internal static class WindowsMidiLoopbackProbe
             engine.Load(plan);
             using (new PlaybackThread(engine, options.ThreadSetup(), options.PreciseSleep()))
             {
-                engine.Play(Tick.Zero);
                 var stop = new CancellationTokenSource();
                 var pressure = options.StartPressure(stop.Token);
                 Thread.Sleep(pressure.Count > 0 ? 1000 : 0);
                 var before = Stopwatch.GetTimestamp();
+                engine.Play(Tick.Zero);
                 Thread.Sleep(TimeSpan.FromSeconds(options.Seconds));
+                var elapsed = Math.Max(0.001, Stopwatch.GetElapsedTime(before).TotalSeconds);
                 var dispatch = engine.Statistics.Snapshot();
                 engine.Stop();
                 Thread.Sleep(100);
@@ -67,8 +68,8 @@ internal static class WindowsMidiLoopbackProbe
                     Target: Targets.MidiLatenessMs));
                 report.Add(new Metric("midi.immediate.late-over-2ms", "messages", dispatch.Late));
                 report.Add(new Metric("midi.immediate.dropped", "messages", dispatch.Dropped + dispatch.SkippedLateNotes, Target: 0));
-                report.Add(new Metric("midi.immediate.rate", "messages/s", dispatch.Dispatched / (double)options.Seconds));
-                report.Notes.Add($"immediate phase ran for {Stopwatch.GetElapsedTime(before).TotalSeconds:0.##} s; WinMM does not support scheduled delivery.");
+                report.Add(new Metric("midi.immediate.rate", "messages/s", dispatch.Dispatched / elapsed));
+                report.Notes.Add($"immediate phase ran for {elapsed:0.##} s; WinMM does not support scheduled delivery.");
             }
         }
 
@@ -98,11 +99,19 @@ internal static class WindowsMidiLoopbackProbe
         using (new PlaybackThread(thruEngine, options.ThreadSetup(), options.PreciseSleep()))
         using (var sourceOutput = provider.OpenOutputAsync(outputEndpoint.Id).AsTask().GetAwaiter().GetResult())
         {
+            using var stop = new CancellationTokenSource();
+            var pressure = options.StartPressure(stop.Token);
+            Thread.Sleep(pressure.Count > 0 ? 1000 : 0);
             capture.BeginThru(thruEngine, output);
             thruEngine.Play(Tick.Zero);
             GenerateControllerInput(sourceOutput, capture, options.Seconds);
             Thread.Sleep(100);
             thruEngine.Stop();
+            stop.Cancel();
+            foreach (var thread in pressure)
+            {
+                thread.Join();
+            }
         }
 
         var roundTrips = capture.RoundTrips;

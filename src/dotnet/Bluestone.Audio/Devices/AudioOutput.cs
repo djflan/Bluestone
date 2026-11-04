@@ -101,6 +101,7 @@ public sealed class AudioDeviceException(string message) : Exception(message);
 public sealed unsafe class AudioOutput : IAudioOutput
 {
     private const int ErrorCapacity = 512;
+    private const int AsioRingCapacityFrames = 262_144;
     private readonly IAudioRenderer _renderer;
     private readonly ManualResetEventSlim _queuePrefilled = new(false);
     private bool _asio;
@@ -109,6 +110,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
     private long _renderFaults;
     private int _queued;
     private int _openedQueue;
+    private int _minimumQueuedFrames;
     private int _renderBlock;
     private Thread? _renderThread;
     private volatile bool _rendering;
@@ -119,11 +121,13 @@ public sealed unsafe class AudioOutput : IAudioOutput
     /// <summary>Frames the render thread keeps queued (buffered mode), or 0 in direct mode.</summary>
     public int QueuedFrames => Volatile.Read(ref _queued);
 
+    internal static int ClampBufferedQueue(int frames, int minimumFrames, int maximumFrames) => Math.Clamp(frames, minimumFrames, maximumFrames);
+
     public void SetQueuedFrames(int frames)
     {
         if (_openedQueue > 0)
         {
-            Volatile.Write(ref _queued, Math.Clamp(frames, 1, _openedQueue));
+            Volatile.Write(ref _queued, ClampBufferedQueue(frames, _minimumQueuedFrames, _openedQueue));
         }
     }
 
@@ -171,12 +175,18 @@ public sealed unsafe class AudioOutput : IAudioOutput
         error[0] = 0;
         stream._queued = Math.Max(0, request.QueuedFrames);
         stream._openedQueue = stream._queued;
+        stream._minimumQueuedFrames = stream._queued > 0 ? 1 : 0;
+        var ringFrames = (uint)(2 * stream._queued) + 8192;
+        if (stream._asio && stream._queued > 0)
+        {
+            ringFrames = Math.Max(ringFrames, AsioRingCapacityFrames);
+        }
         fixed (byte* hostPointer = host)
         fixed (byte* idPointer = id)
         {
             stream._handle = stream._queued == 0
             ? NativeMethods.OpenOutput(hostPointer, idPointer, &native, &RenderCallback, GCHandle.ToIntPtr(stream._self), error, ErrorCapacity)
-            : NativeMethods.OpenOutputBuffered(hostPointer, idPointer, &native, (uint)(2 * stream._queued) + 8192, error, ErrorCapacity);
+            : NativeMethods.OpenOutputBuffered(hostPointer, idPointer, &native, ringFrames, error, ErrorCapacity);
         }
 
         if (stream._handle == 0)
@@ -189,6 +199,26 @@ public sealed unsafe class AudioOutput : IAudioOutput
         var status = stream.Status;
         stream.SampleRate = status.SampleRate;
         stream.Channels = status.Channels;
+        if (stream._queued > 0)
+        {
+            stream._minimumQueuedFrames = status.DeviceBufferFrames;
+            stream._queued = Math.Max(stream._queued, stream._minimumQueuedFrames);
+            stream._openedQueue = stream._queued;
+        }
+
+        if (stream._queued > 0 && stream._asio)
+        {
+            var minimumFrames = status.DeviceBufferFrames;
+            var capacityFrames = (int)Math.Min(status.QueueCapacity, int.MaxValue);
+            if (minimumFrames <= 0 || minimumFrames > capacityFrames)
+            {
+                stream.DisposeCore();
+                throw new AudioDeviceException("The ASIO callback buffer exceeds the available render-ahead queue.");
+            }
+            stream._minimumQueuedFrames = minimumFrames;
+            stream._openedQueue = Math.Max(stream._openedQueue, minimumFrames);
+            stream._queued = ClampBufferedQueue(stream._queued, stream._minimumQueuedFrames, stream._openedQueue);
+        }
         stream._renderBlock = Math.Min(stream._queued, request.BufferFrames > 0 ? request.BufferFrames : 256);
         return stream;
     }

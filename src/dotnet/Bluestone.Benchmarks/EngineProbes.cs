@@ -297,8 +297,13 @@ internal static class EngineProbes
             report.Notes.Add($"The engine's meter also holds {startLive.Count} warm-up keys (sent to check the input reaches the instrument); its shortest and longest include them.");
         }
 
-        var period = (double)buffer / SampleRate * 1000;
+        var stream = project.Audio.Stream;
+        var actualBuffer = stream?.DeviceBufferFrames ?? 0;
+        var sampleRate = stream?.SampleRate ?? SampleRate;
+        var periodFrames = actualBuffer > 0 ? actualBuffer : buffer;
+        var period = (double)periodFrames / sampleRate * 1000;
         var outputLatency = telemetry.OutputLatency.TotalMilliseconds;
+        report.Add(new Metric("audio.device-buffer", "frames", actualBuffer));
         report.Add(new Metric("audio.period", "ms", period));
         report.Add(new Metric("audio.output-latency", "ms", outputLatency));
         report.Add(new Metric("live.played", "notes", played.Count));
@@ -310,10 +315,13 @@ internal static class EngineProbes
         report.Add(new Metric("live.total.min", "ms", live.Min.TotalMilliseconds));
         report.Add(new Metric("live.total.max", "ms", live.Max.TotalMilliseconds));
         report.Add(new Metric("live.added.average", "ms", average - outputLatency - period));
-        report.Add(new Metric("live.added.max", "ms", live.Max.TotalMilliseconds - outputLatency - period, Target: Targets.LiveAddedMs));
+        report.Add(new Metric("live.added.max", "ms", live.Max.TotalMilliseconds - outputLatency - period, Target: actualBuffer > 0 ? Targets.LiveAddedMs : null));
+        report.Add(new Metric("live.depth1-misses", "blocks", telemetry.LiveDeadlineMisses - startMisses, Target: 0));
         report.Add(new Metric("audio.xruns", "xruns", telemetry.Xruns, Target: 0));
-        report.Notes.Add(keyInput == "midi"
-            ? $"The engine's meter keeps the count, average, shortest, and longest latency, from the key's MIDI timestamp (set by the sending process) to when its block is heard: {(OperatingSystem.IsWindows() ? "WinMM" : "Core MIDI")}'s hop to the engine's input is included."
+        report.Notes.Add(keyInput == "midi" && OperatingSystem.IsWindows()
+            ? "On Windows, the live meter starts at WinMM's input-driver timestamp and excludes the sender-to-input hop; it measures input callback to heard time."
+            : keyInput == "midi"
+                ? "The engine's meter keeps the count, average, shortest, and longest latency from the Core MIDI input timestamp to when its block is heard."
             : "The engine's meter keeps the count, average, shortest, and longest latency, from the key's timestamp (taken here) to when its block is heard: the forwarded path from this process, and any pause here, is included.");
         report.Notes.Add(AddedNote);
         gc.AddTo(report);
@@ -418,11 +426,16 @@ internal static class EngineProbes
         }
 
         var telemetry = project.Telemetry();
-        var period = (double)buffer / SampleRate * 1000;
+        var stream = project.Audio.Stream;
+        var actualBuffer = stream?.DeviceBufferFrames ?? 0;
+        var sampleRate = stream?.SampleRate ?? SampleRate;
+        var periodFrames = actualBuffer > 0 ? actualBuffer : buffer;
+        var period = (double)periodFrames / sampleRate * 1000;
         var outputLatency = telemetry.OutputLatency.TotalMilliseconds;
         var inputStatus = capture.Status;
         var inputLatency = inputStatus.InputLatency.TotalMilliseconds;
         report.Add(new Metric("audio.period", "ms", period));
+        report.Add(new Metric("audio.device-buffer", "frames", actualBuffer));
         report.Add(new Metric("audio.output-latency", "ms", outputLatency));
         report.Add(new Metric("audio.input-latency", "ms", inputLatency));
         report.Add(new Metric("audio.input-overruns", "overruns", inputStatus.Overruns, Target: 0));
@@ -430,7 +443,7 @@ internal static class EngineProbes
         report.Add(new Metric("loopback.keys", "keys", played.Count));
         report.Add(new Metric("loopback.unmatched", "keys", unmatched, Target: 0));
         report.Add(new Metric("loopback.total", "ms", Distribution: Distribution.Of(totals)));
-        report.Add(new Metric("loopback.added", "ms", Distribution: Distribution.Of(totals.Select(t => t - outputLatency - period)), Target: Targets.LiveAddedMs));
+        report.Add(new Metric("loopback.added", "ms", Distribution: Distribution.Of(totals.Select(t => t - outputLatency - period)), Target: actualBuffer > 0 ? Targets.LiveAddedMs : null));
         report.Notes.Add(AddedNote);
         report.Notes.Add("total is from the key's timestamp (taken where it was sent) to when the onset entered the loopback input (the input's reported latency is already taken off the capture time); added also takes off the device's reported output latency and one buffer period, so it is negative when a key waits less than a whole period for its callback. The onset is the sine's first sample above 0.02, a few samples into its attack.");
         gc.AddTo(report);

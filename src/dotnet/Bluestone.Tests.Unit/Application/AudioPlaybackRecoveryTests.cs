@@ -128,10 +128,10 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         Assert.Equal(attempts, _backend.Attempts);
         _clock.Advance(TimeSpan.FromSeconds(5));
         _audio.CheckDevice();
-        Assert.Equal(lists + 1, _backend.ListCalls);
+        Assert.Equal(lists + 2, _backend.ListCalls);
         Assert.Equal(attempts, _backend.Attempts);
         _audio.CheckDevice();
-        Assert.Equal(lists + 1, _backend.ListCalls);
+        Assert.Equal(lists + 2, _backend.ListCalls);
 
         _backend.Devices.Add(new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024));
         _clock.Advance(TimeSpan.FromSeconds(5));
@@ -139,6 +139,22 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         Assert.True(_audio.IsRunning);
         Assert.Equal("ASIO", _backend.Requests[^1].Host);
+    }
+
+    [Fact]
+    public void ASIOWaiting_OpensWASAPIWhenItAppears()
+    {
+        Assert.False(_audio.Start(new AudioSettings(true) { Host = "ASIO" }));
+        var attempts = _backend.Attempts;
+
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        _backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        _audio.CheckDevice();
+
+        Assert.True(_audio.IsRunning);
+        Assert.True(_audio.IsOnFallback);
+        Assert.Equal("WASAPI", _backend.Requests[^1].Host);
+        Assert.True(_backend.Attempts > attempts);
     }
 
     [Fact]
