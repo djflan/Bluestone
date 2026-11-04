@@ -284,6 +284,12 @@ public static class FrameCodec
                 w.WriteGuid(m.InstanceId.Value);
                 w.WriteBool(m.ToHost);
                 break;
+            case SetEditorHeader m:
+                w.WriteGuid(m.InstanceId.Value);
+                w.WriteByte((byte)m.Bypass);
+                w.WriteByte((byte)m.Pin);
+                w.WriteByte((byte)m.Keys);
+                break;
             case PluginNotification m:
                 w.WriteGuid(m.InstanceId.Value);
                 w.WriteByte((byte)m.Kind);
@@ -458,6 +464,8 @@ public static class FrameCodec
                 return new SetEditorVisible(ReadInstanceId(ref r), r.ReadBool());
             case MessageType.SetEditorKeyboard:
                 return new SetEditorKeyboard(ReadInstanceId(ref r), r.ReadBool());
+            case MessageType.SetEditorHeader:
+                return new SetEditorHeader(ReadInstanceId(ref r), ReadButtonState(ref r), ReadButtonState(ref r), ReadButtonState(ref r));
             case MessageType.PluginNotification:
                 return ReadNotification(ref r);
             default:
@@ -526,9 +534,16 @@ public static class FrameCodec
             NotificationKind.ParameterEdited => NormalizedValue.IsValid(value),
             NotificationKind.LatencyChanged => parameterId == 0 && value is >= 0 and <= 1 << 24 && value == Math.Floor(value),
             NotificationKind.EditorKey => EditorKey.IsValid(parameterId, value),
+            NotificationKind.EditorButton => EditorButtonClick.IsValid(parameterId, value),
             _ => parameterId == 0 && value == 0,
         };
         return valid ? new PluginNotification(id, kind, parameterId, value) : throw new ProtocolException($"Invalid {kind} notification.");
+    }
+
+    private static EditorButtonState ReadButtonState(ref WireReader r)
+    {
+        var state = (EditorButtonState)r.ReadByte();
+        return Enum.IsDefined(state) ? state : throw new ProtocolException($"Unknown editor button state {(byte)state}.");
     }
 
     private static long ReadFrame(ref WireReader r, string what)

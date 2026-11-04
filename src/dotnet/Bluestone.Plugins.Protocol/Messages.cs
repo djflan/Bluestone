@@ -32,6 +32,7 @@ public enum MessageType : ushort
     PluginNotification = 25,
     SetEditorVisible = 26,
     SetEditorKeyboard = 27,
+    SetEditorHeader = 28,
 }
 
 /// <summary>What a worker process was launched to do.</summary>
@@ -286,6 +287,57 @@ public sealed record SetEditorKeyboard(PluginInstanceId InstanceId, bool ToHost)
     public override MessageType Type => MessageType.SetEditorKeyboard;
 }
 
+/// <summary>
+/// Shows the host's state in the header strip Bluestone draws at the top of the instance's editor window: what each of
+/// its buttons shows. Clicks come back as <see cref="NotificationKind.EditorButton"/> notifications; the window flips the
+/// button at once, and the host answers with the state it settled on. Replies <see cref="Ack"/>, or
+/// <see cref="ErrorReply"/> with <see cref="ErrorCode.NotSupported"/> when no editor is open or the plugin owns its window
+/// (a floating CLAP editor has no header).
+/// </summary>
+public sealed record SetEditorHeader(PluginInstanceId InstanceId, EditorButtonState Bypass, EditorButtonState Pin, EditorButtonState Keys) : ProtocolMessage
+{
+    public override MessageType Type => MessageType.SetEditorHeader;
+}
+
+/// <summary>What one button of an editor window's header shows.</summary>
+public enum EditorButtonState : byte
+{
+    Hidden = 0,
+    Off = 1,
+    On = 2,
+
+    /// <summary>Shown dimmed; clicks do nothing.</summary>
+    Unavailable = 3,
+}
+
+/// <summary>A button of an editor window's header.</summary>
+public enum EditorButton : byte
+{
+    /// <summary>On: the device is bypassed.</summary>
+    Bypass = 1,
+
+    /// <summary>On: the editor stays open when another track is selected.</summary>
+    Pin = 2,
+
+    /// <summary>On: the window's keys go to Bluestone.</summary>
+    Keys = 3,
+}
+
+/// <summary>A click on an editor window's header, decoded from a <see cref="NotificationKind.EditorButton"/> notification.</summary>
+/// <param name="Button">The button clicked.</param>
+/// <param name="On">The state the user wants it in.</param>
+public readonly record struct EditorButtonClick(EditorButton Button, bool On)
+{
+    /// <summary>Whether a notification's fields are a click: a defined button, and 0 or 1.</summary>
+    public static bool IsValid(uint button, double value) => button is >= 1 and <= 3 && value is 0 or 1;
+
+    public static EditorButtonClick From(PluginNotification notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        return new EditorButtonClick((EditorButton)notification.ParameterId, notification.Value == 1);
+    }
+}
+
 /// <summary>What a plugin did on its own, reported by the worker without being asked.</summary>
 public enum NotificationKind : byte
 {
@@ -310,6 +362,13 @@ public enum NotificationKind : byte
     /// Meta), plus 256 when pressed and 512 for an auto-repeat (see <see cref="EditorKey"/>).
     /// </summary>
     EditorKey = 6,
+
+    /// <summary>
+    /// A button of the editor window's header was clicked: <see cref="PluginNotification.ParameterId"/> is the
+    /// <see cref="EditorButton"/>, <see cref="PluginNotification.Value"/> 1 to turn it on, 0 to turn it off (see
+    /// <see cref="EditorButtonClick"/>).
+    /// </summary>
+    EditorButton = 7,
 }
 
 /// <summary>A key from an editor window whose keys go to the host, decoded from a <see cref="NotificationKind.EditorKey"/> notification.</summary>

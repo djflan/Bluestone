@@ -11,7 +11,7 @@ namespace Bluestone.PluginWorker.Native;
 internal static unsafe partial class NativeMethods
 {
     public const string Library = "bluestone_plugin_host";
-    public const uint AbiVersion = 1;
+    public const uint AbiVersion = 2;
     public const uint FormatVst3 = 1;
     public const uint FormatClap = 2;
 
@@ -26,6 +26,9 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "bph_main_wake")]
     public static partial void MainWake();
+
+    [LibraryImport(Library, EntryPoint = "bph_main_set_host_process")]
+    public static partial void MainSetHostProcess(uint processId);
 
     [LibraryImport(Library, EntryPoint = "bph_string_free")]
     public static partial void StringFree(nint text);
@@ -86,6 +89,9 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "bph_plugin_route_editor_keys")]
     public static partial int PluginRouteEditorKeys(nint plugin, int toHost);
+
+    [LibraryImport(Library, EntryPoint = "bph_plugin_set_editor_header")]
+    public static partial int PluginSetEditorHeader(nint plugin, uint bypass, uint pin, uint keys);
 
     [LibraryImport(Library, EntryPoint = "bph_editor_key_routing_supported")]
     public static partial int EditorKeyRoutingSupported();

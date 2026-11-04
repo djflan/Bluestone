@@ -118,6 +118,9 @@ internal sealed class InstanceHostSession(Stream pipe, WorkerMainThread mainThre
         SetEditorKeyboard keys => WithInstance(keys.InstanceId, i => i.RouteEditorKeys(keys.ToHost) is { } error
             ? new ErrorReply(ErrorCode.NotSupported, error)
             : new Ack()),
+        SetEditorHeader header => WithInstance(header.InstanceId, i => i.SetEditorHeader(header.Bypass, header.Pin, header.Keys) is { } error
+            ? new ErrorReply(ErrorCode.NotSupported, error)
+            : new Ack()),
         _ => new ErrorReply(ErrorCode.InvalidRequest, $"{message.Type} is not a request this worker serves."),
     };
 

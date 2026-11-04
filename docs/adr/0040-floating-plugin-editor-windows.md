@@ -1,6 +1,6 @@
 # 0040. Floating plugin editors: follow the selection, pin, and send keys to Bluestone
 
-- Status: Accepted; amends 0025 and 0033
+- Status: Accepted; amends 0025 and 0033; amended by 0048
 - Date: 2026-10-12
 
 ## Context

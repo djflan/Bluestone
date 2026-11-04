@@ -4,7 +4,8 @@ using Bluestone.Plugins.Protocol;
 namespace Bluestone.PluginWorker;
 
 /// <summary>
-/// Entry point. Usage: <c>Bluestone.PluginWorker --mode host|scan --pipe NAME</c>, with the per-launch token as the
+/// Entry point. Usage: <c>Bluestone.PluginWorker --mode host|scan --pipe NAME [--host-pid PID]</c> (Bluestone's process
+/// id, which editor windows use to tell when Bluestone is the active application), with the per-launch token as the
 /// first line on standard input (not on the command line, where other users could read it). The worker connects to
 /// the host's pipe, completes the Hello handshake, and serves until Shutdown or until the pipe closes. The control
 /// plane runs on the thread pool; the process's main thread is kept for plugins and their editors
@@ -30,11 +31,13 @@ internal static class Program
     private static async Task<int> RunAsync(string[] args, WorkerMainThread mainThread)
     {
         WorkerFaults.CrashAtStartupIfRequested();
-        if (!TryParse(args, out var mode, out var pipeName))
+        if (!TryParse(args, out var mode, out var pipeName, out var hostProcessId))
         {
-            await Console.Error.WriteLineAsync("Usage: Bluestone.PluginWorker --mode host|scan --pipe NAME (token on standard input)").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync("Usage: Bluestone.PluginWorker --mode host|scan --pipe NAME [--host-pid PID] (token on standard input)").ConfigureAwait(false);
             return ExitUsage;
         }
+
+        mainThread.HostProcessId = hostProcessId;
 
         var token = await Console.In.ReadLineAsync().ConfigureAwait(false);
         if (string.IsNullOrEmpty(token))
@@ -109,10 +112,11 @@ internal static class Program
         }
     }
 
-    private static bool TryParse(string[] args, out WorkerMode mode, out string pipeName)
+    private static bool TryParse(string[] args, out WorkerMode mode, out string pipeName, out int hostProcessId)
     {
         mode = default;
         pipeName = string.Empty;
+        hostProcessId = 0;
         string? modeText = null;
         for (var i = 0; i + 1 < args.Length; i += 2)
         {
@@ -123,6 +127,13 @@ internal static class Program
                     break;
                 case "--pipe":
                     pipeName = args[i + 1];
+                    break;
+                case "--host-pid":
+                    if (!int.TryParse(args[i + 1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out hostProcessId) || hostProcessId <= 0)
+                    {
+                        return false;
+                    }
+
                     break;
                 default:
                     return false;

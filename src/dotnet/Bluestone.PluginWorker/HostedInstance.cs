@@ -117,6 +117,12 @@ internal sealed class HostedInstance : IDisposable
         : native.RouteEditorKeys(toHost) || !toHost ? null
         : "This platform or editor cannot send its keys to Bluestone.";
 
+    /// <summary>Shows the host's state in the editor window's header; null on success, else why not. Main thread.</summary>
+    public string? SetEditorHeader(EditorButtonState bypass, EditorButtonState pin, EditorButtonState keys) =>
+        _plugin is not NativePlugin native ? $"{_plugin.Identity.DisplayName} has no editor."
+        : native.SetEditorHeader(bypass, pin, keys) ? null
+        : "No editor window of Bluestone's is open (the plugin may manage its editor's window itself).";
+
     public void CloseEditor()
     {
         if (_plugin is NativePlugin native)

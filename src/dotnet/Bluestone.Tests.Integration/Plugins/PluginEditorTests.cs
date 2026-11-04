@@ -1,4 +1,5 @@
 using Bluestone.Plugins;
+using Bluestone.Plugins.Protocol;
 using Bluestone.Plugins.Scanning;
 using static Bluestone.Tests.Integration.Plugins.PluginTestHost;
 
@@ -8,7 +9,7 @@ namespace Bluestone.Tests.Integration.Plugins;
 /// Plugin editors in their worker's window, with installed plugins that have one, on macOS or Windows with a desktop session
 /// (skipped on CI, whose runners have no plugins and no display). The editor opens and closes on request;
 /// when its worker is killed the window goes with the process, the instance reports a crash, and after a restart the
-/// editor opens again.
+/// editor opens again. A window of Bluestone's shows the header it is told; a window the plugin owns has none.
 /// </summary>
 [Collection(PluginProcessTests.Name)]
 public sealed class PluginEditorTests
@@ -98,6 +99,38 @@ public sealed class PluginEditorTests
         host.Track(instance);
         await instance.OpenEditorAsync(name, Ct);
         Assert.Equal(routed, await instance.SetEditorKeyboardAsync(true, Ct));
+        await instance.CloseEditorAsync(Ct);
+    }
+
+    [Theory]
+    [MemberData(nameof(WithEditors))]
+    public async Task AnEditorWindow_ShowsTheHeaderItIsTold_UnlessThePluginOwnsIt_ThroughARestart(string format, string modulePath, string name)
+    {
+        Assert.SkipUnless(OperatingSystem.IsMacOS() || OperatingSystem.IsWindows(), "Editor windows are verified on macOS and Windows only.");
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("CI") == "true", "CI runners have no plugins and no desktop session.");
+        Assert.SkipUnless(Directory.Exists(modulePath) || File.Exists(modulePath), $"{name} ({format}) is not installed at {modulePath}.");
+        await using var host = new PluginTestHost();
+        using var scanner = new PluginScanner(new PluginScannerOptions(Path.Combine(host.Directory, "scan")) { ScanTimeout = TimeSpan.FromSeconds(60) });
+        var plugin = (await scanner.RescanAsync(modulePath, ignoreQuarantine: true, Ct)).Plugins.Single(p => p.DisplayName == name);
+        var instance = await host.CreateRunningAsync(new PluginInstanceRequest(plugin, 48_000, 256, 2, 2) { ModulePath = modulePath });
+
+        Assert.False(await instance.SetEditorHeaderAsync(EditorButtonState.Off, EditorButtonState.Off, EditorButtonState.Off, Ct), "No editor is open yet.");
+
+        await instance.OpenEditorAsync(name, Ct);
+        var shown = await instance.SetEditorHeaderAsync(EditorButtonState.On, EditorButtonState.Off, EditorButtonState.Unavailable, Ct);
+        Assert.True(shown || format == "clap", "A VST3 editor is in a worker window, which has a header.");
+        Assert.Equal(shown, await instance.SetEditorHeaderAsync(EditorButtonState.Off, EditorButtonState.Hidden, EditorButtonState.On, Ct));
+        await instance.SetEditorVisibleAsync(false, Ct);
+        Assert.Equal(shown, await instance.SetEditorHeaderAsync(EditorButtonState.On, EditorButtonState.On, EditorButtonState.Off, Ct));
+        await instance.SetEditorVisibleAsync(true, Ct);
+
+        KillProcess(instance.WorkerProcessId!.Value);
+        await WaitForStateAsync(instance, PluginInstanceState.Unavailable);
+        Assert.False(await instance.SetEditorHeaderAsync(EditorButtonState.Off, EditorButtonState.Off, EditorButtonState.Off, Ct));
+        Assert.Equal(PluginInstanceState.Running, (await instance.RestartAsync(Ct)).State);
+        host.Track(instance);
+        await instance.OpenEditorAsync(name, Ct);
+        Assert.Equal(shown, await instance.SetEditorHeaderAsync(EditorButtonState.Off, EditorButtonState.On, EditorButtonState.Off, Ct));
         await instance.CloseEditorAsync(Ct);
     }
 }

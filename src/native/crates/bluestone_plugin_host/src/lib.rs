@@ -24,6 +24,7 @@ mod clap;
 mod clap_host;
 mod common;
 mod gui;
+mod header;
 mod keys;
 mod loader;
 mod vst3;
@@ -38,7 +39,7 @@ use std::time::Duration;
 use common::Instance;
 pub use common::{BphEvent, BphNotification, BphParamChange, BphProcess};
 
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 pub const FORMAT_VST3: u32 = 1;
 pub const FORMAT_CLAP: u32 = 2;
@@ -108,6 +109,13 @@ pub extern "C" fn bph_main_pump(timeout_ms: u32) {
     if gui::is_main_thread() {
         gui::pump(Duration::from_millis(timeout_ms as u64));
     }
+}
+
+/// Tells editor windows Bluestone's process id (the worker's parent), so they float above other windows while
+/// Bluestone, or any of its workers, is the active application. Any thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn bph_main_set_host_process(pid: u32) {
+    gui::set_host_process(pid);
 }
 
 /// Makes a waiting [`bph_main_pump`] return early. Any thread.
@@ -552,6 +560,32 @@ pub unsafe extern "C" fn bph_plugin_route_editor_keys(
     // SAFETY: per the contract above.
     unsafe { self::plugin(plugin) }
         .is_some_and(|p| p.instance.route_editor_keys_to_host(to_host != 0)) as i32
+}
+
+/// Shows what the host decided in the editor window's header strip: each button (Bypass, Pin, Keys) is 0 hidden, 1 off,
+/// 2 on, or 3 unavailable (shown dimmed). Clicks come back as `EDITOR_BUTTON` notifications. Returns 1 when done, 0
+/// when a state is out of range or there is no window of Bluestone's (no editor open, or a window the plugin owns).
+/// Main thread.
+///
+/// # Safety
+/// `plugin` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bph_plugin_set_editor_header(
+    plugin: *mut PluginHandle,
+    bypass: u32,
+    pin: u32,
+    keys: u32,
+) -> i32 {
+    let (Some(bypass), Some(pin), Some(keys)) = (
+        gui::ButtonState::from_raw(bypass),
+        gui::ButtonState::from_raw(pin),
+        gui::ButtonState::from_raw(keys),
+    ) else {
+        return 0;
+    };
+    let state = gui::HeaderState { bypass, pin, keys };
+    // SAFETY: per the contract above.
+    unsafe { self::plugin(plugin) }.is_some_and(|p| p.instance.set_editor_header(state)) as i32
 }
 
 /// 1 when this platform can send an editor's keys to the host (macOS, Windows), 0 otherwise (Linux).

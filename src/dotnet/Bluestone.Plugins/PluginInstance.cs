@@ -86,6 +86,12 @@ public sealed class PluginInstance : IPluginProcessor
     /// </summary>
     public event EventHandler<EditorKey>? EditorKeyPressed;
 
+    /// <summary>
+    /// A button of the header Bluestone draws on the editor window was clicked (<see cref="SetEditorHeaderAsync"/>).
+    /// Raised on a worker's read loop, in order.
+    /// </summary>
+    public event EventHandler<EditorButtonClick>? EditorButtonClicked;
+
     private volatile bool _editorOpen;
 
     /// <summary>Whether the plugin's editor window is open in its worker, as far as the host knows.</summary>
@@ -379,6 +385,25 @@ public sealed class PluginInstance : IPluginProcessor
         };
     }
 
+    /// <summary>
+    /// Shows what the header Bluestone draws on the editor window offers: each button hidden, off, on, or unavailable.
+    /// Returns false when that could not be done (not running, no editor open, or a window the plugin owns).
+    /// </summary>
+    public async Task<bool> SetEditorHeaderAsync(EditorButtonState bypass, EditorButtonState pin, EditorButtonState keys, CancellationToken cancellationToken = default)
+    {
+        if (_link is not { } link || !_editorOpen)
+        {
+            return false;
+        }
+
+        return await _manager.RequestAsync(link.Worker, new SetEditorHeader(Id, bypass, pin, keys), cancellationToken).ConfigureAwait(false) switch
+        {
+            Ack => true,
+            ErrorReply { Code: ErrorCode.NotSupported } => false,
+            var other => Expect<Ack>(other) is not null,
+        };
+    }
+
     /// <summary>Closes the plugin's editor if it is open. Does nothing when the instance is not running.</summary>
     public async Task CloseEditorAsync(CancellationToken cancellationToken = default)
     {
@@ -409,6 +434,9 @@ public sealed class PluginInstance : IPluginProcessor
                 break;
             case NotificationKind.EditorKey:
                 EditorKeyPressed?.Invoke(this, EditorKey.From(notification));
+                return;
+            case NotificationKind.EditorButton:
+                EditorButtonClicked?.Invoke(this, EditorButtonClick.From(notification));
                 return;
         }
 

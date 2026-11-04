@@ -57,6 +57,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginParameterEditedEventArgs>> _editHandlers = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<NotificationKind>> _changeHandlers = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<EditorKey>> _keyHandlers = new();
+    private readonly ConcurrentDictionary<DeviceId, EventHandler<EditorButtonClick>> _buttonHandlers = new();
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
@@ -231,6 +232,27 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// <summary>A key typed in a plugin editor whose keys go to Bluestone: the device, and the key. Raised on a worker's read loop.</summary>
     public event EventHandler<(DeviceId Device, PluginEditorKey Key)>? EditorKeyPressed;
 
+    /// <summary>A button of a plugin editor window's header was clicked: the device, the button, and the state wanted. Raised on a worker's read loop.</summary>
+    public event EventHandler<(DeviceId Device, PluginEditorButton Button, bool On)>? EditorButtonClicked;
+
+    /// <summary>Shows what the header of the device's editor window offers; false when it could not (not running, no editor, or a window the plugin owns).</summary>
+    public async Task<bool> SetEditorHeaderAsync(DeviceId device, PluginEditorHeader header, CancellationToken cancellationToken = default)
+    {
+        if (!_instances.TryGetValue(device, out var instance))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await instance.SetEditorHeaderAsync((EditorButtonState)header.Bypass, (EditorButtonState)header.Pin, (EditorButtonState)header.Keys, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is PluginHostException or PluginUnavailableException or TimeoutException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Hides or shows the device's editor window, keeping the editor; false when it could not (a gone worker's window went with it).</summary>
     public async Task<bool> SetEditorVisibleAsync(DeviceId device, bool visible, CancellationToken cancellationToken = default)
     {
@@ -384,6 +406,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
                 instance.ParameterEdited -= EditHandler(id);
                 instance.Changed -= ChangeHandler(id);
                 instance.EditorKeyPressed -= KeyHandler(id);
+                instance.EditorButtonClicked -= ButtonHandler(id);
                 await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -485,6 +508,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
                 instance.ParameterEdited -= EditHandler(id);
                 instance.Changed -= ChangeHandler(id);
                 instance.EditorKeyPressed -= KeyHandler(id);
+                instance.EditorButtonClicked -= ButtonHandler(id);
                 await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
                 StatusChanged?.Invoke(this, id);
             }
@@ -589,6 +613,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
             instance.ParameterEdited -= EditHandler(id);
             instance.Changed -= ChangeHandler(id);
             instance.EditorKeyPressed -= KeyHandler(id);
+            instance.EditorButtonClicked -= ButtonHandler(id);
             await _manager.DestroyInstanceAsync(instance, cancellationToken).ConfigureAwait(false);
             StatusChanged?.Invoke(this, id);
         }
@@ -619,6 +644,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
         instance.ParameterEdited += EditHandler(device.Id);
         instance.Changed += ChangeHandler(device.Id);
         instance.EditorKeyPressed += KeyHandler(device.Id);
+        instance.EditorButtonClicked += ButtonHandler(device.Id);
         if (device.State is null && captured is null && instance.Status.State == PluginInstanceState.Running)
         {
             // No saved state: the stored parameter values are the configuration to restore. Only values that differ
@@ -814,6 +840,9 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
 
     private EventHandler<PluginParameterEditedEventArgs> EditHandler(DeviceId device) =>
         _editHandlers.GetOrAdd(device, id => (_, e) => ParameterEdited?.Invoke(this, new PluginParameterEdit(id, e.ParameterId, e.Value)));
+
+    private EventHandler<EditorButtonClick> ButtonHandler(DeviceId device) =>
+        _buttonHandlers.GetOrAdd(device, id => (_, click) => EditorButtonClicked?.Invoke(this, (id, (PluginEditorButton)click.Button, click.On)));
 
     private EventHandler<EditorKey> KeyHandler(DeviceId device) =>
         _keyHandlers.GetOrAdd(device, id => (_, key) => EditorKeyPressed?.Invoke(this, (id, new PluginEditorKey(key.Usage, key.Modifiers, key.Down, key.Repeat))));

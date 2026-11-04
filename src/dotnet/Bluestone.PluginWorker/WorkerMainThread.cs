@@ -29,6 +29,7 @@ internal sealed class WorkerMainThread : IDisposable
     private readonly TextWriter _errors;
     private volatile bool _nativeReady;
     private string? _nativeError;
+    private int _hostProcessId;
 
     /// <summary>Creates the loop for the calling thread; failures of idle handlers are written to <paramref name="errors"/>.</summary>
     internal WorkerMainThread(TextWriter errors)
@@ -81,6 +82,16 @@ internal sealed class WorkerMainThread : IDisposable
     /// <summary>Adds a handler called on the main thread after every turn of the loop; it returns false to be removed. Main thread.</summary>
     public void AddIdleHandler(Func<bool> handler) => _idle.Add(handler);
 
+    /// <summary>
+    /// Bluestone's process id (0 when not given), so editor windows can tell when Bluestone is the active application.
+    /// Set before the native plugin host starts.
+    /// </summary>
+    public int HostProcessId
+    {
+        get => Volatile.Read(ref _hostProcessId);
+        set => Volatile.Write(ref _hostProcessId, value);
+    }
+
     /// <summary>Loads and initializes the native plugin host on first use. Main thread. Throws <see cref="NotSupportedException"/> when it cannot be loaded.</summary>
     public void EnsureNative()
     {
@@ -110,6 +121,11 @@ internal sealed class WorkerMainThread : IDisposable
             if (NativeMethods.MainInit(out var error) != 0)
             {
                 throw new NotSupportedException(NativeMethods.TakeString(error) ?? "The native plugin host failed to start.");
+            }
+
+            if (HostProcessId > 0)
+            {
+                NativeMethods.MainSetHostProcess((uint)HostProcessId);
             }
 
             _nativeReady = true;

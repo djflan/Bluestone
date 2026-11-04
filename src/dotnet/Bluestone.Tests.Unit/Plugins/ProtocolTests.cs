@@ -56,6 +56,8 @@ public sealed class FrameCodecTests
         new SetEditorVisible(Instance, false),
         new SetEditorKeyboard(Instance, true),
         new PluginNotification(Instance, NotificationKind.EditorKey, 44, 1 | 8 | 256 | 512),
+        new SetEditorHeader(Instance, EditorButtonState.On, EditorButtonState.Hidden, EditorButtonState.Unavailable),
+        new PluginNotification(Instance, NotificationKind.EditorButton, (uint)EditorButton.Pin, 1),
     ];
 
     private static readonly PluginIdentity Vst3 = new("vst3", "Synth", "0123456789ABCDEF0123456789ABCDEF", "Synth", "Vendor", PluginKind.Instrument, "1.0");
@@ -85,6 +87,10 @@ public sealed class FrameCodecTests
     [InlineData(NotificationKind.EditorKey, 300u, 256)]
     [InlineData(NotificationKind.EditorKey, 44u, 16)]
     [InlineData(NotificationKind.EditorKey, 44u, 256.5)]
+    [InlineData(NotificationKind.EditorButton, 0u, 1)]
+    [InlineData(NotificationKind.EditorButton, 4u, 1)]
+    [InlineData(NotificationKind.EditorButton, 1u, 0.5)]
+    [InlineData(NotificationKind.EditorButton, 1u, 2)]
     public void Decode_ANotificationWithValuesItsKindDoesNotAllow_Throws(NotificationKind kind, uint parameterId, double value)
     {
         var encoded = FrameCodec.Encode(0, new PluginNotification(Instance, kind, parameterId, value));
@@ -98,6 +104,23 @@ public sealed class FrameCodecTests
         var key = EditorKey.From(new PluginNotification(Instance, NotificationKind.EditorKey, 15, EditorKey.Shift | EditorKey.Meta | 256));
 
         Assert.Equal(new EditorKey(15, EditorKey.Shift | EditorKey.Meta, Down: true, Repeat: false), key);
+    }
+
+    [Fact]
+    public void AnEditorButtonNotification_DecodesTheButtonAndTheWantedState()
+    {
+        var click = EditorButtonClick.From(new PluginNotification(Instance, NotificationKind.EditorButton, (uint)EditorButton.Bypass, 0));
+
+        Assert.Equal(new EditorButtonClick(EditorButton.Bypass, On: false), click);
+    }
+
+    [Fact]
+    public void Decode_AnUnknownEditorButtonState_Throws()
+    {
+        var encoded = FrameCodec.Encode(1, new SetEditorHeader(Instance, EditorButtonState.Off, EditorButtonState.Off, EditorButtonState.Off));
+        encoded[^1] = 9;
+
+        Assert.Throws<ProtocolException>(() => FrameCodec.Decode(encoded));
     }
 
     [Fact]
