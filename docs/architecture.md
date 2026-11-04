@@ -8,7 +8,10 @@ Bluestone models music and musical intent. Tracks organize music, clips contain 
 devices process signals in chains, automation targets device and instrument parameters, and one list
 of connections routes signals to other tracks, shared racks, external instruments, and mixer channels.
 An audio engine plays audio clips, plugin instruments and effects, and the mixer; third-party plugins
-run in separate worker processes. MIDI 1.0, SysEx dialects, operating-system MIDI APIs, audio devices,
+run in separate worker processes. On macOS by default, and elsewhere with `BLUESTONE_ENGINE=1`, MIDI
+playback, endpoints, live input, audio, and the plugin data plane run in a separate engine process
+(`Bluestone.Engine`, ADR 0044) that the application supervises; the application describes the work and
+the engine performs it. MIDI 1.0, SysEx dialects, operating-system MIDI APIs, audio devices,
 and plugin binaries sit at the edges. Future protocols such as MIDI 2.0/UMP must remain boundary concerns
 rather than becoming the domain model. This page shows where things live and why. The
 decisions behind it are in [docs/adr/](adr/), in particular ADRs
@@ -39,6 +42,8 @@ Audio                    Bluestone.Audio: render graph, mixer strips, clips, plu
 Plugin hosting           Bluestone.Plugins (main process: workers, supervision, scanning)
                          Bluestone.PluginWorker (worker process; VST3 and CLAP through bluestone_plugin_host, Rust)
                          Bluestone.Plugins.Protocol (what both sides speak)
+Engine process           Bluestone.Engine (NativeAOT; runs Playback, Audio, endpoints, and the plugin data plane
+                         when enabled), Bluestone.Engine.Protocol (control channel to the application)
 ```
 
 The MIDI layers depend downward. Audio and plugin hosting are beside them and know nothing of the

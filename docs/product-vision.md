@@ -88,7 +88,7 @@ Bluestone devices will support selective oversampling. A musician can oversample
 
 ## Current release posture
 
-Bluestone is alpha software. It is usable for music production today and is appropriate for musicians who enjoy adopting new creative tools early. Missing workflows, platform gaps, and breaking changes must be stated plainly. Alpha does not excuse data loss, misleading claims, poor timing, or careless interaction design.
+Bluestone is alpha software. It is usable today for composing and arranging with MIDI, plugins, and hardware, but audio recording, audio import, and mix or stem export are not available yet; the [roadmap](roadmap.md) lists current gaps. It is appropriate for musicians who enjoy adopting new creative tools early. Missing workflows, platform gaps, and breaking changes must be stated plainly. Alpha does not excuse data loss, misleading claims, poor timing, or careless interaction design.
 
 ## Direction, not immediate scope
 

@@ -12,6 +12,8 @@ To run from source:
 dotnet run --project src/dotnet/Bluestone.Desktop
 ```
 
+On macOS, MIDI playback, MIDI input and thru, and audio run in a separate Bluestone engine process so that editing cannot delay them. On Windows and Linux they run inside the application unless you set `BLUESTONE_ENGINE=1`; `BLUESTONE_ENGINE=0` keeps them inside the application on macOS too. See the [README](../README.md) for why Windows and Linux are opt-in.
+
 Without hardware, route tracks to **Bluestone Monitor** and open the MIDI monitor, or route them to **Bluestone Out** on macOS and Linux and select that virtual port in a software instrument. Drag `samples/bluestone-demo.mid`, another `.mid` file, or a `.bluestone` project onto the window to open it.
 
 ## Essential shortcuts
@@ -81,7 +83,7 @@ The event list (D) shows every event on the track with editable position, channe
 
 Arm a track with its red button, or record into the selected track, then press R. From a stop, Bluestone counts in and begins recording. During playback, R punches in and out. Space stops and adds the take as one undo step.
 
-Takes can merge with or replace existing material from **Recording ▸ Takes** in the inspector. With looping enabled, every pass is merged. MIDI thru plays the armed or selected track's output. MIDI recording currently uses Core MIDI input and therefore works with external controllers on macOS; the computer keyboard works on every platform.
+Takes can merge with or replace existing material from **Recording ▸ Takes** in the inspector. With looping enabled, every pass is merged. MIDI thru plays the armed or selected track's output. External controllers can record on macOS (Core MIDI) and Windows (WinMM); MIDI input on Linux is not implemented yet. The computer keyboard works on every platform.
 
 ### Computer keyboard
 
@@ -121,6 +123,8 @@ Workspace layout, open views, detached windows, locks, collapsed panels, and Bro
 Open Settings with Ctrl/Cmd + ,. In **Audio**, choose the output device, sample rate, buffer, and render-ahead sizes, then start audio. **Test tone** verifies the output. Bluestone remembers the settings and whether audio should start at launch.
 
 Audio input and recording are not implemented in the current alpha. Audio clips already present in a project can play, loop, stream from disk, use gain and fades, and route through the mixer and effects.
+
+**Window ▸ Mixer** on macOS, or **File ▸ Mixer…** on Windows and Linux, opens the mixer console, a separate window with a strip, sends, and meters for each channel.
 
 Scanned VST 3 and CLAP plugins appear in the Browser. The system and per-user scan folders are listed in [plugin-hosting.md](plugin-hosting.md#the-plugin-library-and-the-plugins-view). **Settings ▸ Plugins** rescans, reports modules that failed, retries quarantined modules, chooses how plugins share worker processes, and enables automatic restart.
 
