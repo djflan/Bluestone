@@ -1097,7 +1097,7 @@ impl Instance for Vst3Instance {
 
     fn idle(&self, notifications: &mut Vec<BphNotification>) {
         if let Some(editor) = self.editor.borrow().as_ref() {
-            crate::common::push_editor_keys(&editor.window, notifications);
+            crate::common::push_editor_input(&editor.window, notifications);
         }
         // Edits left queued for a stream that has since stopped.
         self.flush();
@@ -1331,6 +1331,16 @@ impl Instance for Vst3Instance {
             .borrow()
             .as_ref()
             .is_some_and(|editor| editor.window.route_keys_to_host(to_host))
+    }
+
+    fn set_editor_header(&self, state: gui::HeaderState) -> bool {
+        match self.editor.borrow().as_ref() {
+            Some(editor) => {
+                editor.window.set_header(state);
+                true
+            }
+            None => false,
+        }
     }
 }
 

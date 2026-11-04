@@ -122,6 +122,9 @@ pub mod notification_kind {
     /// A key pressed or released in the editor while its keys go to the host: `id` is the USB HID usage, `value` the
     /// modifier bits, plus 256 when down and 512 for a repeat (see `keys`).
     pub const EDITOR_KEY: u32 = 6;
+    /// A button in the editor window's header was clicked: `id` is the button (1 Bypass, 2 Pin, 3 Keys), `value` the
+    /// state the user wants (1 on, 0 off).
+    pub const EDITOR_BUTTON: u32 = 7;
 }
 
 pub mod param_flags {
@@ -188,15 +191,25 @@ pub trait Instance {
     /// Sends the editor window's keys to the host instead of the plugin; false when it cannot (no editor, a window the
     /// plugin owns, or a platform without interception).
     fn route_editor_keys_to_host(&self, to_host: bool) -> bool;
+    /// Shows what the host decided in the editor window's header; false when there is no window of Bluestone's (no
+    /// editor, or a window the plugin owns).
+    fn set_editor_header(&self, state: crate::gui::HeaderState) -> bool;
 }
 
-/// Queues the keys an editor window took for the host as notifications.
-pub fn push_editor_keys(window: &crate::gui::Window, notifications: &mut Vec<BphNotification>) {
+/// Queues what the user did in an editor window for the host: the keys it took, then its header's clicks.
+pub fn push_editor_input(window: &crate::gui::Window, notifications: &mut Vec<BphNotification>) {
     for key in window.take_keys() {
         notifications.push(BphNotification {
             kind: notification_kind::EDITOR_KEY,
             id: key.usage,
             value: key.packed(),
+        });
+    }
+    for (button, wanted) in window.take_header_clicks() {
+        notifications.push(BphNotification {
+            kind: notification_kind::EDITOR_BUTTON,
+            id: button as u32,
+            value: if wanted { 1.0 } else { 0.0 },
         });
     }
 }

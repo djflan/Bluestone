@@ -128,7 +128,7 @@ Audio input and recording are not implemented in the current alpha. Audio clips 
 
 Scanned VST 3 and CLAP plugins appear in the Browser. The system and per-user scan folders are listed in [plugin-hosting.md](plugin-hosting.md#the-plugin-library-and-the-plugins-view). **Settings ▸ Plugins** rescans, reports modules that failed, retries quarantined modules, chooses how plugins share worker processes, and enables automatic restart.
 
-A plugin editor opens in a separate worker-owned window. Unpinned editors follow the selected track by hiding and showing without restarting; pinning keeps one visible. On macOS and Windows, the keyboard button can forward its keys to Bluestone. If a worker crashes, affected devices report it and can restart from their saved state while the main application remains open.
+A plugin editor opens in a separate worker-owned window. Unpinned editors follow the selected track by hiding and showing without restarting; pinning keeps one visible. On macOS and Windows, the keyboard button can forward its keys to Bluestone. The strip across the top of the editor window has the same controls as the device panel: **Bypass**, **Pin**, and **Keys to Bluestone**. Editor windows stay above Bluestone's window while you work in Bluestone, and drop behind when you switch to another application. If a worker crashes, affected devices report it and can restart from their saved state while the main application remains open.
 
 Plugins run with the user's full permissions. Worker processes isolate crashes, not file or network access; see [SECURITY.md](../SECURITY.md).
 

@@ -1,3 +1,4 @@
+using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Domain.Devices;
 
@@ -9,11 +10,13 @@ namespace Bluestone.Presentation;
 /// editor, the instance, and its state stay) while its track (or the chain the Device View shows) is not selected, and
 /// comes back when it is. A pinned editor stays. Each editor can also send its keys to Bluestone instead of the plugin,
 /// where the platform allows it; the mouse keeps working in the editor either way. Pin and keyboard choices belong to one
-/// device's editor and last for the session, through closing and reopening it.
+/// device's editor and last for the session, through closing and reopening it. The header Bluestone draws on each editor
+/// window (Bypass, Pin, Keys to Bluestone) shows the same state as the device panel and changes it the same way: a
+/// bypass is an ordinary, undoable project change.
 /// </summary>
 /// <remarks>
-/// Requests to a worker are serialized per device and coalesced (the latest wanted visibility wins), so rapid selection
-/// changes never pile up requests. Keys forwarded from an editor are tracked while held; switching keys back to the
+/// Requests to a worker are serialized per device and coalesced (the latest wanted visibility or header wins), so rapid
+/// selection changes never pile up requests. Keys forwarded from an editor are tracked while held; switching keys back to the
 /// plugin, hiding or closing the editor, or losing its worker releases them, so a computer-keyboard note never hangs.
 /// </remarks>
 public sealed class PluginEditorWindows
@@ -29,10 +32,12 @@ public sealed class PluginEditorWindows
         _host = host;
         _dispatcher = dispatcher;
         host.EditorKeyPressed += (_, e) => dispatcher.Post(() => OnKey(e.Device, e.Key));
+        host.EditorButtonClicked += (_, e) => dispatcher.Post(() => OnButton(e.Device, e.Button, e.On));
         host.StatusChanged += (_, device) => dispatcher.Post(() => OnStatusChanged(device));
         host.HostingChanged += (_, _) => dispatcher.Post(() =>
         {
             SelectionChanged();
+            SyncHeaders();
             _owner.RefreshDevicePanels();
         });
     }
@@ -66,6 +71,7 @@ public sealed class PluginEditorWindows
     {
         State(device).Pinned = pinned;
         SelectionChanged();
+        SyncHeaders();
         _owner.RefreshDevicePanels();
     }
 
@@ -90,6 +96,7 @@ public sealed class PluginEditorWindows
             _owner.AddMessage(MessageSeverity.Info, "Plugins", "This plugin's editor cannot send its keys to Bluestone on this system; the keys stay with the plugin.");
         }
 
+        SyncHeaders();
         _owner.RefreshDevicePanels();
         return done;
     }
@@ -111,8 +118,40 @@ public sealed class PluginEditorWindows
         }
 
         Want(device, state, true);
+        // A window that was opened again, or newly, shows its header once told.
+        state.HeaderShown = null;
+        state.NoHeader = false;
+        SyncHeaders();
         _owner.RefreshDevicePanels();
         return null;
+    }
+
+    /// <summary>
+    /// What the header on a device's editor window shows: whether the device is bypassed, whether the editor is pinned
+    /// (only while editors follow the selection), and where its keys go (dimmed where they cannot go to Bluestone).
+    /// </summary>
+    public PluginEditorHeader HeaderOf(DeviceId device, bool bypassed)
+    {
+        _states.TryGetValue(device, out var state);
+        return new PluginEditorHeader(
+            bypassed ? PluginEditorButtonState.On : PluginEditorButtonState.Off,
+            !FollowsSelection ? PluginEditorButtonState.Hidden : state?.Pinned == true ? PluginEditorButtonState.On : PluginEditorButtonState.Off,
+            !CanRouteKeys(device) ? PluginEditorButtonState.Unavailable : state?.KeysToHost == true ? PluginEditorButtonState.On : PluginEditorButtonState.Off);
+    }
+
+    /// <summary>Shows each open editor's state in the header on its window. Call when the project or a choice changes.</summary>
+    public void SyncHeaders()
+    {
+        foreach (var chain in _owner.Project.Chains)
+        {
+            foreach (var device in chain.Devices)
+            {
+                if (IsOpen(device.Id))
+                {
+                    WantHeader(device.Id, State(device.Id), HeaderOf(device.Id, device.IsBypassed));
+                }
+            }
+        }
     }
 
     /// <summary>Shows or hides each open, unpinned editor for the current selection. Call when the selection changes.</summary>
@@ -196,6 +235,69 @@ public sealed class PluginEditorWindows
         }
     }
 
+    // The latest wanted header wins; one request at a time per device.
+    private void WantHeader(DeviceId device, EditorState state, PluginEditorHeader header)
+    {
+        state.HeaderWanted = header;
+        if (state.NoHeader || state.HeaderBusy || state.HeaderShown == header)
+        {
+            return;
+        }
+
+        state.HeaderBusy = true;
+        _ = ApplyHeaderAsync(device, state);
+    }
+
+    private async Task ApplyHeaderAsync(DeviceId device, EditorState state)
+    {
+        try
+        {
+            while (state.HeaderShown != state.HeaderWanted && !state.NoHeader && IsOpen(device))
+            {
+                var header = state.HeaderWanted;
+                if (await _host.SetEditorHeaderAsync(device, header))
+                {
+                    state.HeaderShown = header;
+                }
+                else
+                {
+                    // A window the plugin owns has no header; it is not asked again until the editor is reopened.
+                    state.NoHeader = true;
+                }
+            }
+        }
+        finally
+        {
+            state.HeaderBusy = false;
+        }
+    }
+
+    // A click on a window's header: the window already flipped the button, so whatever Bluestone settles on is sent back,
+    // even when that is what it showed before (a refused change).
+    private void OnButton(DeviceId device, PluginEditorButton button, bool on)
+    {
+        if (!IsOpen(device) || _owner.Project.FindDevice(device) is null)
+        {
+            return;
+        }
+
+        State(device).HeaderShown = null;
+        switch (button)
+        {
+            case PluginEditorButton.Bypass:
+                _owner.Execute(DeviceCommands.SetBypassed(device, on, _owner.Devices.Lookup));
+                break;
+            case PluginEditorButton.Pin when FollowsSelection:
+                SetPinned(device, on);
+                break;
+            case PluginEditorButton.Keys when CanRouteKeys(device):
+                _ = SetKeysToBluestoneAsync(device, on);
+                break;
+        }
+
+        SyncHeaders();
+    }
+
     private void OnKey(DeviceId device, PluginEditorKey key)
     {
         if (!_states.TryGetValue(device, out var state) || !state.KeysToHost)
@@ -223,10 +325,17 @@ public sealed class PluginEditorWindows
     {
         if (_states.TryGetValue(device, out var state) && !IsOpen(device))
         {
-            // Closed, or its worker went away: release what it held; the next window starts shown.
+            // Closed, or its worker went away: release what it held; the next window starts shown, with an empty header.
             ReleaseHeld(state);
             state.Applied = true;
             state.Wanted = true;
+            state.HeaderShown = null;
+            state.NoHeader = false;
+        }
+        else if (IsOpen(device))
+        {
+            // An editor that came back on its own (its worker restarted) is told its header.
+            SyncHeaders();
         }
     }
 
@@ -267,6 +376,16 @@ public sealed class PluginEditorWindows
         public bool Wanted { get; set; } = true;
 
         public bool Busy { get; set; }
+
+        /// <summary>The header the window was last told (null: not yet, or no longer known).</summary>
+        public PluginEditorHeader? HeaderShown { get; set; }
+
+        public PluginEditorHeader HeaderWanted { get; set; }
+
+        public bool HeaderBusy { get; set; }
+
+        /// <summary>The window is the plugin's own and has no header.</summary>
+        public bool NoHeader { get; set; }
 
         public HashSet<int> Held { get; } = [];
     }

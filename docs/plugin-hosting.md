@@ -21,7 +21,7 @@ compensation, editor windows, hosting modes, and crash recovery work for both. W
 | ----- | ------- | ---- |
 | CI (Linux x64, macOS arm64, Windows x64) | Reference plugins; Bluestone's test plugins as VST 3 and CLAP (`NativePluginTests`, `ThirdPartyPluginDeviceTests`) | Everything in [Tests](#tests) except editors: scan, kinds, parameters, sample-accurate parameter changes, events, rendering into the plan, state, corrupt state, kill and restart, project save and reopen, an editor refused for a plugin without one |
 | macOS arm64, by hand and in tests | The Legend HZ, REVERSIDE (VST 3); Airwindows Consolidated, Surge XT (CLAP) (`InstalledPluginTests`) | Scan, load, audio out (a note for instruments, a sine through effects), a parameter set and state captured, worker killed while processing: Crashed, silence, restart restores the parameter and audio |
-| macOS arm64, in tests | REVERSIDE (VST 3), Airwindows Consolidated (CLAP) (`PluginEditorTests`, `PluginEditorWindowUiTests`) | Editor opens, closes, opens again; worker killed with the editor open; editor opens again after restart; hidden and shown again; keys routed to the host and back; an editor following the selected track unless pinned |
+| macOS arm64, in tests | REVERSIDE (VST 3), Airwindows Consolidated (CLAP) (`PluginEditorTests`, `PluginEditorWindowUiTests`) | Editor opens, closes, opens again; worker killed with the editor open; editor opens again after restart; hidden and shown again; keys routed to the host and back; an editor following the selected track unless pinned; the window's header told its state, through a restart |
 | Windows x64, native desktop and in tests | Surge XT, Airwindows Consolidated (CLAP); Pro-Q 3 (VST 3) (`InstalledPluginTests`, `PluginEditorTests`, `PluginEditorWindowUiTests`) | CLAP processing, state and worker recovery; editors open/close, hide/show, route keys, survive follow/pin and reopen after worker restart |
 | macOS arm64, development probe | The Legend HZ (VST 3), Airwindows Consolidated (CLAP) | Editor windows appear at the plugin's size (checked through the window list, not by eye); Airwindows sent parameter edits from its editor |
 | macOS arm64, app and probe | SuperClassic, Scaler 3, Scaler 3 Audio, Melody Sauce 3 (VST 3) | Scanned by the app at start; loaded, processed, and saved by the probe; not covered by tests |
@@ -40,7 +40,7 @@ verified is listed under [Not done](#not-done).
 | `Bluestone.Application/Plugins` | Bluestone | Plugins | `PluginLibrary`, `PluginDeviceHost`, `PluginEventRenderer`, `PluginHostingSettings`: the bridge to the project |
 | `Bluestone.Engine` | engine | Plugins, Protocol | With the engine process (ADR 0044), drives the data plane through its own handle on each exchange; Bluestone keeps the control plane ([Data plane](#data-plane)) |
 | `Bluestone.PluginWorker` | worker | Protocol, `bluestone_plugin_host` | Instance-host mode and scan mode; the reference plugins; `NativePlugin` over the Rust host |
-| `src/native/crates/bluestone_plugin_host` | worker | (Rust) `vst3`, `clap-sys` | Loads VST 3 and CLAP modules: instances, parameters, state, processing, host callbacks, editor windows; C ABI version 1 |
+| `src/native/crates/bluestone_plugin_host` | worker | (Rust) `vst3`, `clap-sys` | Loads VST 3 and CLAP modules: instances, parameters, state, processing, host callbacks, editor windows and their header; C ABI version 2 |
 | `src/native/crates/bluestone_test_plugins` | tests only | (Rust) `vst3`, `clap-sys` | Test Gain, Test Sine, Test Transpose as a `.vst3` bundle and a `.clap` module, packaged by `src/dotnet/NativeTestPlugins.targets` |
 
 Everything is C# except the plugin host, which is Rust because it loads native plugin binaries (ADR 0026's
@@ -68,8 +68,9 @@ Launching a worker:
 
 1. Bluestone creates a named-pipe server with a random name and `PipeOptions.CurrentUserOnly`.
 2. It starts the worker directly, never through a shell: the `Bluestone.PluginWorker` app host beside
-   `Bluestone.Plugins.dll`, else `dotnet Bluestone.PluginWorker.dll`. Standard output and error are drained
-   continuously into a short ring of recent lines used in diagnostics.
+   `Bluestone.Plugins.dll`, else `dotnet Bluestone.PluginWorker.dll`, with `--mode`, `--pipe`, and `--host-pid`
+   (Bluestone's process id, so editor windows know when Bluestone is the active application). Standard output and error
+   are drained continuously into a short ring of recent lines used in diagnostics.
 3. It writes a random per-launch token to the worker's standard input (not the command line, which other users can
    read).
 4. The worker connects and sends `Hello` (protocol version, token, process id, mode). Bluestone checks all four and
@@ -187,7 +188,8 @@ path to `CreateInstance` and `RenderEvents`, units and traits to parameter descr
 | `RenderEvents`, `RenderedEvents` | A MIDI effect rendered over the timeline at plan time |
 | `ScanModule`, `ScanResult` | Scan mode |
 | `SetEditorVisible`, `SetEditorKeyboard` | Hide or show an editor window; send its keys to the host (protocol version 4) |
-| `PluginNotification` | The only frame a worker sends unasked (request id 0): `ParameterEdited`, `LatencyChanged`, `StateDirty`, `EditorClosed`, `ParametersChanged`, `EditorKey` |
+| `SetEditorHeader` | What the buttons of an editor window's header show (protocol version 5) |
+| `PluginNotification` | The only frame a worker sends unasked (request id 0): `ParameterEdited`, `LatencyChanged`, `StateDirty`, `EditorClosed`, `ParametersChanged`, `EditorKey`, `EditorButton` |
 | `Ack`, `Error`, `Shutdown` | Generic replies; ask the worker to exit |
 | `InduceTestFault` | Tests only ([Test hooks](#test-hooks)) |
 
@@ -506,6 +508,30 @@ held are released when keys go back to the plugin, when the editor is hidden or 
 computer-keyboard note never hangs. The device panel shows a pin (while editors follow the selection) and a keyboard
 toggle beside **Open editor**.
 
+### The editor window's header, and floating above Bluestone (ADR 0048)
+
+Every editor window Bluestone owns has a 28-point strip across its top, above the plugin's view, with three buttons:
+**Bypass** (the power icon, lit while the device runs), **Pin** (shown while editors follow the selection), and **Keys
+to Bluestone** (dimmed where keys cannot be routed). The window is never narrower than the buttons. The native host
+draws the strip with one renderer on every platform; `SetEditorHeader` tells a window what each button shows, and a
+click comes back as an `EditorButton` notification. The window flips the button at once; `PluginEditorWindows` applies
+the click as the device panel would (a bypass is an undoable project change) and sends back the state it settled on,
+so a refused click is undone. Header updates are serialized and coalesced per device, and follow the project, so a
+bypass from the device panel or an undo shows in the window too.
+
+While Bluestone is the active application (its own process, or any of its workers: a process whose parent is
+Bluestone), editor windows float above other windows, Bluestone's main window included. When another application
+becomes active they drop back among normal windows. Each worker follows activation itself, without polling.
+
+| Platform | Header | Floating while Bluestone is active |
+| -------- | ------ | ---------------------------------- |
+| macOS | An NSView above the plugin's view, with tooltips; a click works without first activating the window | `NSFloatingWindowLevel`, back to the normal level on `NSWorkspaceDidActivateApplicationNotification` for another application |
+| Windows | A child window above the plugin's, with tooltips; a click does not activate the window, so Bluestone keeps the keyboard | `HWND_TOPMOST` on an `EVENT_SYSTEM_FOREGROUND` hook; otherwise placed just below the new foreground window |
+| Linux (X11) | A child window above the plugin's; no tooltips | `_NET_WM_STATE_ABOVE` from `_NET_ACTIVE_WINDOW` and `_NET_WM_PID`; depends on the window manager |
+
+A CLAP editor that floats in its own window has neither: `SetEditorHeader` answers `NotSupported`, and Bluestone does
+not ask again until the editor is reopened.
+
 | Platform | Hide and show | Keys to Bluestone |
 | -------- | ------------- | ----------------- |
 | macOS | `orderOut` / `orderFrontRegardless`; a window whose screen is gone is centred on the main screen | Yes: key events for the window are taken in the worker's pump (verified with REVERSIDE and an embedded CLAP editor) |
@@ -628,7 +654,7 @@ copies of one plugin share a worker and go down together, which `HostingModeProc
 
 | What | Tests |
 | ---- | ----- |
-| Frames of every message, strict decoding, fuzzing, version mismatch, protocol version 3 fields and notifications | `FrameCodecTests`, `HandshakeTests` |
+| Frames of every message, strict decoding, fuzzing, version mismatch, protocol version 3 fields and notifications, editor header states and clicks | `FrameCodecTests`, `HandshakeTests` |
 | Exchange state machine, withdraw, late-result discard, pipelining, faults, generations, disposal, dropped counts; two-thread stress with pattern-checked audio; zero allocation | `BlockExchangeTests`, `PipelineLatencyTests` |
 | The data plane across a real worker, zero allocation | `PluginDataPlaneProcessTests` |
 | Reference plugins (sample-accurate gain, polyphonic deterministic sine, transpose passing controllers and SysEx), state | `ReferencePluginTests`, `ReferencePluginProcessTests` |
@@ -644,6 +670,7 @@ copies of one plugin share a worker and go down together, which `HostingModeProc
 | The bridge: save, reopen, kill, restart, automation still valid, a missing plugin, removing a device, rate changes | `PluginDeviceHostTests` |
 | VST 3 and CLAP through the test plugins: scan, process, state, render, crash and restart, project devices, edits both ways | `NativePluginTests`, `ThirdPartyPluginDeviceTests` |
 | Installed VST 3 and CLAP plugins; editors (macOS and Windows) | `InstalledPluginTests`, `PluginEditorTests`, `PluginEditorWindowUiTests` |
+| Editor windows following the selection, pins, keys, and the window header kept in step with the panel and the project | `PluginEditorWindowsTests`; the header's layout, clicks, and drawing in the native crate's `header` tests |
 | Plugin MIDI effects in the plan: transposition, automation, taps, killed and hung workers | `PluginMidiInThePlanTests`, `ChainRunnerTests.AnOutOfProcessDevice_*` |
 | Plugins in the audio engine: pitch through a mixer strip, connected audio, a killed worker, release on locate, zero allocation, instrument tracks | `AudioPluginTests`, `SoftwareInstrumentAudioTests` |
 | Live input through a plugin MIDI effect and instrument at the measured latency; killed workers leave no hanging note | `LiveInputPluginTests` |

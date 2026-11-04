@@ -39,6 +39,8 @@ internal static class WorkerLauncher
         info.ArgumentList.Add(mode == WorkerMode.Scanner ? "scan" : "host");
         info.ArgumentList.Add("--pipe");
         info.ArgumentList.Add(pipeName);
+        info.ArgumentList.Add("--host-pid");
+        info.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));
         if (directory is not null && Directory.Exists(directory))
         {

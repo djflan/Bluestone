@@ -177,9 +177,9 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
                     Parameters = ReadParameters(_handle);
                 }
 
-                if (kind == NotificationKind.EditorKey)
+                if (kind is NotificationKind.EditorKey or NotificationKind.EditorButton)
                 {
-                    if (EditorKey.IsValid(n.Id, n.Value))
+                    if (kind == NotificationKind.EditorKey ? EditorKey.IsValid(n.Id, n.Value) : EditorButtonClick.IsValid(n.Id, n.Value))
                     {
                         report(kind, n.Id, n.Value);
                     }
@@ -211,6 +211,10 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
 
     /// <summary>Sends the editor's keys to the host or the plugin; false when this editor or platform cannot. Main thread.</summary>
     public bool RouteEditorKeys(bool toHost) => NativeMethods.PluginRouteEditorKeys(_handle, toHost ? 1 : 0) == 1;
+
+    /// <summary>Shows the host's state in the editor window's header; false when there is no window of Bluestone's. Main thread.</summary>
+    public bool SetEditorHeader(EditorButtonState bypass, EditorButtonState pin, EditorButtonState keys) =>
+        NativeMethods.PluginSetEditorHeader(_handle, (uint)bypass, (uint)pin, (uint)keys) == 1;
 
     public bool IsEditorOpen => NativeMethods.PluginIsEditorOpen(_handle) == 1;
 

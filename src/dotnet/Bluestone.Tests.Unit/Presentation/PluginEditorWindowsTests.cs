@@ -11,8 +11,8 @@ using Bluestone.Profiles;
 namespace Bluestone.Tests.Unit.Presentation;
 
 /// <summary>
-/// Floating plugin editors: following the selected track, pinning, coalesced requests, keys sent to Bluestone, and
-/// releases so no forwarded key is left held.
+/// Floating plugin editors: following the selected track, pinning, coalesced requests, keys sent to Bluestone, releases
+/// so no forwarded key is left held, and the header on each window (Bypass, Pin, Keys) kept in step with the panel.
 /// </summary>
 public sealed class PluginEditorWindowsTests : IAsyncLifetime
 {
@@ -211,6 +211,103 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
         Assert.False(await _windows.SetKeysToBluestoneAsync(a, true));
     }
 
+    private static PluginEditorButtonState Keys(bool on) =>
+        !PluginEditorWindows.KeyRoutingSupported ? PluginEditorButtonState.Unavailable
+        : on ? PluginEditorButtonState.On
+        : PluginEditorButtonState.Off;
+
+    private bool IsBypassed(DeviceId device) => _session.Project.FindDevice(device)!.Value.Device.IsBypassed;
+
+    [Fact]
+    public async Task AnOpenedEditor_IsToldItsHeader_AndTheHeaderFollowsThePanelAndTheProject()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        await _windows.OpenAsync(a);
+        Assert.Equal(new PluginEditorHeader(PluginEditorButtonState.Off, PluginEditorButtonState.Off, Keys(false)), _host.Headers[a]);
+
+        _windows.SetPinned(a, true);
+        Assert.Equal(PluginEditorButtonState.On, _host.Headers[a].Pin);
+
+        await _windows.SetKeysToBluestoneAsync(a, true);
+        Assert.Equal(Keys(true), _host.Headers[a].Keys);
+
+        // Bypassed from the device panel (or undone): MainViewModel tells its own coordinator; this one is told directly.
+        _session.Execute(DeviceCommands.SetBypassed(a, true, TestDevices.Lookup));
+        _windows.SyncHeaders();
+        Assert.Equal(PluginEditorButtonState.On, _host.Headers[a].Bypass);
+
+        // Not following the selection, a pin means nothing, so it is not shown.
+        _host.Follow = false;
+        _host.RaiseHostingChanged();
+        Assert.Equal(PluginEditorButtonState.Hidden, _host.Headers[a].Pin);
+
+        var requests = _host.HeaderRequests;
+        _windows.SyncHeaders();
+        Assert.Equal(requests, _host.HeaderRequests);
+    }
+
+    [Fact]
+    public async Task HeaderClicks_ChangeWhatThePanelChanges_AndABypassIsUndoable()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        await _windows.OpenAsync(a);
+
+        _host.Click(a, PluginEditorButton.Bypass, true);
+        Assert.True(IsBypassed(a));
+        Assert.Equal(PluginEditorButtonState.On, _host.Headers[a].Bypass);
+        _session.History.Undo();
+        Assert.False(IsBypassed(a));
+
+        _host.Click(a, PluginEditorButton.Pin, true);
+        Assert.True(_windows.IsPinned(a));
+        Select(1);
+        Assert.True(_host.Visible[a], "Pinned from its own window, it stays.");
+
+        _host.Click(a, PluginEditorButton.Keys, true);
+        await _host.Settled();
+        Assert.Equal(PluginEditorWindows.KeyRoutingSupported, _windows.SendsKeysToBluestone(a));
+        Assert.Equal(Keys(true), _host.Headers[a].Keys);
+    }
+
+    [Fact]
+    public async Task ARefusedClick_IsUndoneInTheWindow()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        _host.Follow = false;
+        await _windows.OpenAsync(a);
+        var requests = _host.HeaderRequests;
+
+        // The window flipped a pin it should not have offered; Bluestone sends back what it shows.
+        _host.Click(a, PluginEditorButton.Pin, true);
+
+        Assert.False(_windows.IsPinned(a));
+        Assert.Equal(requests + 1, _host.HeaderRequests);
+        Assert.Equal(PluginEditorButtonState.Hidden, _host.Headers[a].Pin);
+    }
+
+    [Fact]
+    public async Task AWindowWithoutAHeader_IsNotAskedAgain_UntilTheEditorIsReopened()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        _host.HasHeader = false;
+        await _windows.OpenAsync(a);
+        Assert.Equal(1, _host.HeaderRequests);
+
+        _windows.SetPinned(a, true);
+        _session.Execute(DeviceCommands.SetBypassed(a, true, TestDevices.Lookup));
+        _windows.SyncHeaders();
+        Assert.Equal(1, _host.HeaderRequests);
+
+        _host.HasHeader = true;
+        _host.Close(a);
+        await _windows.OpenAsync(a);
+        Assert.Equal(new PluginEditorHeader(PluginEditorButtonState.On, PluginEditorButtonState.On, Keys(false)), _host.Headers[a]);
+    }
+
     private sealed class ImmediateDispatcher : IUiDispatcher
     {
         public bool CheckAccess() => true;
@@ -250,7 +347,30 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
 
         public event EventHandler<(DeviceId Device, PluginEditorKey Key)>? EditorKeyPressed;
 
+        public event EventHandler<(DeviceId Device, PluginEditorButton Button, bool On)>? EditorButtonClicked;
+
         public event EventHandler<DeviceId>? StatusChanged;
+
+        public Dictionary<DeviceId, PluginEditorHeader> Headers { get; } = [];
+
+        public int HeaderRequests { get; private set; }
+
+        /// <summary>False for a window the plugin owns, which has no header.</summary>
+        public bool HasHeader { get; set; } = true;
+
+        public Task<bool> SetEditorHeaderAsync(DeviceId device, PluginEditorHeader header, CancellationToken cancellationToken = default)
+        {
+            HeaderRequests++;
+            if (!_open.Contains(device) || !HasHeader)
+            {
+                return Task.FromResult(false);
+            }
+
+            Headers[device] = header;
+            return Task.FromResult(true);
+        }
+
+        public void Click(DeviceId device, PluginEditorButton button, bool on) => EditorButtonClicked?.Invoke(this, (device, button, on));
 
         public event EventHandler? HostingChanged;
 

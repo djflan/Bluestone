@@ -945,7 +945,7 @@ impl Instance for ClapInstance {
             .as_ref()
             .and_then(|e| e.window.as_ref())
         {
-            crate::common::push_editor_keys(window, notifications);
+            crate::common::push_editor_input(window, notifications);
         }
         let shared = &self.host.shared;
         // SAFETY: main-thread plugin calls.
@@ -1163,6 +1163,21 @@ impl Instance for ClapInstance {
             .as_ref()
             .and_then(|e| e.window.as_ref())
             .is_some_and(|window| window.route_keys_to_host(to_host))
+    }
+
+    fn set_editor_header(&self, state: gui::HeaderState) -> bool {
+        match self
+            .editor
+            .borrow()
+            .as_ref()
+            .and_then(|e| e.window.as_ref())
+        {
+            Some(window) => {
+                window.set_header(state);
+                true
+            }
+            None => false,
+        }
     }
 }
 

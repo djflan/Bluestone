@@ -1444,6 +1444,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Arrangement.Sync();
         AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         ClipLoop.Sync();
+        EditorWindows?.SyncHeaders();
         await SyncPluginsAsync();
         await RefreshAsync();
     }

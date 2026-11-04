@@ -1,15 +1,71 @@
 //! The worker's main thread: the operating system's event loop (needed by plugin editors, and by plugins that
 //! expect their "message thread" to run), timers and file-descriptor callbacks plugins register with the host, and
-//! top-level editor windows. Everything here except `wake` runs on the main thread only.
+//! top-level editor windows. Everything here except `wake` and `set_host_process` runs on the main thread only.
+//!
+//! An editor window is Bluestone's header strip (`header`) above an area the plugin's view is attached to. Editor
+//! windows float above other windows while Bluestone is the active application (its own process, this worker, or
+//! another of its workers), and drop back to the normal level when another application is.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
+use crate::header::{self, Header};
+pub use crate::header::{Button, ButtonState, HeaderState};
+
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
+static HOST_PROCESS: AtomicU32 = AtomicU32::new(0);
+
+/// Records Bluestone's process id (the worker's parent), so editor windows know when Bluestone is active. Any thread.
+pub fn set_host_process(pid: u32) {
+    HOST_PROCESS.store(pid, Ordering::Release);
+}
+
+thread_local! {
+    // Whether a process is Bluestone's, by process id. Cleared when it grows, since ids are reused.
+    static OURS: RefCell<HashMap<u32, bool>> = RefCell::new(HashMap::new());
+    static BLUESTONE_ACTIVE: Cell<bool> = const { Cell::new(true) };
+}
+
+/// Whether a process belongs to Bluestone: this worker, Bluestone itself, or another worker Bluestone started.
+pub(crate) fn is_bluestone_process(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    if pid == std::process::id() {
+        return true;
+    }
+    let host = HOST_PROCESS.load(Ordering::Acquire);
+    if host == 0 {
+        return false;
+    }
+    if pid == host {
+        return true;
+    }
+    OURS.with_borrow_mut(|ours| {
+        if ours.len() > 256 {
+            ours.clear();
+        }
+        *ours
+            .entry(pid)
+            .or_insert_with(|| platform::parent_process(pid) == Some(host))
+    })
+}
+
+/// Whether editor windows float now: Bluestone was the active application when last told.
+pub(crate) fn bluestone_active() -> bool {
+    BLUESTONE_ACTIVE.get()
+}
+
+/// Records which application is active. True when that changed whether Bluestone is.
+pub(crate) fn set_bluestone_active(active: bool) -> bool {
+    BLUESTONE_ACTIVE.replace(active) != active
+}
 
 /// Something that happened to an editor window, delivered on the main thread while events are pumped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,10 +223,11 @@ pub fn timer_count() -> usize {
     TIMERS.with_borrow(|t| t.timers.len())
 }
 
-/// A top-level window that hosts a plugin editor.
+/// A top-level window that hosts a plugin editor below Bluestone's header strip.
 pub struct Window {
     inner: platform::Window,
     keys: KeyQueue,
+    header: Rc<Header>,
 }
 
 impl Window {
@@ -184,6 +241,7 @@ impl Window {
         if !is_main_thread() {
             return Err("Editor windows can only be created on the main thread.".into());
         }
+        let header = Rc::new(Header::default());
         Ok(Window {
             inner: platform::Window::create(
                 title,
@@ -191,9 +249,23 @@ impl Window {
                 height.max(1),
                 resizable,
                 callback,
+                header.clone(),
             )?,
             keys: Rc::new(RefCell::new(Vec::new())),
+            header,
         })
+    }
+
+    /// Shows what the host decided in the header strip.
+    pub fn set_header(&self, state: HeaderState) {
+        if self.header.set_state(state) {
+            self.inner.header_changed();
+        }
+    }
+
+    /// The header clicks since the last call: each button with the state the user wants.
+    pub fn take_header_clicks(&self) -> Vec<(Button, bool)> {
+        self.header.take_clicks()
     }
 
     /// Hides the window (keeping the editor and its state) or shows it again without taking focus, moved onto a screen
@@ -222,11 +294,13 @@ impl Window {
         std::mem::take(&mut *self.keys.borrow_mut())
     }
 
-    /// NSView* on macOS, HWND on Windows, the X11 window id on Linux.
+    /// The area below the header the plugin's view goes in: NSView* on macOS, HWND on Windows, the X11 window id on
+    /// Linux.
     pub fn parent_handle(&self) -> *mut c_void {
         self.inner.parent_handle()
     }
 
+    /// Sizes the plugin's area; the window adds the header. The area is never narrower than the header's buttons.
     pub fn set_content_size(&self, width: u32, height: u32) {
         self.inner.set_content_size(width.max(1), height.max(1));
     }
@@ -242,6 +316,17 @@ impl Drop for Window {
         let native = self.inner.native_id();
         ROUTED.with_borrow_mut(|routed| routed.retain(|(id, _)| *id != native));
     }
+}
+
+/// The plugin area's width for a plugin `width` wide, in units of `scale` per logical unit: wide enough for the header.
+pub(crate) fn area_width(width: u32, scale: f64) -> u32 {
+    width.max((header::MIN_WIDTH * scale).ceil() as u32)
+}
+
+/// The header's height in units of `scale` per logical unit.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub(crate) fn header_height(scale: f64) -> u32 {
+    (header::HEIGHT * scale).round() as u32
 }
 
 /// Platform names used by VST3 (`IPlugView::attached`) and CLAP (`clap_window.api`).
