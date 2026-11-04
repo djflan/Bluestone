@@ -530,7 +530,8 @@ becomes active they drop back among normal windows. Each worker follows activati
 | Linux (X11) | A child window above the plugin's; no tooltips | `_NET_WM_STATE_ABOVE` from `_NET_ACTIVE_WINDOW` and `_NET_WM_PID`; depends on the window manager |
 
 A CLAP editor that floats in its own window has neither: `SetEditorHeader` answers `NotSupported`, and Bluestone does
-not ask again until the editor is reopened.
+not ask again until the editor is reopened. The header's buttons are drawn rather than native controls, so assistive technology cannot reach them
+in the editor window; the device panel's matching controls remain accessible.
 
 | Platform | Hide and show | Keys to Bluestone |
 | -------- | ------------- | ----------------- |

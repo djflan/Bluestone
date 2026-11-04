@@ -276,10 +276,11 @@ public sealed class PluginEditorWindows
     }
 
     // A click on a window's header: the window already flipped the button, so whatever Bluestone settles on is sent back,
-    // even when that is what it showed before (a refused change).
+    // even when that is what it showed before (a refused change). A click is applied even if its window closed after it
+    // (the close can be handled first), as the user made it; only a device that is gone ignores it.
     private void OnButton(DeviceId device, PluginEditorButton button, bool on)
     {
-        if (!IsOpen(device) || _owner.Project.FindDevice(device) is null)
+        if (_owner.Project.FindDevice(device) is null)
         {
             return;
         }

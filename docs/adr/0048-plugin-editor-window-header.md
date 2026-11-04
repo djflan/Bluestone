@@ -46,3 +46,7 @@ its plugin windows always stay above the song window. Bitwig has a pin in the co
 - Every editor window is taller by the header, and very narrow plugins get side padding.
 - A plugin popup that is a separate, unowned window of normal level can open behind its floating editor.
 - On Linux, floating depends on the window manager honouring EWMH, and the header has no tooltips.
+- The header's buttons are drawn, not native controls, so screen readers and keyboard-only users cannot reach them in
+  the editor window; the same three controls stay accessible on the device panel. Exposing them (NSAccessibility, UI
+  Automation, AT-SPI) is left for later.
+- The window cannot be resized smaller than the header's buttons.

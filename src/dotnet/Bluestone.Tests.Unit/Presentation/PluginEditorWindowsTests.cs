@@ -272,6 +272,22 @@ public sealed class PluginEditorWindowsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AClickHandledAfterItsWindowClosed_IsStillApplied()
+    {
+        var a = DeviceOn(0);
+        Select(0);
+        await _windows.OpenAsync(a);
+
+        // The click and then the close arrive from the worker; the close is seen first.
+        _host.Close(a);
+        _host.Click(a, PluginEditorButton.Bypass, true);
+        _host.Click(a, PluginEditorButton.Pin, true);
+
+        Assert.True(IsBypassed(a));
+        Assert.True(_windows.IsPinned(a));
+    }
+
+    [Fact]
     public async Task ARefusedClick_IsUndoneInTheWindow()
     {
         var a = DeviceOn(0);

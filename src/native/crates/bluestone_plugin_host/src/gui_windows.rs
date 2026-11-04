@@ -180,6 +180,23 @@ unsafe extern "system" fn window_procedure(
             (state.callback)(WindowEvent::CloseRequested);
             0
         }
+        (WM_GETMINMAXINFO, Some(_)) => {
+            // Never smaller than the header's buttons, or they would be cut off.
+            let scale = scale_of(window);
+            // SAFETY: the window's own style; lparam is the MINMAXINFO the system passes with this message.
+            unsafe {
+                let style = GetWindowLongPtrW(window, GWL_STYLE) as u32;
+                let (width, height) = outer_size(
+                    super::area_width(1, scale),
+                    super::header_height(scale) + 1,
+                    style,
+                );
+                let info = &mut *(lparam as *mut MINMAXINFO);
+                info.ptMinTrackSize.x = width;
+                info.ptMinTrackSize.y = height;
+            }
+            0
+        }
         (WM_SIZE, Some(state)) => {
             layout(
                 window,

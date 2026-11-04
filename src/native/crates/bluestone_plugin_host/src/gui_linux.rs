@@ -534,8 +534,12 @@ impl Window {
                     &[std::process::id()],
                 )
                 .map_err(|e| e.to_string())?;
-                if !resizable {
-                    set_fixed_size(c, id, width, height + header_height)?;
+                if resizable {
+                    // Never smaller than the header's buttons, or they would be cut off.
+                    set_size_hints(c, id, (super::area_width(1, 1.0), header_height + 1), None)?;
+                } else {
+                    let size = (width, height + header_height);
+                    set_size_hints(c, id, size, Some(size))?;
                 }
                 display.initial_above(id);
                 let c = &display.connection;
@@ -618,19 +622,22 @@ impl Window {
     }
 }
 
-fn set_fixed_size(
+/// WM_NORMAL_HINTS: a minimum size (PMinSize, flag 16), and a maximum (PMaxSize, flag 32) when given.
+fn set_size_hints(
     connection: &RustConnection,
     id: Window_,
-    width: u32,
-    height: u32,
+    minimum: (u32, u32),
+    maximum: Option<(u32, u32)>,
 ) -> Result<(), String> {
-    // WM_NORMAL_HINTS with PMinSize | PMaxSize (flags 16 | 32), min = max = the size.
     let mut hints = [0u32; 18];
-    hints[0] = 16 | 32;
-    hints[5] = width;
-    hints[6] = height;
-    hints[7] = width;
-    hints[8] = height;
+    hints[0] = 16;
+    hints[5] = minimum.0;
+    hints[6] = minimum.1;
+    if let Some((width, height)) = maximum {
+        hints[0] |= 32;
+        hints[7] = width;
+        hints[8] = height;
+    }
     connection
         .change_property32(
             PropMode::REPLACE,

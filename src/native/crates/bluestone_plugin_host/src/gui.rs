@@ -7,7 +7,6 @@
 //! another of its workers), and drop back to the normal level when another application is.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -27,8 +26,6 @@ pub fn set_host_process(pid: u32) {
 }
 
 thread_local! {
-    // Whether a process is Bluestone's, by process id. Cleared when it grows, since ids are reused.
-    static OURS: RefCell<HashMap<u32, bool>> = RefCell::new(HashMap::new());
     static BLUESTONE_ACTIVE: Cell<bool> = const { Cell::new(true) };
 }
 
@@ -44,17 +41,9 @@ pub(crate) fn is_bluestone_process(pid: u32) -> bool {
     if host == 0 {
         return false;
     }
-    if pid == host {
-        return true;
-    }
-    OURS.with_borrow_mut(|ours| {
-        if ours.len() > 256 {
-            ours.clear();
-        }
-        *ours
-            .entry(pid)
-            .or_insert_with(|| platform::parent_process(pid) == Some(host))
-    })
+    // Asked afresh each time (only when the active application changes): process ids are reused, so an answer kept
+    // for an exited worker could be wrong for whatever has its id now.
+    pid == host || platform::parent_process(pid) == Some(host)
 }
 
 /// Whether editor windows float now: Bluestone was the active application when last told.
