@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using Bluestone.Application.Audio;
 using Bluestone.Application.Live;
 using Bluestone.Application.Sessions;
@@ -45,6 +46,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private IEngineLink? _link;
     private IEngineLink? _graphLink;
     private AudioSettings? _wanted;
+    private long _answeredGraph; // the newest graph this engine (link) has answered, applied or not; 0 for none yet
     private bool _testTone;
     private long _request;
     private long _startRequest;
@@ -128,6 +130,37 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     }
 
     public bool IsWaitingForDevice => _wanted is not null && !IsRunning && !IsStarting;
+
+    /// <summary>
+    /// True once audio can follow the transport, false after <paramref name="timeout"/>: audio is off; or the engine has
+    /// opened the device and answered every graph described so far; or it found no device to open (MIDI plays without
+    /// audio, and the Audio window says why). Waited for before Play and Record so playback never starts ahead of it.
+    /// </summary>
+    public async Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
+        while (true)
+        {
+            lock (_gate)
+            {
+                var deviceKnown = _link is not null && _status is not null && _status.Request >= _startRequest;
+                var running = deviceKnown && _status!.State is AudioDeviceState.Running or AudioDeviceState.Fallback;
+                if (_wanted is null
+                    || (running && _answeredGraph > 0 && _answeredGraph >= Interlocked.Read(ref _nextGraph))
+                    || (deviceKnown && !running))
+                {
+                    return true;
+                }
+            }
+
+            if (Stopwatch.GetTimestamp() >= deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(5, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public ImmutableArray<string> GraphProblems
     {
@@ -368,6 +401,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _link = link;
             _status = null;
             _graphLink = null;
+            _answeredGraph = 0;
             Volatile.Write(ref _meters, Meters.None);
             if (_wanted is { } wanted)
             {
@@ -431,6 +465,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _link = null;
             _status = null;
             _graphLink = null;
+            _answeredGraph = 0;
             Volatile.Write(ref _meters, Meters.None);
             renders = [.. _renders.Values];
             _renders.Clear();
@@ -488,6 +523,11 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         {
             stale = [.. _graphFiles.Where(g => g.Id < loaded.GraphId).Select(g => g.Path)];
             _graphFiles.RemoveAll(g => g.Id < loaded.GraphId);
+            if (ReferenceEquals(link, _link))
+            {
+                _answeredGraph = Math.Max(_answeredGraph, loaded.GraphId);
+            }
+
             if (ReferenceEquals(link, _link) && loaded.Applied)
             {
                 PlayingGraph = loaded.GraphId;

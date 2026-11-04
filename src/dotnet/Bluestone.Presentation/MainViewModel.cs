@@ -146,8 +146,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             if (_playback.Recorder.IsRecording)
             {
+                AddMessage(MessageSeverity.Warning, "Record", "The audio engine stopped while recording, so recording ended there.");
                 ReportTake(_playback.FinishRecording());
-                AddMessage(MessageSeverity.Warning, "Record", "The audio engine stopped while recording. The take so far was kept; the engine is restarting.");
             }
         });
         if (_plugins is not null)
@@ -1105,6 +1105,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         else
         {
+            // A Play or Record still waiting for the engine does not start after this.
+            _playback.CancelPendingStarts();
             SeekTo(0);
         }
     }

@@ -51,6 +51,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     private readonly List<(long Id, string Path)> _planFiles = [];
     private readonly Dictionary<long, TempoMap> _tempos = [];
     private readonly List<string> _problems = [];
+    private readonly EngineSupervisor _supervisor;
     private IEngineLink? _link;
     private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _nextHandle;
@@ -72,6 +73,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     public EnginePlayback(EngineSupervisor supervisor, EnginePlaybackOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(supervisor);
+        _supervisor = supervisor;
         _options = options ?? new EnginePlaybackOptions();
         _planDirectory = _options.PlanDirectory ?? Path.Combine(Path.GetTempPath(), $"bluestone-engine-{Environment.ProcessId}");
         supervisor.Attach(this);
@@ -96,6 +98,15 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     }
 
     public IMonotonicClock Clock => SystemMonotonicClock.Instance;
+
+    /// <summary>Starts the engine again if the supervisor gave up on it (<see cref="EngineState.Failed"/>); otherwise nothing.</summary>
+    public void RestartIfFailed()
+    {
+        if (_supervisor.State == EngineState.Failed)
+        {
+            _ = _supervisor.RestartAsync();
+        }
+    }
 
     public async Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {

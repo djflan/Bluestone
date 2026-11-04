@@ -222,6 +222,11 @@ public partial class App : Avalonia.Application
         IAudioPlayback audio = _engine is { } engine
             ? new EngineAudio(engine, playback, session, devices.InstanceOf, prepare)
             : new AudioPlayback(playback, session, devices.InstanceOf, prepareSampleRate: prepare);
+        if (audio is EngineAudio engineAudio)
+        {
+            playback.AudioReady = engineAudio.WhenReadyAsync;
+        }
+
         _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher(), activities: viewModel.Activities);
         viewModel.Mixer.MeterSource = audio.MeterOf;
         window.AttachAudio(_audio);

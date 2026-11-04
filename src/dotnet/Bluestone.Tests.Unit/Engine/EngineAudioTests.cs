@@ -201,6 +201,44 @@ public sealed class EngineAudioTests : IAsyncDisposable
         Assert.True(_audio.IsRunning);
     }
 
+    [Fact]
+    public async Task ItIsReady_WhenAudioIsOff_OrTheDeviceIsOpenAndTheEngineAnsweredTheGraph_OrNoDeviceCanOpen()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var shortWait = TimeSpan.FromMilliseconds(30);
+        Assert.True(await _audio.WhenReadyAsync(shortWait, ct));
+
+        var first = new RecordingLink();
+        Client.Connected(first, restarted: false);
+        _audio.Start(new AudioSettings(true));
+        Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
+
+        // The device is open, but the graph for it has not been answered: playback would start ahead of the audio.
+        Client.Received(first, new AudioDeviceStatus(1, AudioDeviceState.Running, null, 48_000, 2, 128, 0, null));
+        await WaitUntilAsync(() => first.Sent.OfType<LoadAudioGraph>().Any());
+        Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
+        Client.Received(first, new AudioGraphLoaded(first.Sent.OfType<LoadAudioGraph>().Last().GraphId, true, 0, []));
+        Assert.True(await _audio.WhenReadyAsync(shortWait, ct));
+
+        // A restarted engine: not ready until it has opened the device and answered a graph of its own.
+        Client.Disconnected(first);
+        var second = new RecordingLink();
+        Client.Connected(second, restarted: true);
+        Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
+        var resent = second.Sent.OfType<SetAudio>().Single();
+        Client.Received(second, new AudioDeviceStatus(resent.Request, AudioDeviceState.Running, null, 48_000, 2, 128, 0, null));
+        Assert.False(await _audio.WhenReadyAsync(shortWait, ct));
+        await WaitUntilAsync(() => second.Sent.OfType<LoadAudioGraph>().Any());
+        Client.Received(second, new AudioGraphLoaded(second.Sent.OfType<LoadAudioGraph>().Last().GraphId, false, 0, ["Not applied."]));
+        Assert.True(await _audio.WhenReadyAsync(shortWait, ct));
+
+        // No device can open: MIDI plays without audio rather than waiting for it.
+        _audio.Start(new AudioSettings(true, "gone"));
+        var again = second.Sent.OfType<SetAudio>().Last();
+        Client.Received(second, new AudioDeviceStatus(again.Request, AudioDeviceState.Waiting, "No device.", 0, 0, 0, 0, null));
+        Assert.True(await _audio.WhenReadyAsync(shortWait, ct));
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
