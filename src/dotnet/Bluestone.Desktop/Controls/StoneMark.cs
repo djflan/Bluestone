@@ -5,18 +5,28 @@ using Avalonia.Media.Imaging;
 
 namespace Bluestone.Desktop.Controls;
 
-/// <summary>Bluestone's mark: a hexagonal gemstone seen from above, lit from the top left in shades of blue.</summary>
+/// <summary>Bluestone's mark: a raw sapphire crystal, a few broad faces from frosted pale to deep blue, with a little rock still on it.</summary>
 internal sealed class StoneMark : Control
 {
-    private const int Sides = 6;
+    private static readonly Color Darkest = Color.Parse("#050C2E");
+    private static readonly Color Middle = Color.Parse("#1F48B0");
+    private static readonly Color Lightest = Color.Parse("#C6D8F5");
+    private static readonly Color Frost = Color.Parse("#DCE5F0");
 
-    private static readonly Color Darkest = Color.Parse("#061230");
-    private static readonly Color Middle = Color.Parse("#2F6FC4");
-    private static readonly Color Lightest = Color.Parse("#B4DAFF");
+    // The crystal in a design box: the outline A–I clockwise from the top left, and the inner ridge points J–M.
+    private static readonly Point A = new(36, 8), B = new(66, 4), C = new(74, 12), D = new(80, 44), E = new(70, 70);
+    private static readonly Point F = new(50, 90), G = new(26, 86), H = new(14, 64), I = new(20, 36);
+    private static readonly Point J = new(56, 30), K = new(58, 56), L = new(40, 22), M = new(34, 60);
 
-    // Fixed per-facet nudges to the shading, so neighbouring facets catch the light differently.
-    private static readonly double[] Sparkle =
-        [0.10, -0.08, 0.05, -0.11, 0.08, -0.03, 0.12, -0.06, 0.02, 0.09, -0.10, 0.06, -0.04];
+    // The far side's ridge, seen faintly through the stone.
+    private static readonly Point P = new(42, 44), Q = new(52, 72);
+    private static readonly Rect Design = new(14, 4, 66, 86);
+
+    // Glints inside the deep face, and faint fracture streaks through the stone (design units).
+    private static readonly (Point At, double Radius)[] Glints =
+        [(new(66, 22), 0.9), (new(70, 34), 0.6), (new(62, 40), 0.7), (new(73, 46), 0.5), (new(65, 50), 0.6), (new(60, 28), 0.5)];
+
+    private static readonly (Point From, Point To)[] Streaks = [(new(44, 34), new(54, 52)), (new(48, 30), new(62, 46))];
 
     public override void Render(DrawingContext context)
     {
@@ -26,77 +36,58 @@ internal sealed class StoneMark : Control
             return;
         }
 
-        var radius = size / 2;
-        var centre = new Point(Bounds.Width / 2, Bounds.Height / 2);
+        var scale = size / Math.Max(Design.Width, Design.Height);
+        var origin = new Point((Bounds.Width - (Design.Width * scale)) / 2, (Bounds.Height - (Design.Height * scale)) / 2);
+        Point At(Point p) => origin + ((p - Design.TopLeft) * scale);
 
-        // The table is 0.618 of the stone's size, set toward the light by 0.146 (0.382²) and turned slightly, as a real cut rarely sits true.
-        var outer = Polygon(centre, radius, 0);
-        var table = Polygon(centre + (new Point(-0.64, -0.77) * radius * 0.146), radius * 0.618, 9);
+        // Broad faces, each with its own light: frosted where it catches the sky, deep blue where you see into the stone.
+        Facet(context, [At(A), At(B), At(J), At(L)], 0.82, frost: 0.45);
+        Facet(context, [At(B), At(C), At(J)], 0.72, frost: 0.2);
+        Facet(context, [At(C), At(D), At(K), At(J)], 0.2, frost: 0);
+        Facet(context, [At(D), At(E), At(F), At(K)], 0.58, frost: 0.35);
+        Facet(context, [At(L), At(J), At(K), At(M)], 0.4, frost: 0);
+        Facet(context, [At(A), At(L), At(M), At(H), At(I)], 0.55, frost: 0.15);
+        var rockFace = Facet(context, [At(M), At(K), At(F), At(G), At(H)], 0.3, frost: 0);
 
-        // The crown: each band between the outline and the table is cut into two triangles, three where the light falls and on
-        // the darkest band, split at golden-ratio points so the cuts do not halve anything.
-        var facet = 0;
-        double Next() => Sparkle[facet++ % Sparkle.Length];
-        var facing = Enumerable.Range(0, Sides).Select(i => Facing(centre, outer[i], outer[(i + 1) % Sides], table[(i + 1) % Sides], table[i])).ToArray();
-        var darkest = Array.IndexOf(facing, facing.Min());
-        for (var i = 0; i < Sides; i++)
+        // The back faces show through, as if the stone were partly clear: light where they catch the light, darker below.
+        Ghost(context, [At(I), At(P), At(Q), At(G), At(H)], "#18DCE5F0");
+        Ghost(context, [At(C), At(D), At(Q), At(P)], "#26C6D8F5");
+        Ghost(context, [At(D), At(E), At(F), At(G), At(Q)], "#30050C2E");
+        var backEdge = new Pen(new SolidColorBrush(Color.Parse("#38DCE5F0")), Math.Max(0.5, scale * 0.5), lineCap: PenLineCap.Round);
+        foreach (var (from, to) in new[] { (I, P), (C, P), (P, Q), (D, Q), (G, Q) })
         {
-            var next = (i + 1) % Sides;
-            if (facing[i] > 0.3 || i == darkest)
+            context.DrawLine(backEdge, At(from), At(to));
+        }
+
+        // A little of the host rock still clings to the lower left.
+        using (context.PushGeometryClip(rockFace))
+        {
+            foreach (var (centre, radius) in new[] { (new Point(28, 76), 11.0), (new Point(38, 84), 8.0), (new Point(20, 68), 6.0) })
             {
-                var split = outer[i] + ((outer[next] - outer[i]) * (i == darkest ? 0.618 : 0.382));
-                Facet(context, centre, [outer[i], split, table[i]], Next());
-                Facet(context, centre, [split, outer[next], table[next]], Next());
-                Facet(context, centre, [split, table[next], table[i]], Next());
-            }
-            else
-            {
-                Facet(context, centre, [outer[i], outer[next], table[i]], Next());
-                Facet(context, centre, [outer[next], table[next], table[i]], Next());
+                var r = radius * scale;
+                context.DrawEllipse(new RadialGradientBrush
+                {
+                    GradientStops = { new GradientStop(Color.Parse("#A0745E4A"), 0), new GradientStop(Color.Parse("#00745E4A"), 1) },
+                }, null, At(centre), r, r * 0.8);
             }
         }
 
-        // The table repeats the cut one level in: a core 0.618 of the table, moved and turned by the same steps again, ringed by
-        // a softer band of facets so the middle reads as one face catching the light.
-        var core = Polygon(centre + (new Point(-0.64, -0.77) * radius * 0.146 * 1.618), radius * 0.382, 18);
-        for (var i = 0; i < Sides; i++)
+        var streak = new Pen(new SolidColorBrush(Color.Parse("#40DCE5F0")), Math.Max(0.5, scale * 0.6), lineCap: PenLineCap.Round);
+        foreach (var (from, to) in Streaks)
         {
-            var next = (i + 1) % Sides;
-            Point[] first = [table[i], table[next], core[i]];
-            Point[] second = [table[next], core[next], core[i]];
-            Facet(context, centre, first, 0, brightness: 0.62 + (0.22 * Facing(centre, first)) + (0.5 * Next()));
-            Facet(context, centre, second, 0, brightness: 0.62 + (0.22 * Facing(centre, second)) + (0.5 * Next()));
+            context.DrawLine(streak, At(from), At(to));
         }
 
-        Facet(context, centre, core, 0, brightness: 0.8);
-    }
-
-    private static Point[] Polygon(Point centre, double radius, double turnDegrees)
-    {
-        var corners = new Point[Sides];
-        for (var i = 0; i < Sides; i++)
+        var glint = new SolidColorBrush(Color.Parse("#D0F2F7FF"));
+        foreach (var (at, radius) in Glints)
         {
-            var angle = Math.PI / 180 * (210 + (360.0 / Sides * i) + turnDegrees);
-            corners[i] = centre + new Point(radius * Math.Cos(angle), radius * Math.Sin(angle));
+            context.DrawEllipse(glint, null, At(at), radius * scale, radius * scale);
         }
-
-        return corners;
     }
 
-    /// <summary>How directly the middle of <paramref name="corners"/> faces the light, from -1 (away) to 1.</summary>
-    private static double Facing(Point centre, params Point[] corners)
+    /// <summary>A back face seen through the stone: a faint wash of <paramref name="color"/> (#AARRGGBB).</summary>
+    private static void Ghost(DrawingContext context, Point[] corners, string color)
     {
-        var mid = new Point(corners.Average(p => p.X), corners.Average(p => p.Y)) - centre;
-        var length = Math.Max(1e-6, Math.Sqrt((mid.X * mid.X) + (mid.Y * mid.Y)));
-        return ((mid.X * -0.64) + (mid.Y * -0.77)) / length;
-    }
-
-    /// <summary>Fills a facet in a blue that is lighter the more it faces the top left; facets facing the light vary more.</summary>
-    private static void Facet(DrawingContext context, Point centre, Point[] corners, double sparkle, double? brightness = null)
-    {
-        var facing = Facing(centre, corners);
-        var shade = Math.Clamp(brightness ?? (0.45 + (0.45 * facing) + (sparkle * (1 + (1.5 * Math.Max(0, facing))))), 0, 1);
-
         var geometry = new StreamGeometry();
         using (var draw = geometry.Open())
         {
@@ -109,8 +100,26 @@ internal sealed class StoneMark : Control
             draw.EndFigure(isClosed: true);
         }
 
-        // Each facet darkens away from the light, top left to bottom right.
-        var color = Ramp(shade);
+        context.DrawGeometry(new SolidColorBrush(Color.Parse(color)), null, geometry);
+    }
+
+    /// <summary>Fills a face in the blue for <paramref name="brightness"/>, washed toward frosted white by <paramref name="frost"/>.</summary>
+    private static StreamGeometry Facet(DrawingContext context, Point[] corners, double brightness, double frost)
+    {
+        var geometry = new StreamGeometry();
+        using (var draw = geometry.Open())
+        {
+            draw.BeginFigure(corners[0], isFilled: true);
+            foreach (var corner in corners.Skip(1))
+            {
+                draw.LineTo(corner);
+            }
+
+            draw.EndFigure(isClosed: true);
+        }
+
+        // Each face darkens away from the light, top left to bottom right.
+        var color = Lerp(Ramp(Math.Clamp(brightness, 0, 1)), Frost, frost);
         var fill = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
@@ -122,8 +131,9 @@ internal sealed class StoneMark : Control
                 new GradientStop(Lerp(color, Darkest, 0.6), 1),
             },
         };
-        // Stroked in its own fill so neighbouring facets meet without a hairline seam.
+        // Stroked in its own fill so neighbouring faces meet without a hairline seam.
         context.DrawGeometry(fill, new Pen(fill, 0.75, lineJoin: PenLineJoin.Round), geometry);
+        return geometry;
     }
 
     private static Color Ramp(double shade) =>
