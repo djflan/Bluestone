@@ -41,6 +41,9 @@
     </DataTemplate>
   </Window.Resources>
   <Panel>
+  <DockPanel>
+  <!-- The window's menu, shown here where the platform has no menu bar of its own (Windows, most Linux desktops). -->
+  <NativeMenuBar x:Name="MenuBar" DockPanel.Dock="Top" Background="{StaticResource Surface.Chrome}" />
   <Grid RowDefinitions="Auto,*,Auto">
 
     <!-- Control bar: view toggles and undo on the left, transport and LCD in the centre, panic on the right. -->
@@ -64,28 +67,6 @@
           <Button Classes="tool" Command="{Binding RedoCommand}" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)" AutomationProperties.Name="Redo">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Redo}" />
           </Button>
-          <DropDownButton x:Name="FileMenuButton" Classes="ghost" Content="File" Margin="6,0,0,0" FontSize="12" AutomationProperties.Name="File menu">
-            <DropDownButton.Flyout>
-              <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                <MenuItem Header="New Project" Command="{Binding NewProjectCommand}" InputGesture="Ctrl+N" />
-                <MenuItem Header="Open…" Command="{Binding OpenCommand}" InputGesture="Ctrl+O" />
-                <Separator />
-                <MenuItem Header="Save" Command="{Binding SaveCommand}" InputGesture="Ctrl+S" />
-                <MenuItem Header="Save As…" Command="{Binding SaveAsCommand}" InputGesture="Ctrl+Shift+S" />
-                <Separator />
-                <MenuItem Header="Import MIDI File…" Command="{Binding ImportMidiCommand}" InputGesture="Ctrl+I" />
-                <MenuItem Header="Export MIDI File…" Command="{Binding ExportMidiCommand}" InputGesture="Ctrl+E" />
-                <Separator />
-                <MenuItem Header="Mixer…" Classes="keepsSettings" Click="OnShowMixer" ToolTip.Tip="The mixer console: strips, sends, and meters" />
-                <MenuItem Header="Plugins…" Classes="keepsSettings" Click="OnShowPlugins" ToolTip.Tip="Settings ▸ Plugins: scanned plugins, how they share worker processes, and quarantined modules" />
-                <MenuItem Header="Audio Settings…" Classes="keepsSettings" Click="OnAudioSettingsClick" ToolTip.Tip="Settings ▸ Audio: the output device, sample rate, and buffer" />
-                <Separator />
-                <MenuItem Header="Settings…" Classes="keepsSettings" Click="OnSettingsClick" InputGesture="Ctrl+OemComma" />
-                <Separator />
-                <MenuItem Header="About Bluestone" Click="OnAboutClick" />
-              </MenuFlyout>
-            </DropDownButton.Flyout>
-          </DropDownButton>
         </StackPanel>
 
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -740,6 +721,7 @@
       </Grid>
     </Border>
   </Grid>
+  </DockPanel>
 
   <!-- Shown while a supported file is dragged over the window. -->
   <Border x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False" Margin="8"

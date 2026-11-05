@@ -160,4 +160,24 @@ public sealed class ShortcutTests
         Item("Edit", "Undo").Command!.Execute(null);
         Assert.Equal(["Lead", "Bass"], TrackNames(app));
     });
+
+    [Fact]
+    public Task TheInWindowMenuBar_UsesWindowsConventions_AndOpensSettingsFromFile() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync(LeadAndBass());
+        var menu = NativeMenu.GetMenu(app.Window)!;
+        string[] Headers(string submenu) =>
+            [.. menu.Items.OfType<NativeMenuItem>().Single(i => i.Header == submenu).Menu!.Items.OfType<NativeMenuItem>().Select(i => i.Header ?? string.Empty)];
+
+        Assert.True(app.Find<NativeMenuBar>("MenuBar").IsEffectivelyVisible);
+        Assert.Equal("Exit", Headers("_File")[^1]);
+        Assert.DoesNotContain("Close Window", Headers("_File"));
+        Assert.DoesNotContain("Minimize", Headers("_Window"));
+        Assert.Contains("Delete    Del", Headers("_Edit"));
+        Assert.Contains("Velocity Up    Alt+↑", Headers("_MIDI"));
+        Assert.Contains("T_ransport", menu.Items.OfType<NativeMenuItem>().Select(i => i.Header));
+
+        app.ChooseFromMenu("File", "Settings…");
+        Assert.True(app.Window.Settings.IsOpen);
+    });
 }

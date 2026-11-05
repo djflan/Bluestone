@@ -54,7 +54,7 @@ internal sealed class SplashWindow : Window
         _status = new TextBlock { Text = "Starting…", Foreground = new SolidColorBrush(Palette.Text), FontSize = 13 };
         _detail = new TextBlock
         {
-            Foreground = new SolidColorBrush(Palette.TextMuted),
+            Foreground = new SolidColorBrush(MutedText),
             FontSize = 11,
             TextTrimming = TextTrimming.PrefixCharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
@@ -78,7 +78,7 @@ internal sealed class SplashWindow : Window
                     Children =
                     {
                         new TextBlock { Text = AppVersion.Release, FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
-                        new TextBlock { Text = AppVersion.Commit, FontSize = 11, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.TextMuted), IsVisible = AppVersion.Commit.Length > 0 },
+                        new TextBlock { Text = AppVersion.Commit, FontSize = 11, LetterSpacing = 1, Foreground = new SolidColorBrush(MutedText), IsVisible = AppVersion.Commit.Length > 0 },
                         new TextBlock { Text = "PRE-RELEASE", FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
                     },
                 },
@@ -144,6 +144,9 @@ internal sealed class SplashWindow : Window
 
     /// <summary>The space round the marble for its shadow.</summary>
     private const double Inset = 16;
+
+    // Palette.TextMuted is too dark to read on the marble.
+    private static readonly Color MutedText = Color.Parse("#B9B9C0");
 
     /// <summary>Whether this is About Bluestone rather than the start-up splash.</summary>
     public bool IsAbout { get; }

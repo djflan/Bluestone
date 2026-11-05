@@ -138,7 +138,7 @@ The status line at the bottom of the window says what Bluestone is doing: openin
 
 ## Menus and accessibility
 
-macOS uses the standard application menu bar. Windows and Linux place file commands in the toolbar and expose other commands through buttons, context menus, and key bindings.
+macOS uses the standard application menu bar. Windows and Linux show the same menus in a menu bar at the top of the window (with Settings and Exit in File); Alt plus the underlined letter opens a menu.
 
 Primary controls have screen-reader names, and statuses use words and icons rather than color alone. Screen readers announce changes to the status line politely, at most a few times a second. Custom-drawn arrangement and editor surfaces describe their gestures as a whole rather than exposing each event as a separate accessibility element. Platform accessibility verification is ongoing.
 

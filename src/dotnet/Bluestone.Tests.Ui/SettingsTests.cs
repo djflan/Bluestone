@@ -198,7 +198,7 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
-    public Task TheControlBarsUndo_BringsTheWorkspaceBack_AndItsFileMenuCanOpenAnotherSettingsPage() => HeadlessApp.RunAsync(async () =>
+    public Task TheControlBarsUndo_BringsTheWorkspaceBack_AndTheMenuBarCanOpenAnotherSettingsPage() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
         using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
@@ -207,9 +207,7 @@ public sealed class SettingsTests : IDisposable
         app.Window.ShowSettings(SettingsPage.Plugins);
         app.Settle();
 
-        app.Click(app.Find<DropDownButton>("FileMenuButton"));
-        var flyout = Assert.IsType<MenuFlyout>(app.Find<DropDownButton>("FileMenuButton").Flyout);
-        app.Click(flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Audio Settings…")));
+        app.ChooseFromMenu("Window", "Audio Settings…");
         Assert.True(app.Window.Settings.IsOpen);
         Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
 

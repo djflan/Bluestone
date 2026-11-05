@@ -79,15 +79,12 @@ public sealed class SplashWindowTests
         Assert.Single(app.Window.OwnedWindows.OfType<SplashWindow>()).Close();
     });
 
-    /// <summary>Windows and Linux have no native menu bar, so About is in the in-window File menu too.</summary>
+    /// <summary>Windows and Linux have no native menu bar, so About is in the window's own Help menu.</summary>
     [Fact]
-    public Task About_OpensFromTheInWindowFileMenu() => HeadlessApp.RunAsync(async () =>
+    public Task About_OpensFromTheInWindowHelpMenu() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
-        var file = app.Find<DropDownButton>("FileMenuButton");
-        app.Click(file);
-        var flyout = Assert.IsType<MenuFlyout>(file.Flyout);
-        app.Click(flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "About Bluestone")));
+        app.ChooseFromMenu("Help", "About Bluestone");
 
         var about = Assert.Single(app.Window.OwnedWindows.OfType<SplashWindow>());
         Assert.True(about.IsAbout);

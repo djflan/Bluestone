@@ -1,5 +1,3 @@
-using Avalonia.Interactivity;
-
 namespace Bluestone.Desktop.Views;
 
 /// <summary>The mixer console (kept apart from the rest of the main window).</summary>
@@ -7,7 +5,7 @@ public partial class MainWindow
 {
     private MixerWindow? _mixer;
 
-    /// <summary>Opens the mixer console (Window ▸ Mixer in the macOS menu bar, File ▸ Mixer… elsewhere), or brings it to the front.</summary>
+    /// <summary>Opens the mixer console (Window ▸ Mixer), or brings it to the front.</summary>
     internal void ShowMixer()
     {
         if (_viewModel is not { } vm)
@@ -26,6 +24,4 @@ public partial class MainWindow
         _mixer.Closed += (_, _) => _mixer = null;
         _mixer.Show(this);
     }
-
-    private void OnShowMixer(object? sender, RoutedEventArgs e) => ShowMixer();
 }
