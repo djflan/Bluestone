@@ -65,21 +65,37 @@ internal sealed class SplashWindow : Window
 
         var title = new StackPanel
         {
+            Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 2,
+            Spacing = 16,
             Children =
             {
-                Wordmark(),
+                new Controls.StoneMark
+                {
+                    Width = about ? 84 : 60,
+                    Height = about ? 84 : 60,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Effect = new DropShadowEffect { Color = Color.Parse("#3B86FF"), BlurRadius = 30, OffsetX = 0, OffsetY = 0, Opacity = 0.9 },
+                },
                 new StackPanel
                 {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 8,
-                    Margin = new Thickness(3, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Spacing = 2,
                     Children =
                     {
-                        new TextBlock { Text = AppVersion.Release, FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
-                        new TextBlock { Text = AppVersion.Commit, FontSize = 11, LetterSpacing = 1, Foreground = new SolidColorBrush(MutedText), IsVisible = AppVersion.Commit.Length > 0 },
-                        new TextBlock { Text = "PRE-RELEASE", FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
+                        Wordmark(),
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Spacing = 8,
+                            Margin = new Thickness(3, 0, 0, 0),
+                            Children =
+                            {
+                                new TextBlock { Text = AppVersion.Release, FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
+                                new TextBlock { Text = AppVersion.Commit, FontSize = 11, LetterSpacing = 1, Foreground = new SolidColorBrush(MutedText), IsVisible = AppVersion.Commit.Length > 0 },
+                                new TextBlock { Text = "PRE-RELEASE", FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
+                            },
+                        },
                     },
                 },
             },

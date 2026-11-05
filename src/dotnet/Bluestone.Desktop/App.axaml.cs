@@ -32,6 +32,8 @@ public partial class App : Avalonia.Application
     /// <summary>The start-up plugin scan while it runs, so quitting can wait for it to stop its scanner process.</summary>
     private static Task? _startupScan;
 
+    private static WindowIcon? _icon;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -45,6 +47,7 @@ public partial class App : Avalonia.Application
         // Earlier Windows ignores title bar colours and keeps its own dark grey.
         Window.WindowOpenedEvent.AddClassHandler<Window>((window, _) =>
         {
+            window.Icon ??= _icon ??= Controls.StoneMark.CreateIcon();
             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
             {
                 MatchTitleBar(window);
