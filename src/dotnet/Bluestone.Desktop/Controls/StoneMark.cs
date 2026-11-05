@@ -239,13 +239,27 @@ internal sealed class StoneMark : Control
         (byte)(from.B + ((to.B - from.B) * t)));
 
     /// <summary>The mark drawn at <paramref name="pixels"/> square, for window and taskbar icons.</summary>
-    public static WindowIcon CreateIcon(int pixels = 256)
+    public static WindowIcon CreateIcon(int pixels = 256) => new(Render(pixels, inset: 0));
+
+    /// <summary>
+    /// The mark as PNG for the macOS Dock, which ignores window icons. Inset to sit on Apple's icon grid, so it is no
+    /// larger than its neighbours.
+    /// </summary>
+    public static byte[] CreateDockImage(int pixels = 512)
     {
-        var mark = new StoneMark { Width = pixels, Height = pixels };
-        mark.Measure(new Size(pixels, pixels));
-        mark.Arrange(new Rect(0, 0, pixels, pixels));
+        using var bitmap = Render(pixels, inset: pixels / 10.0);
+        using var png = new MemoryStream();
+        bitmap.Save(png, PngBitmapEncoderOptions.Default);
+        return png.ToArray();
+    }
+
+    private static RenderTargetBitmap Render(int pixels, double inset)
+    {
+        var frame = new Decorator { Padding = new Thickness(inset), Child = new StoneMark(), Width = pixels, Height = pixels };
+        frame.Measure(new Size(pixels, pixels));
+        frame.Arrange(new Rect(0, 0, pixels, pixels));
         var bitmap = new RenderTargetBitmap(new PixelSize(pixels, pixels));
-        bitmap.Render(mark);
-        return new WindowIcon(bitmap);
+        bitmap.Render(frame);
+        return bitmap;
     }
 }
