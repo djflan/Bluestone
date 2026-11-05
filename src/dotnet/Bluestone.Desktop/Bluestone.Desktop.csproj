@@ -5,6 +5,8 @@
     <RootNamespace>Bluestone.Desktop</RootNamespace>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationTitle>Bluestone</ApplicationTitle>
+    <!-- For the source-generated P/Invoke that sets the macOS Dock icon (Services/DockIcon.cs). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Bluestone.Tests.Ui" />

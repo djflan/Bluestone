@@ -112,6 +112,19 @@ public sealed class SplashWindowTests
         Assert.True(effect is not null, errors);
     }
 
+    [Fact]
+    public Task StoneMark_DockImage_IsPaddedPng() => HeadlessApp.RunAsync(() =>
+    {
+        using var png = new MemoryStream(StoneMark.CreateDockImage(100));
+        using var image = new Bitmap(png);
+        Assert.Equal(new PixelSize(100, 100), image.PixelSize);
+
+        var pixels = Pixels(image);
+        Assert.All(Enumerable.Range(0, image.PixelSize.Width * 8), pixel => Assert.Equal((byte)0, pixels[(pixel * 4) + 3]));
+        Assert.Contains(pixels.Where((_, index) => index % 4 == 3), alpha => alpha > 0);
+        return Task.CompletedTask;
+    });
+
     [Theory]
     [InlineData(0.0, 0.0)]
     [InlineData(7.3, 21.9)]

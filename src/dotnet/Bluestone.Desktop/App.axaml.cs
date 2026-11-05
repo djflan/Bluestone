@@ -42,6 +42,7 @@ public partial class App : Avalonia.Application
         if (OperatingSystem.IsMacOS())
         {
             AppMenu.InstallApplicationMenu(this, () => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow as MainWindow);
+            DockIcon.Set(Controls.StoneMark.CreateDockImage());
         }
 
         // Earlier Windows ignores title bar colours and keeps its own dark grey.
