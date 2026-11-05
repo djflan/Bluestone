@@ -77,7 +77,15 @@ internal sealed class StoneMark : Control
             draw.EndFigure(isClosed: true);
         }
 
-        context.DrawGeometry(new SolidColorBrush(Ramp(shade)), Edge, geometry);
+        // Each facet darkens away from the light, top left to bottom right.
+        var color = Ramp(shade);
+        var fill = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            GradientStops = { new GradientStop(color, 0), new GradientStop(Lerp(color, Darkest, 0.35), 1) },
+        };
+        context.DrawGeometry(fill, Edge, geometry);
     }
 
     private static Color Ramp(double shade) =>
