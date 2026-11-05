@@ -72,8 +72,8 @@ internal sealed class SplashWindow : Window
             {
                 new Controls.StoneMark
                 {
-                    Width = about ? 84 : 60,
-                    Height = about ? 84 : 60,
+                    Width = 84,
+                    Height = 84,
                     VerticalAlignment = VerticalAlignment.Center,
                     Effect = new DropShadowEffect { Color = Color.Parse("#3B86FF"), BlurRadius = 30, OffsetX = 0, OffsetY = 0, Opacity = 0.9 },
                 },
