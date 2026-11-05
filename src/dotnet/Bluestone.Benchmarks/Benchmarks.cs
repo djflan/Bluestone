@@ -120,7 +120,7 @@ public class FileBenchmarks
             root = Path.GetDirectoryName(root)!;
         }
 
-        _profile = File.ReadAllBytes(Path.Combine(root, "profiles", "general-midi.bluestone-profile.json"));
+        _profile = File.ReadAllBytes(Path.Combine(root, "src", "dotnet", "Bluestone.Desktop", "Profiles", "general-midi.bluestone-profile.json"));
     }
 
     [Benchmark]

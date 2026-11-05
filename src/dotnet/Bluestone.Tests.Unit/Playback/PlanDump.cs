@@ -35,7 +35,7 @@ internal static class PlanDump
         }
     }
 
-    public static string SamplesDirectory => Path.Combine(RepositoryRoot, "samples");
+    public static string SamplesDirectory => Path.Combine(RepositoryRoot, "src", "dotnet", "TestFixtures", "Midi");
 
     /// <summary>
     /// <paramref name="project"/> with each track sending to an external instrument on a test

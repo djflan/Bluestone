@@ -3,7 +3,7 @@
 Bluestone is an independent open-source project. It is not affiliated with, sponsored, endorsed, or authorized by
 the owners of the companies, products, formats, or standards it names.
 
-Names such as Yamaha, XG, QY100, Roland, GS, VST, ASIO, CLAP, MIDI, Apple, macOS, Core MIDI, Microsoft, Windows, WinMM,
+Names such as Yamaha, XG, Roland, GS, VST, ASIO, CLAP, MIDI, Apple, macOS, Core MIDI, Microsoft, Windows, WinMM,
 Linux, ALSA, and Bitwig Studio appear in Bluestone's software and documentation only to identify those products and
 standards: to say which instruments, formats, and platform interfaces Bluestone works with or was tested against,
 and, in engineering documents, which products' workflows informed a design. A workflow comparison describes

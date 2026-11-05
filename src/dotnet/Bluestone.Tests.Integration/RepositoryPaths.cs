@@ -17,5 +17,9 @@ internal static class RepositoryPaths
         }
     }
 
-    public static string Profiles => Path.Combine(Root, "profiles");
+    /// <summary>The device profiles that ship with the application.</summary>
+    public static string Profiles => Path.Combine(Root, "src", "dotnet", "Bluestone.Desktop", "Profiles");
+
+    /// <summary>Standard MIDI files shared by the test projects.</summary>
+    public static string MidiFixtures => Path.Combine(Root, "src", "dotnet", "TestFixtures", "Midi");
 }

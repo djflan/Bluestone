@@ -4,7 +4,7 @@ using static Bluestone.Tests.Unit.Playback.PlanDump;
 namespace Bluestone.Tests.Unit.Playback;
 
 /// <summary>
-/// Guards what a MIDI 1.0 device receives from the shipped samples, for playback and for SMF export.
+/// Guards what a MIDI 1.0 device receives from the MIDI test fixtures (src/dotnet/TestFixtures/Midi), for playback and for SMF export.
 /// See <see cref="PlanDump"/> for how outputs are listed.
 /// </summary>
 /// <remarks>

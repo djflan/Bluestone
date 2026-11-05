@@ -41,6 +41,3 @@ $RECYCLE.BIN/
 
 # Local agent briefing (not distributed)
 AGENT_HANDOFF.md
-
-# Yamaha XG MIDI samples (not distributed)
-samples/xg/

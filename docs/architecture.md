@@ -25,7 +25,7 @@ and [0020](adr/0020-hybrid-tracks-clips-and-automation.md) to
 ```text
 UI / Application         Bluestone.Desktop, Bluestone.Presentation, Bluestone.Application
        ↓
-Sequencer / Domain       Bluestone.Domain, Bluestone.Profiles
+Project / Domain         Bluestone.Domain, Bluestone.Profiles
        ↓
 Signal processing        Bluestone.Signal: device chains, the routing graph, live processors
        ↓
@@ -145,7 +145,7 @@ and Linux; separate tests check the macOS menu's items, gestures, and Window men
 | How MIDI 1.0 messages from files or input become channel events | `Bluestone.Midi/Wire/Midi1Decoder.cs` |
 | Reading or writing `.mid` files | `Bluestone.Midi/Files` |
 | Recognizing a SysEx family (Universal, XG, GS, another manufacturer) | `Bluestone.Midi/SysEx` |
-| Facts about one instrument (banks, voices, drum names, setup SysEx) | a JSON profile in `/profiles`; the loader is `Bluestone.Profiles` |
+| Facts about one instrument (banks, voices, drum names, setup SysEx) | a JSON profile (shipped ones in `Bluestone.Desktop/Profiles`); the loader is `Bluestone.Profiles` |
 | A hardware parameter automation can set (CC, RPN, NRPN, SysEx) | the profile's `parameterMap` ([profiles.md](profiles.md)); the loader is `Bluestone.Profiles/ProfileLoader.ParameterMap.cs`; translation is `Bluestone.Application/Routing/HardwareAutomation.cs` |
 | An operating-system MIDI API | `Bluestone.Platform.<OS>`, implementing `IMidiEndpointProvider` |
 | The project file format or a migration | `Bluestone.Infrastructure/Projects` |
@@ -198,7 +198,7 @@ on the manufacturer ID, because nothing needs to swap them at run time.
 ```text
                         BLUESTONE
                             │
-                    Sequencer domain
+                     Project domain
                             │
                      MIDI semantics
                             │
@@ -231,8 +231,8 @@ on the manufacturer ID, because nothing needs to swap them at run time.
 
 ### MIDI 1.0: first-class
 
-MIDI 1.0 is fully supported and is not a compatibility layer. Hardware, Standard MIDI Files, and
-XG-era instruments all depend on it. Its specific concerns stay in `Bluestone.Midi`:
+MIDI 1.0 is fully supported and is not a compatibility layer. Hardware instruments, Standard MIDI
+Files, and plugin instruments all depend on it. Its specific concerns stay in `Bluestone.Midi`:
 
 - The domain stores channel events, not messages: `NoteEvent`, `NoteOffEvent`, `ControllerEvent`,
   `ProgramEvent`, `PitchBendEvent`, `ChannelPressureEvent`, and `PolyPressureEvent`. Controller,
@@ -243,8 +243,8 @@ XG-era instruments all depend on it. Its specific concerns stay in `Bluestone.Mi
   becomes a note-on and a note-off, and values are reduced to 7 bits, or 14 for pitch bend.
 - `Wire/Midi1Decoder` is the inverse, used by SMF import and recording. Bank selects on the same
   channel and tick as a program change are folded into it. Anywhere else they stay controller
-  events, so what is sent is unchanged. `MidiOneOutputGoldenTests` checks that the shipped samples
-  play and export exactly the same MIDI 1.0 bytes.
+  events, so what is sent is unchanged. `MidiOneOutputGoldenTests` checks that the MIDI test fixtures
+  (`src/dotnet/TestFixtures/Midi`) play and export exactly the same MIDI 1.0 bytes.
 - `Wire/ChannelMessage` is the compact MIDI 1.0 message (status byte plus data bytes). It is used
   in the playback plan and the real-time engine, which send only MIDI 1.0.
 - `Wire/MidiWire` validates complete messages, and `Wire/MidiStreamParser` handles running status,
@@ -276,8 +276,8 @@ Bluestone does not send MIDI 2.0. The design leaves room for it:
 MIDI Capability Inquiry (Discovery, Profiles, Property Exchange) could let Bluestone ask a modern
 device for its capabilities, program lists, and controller names, instead of relying only on
 shipped profiles. It needs a paired input and output on one device, so it would sit above the
-endpoint contracts, and what it learns would feed device knowledge, not transport. Legacy
-instruments do not answer MIDI-CI, so data profiles and the XG and GS interpreters stay essential.
+endpoint contracts, and what it learns would feed device knowledge, not transport. Most
+hardware instruments do not answer MIDI-CI, so data profiles and the SysEx dialect interpreters stay essential.
 
 ### SysEx: always preserved, optionally understood
 
@@ -299,7 +299,8 @@ and tuning) is kept separate from manufacturer SysEx and does not depend on Yama
 **XG** (`XgDialect`) recognizes parameter changes, including XG System On and All Parameter Reset.
 It sorts them into system, reverb, chorus, variation, insertion, multi part (with the part number),
 and drum setup (with the note), and it recognizes bulk dumps with their checksum. Parameter names
-within each block, model-specific extensions such as the QY100's, and requests are future work.
+within each block, model-specific extensions, and requests are future work. XG-specific support is deferred
+(ADR 0041): the interpreter stays in the dispatch, but its tests are skipped and it is not extended.
 
 **GS** (`GsDialect`) recognizes data set (DT1) messages: GS Reset, system mode, system, reverb,
 chorus, common, part (using GS's own block-to-part numbering), and drum map. It checks the Roland
@@ -320,7 +321,7 @@ messages whichever profile a track is routed to.
 | ------- | -------- | -------- |
 | Transport | Core MIDI, WinMM, ALSA, future Windows MIDI Services | `Bluestone.Platform.*` |
 | Protocol | MIDI 1.0 bytes, SMF, future UMP | `Bluestone.Midi` |
-| Dialect and device semantics | Universal, XG, GS, device profiles and their parameter maps | `Bluestone.Midi/SysEx`, `Bluestone.Profiles`, `/profiles` |
+| Dialect and device semantics | Universal, XG, GS, device profiles and their parameter maps | `Bluestone.Midi/SysEx`, `Bluestone.Profiles`, `Bluestone.Desktop/Profiles` |
 
 An adapter never interprets what it carries, and an interpreter never cares where the bytes came
 from (ADR 0005, 0007, 0023).
@@ -399,10 +400,10 @@ gets an instrument while its sound goes nowhere, is given an explicit audio conn
 (`TrackSetup`, ADR 0038).
 
 ```text
-Piano ───┐                                           ┌──► MU2000 port A, ch 1..16
-Strings ─┼──► rack "XG" [XG synth → Delay] ──audio──► mixer "XG" ──► master
+Piano ───┐                                          ┌──► Hardware synth port A, ch 1..16
+Strings ─┼──► rack "Keys" [Synth → Delay] ──audio──► mixer "Keys" ──► master
 Bass ────┘
-Lead ──► [Arpeggiator → Transpose] ──► MU2000 port B, ch 4
+Lead ──► [Arpeggiator → Transpose] ──► Hardware synth port B, ch 4
                  └── tap ──► track "Harmony"
 ```
 
@@ -589,8 +590,8 @@ Built and tested automatically where a test can reach, but not yet checked by a 
 [hardware-test-plan.md](hardware-test-plan.md)): listening to Windows WASAPI or Linux ALSA output; unplugging a
 physical audio device (tested with a test backend); Linux plugin editors and hand-checking Windows editor resize,
 focus, and multi-monitor behavior; physical Windows MIDI/hardware live-input latency (software loopback is measured,
-but misses the 2 ms live target); third-party plugins through the audio engine on a real device; the shipped XG
-parameter map on an XG instrument.
+but misses the 2 ms live target); third-party plugins through the audio engine on a real device; a profile parameter
+map on a hardware instrument.
 
 ## Future compatibility notes
 
@@ -712,14 +713,14 @@ a cdylib with a small, versioned C ABI. `dotnet build` builds the crates a proje
 
 | # | Scenario | Tests |
 | - | -------- | ----- |
-| 1 | Four tracks feed one shared XG synth with one audio output | `AcceptanceScenarioTests.Scenario1_*` |
+| 1 | Four tracks feed one shared synth with one audio output | `AcceptanceScenarioTests.Scenario1_*` |
 | 2 | A track's MIDI effect transforms notes before a synth | `SignalGraphTests.Scenario2_*` |
 | 3 | Events a MIDI effect generates reach another track | `SignalGraphTests.Scenario3_*` |
 | 4 | Several tracks share one processing chain | `SignalGraphTests.Scenario4_*` |
 | 5 | Automation targets MIDI FX, synth, and filter; reordering keeps it | `AcceptanceScenarioTests.Scenario5_*`, `DeviceAndRoutingCommandsTests.Scenario14_*` |
-| 6 | A note processor keeps XG SysEx and controllers | `SignalGraphTests.Scenario6_*` |
+| 6 | A note processor keeps SysEx and controllers | `SignalGraphTests.Scenario6_*` |
 | 7 | One preset on several tracks creates independent devices | `DeviceAndRoutingCommandsTests.Scenario7_*`, `ChainPresetSerializerTests` |
-| 8 | A track plays an external Yamaha instrument on its port and channel | `AcceptanceScenarioTests.Scenario8_*` |
+| 8 | A track plays an external hardware instrument on its port and channel | `AcceptanceScenarioTests.Scenario8_*` |
 | 9 | Audio on an instrument track makes it hybrid without loss | `DeviceAndRoutingCommandsTests.Scenario9_*` |
 | 10 | Invalid connections and feedback are detected | `SignalGraphTests.Scenario10_*`, `DeviceAndRoutingCommandsTests.Scenario10_*`, `SignalRoutingValidatorTests` |
 | 11–13, 15 | Plugin crash isolation, state recovery, several workers, scanning failure | see [plugin-hosting.md](plugin-hosting.md#acceptance-scenarios) |

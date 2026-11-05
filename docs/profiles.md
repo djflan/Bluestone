@@ -9,6 +9,14 @@ Profiles are untrusted input. Bluestone rejects any profile with an error and re
 with its JSON path, for example `$.banks[0].programs[3].number: must be between 1 and 128 (found 0)`.
 Warnings (unknown properties, unused template parameters) do not block loading.
 
+Bluestone loads the profiles it ships with (`src/dotnet/Bluestone.Desktop/Profiles`, copied beside the
+executable) and any in `<application data>/Bluestone/profiles` (for example
+`~/Library/Application Support/Bluestone/profiles` on macOS). It currently ships one profile:
+
+| Profile | ID | Verification |
+| ------- | -- | ------------ |
+| General MIDI (Level 1) | `bluestone.generic.gm1` | Unverified |
+
 ## Top level
 
 | Property | Required | Description |
@@ -60,9 +68,9 @@ Program `number` is **one-based (1–128)**, as printed in most voice lists; Blu
 ## SysEx templates
 
 ```json
-{ "id": "xg-system-on", "name": "XG System On", "effect": "reset",
-  "bytes": "F0 43 {device} 4C 00 00 7E 00 F7",
-  "parameters": [ { "name": "device", "min": 16, "max": 31, "default": 16 } ] }
+{ "id": "gm-system-on", "name": "GM System On", "effect": "reset",
+  "bytes": "F0 7E {device} 09 01 F7",
+  "parameters": [ { "name": "device", "min": 0, "max": 127, "default": 127 } ] }
 ```
 
 - `bytes` is space-separated: two-digit hex bytes or `{parameter}` placeholders. It must start with
@@ -121,3 +129,21 @@ What each kind sends, in order:
 Parameter map entries set one parameter. Never map a reset or a message that overwrites more than that
 parameter: automation sends without asking. An older Bluestone warns about `parameterMap` and ignores it; the
 schema version stays 1.
+
+## Contributing a profile
+
+1. **Only redistributable facts.** Interface facts (message formats, bank select numbers,
+   controller numbers) are fine. Do not copy voice lists, manual text, artwork, screenshots,
+   firmware, or ROM data from a vendor unless you hold the right to redistribute them.
+2. **Record provenance.** List every source in `provenance.sources`, name the contributors, set
+   `redistributionConfirmed` to `true` only if you are sure, and state `verification` honestly:
+   `unverified` (from documentation), `simulated` (checked with traces or a compatible synth), or
+   `hardware-verified` (checked on the instrument itself).
+3. **Mark destructive messages.** SysEx that resets or overwrites state must use effect `reset` or
+   `bulk`, so Bluestone asks before sending it. Nothing in a profile is ever sent just because a
+   project was opened. Parameter map entries are sent by automation without asking, so each must
+   set only its one parameter.
+4. **Name trademarks factually.** Add a non-affiliation notice to `notices` when a profile names a
+   vendor's product or format (see [TRADEMARKS.md](../TRADEMARKS.md)). Do not state who owns a name
+   unless the owner's own published material says so.
+5. Run `dotnet test src/dotnet/Bluestone.slnx`; the integration suite validates every shipped profile.

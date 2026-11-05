@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Device profile schema, validation, and loading. Contains no vendor or device content; see /profiles. -->
+  <!-- Device profile schema, validation, and loading. Contains no vendor or device content; shipped profiles are in Bluestone.Desktop/Profiles. -->
   <PropertyGroup>
     <RootNamespace>Bluestone.Profiles</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>

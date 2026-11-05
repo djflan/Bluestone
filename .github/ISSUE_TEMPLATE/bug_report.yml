@@ -62,7 +62,7 @@ body:
       label: MIDI, audio, and plugin setup
       description: Device profile, MIDI endpoint, and hardware or software instrument involved; the audio device and settings; plugins (name, format, version) and hosting mode.
       placeholder: |
-        Generic XG profile -> physical QY100 over USB MIDI interface
+        General MIDI profile -> hardware synth over USB MIDI interface
         Audio: built-in output, 48 kHz, buffer 256
         Surge XT 1.3.4 (CLAP), hosted by plugin
   - type: textarea

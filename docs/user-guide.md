@@ -14,7 +14,7 @@ dotnet run --project src/dotnet/Bluestone.Desktop
 
 On macOS, MIDI playback, MIDI input and thru, and audio run in a separate Bluestone engine process so that editing cannot delay them. On Windows and Linux they run inside the application unless you set `BLUESTONE_ENGINE=1`; `BLUESTONE_ENGINE=0` keeps them inside the application on macOS too. See the [README](../README.md) for why Windows and Linux are opt-in.
 
-Without hardware, route tracks to **Bluestone Monitor** and open the MIDI monitor, or route them to **Bluestone Out** on macOS and Linux and select that virtual port in a software instrument. Drag `samples/bluestone-demo.mid`, another `.mid` file, or a `.bluestone` project onto the window to open it.
+Without hardware, route tracks to **Bluestone Monitor** and open the MIDI monitor, or route them to **Bluestone Out** on macOS and Linux and select that virtual port in a software instrument. Drag a `.mid` file or a `.bluestone` project onto the window to open it.
 
 ## Essential shortcuts
 

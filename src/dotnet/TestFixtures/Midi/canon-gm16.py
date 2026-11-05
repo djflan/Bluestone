@@ -9,7 +9,7 @@ copyright and text meta events, tempo and meter changes, markers, running status
 styles (0x80 and note-on velocity 0), and same-note retriggers on the tick of the previous release.
 
 The file is written byte by byte with the standard library only, independent of Bluestone's own
-writer. Usage: python3 samples/canon-gm16.py  (writes both MIDI files next to this script)
+writer. Usage: python3 src/dotnet/TestFixtures/Midi/canon-gm16.py  (writes both MIDI files next to this script)
 """
 
 import pathlib

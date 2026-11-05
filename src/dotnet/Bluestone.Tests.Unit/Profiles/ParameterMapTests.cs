@@ -137,7 +137,7 @@ public sealed class ParameterMapTests
         Assert.True(Assert.IsType<GsDataSet>(SysExInterpreter.Interpret(message)).ChecksumValid);
     }
 
-    [Fact]
+    [Fact(Skip = DeferredFeatures.Xg)]
     public void SysEx_YamahaChecksum_MakesAValidBulkDump()
     {
         // An XG bulk dump of one multi part byte: byte count 00 01, address 08 pp 0B, data, checksum over count to data.
