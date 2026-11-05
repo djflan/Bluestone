@@ -91,9 +91,9 @@ internal sealed class SplashWindow : Window
                             Margin = new Thickness(3, 0, 0, 0),
                             Children =
                             {
-                                new TextBlock { Text = AppVersion.Release, FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
-                                new TextBlock { Text = AppVersion.Commit, FontSize = 11, LetterSpacing = 1, Foreground = new SolidColorBrush(MutedText), IsVisible = AppVersion.Commit.Length > 0 },
-                                new TextBlock { Text = "PRE-RELEASE", FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
+                                new TextBlock { Text = AppVersion.Release, FontSize = 13, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
+                                new TextBlock { Text = AppVersion.Commit, FontSize = 13, LetterSpacing = 1, Foreground = new SolidColorBrush(MutedText), IsVisible = AppVersion.Commit.Length > 0 },
+                                new TextBlock { Text = "PRE-RELEASE", FontSize = 13, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
                             },
                         },
                     },
@@ -250,7 +250,7 @@ internal sealed class SplashWindow : Window
         static TextBlock Layer(IBrush brush, double blur, double opacity) => new()
         {
             Text = "BLUESTONE",
-            FontSize = 40,
+            FontSize = 48,
             FontWeight = FontWeight.Bold,
             Foreground = brush,
             Opacity = opacity,

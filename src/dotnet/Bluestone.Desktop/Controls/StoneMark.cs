@@ -24,7 +24,8 @@ internal sealed class StoneMark : Control
 
     // Glints inside the deep face, and faint fracture streaks through the stone (design units).
     private static readonly (Point At, double Radius)[] Glints =
-        [(new(66, 22), 0.9), (new(70, 34), 0.6), (new(62, 40), 0.7), (new(73, 46), 0.5), (new(65, 50), 0.6), (new(60, 28), 0.5)];
+        [(new(66, 22), 0.9), (new(70, 34), 0.6), (new(62, 40), 0.7), (new(73, 46), 0.5), (new(65, 50), 0.6), (new(60, 28), 0.5),
+         (new(75, 40), 0.4), (new(58, 48), 0.4), (new(46, 16), 0.5), (new(72, 62), 0.4)];
 
     private static readonly (Point From, Point To)[] Streaks = [(new(44, 34), new(54, 52)), (new(48, 30), new(62, 46))];
 
@@ -53,6 +54,29 @@ internal sealed class StoneMark : Control
         Facet(context, [At(A), At(new Point(44, 7)), At(new Point(39, 15))], 0.9, frost: 0.55);
         Facet(context, [At(D), At(new Point(76, 34)), At(new Point(73, 46))], 0.62, frost: 0.3);
         Facet(context, [At(I), At(new Point(24, 30)), At(new Point(26, 42))], 0.66, frost: 0.3);
+        Facet(context, [At(F), At(new Point(43, 89)), At(new Point(47, 83))], 0.24, frost: 0.05);
+        Facet(context, [At(B), At(new Point(70, 6)), At(new Point(64, 11))], 0.86, frost: 0.4);
+
+        // Shallow secondary facets break up the broad faces.
+        Facet(context, [At(L), At(J), At(new Point(47, 46))], 0.48, frost: 0);
+        Facet(context, [At(A), At(L), At(new Point(28, 40)), At(I)], 0.63, frost: 0.22);
+        Facet(context, [At(E), At(F), At(new Point(64, 74))], 0.5, frost: 0.28);
+
+        // Light gathers inside the deep face; fine needles of "silk" lie across it at 60°, as in natural sapphire.
+        using (context.PushGeometryClip(deepFace))
+        {
+            context.DrawEllipse(new RadialGradientBrush
+            {
+                GradientStops = { new GradientStop(Color.Parse("#504C8DDB"), 0), new GradientStop(Color.Parse("#004C8DDB"), 1) },
+            }, null, At(new Point(68, 34)), scale * 10, scale * 12);
+
+            var silk = new Pen(new SolidColorBrush(Color.Parse("#30DCE5F0")), Math.Max(0.4, scale * 0.25), lineCap: PenLineCap.Round);
+            for (var i = 0; i < 8; i++)
+            {
+                var from = new Point(61 + (i * 2.2), 18 + (i * 3.6));
+                context.DrawLine(silk, At(from), At(from + new Point(3, 5.2)));
+            }
+        }
 
         // Sapphire grows in bands; lighter zones run across the deep face.
         using (context.PushGeometryClip(deepFace))
@@ -113,6 +137,23 @@ internal sealed class StoneMark : Control
             context.DrawLine(streak, At(from), At(to));
         }
 
+        // A hairline fracture in the front face, branching once.
+        var fracture = new Pen(new SolidColorBrush(Color.Parse("#50DCE5F0")), Math.Max(0.4, scale * 0.3), lineCap: PenLineCap.Round);
+        context.DrawLine(fracture, At(new Point(40, 30)), At(new Point(44, 38)));
+        context.DrawLine(fracture, At(new Point(44, 38)), At(new Point(43, 45)));
+        context.DrawLine(fracture, At(new Point(44, 38)), At(new Point(50, 41)));
+
+        // The edges turning away from the light fall into shadow.
+        using (context.PushGeometryClip(Shape([At(A), At(B), At(C), At(D), At(E), At(F), At(G), At(H), At(I)])))
+        {
+            context.DrawGeometry(null, new Pen(new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse("#00050C2E"), 0.45), new GradientStop(Color.Parse("#A0050C2E"), 1) },
+            }, scale * 3), Shape([At(A), At(B), At(C), At(D), At(E), At(F), At(G), At(H), At(I)]));
+        }
+
         var glint = new SolidColorBrush(Color.Parse("#D0F2F7FF"));
         foreach (var (at, radius) in Glints)
         {
@@ -146,7 +187,10 @@ internal sealed class StoneMark : Control
     }
 
     /// <summary>A back face seen through the stone: a faint wash of <paramref name="color"/> (#AARRGGBB).</summary>
-    private static void Ghost(DrawingContext context, Point[] corners, string color)
+    private static void Ghost(DrawingContext context, Point[] corners, string color) =>
+        context.DrawGeometry(new SolidColorBrush(Color.Parse(color)), null, Shape(corners));
+
+    private static StreamGeometry Shape(Point[] corners)
     {
         var geometry = new StreamGeometry();
         using (var draw = geometry.Open())
@@ -160,23 +204,13 @@ internal sealed class StoneMark : Control
             draw.EndFigure(isClosed: true);
         }
 
-        context.DrawGeometry(new SolidColorBrush(Color.Parse(color)), null, geometry);
+        return geometry;
     }
 
     /// <summary>Fills a face in the blue for <paramref name="brightness"/>, washed toward frosted white by <paramref name="frost"/>.</summary>
     private static StreamGeometry Facet(DrawingContext context, Point[] corners, double brightness, double frost)
     {
-        var geometry = new StreamGeometry();
-        using (var draw = geometry.Open())
-        {
-            draw.BeginFigure(corners[0], isFilled: true);
-            foreach (var corner in corners.Skip(1))
-            {
-                draw.LineTo(corner);
-            }
-
-            draw.EndFigure(isClosed: true);
-        }
+        var geometry = Shape(corners);
 
         // Each face darkens away from the light, top left to bottom right.
         var color = Lerp(Ramp(Math.Clamp(brightness, 0, 1)), Frost, frost);
