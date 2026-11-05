@@ -75,7 +75,7 @@ Install at least one VST 3 and one CLAP instrument and effect in the default plu
 
 | # | Step | Expected |
 | - | ---- | -------- |
-| 30 | Open **Plugins…** (Window menu on macOS, File menu elsewhere) | Installed plugins are listed with their kind, vendor, version, and module; modules that could not be read say why |
+| 30 | Open **Window ▸ Plugins…** | Installed plugins are listed with their kind, vendor, version, and module; modules that could not be read say why |
 | 31 | Drag a VST 3 instrument from the Browser into a track's Device View (or select it and press Return), play notes; repeat with CLAP | The instrument sounds through the master; the meters move |
 | 32 | Add a plugin audio effect after the instrument and turn one of its parameters | The effect is heard; the change is heard within a block |
 | 33 | Press **Open editor**; edit a control, resize the window, close it, open it again | The window appears at the plugin's size; edits change the sound; resizing and reopening work. Windows editor lifecycle is covered by tests; hand-check sizing/focus and Linux in particular |
