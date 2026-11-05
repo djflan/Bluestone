@@ -61,13 +61,12 @@ public sealed class PluginsViewTests : IDisposable
     }
 
     [Fact]
-    public Task PluginsFromTheFileMenu_ListsScannedPluginsAndTheQuarantinedModule_AndRescansWithTheMouse() => HeadlessApp.RunAsync(async () =>
+    public Task PluginsFromTheWindowMenu_ListsScannedPluginsAndTheQuarantinedModule_AndRescansWithTheMouse() => HeadlessApp.RunAsync(async () =>
     {
         await _library.ScanAsync(cancellationToken: TestContext.Current.CancellationToken);
         await using var app = await AppUnderTest.OpenAsync(pluginLibrary: new PluginsViewModel(_library, new AvaloniaDispatcher()));
 
-        app.Click(app.Find<DropDownButton>("FileMenuButton"));
-        app.Click(OpenedMenuItem(app, "Plugins…"));
+        app.ChooseFromMenu("Window", "Plugins…");
 
         var view = OpenedPlugins(app);
         var plugins = Assert.IsType<PluginsViewModel>(view.DataContext);
@@ -116,8 +115,7 @@ public sealed class PluginsViewTests : IDisposable
         var dispatcher = new AvaloniaDispatcher();
         await using var app = await AppUnderTest.OpenAsync(session, _ => bridge, pluginLibrary: new PluginsViewModel(_library, dispatcher, bridge, store));
 
-        app.Click(app.Find<DropDownButton>("FileMenuButton"));
-        app.Click(OpenedMenuItem(app, "Plugins…"));
+        app.ChooseFromMenu("Window", "Plugins…");
         var view = OpenedPlugins(app);
         var plugins = Assert.IsType<PluginsViewModel>(view.DataContext);
         Assert.True(view.FindControl<StackPanel>("HostingSection")!.IsEffectivelyVisible);
@@ -145,14 +143,6 @@ public sealed class PluginsViewTests : IDisposable
         app.Settle();
         Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
     });
-
-    private static MenuItem OpenedMenuItem(AppUnderTest app, string header)
-    {
-        var button = app.Find<DropDownButton>("FileMenuButton");
-        var flyout = Assert.IsType<MenuFlyout>(button.Flyout);
-        Assert.True(flyout.IsOpen, "The File menu should open when clicked.");
-        return flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, header));
-    }
 
     private static List<string> Texts(Control scope) =>
         [.. scope.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text ?? string.Empty)];

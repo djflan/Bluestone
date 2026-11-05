@@ -449,7 +449,7 @@ scans through `IPluginScanner`, which `PluginScanner` implements (view-model tes
   gone stops and shows "Not installed".
 
 The **Plugins view** (`PluginsViewModel`, shown as **Settings ▸ Plugins** by `PluginSettingsPage`; also Window ▸
-Plugins… in the macOS menu bar, File ▸ Plugins… elsewhere; ADR 0038) shows the hosting settings, the scan folders, the available plugins with kind, vendor, version, and
+Plugins…; ADR 0038) shows the hosting settings, the scan folders, the available plugins with kind, vendor, version, and
 module, the modules that could not be read and why, and the quarantined modules, each with **Retry**. **Rescan all**
 shows a progress bar and the module being scanned; one operation runs at a time and the buttons are disabled
 meanwhile. The result is a line such as "Rescanned. 3 plugins available from 4 modules. 1 module quarantined."

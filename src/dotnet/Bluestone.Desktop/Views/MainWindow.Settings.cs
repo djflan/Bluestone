@@ -25,10 +25,10 @@ public partial class MainWindow
     /// <summary>Opens Settings at <paramref name="page"/>, or where it was last.</summary>
     internal void ShowSettings(SettingsPage? page = null) => Settings.Open(page);
 
-    /// <summary>Opens Settings ▸ Audio (Window ▸ Audio Settings… in the macOS menu bar, File ▸ Audio Settings… elsewhere).</summary>
+    /// <summary>Opens Settings ▸ Audio (Window ▸ Audio Settings…).</summary>
     internal void ShowAudioSettings() => ShowSettings(SettingsPage.Audio);
 
-    /// <summary>Opens Settings ▸ Plugins (Window ▸ Plugins… in the macOS menu bar, File ▸ Plugins… elsewhere).</summary>
+    /// <summary>Opens Settings ▸ Plugins (Window ▸ Plugins…).</summary>
     internal void ShowPlugins() => ShowSettings(SettingsPage.Plugins);
 
     private void AttachSettings(MainViewModel vm)
@@ -44,11 +44,11 @@ public partial class MainWindow
         };
         ApplySettingsVisibility();
 
-        // The control bar's workspace tools (view toggles, undo and redo, the File menu) act on the workspace or project, so
-        // using one brings the workspace back; the File menu's Settings, Plugins, Audio, and Mixer items keep Settings open.
-        WorkspaceTools.AddHandler(Button.ClickEvent, (_, e) =>
+        // The control bar's workspace tools (view toggles, undo and redo) act on the workspace or project, so using one brings
+        // the workspace back.
+        WorkspaceTools.AddHandler(Button.ClickEvent, (_, _) =>
         {
-            if (Settings.IsOpen && !(e.Source is Control source && source.Classes.Contains("keepsSettings")))
+            if (Settings.IsOpen)
             {
                 Settings.Close();
             }
@@ -109,12 +109,6 @@ public partial class MainWindow
             command,
             () => Settings.IsOpen && !(FocusManager?.GetFocusedElement() is TextBox field && field.GetVisualAncestors().Contains(SettingsHost)),
             Settings.Close);
-
-    private void OnAudioSettingsClick(object? sender, RoutedEventArgs e) => ShowAudioSettings();
-
-    private void OnShowPlugins(object? sender, RoutedEventArgs e) => ShowPlugins();
-
-    private void OnSettingsClick(object? sender, RoutedEventArgs e) => ShowSettings();
 
     private void OnSettingsButtonClick(object? sender, RoutedEventArgs e)
     {

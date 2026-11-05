@@ -9,8 +9,8 @@ namespace Bluestone.Desktop.Views;
 
 /// <summary>
 /// The menu bar, following macOS conventions: an application menu, then File, Edit, Track, MIDI,
-/// Transport, View, Window, and Help. On macOS it appears in the system menu bar; elsewhere the
-/// in-window controls and key bindings provide the same commands.
+/// Transport, View, Window, and Help. On macOS it appears in the system menu bar; elsewhere it is shown
+/// in the window, with Settings and Exit in File, and the window binds its shortcuts.
 /// </summary>
 internal static class AppMenu
 {
@@ -45,24 +45,38 @@ internal static class AppMenu
         ]);
     }
 
-    public static void Install(MainWindow window, MainViewModel vm, KeyModifiers command)
+    /// <summary>
+    /// Gives <paramref name="window"/> its menu. With <paramref name="nativeMenuBar"/> (macOS) the system menu bar shows it and handles
+    /// its shortcuts; otherwise the window's own menu bar shows it, and a menu's gestures are only labels.
+    /// </summary>
+    public static void Install(MainWindow window, MainViewModel vm, KeyModifiers command, bool nativeMenuBar)
     {
         KeyGesture Cmd(Key key, KeyModifiers extra = KeyModifiers.None) => new(key, command | extra);
+
+        // Access keys (Alt+F for File) where the menu bar is in the window.
+        string Title(string header, int accessKey = 0) => nativeMenuBar ? header : header.Insert(accessKey, "_");
 
         var editor = vm.Editor;
         NativeMenuItem[] menus =
         [
-            Submenu("File",
+            Submenu(Title("File"),
+            [
                 Item("New Project", vm.NewProjectCommand, Cmd(Key.N)),
                 Item("Open…", vm.OpenCommand, Cmd(Key.O)),
                 new NativeMenuItemSeparator(),
-                Item("Close Window", window.Close, Cmd(Key.W)),
+                .. If(nativeMenuBar, Item("Close Window", window.Close, Cmd(Key.W))),
                 Item("Save", vm.SaveCommand, Cmd(Key.S)),
                 Item("Save As…", vm.SaveAsCommand, Cmd(Key.S, KeyModifiers.Shift)),
                 new NativeMenuItemSeparator(),
                 Item("Import MIDI File…", vm.ImportMidiCommand, Cmd(Key.I)),
-                Item("Export MIDI File…", vm.ExportMidiCommand, Cmd(Key.E))),
-            Submenu("Edit",
+                Item("Export MIDI File…", vm.ExportMidiCommand, Cmd(Key.E)),
+                .. If(!nativeMenuBar,
+                    new NativeMenuItemSeparator(),
+                    Item("Settings…", () => window.ShowSettings(), Cmd(Key.OemComma)),
+                    new NativeMenuItemSeparator(),
+                    Item("Exit", window.Close, new KeyGesture(Key.F4, KeyModifiers.Alt))),
+            ]),
+            Submenu(Title("Edit"),
                 Item("Undo", vm.UndoCommand, Cmd(Key.Z)),
                 Item("Redo", vm.RedoCommand, Cmd(Key.Z, KeyModifiers.Shift)),
                 new NativeMenuItemSeparator(),
@@ -77,7 +91,7 @@ internal static class AppMenu
                 Item("Deselect All    Esc", editor.SelectNone)),
             // Single-key shortcuts are shown in the titles but handled by the window, so they never
             // reach the menu bar while a text field is being edited.
-            Submenu("Track",
+            Submenu(Title("Track"),
                 Item("New Track", vm.AddTrackCommand, Cmd(Key.T)),
                 Item("Duplicate Tracks", vm.DuplicateTracksCommand),
                 Item("Rename    Return", window.BeginRename),
@@ -92,7 +106,7 @@ internal static class AppMenu
                 new NativeMenuItemSeparator(),
                 Item("Use Output for All Tracks", vm.UseOutputForAllTracksCommand),
                 Item("Initialize Instrument…", vm.InitializeInstrumentCommand)),
-            Submenu("MIDI",
+            Submenu(Title("MIDI"),
                 Item("Quantize    Q", editor.QuantizeCommand),
                 Item("Quantize Note Ends    ⇧Q", editor.QuantizeEndsCommand),
                 Item("Legato", editor.LegatoCommand),
@@ -111,7 +125,7 @@ internal static class AppMenu
                 Item("Arrow Tool    1", () => editor.Tool = EditTool.Arrow),
                 Item("Pencil Tool    2", () => editor.Tool = EditTool.Pencil),
                 Item("Eraser Tool    3", () => editor.Tool = EditTool.Eraser)),
-            Submenu("Transport",
+            Submenu(Title("Transport", 1),
                 Item("Play / Stop    Space", vm.PlayPauseCommand),
                 Item("Record    R", vm.RecordCommand),
                 Item("Stop", vm.StopCommand),
@@ -129,7 +143,7 @@ internal static class AppMenu
                 Check("MIDI Thru", vm, nameof(MainViewModel.IsThruEnabled), () => vm.IsThruEnabled, () => vm.IsThruEnabled = !vm.IsThruEnabled),
                 new NativeMenuItemSeparator(),
                 Item("Panic", vm.PanicCommand, Cmd(Key.OemPeriod))),
-            Submenu("View",
+            Submenu(Title("View"),
                 Check("Inspector    I", vm, nameof(MainViewModel.IsInspectorVisible), () => vm.IsInspectorVisible, () => vm.IsInspectorVisible = !vm.IsInspectorVisible),
                 Item("Piano Roll    P", () => window.ShowPane(LowerPane.PianoRoll)),
                 Item("Event List    D", () => window.ShowPane(LowerPane.EventList)),
@@ -141,14 +155,17 @@ internal static class AppMenu
                 Item("Zoom to Fit", vm.ZoomToFitCommand, Cmd(Key.D0)),
                 Item("Zoom to Selection", vm.ZoomToSelectionCommand, Cmd(Key.D0, KeyModifiers.Shift)),
                 Item("Zoom to Loop", vm.ZoomToLoopCommand, Cmd(Key.D0, KeyModifiers.Alt))),
-            Submenu("Window",
-                Item("Minimize", () => window.WindowState = WindowState.Minimized, Cmd(Key.M)),
-                Item("Zoom", () => window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized),
-                new NativeMenuItemSeparator(),
+            Submenu(Title("Window"),
+            [
+                .. If(nativeMenuBar,
+                    Item("Minimize", () => window.WindowState = WindowState.Minimized, Cmd(Key.M)),
+                    Item("Zoom", () => window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized),
+                    new NativeMenuItemSeparator()),
                 Item("Mixer", new RelayCommand(window.ShowMixer)),
                 Item("Plugins…", new RelayCommand(window.ShowPlugins)),
-                Item("Audio Settings…", new RelayCommand(window.ShowAudioSettings))),
-            Submenu("Help",
+                Item("Audio Settings…", new RelayCommand(window.ShowAudioSettings)),
+            ]),
+            Submenu(Title("Help"),
                 Item("Keyboard Shortcuts", window.ShowShortcuts, Cmd(Key.OemQuestion)),
                 Item("Bluestone Help", () => _ = window.Launcher.LaunchUriAsync(new Uri(HelpUrl))),
                 new NativeMenuItemSeparator(),
@@ -157,6 +174,10 @@ internal static class AppMenu
         foreach (var menu in menus)
         {
             ReturnToWorkspace(menu, window);
+            if (!nativeMenuBar)
+            {
+                SpellOutKeys(menu);
+            }
         }
 
         NativeMenu.SetMenu(window, [.. menus]);
@@ -164,7 +185,7 @@ internal static class AppMenu
 
     /// <summary>Items that act within Settings or the window itself, so they leave Settings open.</summary>
     private static readonly HashSet<string> SettingsSafe =
-        ["Close Window", "Minimize", "Zoom", "Mixer", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
+        ["Close Window", "Exit", "Settings…", "Minimize", "Zoom", "Mixer", "Plugins…", "Audio Settings…", "Keyboard Shortcuts", "Bluestone Help"];
 
     /// <summary>Items that edit a focused Settings field where it is, and otherwise act on the workspace.</summary>
     private static readonly HashSet<string> TextEditing = ["Cut", "Copy", "Paste", "Select All"];
@@ -191,6 +212,17 @@ internal static class AppMenu
             item.Command = TextEditing.Contains(header) ? window.InWorkspaceUnlessEditingText(command) : window.InWorkspace(command);
         }
     }
+
+    /// <summary>The macOS key symbols in the titles' shortcut hints, written out as Windows and Linux name the keys.</summary>
+    private static void SpellOutKeys(NativeMenuItem item)
+    {
+        foreach (var child in item.Menu?.Items.OfType<NativeMenuItem>() ?? [])
+        {
+            child.Header = child.Header?.Replace("⌫", "Del").Replace("⇧", "Shift+").Replace("⌥", "Alt+").Replace("Return", "Enter");
+        }
+    }
+
+    private static NativeMenuItemBase[] If(bool condition, params NativeMenuItemBase[] items) => condition ? items : [];
 
     private static NativeMenuItem Submenu(string header, params NativeMenuItemBase[] items)
     {

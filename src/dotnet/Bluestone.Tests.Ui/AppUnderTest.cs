@@ -5,6 +5,7 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop;
@@ -139,6 +140,18 @@ internal sealed class AppUnderTest : IAsyncDisposable
         root.MouseDown(centre, MouseButton.Left);
         root.MouseUp(centre, MouseButton.Left);
         Settle();
+    }
+
+    /// <summary>Chooses <paramref name="menu"/> ▸ <paramref name="item"/> in the window's menu bar (Windows and Linux) with the mouse.</summary>
+    public void ChooseFromMenu(string menu, string item)
+    {
+        var bar = Find<NativeMenuBar>("MenuBar").GetVisualDescendants().OfType<Menu>().Single();
+        var top = NativeMenu.GetMenu(Window)!.Items.OfType<NativeMenuItem>().Single(i => i.Header?.Replace("_", "", StringComparison.Ordinal) == menu);
+        var opened = bar.ContainerFromItem(top) as MenuItem ?? throw new InvalidOperationException($"{menu} is not in the menu bar.");
+        Click(opened);
+        Assert.True(opened.IsSubMenuOpen, $"{menu} should open when clicked.");
+        var child = top.Menu!.Items.OfType<NativeMenuItem>().Single(i => i.Header == item);
+        Click(opened.ContainerFromItem(child) as MenuItem ?? throw new InvalidOperationException($"{menu} ▸ {item} is not showing."));
     }
 
     /// <summary>The platform's command key (⌘ on macOS, Ctrl elsewhere), as the window reads it.</summary>

@@ -1,5 +1,8 @@
+using System.Runtime.Versioning;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Bluestone.Application.Audio;
 using Bluestone.Application.Engine;
 using Bluestone.Application.Plugins;
@@ -9,6 +12,7 @@ using Bluestone.Desktop.Services;
 using Bluestone.Desktop.Views;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
+using Bluestone.Platform.Windows;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Scanning;
 using Bluestone.Presentation;
@@ -28,6 +32,8 @@ public partial class App : Avalonia.Application
     /// <summary>The start-up plugin scan while it runs, so quitting can wait for it to stop its scanner process.</summary>
     private static Task? _startupScan;
 
+    private static WindowIcon? _icon;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -36,6 +42,28 @@ public partial class App : Avalonia.Application
         if (OperatingSystem.IsMacOS())
         {
             AppMenu.InstallApplicationMenu(this, () => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow as MainWindow);
+        }
+
+        // Earlier Windows ignores title bar colours and keeps its own dark grey.
+        Window.WindowOpenedEvent.AddClassHandler<Window>((window, _) =>
+        {
+            window.Icon ??= _icon ??= Controls.StoneMark.CreateIcon();
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+            {
+                MatchTitleBar(window);
+            }
+        });
+    }
+
+    /// <summary>Draws a window's title bar in the menu bar's colour, so the two read as one.</summary>
+    [SupportedOSPlatform("windows10.0.22000")]
+    private void MatchTitleBar(Window window)
+    {
+        if (window.TryGetPlatformHandle() is { HandleDescriptor: "HWND" } handle
+            && this.TryGetResource("Surface.ChromeColor", ActualThemeVariant, out var background) && background is Color chrome
+            && this.TryGetResource("Text.PrimaryColor", ActualThemeVariant, out var foreground) && foreground is Color text)
+        {
+            WindowFrame.SetTitleBarColors(handle.Handle, chrome.ToUInt32() & 0xFFFFFF, text.ToUInt32() & 0xFFFFFF);
         }
     }
 

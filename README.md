@@ -1,6 +1,15 @@
-# Bluestone
+<h1 align="center">
+  <img src="docs/images/bluestone-banner.png" alt="Bluestone" width="620">
+</h1>
 
-[![CI](https://github.com/djflan/Bluestone/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/djflan/Bluestone/actions/workflows/ci.yml)
+<p align="center">
+  <a href="https://github.com/djflan/Bluestone/releases"><img src="https://img.shields.io/github/v/tag/djflan/Bluestone?sort=semver&label=version&color=4C8DDB" alt="Latest version"></a>
+  <a href="https://github.com/djflan/Bluestone/actions/workflows/ci.yml"><img src="https://github.com/djflan/Bluestone/actions/workflows/ci.yml/badge.svg?event=pull_request" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3A4A5E" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-3A4A5E" alt="macOS, Windows, and Linux">
+</p>
+
+<p align="center"><b>A device-centric digital audio workstation built for tight timing and accuracy.</b></p>
 
 Bluestone is a modern, open-source, device-centric digital audio workstation built for tight timing and accuracy. It brings hardware instruments, software instruments, effects, and note processors into one modular environment without making musicians work like routing engineers. Bluestone on its own is meant to be a complete virtual studio; plugins and hardware join it as peers.
 

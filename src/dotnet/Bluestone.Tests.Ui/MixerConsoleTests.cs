@@ -14,7 +14,7 @@ using Bluestone.Presentation;
 namespace Bluestone.Tests.Ui;
 
 /// <summary>
-/// The mixer console opened from the File menu, in its own window on the headless platform: a strip per channel and the
+/// The mixer console opened from the Window menu, in its own window on the headless platform: a strip per channel and the
 /// master, a fader dragged with the mouse and undone with the keyboard, sends added from the strip, and meters fed from
 /// a meter source.
 /// </summary>
@@ -22,9 +22,7 @@ public sealed class MixerConsoleTests
 {
     private static MixerWindow OpenMixer(AppUnderTest app)
     {
-        app.Click(app.Find<DropDownButton>("FileMenuButton"));
-        var flyout = Assert.IsType<MenuFlyout>(app.Find<DropDownButton>("FileMenuButton").Flyout);
-        app.Click(flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Mixer…")));
+        app.ChooseFromMenu("Window", "Mixer");
         var mixer = app.Window.OwnedWindows.OfType<MixerWindow>().SingleOrDefault() ?? throw new InvalidOperationException("The mixer did not open.");
         Settle(mixer);
         return mixer;

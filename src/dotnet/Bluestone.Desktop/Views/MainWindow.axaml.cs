@@ -125,12 +125,7 @@ public partial class MainWindow : Window
 
         var command = CommandModifier;
         var nativeMenuBar = UseNativeMenuBar;
-        if (nativeMenuBar)
-        {
-            AppMenu.Install(this, viewModel, command);
-            FileMenuButton.IsVisible = false;
-        }
-
+        AppMenu.Install(this, viewModel, command, nativeMenuBar);
         AddKeyBindings(viewModel, command, skipMenuGestures: nativeMenuBar);
         Closing += OnClosing;
 
@@ -858,9 +853,6 @@ public partial class MainWindow : Window
     internal void ShowShortcuts() => _ = Shortcuts.CreateWindow().ShowDialog(this);
 
     private SplashWindow? _about;
-
-    // The in-window File menu, where there is no native menu bar (Windows and Linux).
-    private void OnAboutClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => ShowAbout();
 
     /// <summary>Shows About Bluestone (the splash, without start-up progress), or brings it forward if it is open.</summary>
     internal void ShowAbout()
