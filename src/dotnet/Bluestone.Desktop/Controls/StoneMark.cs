@@ -41,13 +41,33 @@ internal sealed class StoneMark : Control
         Point At(Point p) => origin + ((p - Design.TopLeft) * scale);
 
         // Broad faces, each with its own light: frosted where it catches the sky, deep blue where you see into the stone.
-        Facet(context, [At(A), At(B), At(J), At(L)], 0.82, frost: 0.45);
+        var topFace = Facet(context, [At(A), At(B), At(J), At(L)], 0.82, frost: 0.45);
         Facet(context, [At(B), At(C), At(J)], 0.72, frost: 0.2);
-        Facet(context, [At(C), At(D), At(K), At(J)], 0.2, frost: 0);
-        Facet(context, [At(D), At(E), At(F), At(K)], 0.58, frost: 0.35);
-        Facet(context, [At(L), At(J), At(K), At(M)], 0.4, frost: 0);
+        var deepFace = Facet(context, [At(C), At(D), At(K), At(J)], 0.2, frost: 0);
+        var lowerFace = Facet(context, [At(D), At(E), At(F), At(K)], 0.58, frost: 0.35);
+        var frontFace = Facet(context, [At(L), At(J), At(K), At(M)], 0.4, frost: 0);
         Facet(context, [At(A), At(L), At(M), At(H), At(I)], 0.55, frost: 0.15);
         var rockFace = Facet(context, [At(M), At(K), At(F), At(G), At(H)], 0.3, frost: 0);
+
+        // Small chips knocked off the edges, each a little facet of its own.
+        Facet(context, [At(A), At(new Point(44, 7)), At(new Point(39, 15))], 0.9, frost: 0.55);
+        Facet(context, [At(D), At(new Point(76, 34)), At(new Point(73, 46))], 0.62, frost: 0.3);
+        Facet(context, [At(I), At(new Point(24, 30)), At(new Point(26, 42))], 0.66, frost: 0.3);
+
+        // Sapphire grows in bands; lighter zones run across the deep face.
+        using (context.PushGeometryClip(deepFace))
+        {
+            var band = new Pen(new SolidColorBrush(Color.Parse("#283C78D8")), scale * 2.2);
+            context.DrawLine(band, At(new Point(60, 14)), At(new Point(82, 30)));
+            context.DrawLine(band, At(new Point(56, 36)), At(new Point(82, 54)));
+        }
+
+        // Frosted faces are rough: a fine scatter of paler grains.
+        Speckle(context, topFace, At, new Rect(36, 4, 30, 26), seed: 3, count: 22, "#55F4F8FF", 0.35 * scale);
+        Speckle(context, lowerFace, At, new Rect(50, 44, 30, 46), seed: 5, count: 22, "#45F4F8FF", 0.35 * scale);
+
+        // A few dark inclusions deep in the front face.
+        Speckle(context, frontFace, At, new Rect(36, 24, 22, 34), seed: 11, count: 5, "#90050C2E", 0.5 * scale);
 
         // The back faces show through, as if the stone were partly clear: light where they catch the light, darker below.
         Ghost(context, [At(I), At(P), At(Q), At(G), At(H)], "#18DCE5F0");
@@ -72,6 +92,21 @@ internal sealed class StoneMark : Control
             }
         }
 
+        // The rock is gritty: darker and paler grains through it.
+        Speckle(context, rockFace, At, new Rect(16, 62, 30, 26), seed: 17, count: 24, "#A04A3A2C", 0.45 * scale);
+        Speckle(context, rockFace, At, new Rect(16, 62, 30, 26), seed: 19, count: 14, "#80B89E80", 0.35 * scale);
+
+        // The ridges that face the light catch a thin bright edge, fading along their length.
+        foreach (var (from, to) in new[] { (B, J), (L, J), (J, K) })
+        {
+            context.DrawLine(new Pen(new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(At(from), RelativeUnit.Absolute),
+                EndPoint = new RelativePoint(At(to), RelativeUnit.Absolute),
+                GradientStops = { new GradientStop(Color.Parse("#90F2F7FF"), 0), new GradientStop(Color.Parse("#00F2F7FF"), 1) },
+            }, Math.Max(0.5, scale * 0.5), lineCap: PenLineCap.Round), At(from), At(to));
+        }
+
         var streak = new Pen(new SolidColorBrush(Color.Parse("#40DCE5F0")), Math.Max(0.5, scale * 0.6), lineCap: PenLineCap.Round);
         foreach (var (from, to) in Streaks)
         {
@@ -83,6 +118,31 @@ internal sealed class StoneMark : Control
         {
             context.DrawEllipse(glint, null, At(at), radius * scale, radius * scale);
         }
+
+        // One star of light where the top face meets the ridge.
+        var star = new Pen(new SolidColorBrush(Color.Parse("#B0FFFFFF")), Math.Max(0.5, scale * 0.4), lineCap: PenLineCap.Round);
+        var spark = At(new Point(54, 12));
+        context.DrawLine(star, spark - new Point(scale * 4, 0), spark + new Point(scale * 4, 0));
+        context.DrawLine(star, spark - new Point(0, scale * 2.5), spark + new Point(0, scale * 2.5));
+        context.DrawEllipse(glint, null, spark, scale * 0.8, scale * 0.8);
+    }
+
+    /// <summary>Scatters <paramref name="count"/> fixed grains over <paramref name="area"/> (design units), kept inside <paramref name="face"/>.</summary>
+    private static void Speckle(DrawingContext context, Geometry face, Func<Point, Point> at, Rect area, int seed, int count, string color, double radius)
+    {
+#pragma warning disable CA5394 // Decorative grain from a fixed seed, not security.
+        var random = new Random(seed);
+        var brush = new SolidColorBrush(Color.Parse(color));
+        using (context.PushGeometryClip(face))
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var point = new Point(area.X + (random.NextDouble() * area.Width), area.Y + (random.NextDouble() * area.Height));
+                var r = radius * (0.6 + random.NextDouble());
+                context.DrawEllipse(brush, null, at(point), r, r);
+            }
+        }
+#pragma warning restore CA5394
     }
 
     /// <summary>A back face seen through the stone: a faint wash of <paramref name="color"/> (#AARRGGBB).</summary>
