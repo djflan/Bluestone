@@ -122,6 +122,8 @@ public sealed class SplashWindowTests
     {
         var splash = new SplashWindow();
         splash.GetLogicalDescendants().OfType<MarbleSlab>().Single().Seed = new Vector(x, y);
+        // The glowing stone mark is not marble; leave it out of the count.
+        splash.GetLogicalDescendants().OfType<StoneMark>().Single().IsVisible = false;
         splash.Show();
         splash.UpdateLayout();
         using var frame = splash.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
