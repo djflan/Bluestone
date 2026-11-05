@@ -18,8 +18,6 @@ internal sealed class StoneMark : Control
     private static readonly double[] Sparkle =
         [0.10, -0.08, 0.05, -0.11, 0.08, -0.03, 0.12, -0.06, 0.02, 0.09, -0.10, 0.06, -0.04];
 
-    private static readonly IPen Edge = new Pen(new SolidColorBrush(Color.Parse("#4DC8E2FF")), 0.75);
-
     public override void Render(DrawingContext context)
     {
         var size = Math.Min(Bounds.Width, Bounds.Height);
@@ -124,7 +122,8 @@ internal sealed class StoneMark : Control
                 new GradientStop(Lerp(color, Darkest, 0.6), 1),
             },
         };
-        context.DrawGeometry(fill, Edge, geometry);
+        // Stroked in its own fill so neighbouring facets meet without a hairline seam.
+        context.DrawGeometry(fill, new Pen(fill, 0.75, lineJoin: PenLineJoin.Round), geometry);
     }
 
     private static Color Ramp(double shade) =>
