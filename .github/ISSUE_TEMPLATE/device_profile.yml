@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Profiles may only contain redistributable facts. Please read [profiles/README.md](https://github.com/djflan/Bluestone/blob/main/profiles/README.md) first. Do not attach manual scans, voice lists copied from vendor documentation, firmware, or ROM data.
+        Profiles may only contain redistributable facts. Please read the [contribution rules](https://github.com/djflan/Bluestone/blob/main/docs/profiles.md#contributing-a-profile) first. Do not attach manual scans, voice lists copied from vendor documentation, firmware, or ROM data.
   - type: input
     id: instrument
     attributes:

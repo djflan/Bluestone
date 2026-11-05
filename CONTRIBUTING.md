@@ -71,7 +71,7 @@ A release builds a self-contained, unsigned archive for macOS (Apple silicon and
 
 ## Device profiles
 
-Profiles are data, not code. Follow the rules in [profiles/README.md](profiles/README.md) and the format in [docs/profiles.md](docs/profiles.md). In short: include provenance, state verification honestly, and only submit material you have the right to redistribute.
+Profiles are data, not code. Follow the format and contribution rules in [docs/profiles.md](docs/profiles.md). In short: include provenance, state verification honestly, and only submit material you have the right to redistribute.
 
 ## Content you must not contribute
 

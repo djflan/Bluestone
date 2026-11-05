@@ -14,7 +14,8 @@ namespace Bluestone.Tests.Unit.Infrastructure;
 /// </summary>
 /// <remarks>
 /// Every endpoint the fixtures name is present except <c>gone-*</c> (missing) and <c>old-*</c>, which is
-/// present under a new key with the same name (so it binds by name). Profiles are the ones in /profiles.
+/// present under a new key with the same name (so it binds by name). Profiles are the ones the application ships plus
+/// the Generic XG profile in Fixtures/Profiles, which the fixtures were frozen against.
 /// </remarks>
 public sealed class Format3EquivalenceTests
 {
@@ -35,7 +36,9 @@ public sealed class Format3EquivalenceTests
         Output("canon-2", "Canon 2"),
     ];
 
-    internal static ProfileCatalog Profiles { get; } = ProfileCatalog.LoadDirectory(Path.Combine(RepositoryRoot, "profiles"));
+    internal static ProfileCatalog Profiles { get; } = ProfileCatalog
+        .LoadDirectory(Path.Combine(RepositoryRoot, "src", "dotnet", "Bluestone.Desktop", "Profiles"))
+        .AddDirectory(Path.Combine(AppContext.BaseDirectory, "Infrastructure", "Fixtures", "Profiles"));
 
     [Theory]
     [MemberData(nameof(Fixtures))]

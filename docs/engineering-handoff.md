@@ -20,7 +20,7 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | `Bluestone.Signal`: chain runner, built-in devices, signal graph | Done, tested; built-in devices also have live, allocation-free forms (ADR 0035) |
 | Routing model, format 4, migrations, chain presets, commands, inspector | Done, tested |
 | Group tracks: mute/solo reach members, joining routes into the group, folding saved (ADR 0030) | Done, tested; headless UI test |
-| Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; XG map unverified on hardware |
+| Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; not verified on hardware |
 | Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, mixer with sends, clip gain and fades, meters, device-loss fallback, one transport (ADR 0032) | Done; Core Audio heard on macOS; WASAPI tested on Windows; ASIO was tested locally but is excluded from standard Windows builds pending licensing; output was not listened to |
 | Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS and through Windows WinMM software loopback (Windows result misses target) |
 | Engine process: MIDI playback, endpoints, live input and thru, the audio device rendering in the callback, the graph, clips, meters, and the plugin data plane in a NativeAOT C# process with its own protocol and supervisor; depth 1 for the monitored plugin instrument; real-time plugin worker threads (ADRs 0043, 0044) | Done; default on macOS. Windows x64 WinMM live input and WASAPI were measured through software loopback; live added latency missed target, so remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux |
@@ -78,7 +78,7 @@ says so.
 2. **One routing model**: the `SignalConnection` list. Sources: track output, rack output, device tap. Destinations: track/rack input, external-instrument part (port + channel via mapping), mixer channel, master. The strip and the inspector must both edit this list only.
 3. **Chains are first-class**, one owner each, addressed by `DeviceChainId`; a track has at most one chain (optional, so `project with { Sequence = ... }` keeps working).
 4. **External instruments are project entities**; the profile is stated once per instrument. There is **no** "external instrument device kind": it would be a second way to express a route.
-5. **Passthrough** is by `EventClass`: a device is given only the classes in `Handles`; everything else is merged back in canonical order. Only explicit filter devices drop events (SysEx/XG data must survive note processors).
+5. **Passthrough** is by `EventClass`: a device is given only the classes in `Handles`; everything else is merged back in canonical order. Only explicit filter devices drop events (SysEx data must survive note processors).
 6. **Processing runs at plan-compile time** for built-in processors (immutable plans stay; the real-time thread only dispatches). Plugins process in workers at runtime. Software-instrument event streams are produced as `SoftwareInstrumentFeed`s; a plugin instrument plays them through the audio engine while audio output is on (decision 29, ADR 0032), and otherwise a `NotAudible` diagnostic says so: never imply support.
 7. **Device automation is never MIDI**: it becomes `ParameterChange`s. SMF export reports device lanes it cannot write (SMF204).
 8. **Presets are `DevicePreset` templates without ids**, so loading always creates new identities; presets exclude connections (no hardware references).
@@ -143,7 +143,7 @@ says so.
 
 ## 5. Regression net
 
-Format 3 projects must play and export exactly as they did before the routing model (ADR 0023) replaced per-track routes. `Format3EquivalenceTests` asserts this through the current pipeline (format 4 migration, signal graph, routing preparation, compiler). The expected values were frozen from the old pipeline (resolve routes, `PlaybackRouting.Prepare`, compile), with every endpoint present except `gone-*` (missing) and `old-*` (present as `new-*` with the same name, so bound by name), profiles from `profiles/`:
+Format 3 projects must play and export exactly as they did before the routing model (ADR 0023) replaced per-track routes. `Format3EquivalenceTests` asserts this through the current pipeline (format 4 migration, signal graph, routing preparation, compiler). The expected values were frozen from the old pipeline (resolve routes, `PlaybackRouting.Prepare`, compile), with every endpoint present except `gone-*` (missing) and `old-*` (present as `new-*` with the same name, so bound by name), profiles from `Bluestone.Desktop/Profiles` plus the Generic XG profile kept as a test fixture in `Infrastructure/Fixtures/Profiles` (no longer shipped):
 
 | Fixture | Playback hash | SMF export hash | Slots | Plan events |
 | ------- | ------------- | --------------- | ----- | ----------- |
@@ -156,7 +156,7 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 
 ## 6. Not verified
 
-- Real MIDI hardware and the XG parameter map against an XG instrument; Windows MIDI input timing is measured only through a Windows MIDI Services software loopback.
+- Real MIDI hardware and a profile parameter map against a hardware instrument; Windows MIDI input timing is measured only through a Windows MIDI Services software loopback.
 - Audio output heard on Windows and Linux (Windows WASAPI callbacks run but output was not listened to; ASIO was measured in a local build and is currently excluded from standard builds); unplugging a real device (device loss is tested with a test backend).
 - Plugin editors on Linux and hand-checking Windows editor resize/focus/multi-monitor behavior; Windows editor lifecycle, follow/pin, and key-routing tests pass with installed plugins.
 - ASIO on an external audio interface: the installed Realtek ASIO driver was exercised, but the RME MADIface was not connected; the acoustic round trip is unmeasured.

@@ -22,7 +22,7 @@ connection path, plugins, and results for each run.
 | # | Step | Expected |
 | - | ---- | -------- |
 | 1 | Open the inspector's **External MIDI ▸ Output** list | The interface port is listed as *Hardware* with its name; Bluestone Monitor and Bluestone Out are also listed |
-| 2 | Import `samples/bluestone-demo.mid`, route one compatible melodic track (*Bass*, *Keys*, or *Lead*) to the interface, and choose a channel and program the instrument can play | The routed track shows **Ready**; unrelated tracks may remain unrouted or use other devices |
+| 2 | Import `src/dotnet/TestFixtures/Midi/bluestone-demo.mid`, route one compatible melodic track (*Bass*, *Keys*, or *Lead*) to the interface, and choose a channel and program the instrument can play | The routed track shows **Ready**; unrelated tracks may remain unrouted or use other devices |
 | 3 | Press Space | The selected part plays in time; the status bar shows 0 late, 0 dropped |
 | 3a | On a multitimbral GM-compatible instrument, route all demo tracks to the interface (**Use for all tracks**) and play | All routed tracks show **Ready**; the instrument plays drums, bass, keys, and lead in time |
 | 4 | Select the routed track, choose a compatible profile and any named program; play from the start | The voice changes at the start of playback and the saved program returns after reopening |
@@ -87,18 +87,16 @@ Install at least one VST 3 and one CLAP instrument and effect in the default plu
 | 36 | Save, quit, reopen the project | Plugin settings are restored |
 | 37 | In **Plugins…**, change the hosting mode (for example from By plugin to Individually) while playing | Plugins move to their new workers and keep their settings |
 
-## Generic XG compatibility (optional legacy coverage)
+## Hardware parameter automation
 
-This section preserves coverage for Bluestone's shipped Generic XG profile. It is compatibility testing, not the
-primary product workflow, and it requires an XG-compatible instrument.
-
-Route a track to the XG instrument with the **Generic XG** profile.
+This needs a profile whose `parameterMap` ([profiles.md](profiles.md#parameter-map)) covers parameters the
+instrument responds to, installed in the user profiles folder. Route a track to the instrument with that profile.
 
 | # | Step | Expected |
 | - | ---- | -------- |
-| 38 | Add automation lanes for Filter Cutoff (NRPN), Pitch Bend Range (RPN), Part Volume (SysEx), and Part Detune (SysEx in nibbles); draw ramps; play | Each parameter audibly follows its lane; the MIDI monitor shows the NRPN, RPN, and SysEx messages |
+| 38 | Add automation lanes for one mapped parameter of each kind the profile uses (CC, RPN, NRPN, SysEx); draw ramps; play | Each parameter audibly follows its lane; the MIDI monitor shows the matching messages |
 | 39 | Stop in the middle of a ramp, seek, and loop across it | After each jump the instrument is at the lane's value; nothing is left at a stray value |
-| 40 | Export a MIDI file and play it from another sequencer to the same instrument | The same parameter changes are heard |
+| 40 | Export a MIDI file and play it from another application to the same instrument | The same parameter changes are heard |
 
 ## Live input latency
 

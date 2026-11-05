@@ -51,11 +51,10 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
       ]
     },
     "instruments": [
-      { "id": "…", "name": "QY Out", "profile": { "id": "bluestone.generic.xg", "name": "Generic XG" },
-        "operatingMode": "XG",
+      { "id": "…", "name": "Synth Module", "profile": { "id": "bluestone.generic.gm1", "name": "General MIDI (Level 1)" },
+        "operatingMode": "GM",
         "ports": [ { "id": "A", "name": "Port A",
-                     "endpoint": { "provider": "coremidi", "key": "-12345", "name": "QY Out",
-                                   "manufacturer": "Yamaha", "model": "QY100" } } ] }
+                     "endpoint": { "provider": "coremidi", "key": "-12345", "name": "Synth Module" } } ] }
     ],
     "chains": [
       { "id": "…", "owner": { "type": "track", "track": "…" },

@@ -2,7 +2,7 @@ using Bluestone.Profiles;
 
 namespace Bluestone.Tests.Integration.Profiles;
 
-/// <summary>Every profile shipped in /profiles must load cleanly and meet the contribution rules.</summary>
+/// <summary>Every profile shipped with the application (Bluestone.Desktop/Profiles) must load cleanly and meet the contribution rules.</summary>
 public sealed class ShippedProfileTests
 {
     public static TheoryData<string> ProfileFiles() =>
@@ -43,8 +43,6 @@ public sealed class ShippedProfileTests
 
         Assert.Empty(catalog.Failures);
         Assert.NotNull(catalog.Find("bluestone.generic.gm1"));
-        Assert.NotNull(catalog.Find("bluestone.generic.xg"));
         Assert.Equal(128, catalog.Find("bluestone.generic.gm1")!.Banks.Single().Programs.Length);
-        Assert.Equal("F0 43 10 4C 00 00 7E 00 F7", Convert.ToHexString(catalog.Find("bluestone.generic.xg")!.FindTemplate("xg-system-on")!.Render().Bytes.Span).Chunk(2).Select(c => new string(c)).Aggregate((a, b) => a + " " + b));
     }
 }

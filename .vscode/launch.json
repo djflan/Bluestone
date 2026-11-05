@@ -18,7 +18,7 @@
             "request": "launch",
             "preLaunchTask": "build desktop",
             "program": "${workspaceFolder}/src/dotnet/Bluestone.Desktop/bin/Debug/net10.0/Bluestone.Desktop.dll",
-            "args": ["${workspaceFolder}/samples/bluestone-demo.mid"],
+            "args": ["${workspaceFolder}/src/dotnet/TestFixtures/Midi/bluestone-demo.mid"],
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
             "stopAtEntry": false

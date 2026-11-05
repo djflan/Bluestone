@@ -13,8 +13,8 @@ public sealed class SampleFileTests
         var original = new ProjectSession();
         var split = new ProjectSession();
         var cancellationToken = TestContext.Current.CancellationToken;
-        var originalReport = await original.ImportMidiAsync(Path.Combine(RepositoryPaths.Root, "samples", "canon-gm16.mid"), cancellationToken);
-        var splitReport = await split.ImportMidiAsync(Path.Combine(RepositoryPaths.Root, "samples", "canon-gm16-format0.mid"), cancellationToken);
+        var originalReport = await original.ImportMidiAsync(Path.Combine(RepositoryPaths.MidiFixtures, "canon-gm16.mid"), cancellationToken);
+        var splitReport = await split.ImportMidiAsync(Path.Combine(RepositoryPaths.MidiFixtures, "canon-gm16-format0.mid"), cancellationToken);
 
         Assert.Empty(originalReport.ImportDiagnostics);
         Assert.Empty(splitReport.ImportDiagnostics);
@@ -52,7 +52,7 @@ public sealed class SampleFileTests
     {
         var session = new ProjectSession();
 
-        var report = await session.ImportMidiAsync(Path.Combine(RepositoryPaths.Root, "samples", "bluestone-demo.mid"), TestContext.Current.CancellationToken);
+        var report = await session.ImportMidiAsync(Path.Combine(RepositoryPaths.MidiFixtures, "bluestone-demo.mid"), TestContext.Current.CancellationToken);
 
         Assert.Empty(report.ImportDiagnostics);
         Assert.Equal("Bluestone Demo", session.Project.Name);
@@ -66,7 +66,7 @@ public sealed class SampleFileTests
     {
         var session = new ProjectSession();
 
-        var report = await session.ImportMidiAsync(Path.Combine(RepositoryPaths.Root, "samples", "canon-gm16.mid"), TestContext.Current.CancellationToken);
+        var report = await session.ImportMidiAsync(Path.Combine(RepositoryPaths.MidiFixtures, "canon-gm16.mid"), TestContext.Current.CancellationToken);
 
         Assert.Empty(report.ImportDiagnostics);
         Assert.Equal("Canon in D (after Pachelbel)", session.Project.Name);
@@ -77,7 +77,7 @@ public sealed class SampleFileTests
              "Flute", "Drums", "Oboe", "French Horn", "Harp", "Choir", "Timpani", "Glockenspiel"],
             sequence.Tracks.Select(t => t.Name));
 
-        // Expected values come from samples/canon-gm16.py, not from Bluestone.
+        // Expected values come from src/dotnet/TestFixtures/Midi/canon-gm16.py, not from Bluestone.
         int[] notes = [97, 89, 81, 65, 29, 195, 148, 100, 33, 88, 11, 21, 166, 23, 24, 9];
         int[] programs = [40, 40, 41, 42, 43, 6, 0, 48, 73, 0, 68, 60, 46, 52, 47, 9];
         for (var i = 0; i < 16; i++)

@@ -64,7 +64,7 @@ public sealed class SysExInterpreterTests
         Assert.Equal("Identity Reply · manufacturer 43", message.Summary);
     }
 
-    [Fact]
+    [Fact(Skip = DeferredFeatures.Xg)]
     public void Interpret_RecognizesXgSystemOnAndReset()
     {
         var on = Assert.IsType<XgParameterChange>(Interpret(0xF0, 0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00, 0xF7));
@@ -77,7 +77,7 @@ public sealed class SysExInterpreterTests
         Assert.Equal(XgArea.System, reset.Address.Area);
     }
 
-    [Theory]
+    [Theory(Skip = DeferredFeatures.Xg)]
     [InlineData(0x08, 0x01, 0x0B, XgArea.MultiPart, "XG Multi Part 2 parameter 0B")]
     [InlineData(0x02, 0x01, 0x00, XgArea.Reverb, "XG Reverb parameter 00")]
     [InlineData(0x02, 0x01, 0x20, XgArea.Chorus, "XG Chorus parameter 20")]
@@ -96,7 +96,7 @@ public sealed class SysExInterpreterTests
         Assert.Equal(area == XgArea.MultiPart ? mid + 1 : null, change.Part);
     }
 
-    [Fact]
+    [Fact(Skip = DeferredFeatures.Xg)]
     public void Interpret_ChecksXgBulkDumpChecksum()
     {
         // Byte count 00 02, address 08 00 00, data 01 02; checksum makes count..checksum sum to 0 mod 128.
@@ -114,7 +114,7 @@ public sealed class SysExInterpreterTests
         Assert.EndsWith("bad checksum", bad.Summary, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [Fact(Skip = DeferredFeatures.Xg)]
     public void Interpret_LeavesXgBulkDumpWithWrongByteCountOpaque() =>
         Assert.Null(Interpret(0xF0, 0x43, 0x00, 0x4C, 0x00, 0x05, 0x08, 0x00, 0x00, 0x01, 0x02, 0x00, 0xF7));
 

@@ -172,8 +172,6 @@ Bluestone/
 │   ├── project-format.md       Project persistence and migrations
 │   ├── midi-files.md           Standard MIDI File behavior
 │   └── profiles.md             Hardware profile format
-├── profiles/                   Shipped device-profile data
-├── samples/                    Redistributable demos and fixtures
 └── src/
     ├── dotnet/                 Application, domain, UI, adapters, and tests
     └── native/                 Rust audio, plugin host, and test-plugin crates
