@@ -131,7 +131,7 @@ public partial class MainWindow : Window
 
         AddHandler(DragDrop.DragEnterEvent, OnDragOver);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
-        AddHandler(DragDrop.DragLeaveEvent, (_, _) => DropOverlay.IsVisible = false);
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => HideDropFeedback());
         AddHandler(DragDrop.DropEvent, OnDrop);
     }
 
@@ -499,6 +499,25 @@ public partial class MainWindow : Window
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
+        HideDropFeedback();
+        if (ChainDrag.From(e) is { } drag)
+        {
+            e.DragEffects = DragDropEffects.None;
+            if (drag.Definition is { } definition && DeviceDropTarget(e) is { } target)
+            {
+                e.DragEffects = DragDropEffects.Copy;
+                DeviceDropText.Text = target.Track is { } track
+                    ? $"Replace devices on {track.Name} with {definition.Name}"
+                    : $"New track with {definition.Name}";
+                DeviceDropOverlay.Margin = new Thickness(0, target.Top, 0, 0);
+                DeviceDropOverlay.Height = target.Height;
+                DeviceDropOverlay.IsVisible = true;
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         var path = DroppedFile(e);
         e.DragEffects = path is null ? DragDropEffects.None : DragDropEffects.Copy;
         DropOverlay.IsVisible = path is not null;
@@ -514,13 +533,58 @@ public partial class MainWindow : Window
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
-        DropOverlay.IsVisible = false;
+        HideDropFeedback();
         e.Handled = true;
+        if (ChainDrag.From(e) is { } drag)
+        {
+            e.DragEffects = DragDropEffects.None;
+            if (_viewModel is { } vm && drag.Definition is { } definition && DeviceDropTarget(e) is { } target)
+            {
+                e.DragEffects = DragDropEffects.Copy;
+                var track = target.Track?.Id;
+                // Leave the native drag session before rebuilding the Browser or starting a plugin.
+                Dispatcher.UIThread.Post(async () => await vm.DropDeviceAsync(definition, track));
+            }
+
+            return;
+        }
+
         if (_viewModel is not null && DroppedFile(e) is { } path)
         {
             Activate();
             await _viewModel.OpenFileAsync(path);
         }
+    }
+
+    private (TrackViewModel? Track, double Top, double Height)? DeviceDropTarget(DragEventArgs e)
+    {
+        if (_viewModel is not { } vm || !new Rect(TrackDropArea.Bounds.Size).Contains(e.GetPosition(TrackDropArea)))
+        {
+            return null;
+        }
+
+        var y = e.GetPosition(TrackDropArea).Y + TimelineScroller.Offset.Y;
+        var top = 0d;
+        foreach (var track in vm.Tracks)
+        {
+            if (track.RowHeight > 0 && y >= top && y < top + track.RowHeight)
+            {
+                var visibleTop = Math.Max(0, top - TimelineScroller.Offset.Y);
+                var visibleBottom = Math.Min(TrackDropArea.Bounds.Height, top + track.RowHeight - TimelineScroller.Offset.Y);
+                return (track, visibleTop, Math.Max(0, visibleBottom - visibleTop));
+            }
+
+            top += track.RowHeight;
+        }
+
+        var blankTop = Math.Max(0, top - TimelineScroller.Offset.Y);
+        return (null, blankTop, Math.Max(0, TrackDropArea.Bounds.Height - blankTop));
+    }
+
+    private void HideDropFeedback()
+    {
+        DropOverlay.IsVisible = false;
+        DeviceDropOverlay.IsVisible = false;
     }
 
     private void OnTrackHeaderWheel(object? sender, PointerWheelEventArgs e)

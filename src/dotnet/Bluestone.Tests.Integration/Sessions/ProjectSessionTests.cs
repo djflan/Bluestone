@@ -38,6 +38,35 @@ public sealed class ProjectSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task Generation_ChangesWhenDocumentsAreReplaced_EvenWhenTheirProjectIdIsUnchanged()
+    {
+        var session = new ProjectSession();
+        var generation = session.Generation;
+        var project = session.Project.Id;
+        session.Execute(ProjectCommands.RenameProject("Saved"));
+        await session.SaveAsync(PathOf("generation.bluestone"), Ct);
+        Assert.Equal(generation, session.Generation);
+
+        await session.OpenAsync(PathOf("generation.bluestone"), Ct);
+        Assert.Equal(project, session.Project.Id);
+        Assert.Equal(++generation, session.Generation);
+        await session.OpenAsync(PathOf("generation.bluestone"), Ct);
+        Assert.Equal(project, session.Project.Id);
+        Assert.Equal(++generation, session.Generation);
+
+        session.Execute(ProjectCommands.RenameProject("Recovered"));
+        await session.AutosaveAsync(Ct);
+        Assert.Equal(generation, session.Generation);
+        await session.RestoreRecoveryAsync(Ct);
+        Assert.Equal(project, session.Project.Id);
+        Assert.Equal(++generation, session.Generation);
+
+        session.New();
+        Assert.NotEqual(project, session.Project.Id);
+        Assert.Equal(++generation, session.Generation);
+    }
+
+    [Fact]
     public async Task ImportMidi_CreatesAnUnsavedProjectAndNeverTouchesTheSource()
     {
         var sequence = Sequence.CreateEmpty(new Ppqn(96)).WithTrack(Track.FromEvents(TrackId.New(), "Piano", [new NoteEvent(Tick.Zero, new TickSpan(96), MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max)]));

@@ -47,6 +47,50 @@ public sealed class EditHistoryTests
     }
 
     [Fact]
+    public void UndoPreparation_StoresLivePluginStateWithoutAnExtraEditOrNotification()
+    {
+        var track = Track.Create("Synth", TrackRole.Hybrid);
+        var device = TestDevices.Instance(TestDevices.Synth);
+        var original = Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(track) };
+        original = original.WithChain(DeviceChain.Create(ChainOwner.ForTrack(track.Id)).Add(device));
+        var history = new EditHistory(original);
+        var state = new PluginState(ByteBlock.Copy([1, 2, 3]), "test");
+        var prepare = DeviceCommands.SetPluginState(device.Id, state);
+        var replacement = TestDevices.Instance(TestDevices.MidiFx);
+        var notifications = 0;
+        history.Changed += (_, _) => notifications++;
+
+        Assert.True(history.Execute(DeviceCommands.ReplaceTrackDevices(track.Id, replacement, TestDevices.Lookup), prepare));
+
+        Assert.Equal(1, history.UndoCount);
+        Assert.Equal(1, notifications);
+        Assert.Equal("Replace Track Devices", history.UndoLabel);
+        Assert.Null(original.FindDevice(device.Id)!.Value.Device.State);
+        history.Undo();
+        Assert.Equal(state, history.Current.FindDevice(device.Id)!.Value.Device.State);
+        history.Redo();
+        Assert.Equal(replacement.Id, Assert.Single(history.Current.ChainOf(track.Id)!.Devices).Id);
+    }
+
+    [Fact]
+    public void UndoPreparation_IsDiscardedWhenAnEditIsRefusedOrChangesNothing()
+    {
+        var original = Project.CreateNew("Original");
+        var history = new EditHistory(original);
+        var prepare = ProjectCommands.RenameProject("Prepared");
+        var notifications = 0;
+        history.Changed += (_, _) => notifications++;
+
+        Assert.False(history.Execute(new ProjectCommand("No op", p => p), prepare));
+        Assert.Throws<CommandRefusedException>(() => history.Execute(
+            new ProjectCommand("Refused", _ => throw new CommandRefusedException("Not allowed")), prepare));
+
+        Assert.Same(original, history.Current);
+        Assert.False(history.CanUndo);
+        Assert.Equal(0, notifications);
+    }
+
+    [Fact]
     public void NewCommand_ClearsRedo()
     {
         var history = new EditHistory(Project.CreateNew("A"));

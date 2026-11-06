@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading.Channels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -393,6 +395,319 @@ public sealed class ChainDragTests
         Assert.Same(before, app.Session.Project);
         Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not replaced", StringComparison.Ordinal));
     });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task ABrowserInstrumentDrag_ToTheArrangement_CreatesOrReplacesATrackAtomically(bool replace) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenWithChainAsync(plugins);
+        using var source = RecordingDragSource.Install();
+        var before = app.Session.Project;
+        var released = StartBrowserDrag(app, app.ViewModel.Browser.Items.Single(i => i.Name == Sine.DisplayName));
+        var drag = Assert.Single(source.Drags);
+        var at = app.InWindow(app.Find<Control>("TrackDropArea"), new Point(320, replace ? 25 : 125));
+
+        var effect = source.DropAt(drag, app.Window, at);
+        Assert.Equal(DragDropEffects.Copy, effect);
+        RecordingDragSource.Finish(drag, effect);
+        FinishGesture(app.Window, released);
+        await AppUnderTest.WaitUntilAsync(
+            () => app.Session.Project.Chains.Any(c => c.Devices.Any(d => d.Definition.Id == PluginDeviceHost.DefinitionOf(Sine).Id)),
+            "the dropped instrument to load");
+
+        Assert.Equal(replace ? 2 : 3, app.Session.Project.Sequence.Tracks.Length);
+        var track = replace ? app.Session.Project.Sequence.Tracks[0] : app.Session.Project.Sequence.Tracks[^1];
+        Assert.Equal(Sine.DisplayName, Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+        if (replace)
+        {
+            Assert.Equal(before.Connections, app.Session.Project.Connections);
+        }
+        else
+        {
+            Assert.True(TrackSetup.HasAudioPath(app.Session.Project, track.Id));
+        }
+        Assert.Equal(track.Id, Assert.Single(app.ViewModel.SelectedTracks).Id);
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Same(before, app.Session.Project);
+        app.ViewModel.RedoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(Sine.DisplayName, Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AFailedArrangementPluginDrop_LeavesBothExistingAndNewTracksUnchanged(bool replace) => HeadlessApp.RunAsync(async () =>
+    {
+        var broken = new PluginIdentity("bluestone-reference", "bluestone.reference", "reference.missing", "Missing Synth", "Bluestone", PluginKind.Instrument, "1.0.0");
+        await using var plugins = Plugins();
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [broken]));
+        var before = app.Session.Project;
+
+        Assert.False(await app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(broken), replace ? before.Sequence.Tracks[0].Id : null));
+
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not loaded", StringComparison.Ordinal));
+    });
+
+    [Theory]
+    [InlineData("project")]
+    [InlineData("chain")]
+    [InlineData("track")]
+    public Task APluginDrop_ThatFinishesAfterItsTargetChanges_DoesNotOverwriteNewerWork(string change) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [Sine]));
+        var track = app.ViewModel.Tracks[0].Id;
+        var pending = app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Sine), change == "project" ? null : track);
+        Assert.False(pending.IsCompleted);
+
+        switch (change)
+        {
+            case "project":
+                app.Session.New();
+                break;
+            case "chain":
+                app.Session.Execute(DeviceCommands.InsertDevice(track, DeviceInstance.Create(BuiltIn("Transpose").ToReference()), BuiltInDevices.Find));
+                break;
+            case "track":
+                app.Session.Execute(ProjectCommands.RemoveTrack(track));
+                break;
+        }
+
+        var before = app.Session.Project;
+        Assert.False(await pending);
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("changed while the device was loading", StringComparison.Ordinal));
+    });
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public Task AnUnavailablePluginDrop_IsRefusedBeforeChangingTheProject(bool replace, bool missingHost) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        Func<ProjectSession, PluginDeviceHost>? create = missingHost ? null : s => host = new PluginDeviceHost(plugins, s, [Sine]);
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), plugins: create);
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Transpose"));
+        view.InsertAt(1, BuiltIn("Event Filter"));
+        var definition = PluginDeviceHost.DefinitionOf(Sine);
+        // A drag keeps its definition even if a rescan removes the plugin from the Browser.
+        host?.SetAvailable([]);
+        var before = app.Session.Project;
+
+        Assert.False(await app.ViewModel.DropDeviceAsync(definition, replace ? before.Sequence.Tracks[0].Id : null));
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not loaded", StringComparison.Ordinal));
+        Assert.False(await view.ReplaceAsync(view.Devices[0].Id, definition));
+        Assert.Same(before, app.Session.Project);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task APluginRemovedDuringStartup_IsNotCommitted(bool singleDevice) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => host = new PluginDeviceHost(plugins, s, [Sine]));
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Transpose"));
+        var before = app.Session.Project;
+        var definition = PluginDeviceHost.DefinitionOf(Sine);
+        var pending = singleDevice
+            ? view.ReplaceAsync(view.Devices[0].Id, definition)
+            : app.ViewModel.DropDeviceAsync(definition, app.ViewModel.Tracks[0].Id);
+        Assert.False(pending.IsCompleted);
+
+        host!.SetAvailable([]);
+
+        Assert.False(await pending);
+        Assert.Same(before, app.Session.Project);
+        Assert.Empty(plugins.Instances);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("no longer available", StringComparison.Ordinal));
+    });
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public Task APluginDrop_CannotCommitIntoTheSameProjectReopenedOrRecovered(bool replace, bool recovery) => HeadlessApp.RunAsync(async () =>
+    {
+        var directory = Directory.CreateTempSubdirectory("bluestone-pending-drop-").FullName;
+        try
+        {
+            await using var plugins = Plugins();
+            await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [Sine]));
+            var path = Path.Combine(directory, "same.bluestone");
+            await app.Session.SaveAsync(path);
+            if (recovery)
+            {
+                app.Session.Execute(ProjectCommands.RenameProject("Recovery"));
+                await app.Session.AutosaveAsync();
+            }
+
+            var project = app.Session.Project.Id;
+            var pending = app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Sine), replace ? app.ViewModel.Tracks[0].Id : null);
+            Assert.False(pending.IsCompleted);
+            // Keep the drop's UI continuation queued until the same document has finished loading.
+            if (recovery)
+            {
+                app.Session.RestoreRecoveryAsync().GetAwaiter().GetResult();
+            }
+            else
+            {
+                app.Session.OpenAsync(path).GetAwaiter().GetResult();
+            }
+
+            var reopened = app.Session.Project;
+            Assert.Equal(project, reopened.Id);
+            Assert.False(await pending);
+            Assert.Same(reopened, app.Session.Project);
+            Assert.Empty(plugins.Instances);
+            Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("changed while the device was loading", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    });
+
+    [Fact]
+    public Task ReplacingAChain_CapturesLivePluginStateIntoTheSameUndoStep() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        await using var app = await AppUnderTest.OpenAsync(plugins: s => host = new PluginDeviceHost(plugins, s, [Gain]));
+        Assert.True(await app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Gain), null));
+        var track = Assert.Single(app.Session.Project.Sequence.Tracks);
+        var device = Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices);
+        var running = host!.InstanceOf(device.Id)!;
+        await running.SetParameterAsync(0, 0.25);
+        var live = await running.CaptureStateAsync();
+        Assert.Null(app.Session.Project.FindDevice(device.Id)!.Value.Device.State);
+        var undoCount = app.Session.History.UndoCount;
+
+        Assert.True(await app.ViewModel.DropDeviceAsync(BuiltIn("Transpose"), track.Id));
+        await AppUnderTest.WaitUntilAsync(() => host.InstanceOf(device.Id) is null, "the replaced plugin to be destroyed");
+        Assert.Equal(undoCount + 1, app.Session.History.UndoCount);
+        Assert.Equal("Replace Track Devices", app.Session.History.UndoLabel);
+
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        var restored = app.Session.Project.FindDevice(device.Id)!.Value.Device;
+        Assert.Equal(live.State.Data, restored.State!.Data.ToArray());
+        Assert.Equal(0.25, restored.ValueOf(new ParameterId(0))!.Value.ToFraction(), 6);
+        await AppUnderTest.WaitUntilAsync(() => host.InstanceOf(device.Id)?.Status.State == PluginInstanceState.Running, "the outgoing plugin to restart from its undo state");
+        var parameters = await host.InstanceOf(device.Id)!.GetParametersAsync();
+        Assert.Equal(0.25, parameters.Single(p => p.Id == 0).Value, 6);
+        app.ViewModel.RedoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal("Transpose", Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AStagedPluginLostAfterOutgoingStateCapture_DoesNotReplaceTheWorkingChain(bool reconfigure) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        await using var app = await AppUnderTest.OpenAsync(plugins: s => host = new PluginDeviceHost(plugins, s, [Gain, Sine],
+            hosting: new PluginHostingSettings { Mode = HostingMode.Individually }));
+        Assert.True(await app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Gain), null));
+        var track = Assert.Single(app.Session.Project.Sequence.Tracks);
+        var old = Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices);
+        var running = host!.InstanceOf(old.Id)!;
+        var snapshot = running.LastSnapshot;
+        var before = app.Session.Project;
+        var undoCount = app.Session.History.UndoCount;
+        var context = new PausedUiContext();
+        var pending = context.Run(() => app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Sine), track.Id));
+
+        // Hold only the commit continuation, after staging and the outgoing capture have both succeeded.
+        Action resume;
+        while (true)
+        {
+            resume = await context.NextAsync();
+            if (!ReferenceEquals(snapshot, running.LastSnapshot))
+            {
+                break;
+            }
+
+            context.Run(() =>
+            {
+                resume();
+                return true;
+            });
+            Assert.False(pending.IsCompleted);
+        }
+
+        var staged = plugins.Instances.Single(i => i.Plugin == Sine);
+        Assert.Equal(PluginInstanceState.Running, staged.Status.State);
+        if (reconfigure)
+        {
+            await host.SetSampleRateAsync(44_100);
+            Assert.DoesNotContain(staged, plugins.Instances);
+        }
+        else
+        {
+            Assert.NotEqual(running.WorkerProcessId, staged.WorkerProcessId);
+            using var process = Process.GetProcessById(staged.WorkerProcessId!.Value);
+            process.Kill();
+            await AppUnderTest.WaitUntilAsync(() => staged.Status.State == PluginInstanceState.Unavailable, "the staged plugin's crash to be reported");
+        }
+
+        Assert.True(host.Hosts(PluginDeviceHost.DefinitionOf(Sine).Id));
+        resume();
+        Assert.False(await pending);
+        Assert.Same(before, app.Session.Project);
+        Assert.Equal(undoCount, app.Session.History.UndoCount);
+        Assert.Equal("Reference Gain", Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+        Assert.Equal(PluginInstanceState.Running, host.InstanceOf(old.Id)!.Status.State);
+        Assert.DoesNotContain(plugins.Instances, i => i.Plugin == Sine);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("stopped before the drop could be committed", StringComparison.Ordinal));
+    });
+
+    private sealed class PausedUiContext : SynchronizationContext
+    {
+        private readonly Channel<(SendOrPostCallback Callback, object? State)> _posted = Channel.CreateUnbounded<(SendOrPostCallback, object?)>();
+
+        public override void Post(SendOrPostCallback d, object? state) => Assert.True(_posted.Writer.TryWrite((d, state)));
+
+        public T Run<T>(Func<T> action)
+        {
+            var previous = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                return action();
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
+
+        public async Task<Action> NextAsync()
+        {
+            var work = await _posted.Reader.ReadAsync(TestContext.Current.CancellationToken).AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            return () => work.Callback(work.State);
+        }
+    }
 
     private static Point PanelMiddle(TopLevel window, DeviceViewControl control, int index)
     {

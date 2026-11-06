@@ -66,6 +66,22 @@ or Return inserts into the **most recently active** Device View (`WorkspaceViewM
 selected device, if that view is open and shows a chain; otherwise nothing is inserted and a message says why.
 Bluestone never guesses a destination.
 
+The arrangement is also an explicit drop target for Browser devices: empty space creates a named hybrid track with
+the device and its default master audio path; an existing track's header or lane replaces that track's entire device
+chain, leaving track content and track-level routing intact. A target preview distinguishes creation from replacement.
+Both are one undo step. Device View gaps still insert and panel middles still replace just one device. Plugins are
+started before committing a drop; a startup failure or a project/target-chain change during startup leaves the
+current project untouched and reports why. A session generation, not the saved project ID, distinguishes document
+loads and recovery; availability and the staged instance's running state are checked after startup and before commit.
+Whole-chain replacement captures
+outgoing plugins' live opaque state and parameters into `EditHistory.Execute`'s undo preparation. Preparation is
+applied atomically with the replacement, without an extra undo step or an intermediate project notification; if the
+edit is refused or changes nothing, neither preparation nor replacement is committed. Undo-only capture does not
+update the host-value cache, so refusing the edit cannot cause a subsequent sync to reset surviving live settings.
+It also holds the host lifecycle gate so audio-rate recreation cannot temporarily hide the outgoing instances, and
+includes the last recoverable state of an outgoing instance that is already unavailable.
+Replacement feedback is centered in the target track's visible portion, not the full height of expanded automation.
+
 ### Design tokens
 
 `Theme/Tokens.axaml` defines the one dark theme as semantic tokens: surfaces, lines, text levels, states (hover,

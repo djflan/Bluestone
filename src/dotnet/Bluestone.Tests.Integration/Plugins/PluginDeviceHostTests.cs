@@ -50,6 +50,130 @@ public sealed class PluginDeviceHostTests
     }
 
     [Fact]
+    public async Task UndoOnlyCapture_DoesNotResendStoredValuesToASurvivingPlugin_AfterARefusedEdit()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Live settings");
+        session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.5)));
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var instance = bridge.InstanceOf(device.Id)!;
+        host.Track(instance);
+        await instance.SetParameterAsync(GainParameter.Value, 0.25, Ct);
+        var before = session.Project;
+        var undoCount = session.History.UndoCount;
+
+        var prepare = await bridge.CaptureForUndoAsync([device.Id], Ct);
+        Assert.Throws<CommandRefusedException>(() => session.Execute(
+            new ProjectCommand("Refused Drop", _ => throw new CommandRefusedException("The target changed.")), prepare));
+        await bridge.SyncAsync(session.Project, Ct);
+
+        Assert.Same(before, session.Project);
+        Assert.Equal(undoCount, session.History.UndoCount);
+        Assert.Same(instance, bridge.InstanceOf(device.Id));
+        var parameters = await instance.GetParametersAsync(Ct);
+        Assert.Equal(0.25, parameters.Single(p => p.Id == GainParameter.Value).Value, 6);
+    }
+
+    [Fact]
+    public async Task UndoCapture_DuringRateRecreation_WaitsForTheOutgoingInstanceAndPreservesItsLiveState()
+    {
+        await using var host = new PluginTestHost();
+        var (session, track, device) = ProjectWithGainOn("Live settings");
+        session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.5)));
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var original = bridge.InstanceOf(device.Id)!;
+        host.Track(original);
+        await original.SetParameterAsync(GainParameter.Value, 0.25, Ct);
+        var before = session.Project;
+        var undoCount = session.History.UndoCount;
+        var removed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var resume = new ManualResetEventSlim();
+        var released = false;
+        original.StatusChanged += (_, change) =>
+        {
+            if (change.Current.State == PluginInstanceState.Unloaded)
+            {
+                // Pause recreation after removal, while its only live snapshot is in the restore map.
+                removed.TrySetResult();
+                released = resume.Wait(StatusTimeout, Ct);
+            }
+        };
+        var recreation = Task.Run(() => bridge.SetSampleRateAsync(44_100, Ct), Ct);
+        Task<IProjectCommand> capture;
+        try
+        {
+            await removed.Task.WaitAsync(StatusTimeout, Ct);
+            Assert.Null(bridge.InstanceOf(device.Id));
+            capture = bridge.CaptureForUndoAsync([device.Id], Ct);
+            Assert.False(capture.IsCompleted);
+        }
+        finally
+        {
+            resume.Set();
+        }
+
+        await recreation;
+        Assert.True(released, "Recreation must be resumed before its bounded pause expires.");
+        var preparation = await capture;
+        host.Track(bridge.InstanceOf(device.Id)!);
+        Assert.Same(before, session.Project);
+        var replacement = DeviceInstance.Create(BuiltInDevices.Transpose.ToReference());
+        session.Execute(DeviceCommands.ReplaceTrackDevices(track.Id, replacement, bridge.Extend(DeviceCatalog.BuiltIn).Lookup), preparation);
+        await bridge.SyncAsync(session.Project, Ct);
+        Assert.Null(bridge.InstanceOf(device.Id));
+        Assert.Equal(undoCount + 1, session.History.UndoCount);
+
+        session.History.Undo();
+        await bridge.SyncAsync(session.Project, Ct);
+        var restored = bridge.InstanceOf(device.Id)!;
+        host.Track(restored);
+        Assert.NotNull(session.Project.FindDevice(device.Id)!.Value.Device.State);
+        var parameters = await restored.GetParametersAsync(Ct);
+        Assert.Equal(0.25, parameters.Single(p => p.Id == GainParameter.Value).Value, 6);
+        Assert.Equal(undoCount, session.History.UndoCount);
+    }
+
+    [Fact]
+    public async Task ReplacingACrashedPlugin_UndoRestoresItsLastRecoverableSnapshot()
+    {
+        await using var host = new PluginTestHost();
+        var (session, track, device) = ProjectWithGainOn("Recoverable settings");
+        session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.5)));
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var original = bridge.InstanceOf(device.Id)!;
+        host.Track(original);
+        await original.SetParameterAsync(GainParameter.Value, 0.25, Ct);
+
+        await bridge.SetSampleRateAsync(44_100, Ct);
+
+        var recreated = bridge.InstanceOf(device.Id)!;
+        host.Track(recreated);
+        Assert.NotNull(recreated.LastSnapshot);
+        KillProcess(recreated.WorkerProcessId!.Value);
+        await WaitForStateAsync(recreated, PluginInstanceState.Unavailable);
+        var before = session.Project;
+        var undoCount = session.History.UndoCount;
+
+        var preparation = await bridge.CaptureForUndoAsync([device.Id], Ct);
+        var replacement = DeviceInstance.Create(BuiltInDevices.Transpose.ToReference());
+        session.Execute(DeviceCommands.ReplaceTrackDevices(track.Id, replacement, bridge.Extend(DeviceCatalog.BuiltIn).Lookup), preparation);
+        await bridge.SyncAsync(session.Project, Ct);
+        Assert.Null(bridge.InstanceOf(device.Id));
+        Assert.Equal(undoCount + 1, session.History.UndoCount);
+
+        session.History.Undo();
+        await bridge.SyncAsync(session.Project, Ct);
+        var restored = bridge.InstanceOf(device.Id)!;
+        host.Track(restored);
+        Assert.NotSame(before, session.Project);
+        var parameters = await restored.GetParametersAsync(Ct);
+        Assert.Equal(0.25, parameters.Single(p => p.Id == GainParameter.Value).Value, 6);
+    }
+
+    [Fact]
     public async Task Scenario12_APluginDevice_IsRestoredFromTheProjectsSavedState_AfterReopeningAndAfterARestart()
     {
         await using var host = new PluginTestHost();

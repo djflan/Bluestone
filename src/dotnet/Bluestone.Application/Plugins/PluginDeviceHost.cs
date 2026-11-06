@@ -677,24 +677,73 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// </summary>
     public async Task<bool> CaptureStateAsync(DeviceId device, CancellationToken cancellationToken = default)
     {
-        if (!_instances.TryGetValue(device, out var instance) || instance.Status.State != PluginInstanceState.Running)
+        if (await CaptureStateCommandAsync(device, updateHostValues: true, useLastSnapshot: false, cancellationToken).ConfigureAwait(false) is not { } command)
         {
             return false;
         }
 
-        var snapshot = await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false);
+        _session.Execute(command);
+        return true;
+    }
+
+    /// <summary>
+    /// Reads outgoing plugins' live state without editing the project or the last-applied host-value cache. Apply the
+    /// result as undo preparation so Undo restores their opaque configuration and parameters with the replacement.
+    /// Waits for instance recreation so temporarily removed plugins are not missed.
+    /// </summary>
+    public async Task<IProjectCommand> CaptureForUndoAsync(IEnumerable<DeviceId> devices, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(devices);
+        await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var commands = new List<IProjectCommand>();
+            foreach (var device in devices)
+            {
+                if (await CaptureStateCommandAsync(device, updateHostValues: false, useLastSnapshot: true, cancellationToken).ConfigureAwait(false) is { } command)
+                {
+                    commands.Add(command);
+                }
+            }
+
+            return ProjectCommands.Batch("Capture Plugin Undo State", commands);
+        }
+        finally
+        {
+            _syncing.Release();
+        }
+    }
+
+    private async Task<IProjectCommand?> CaptureStateCommandAsync(DeviceId device, bool updateHostValues, bool useLastSnapshot, CancellationToken cancellationToken)
+    {
+        if (!_instances.TryGetValue(device, out var instance))
+        {
+            return null;
+        }
+
+        var snapshot = instance.Status.State == PluginInstanceState.Running
+            ? await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false)
+            : useLastSnapshot ? instance.LastSnapshot : null;
+        if (snapshot is null)
+        {
+            return null;
+        }
+
         var state = new PluginState(ByteBlock.Copy(snapshot.State.Data.AsSpan()), snapshot.State.Format);
         var commands = new List<IProjectCommand> { DeviceCommands.SetPluginState(device, state) };
         var shown = instance.Parameters.Where(p => p.IsUserFacing).Select(p => p.Id).ToHashSet();
         foreach (var parameter in snapshot.ParameterValues.Where(p => shown.Contains(p.Id)))
         {
             var value = ControlValue.FromFraction(parameter.Value);
-            _hostValues[(device, parameter.Id)] = value.ToFraction();
+            if (updateHostValues)
+            {
+                _hostValues[(device, parameter.Id)] = value.ToFraction();
+            }
+
             commands.Add(DeviceCommands.SetParameter(device, new ParameterId(parameter.Id), value));
         }
 
-        _session.Execute(ProjectCommands.Batch("Store Plugin State", commands));
-        return true;
+        return ProjectCommands.Batch("Store Plugin State", commands);
     }
 
     /// <summary>Captures every running plugin's state into the project, before a save.</summary>
