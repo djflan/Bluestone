@@ -235,9 +235,9 @@
       <!-- Arrangement above, the detail region below -->
       <Grid x:Name="MainArea" Grid.Column="2" RowDefinitions="*,Auto,Auto,330">
 
-        <Grid Grid.Row="0" RowDefinitions="28,30,*" ColumnDefinitions="252,*">
+        <Grid Grid.Row="0" RowDefinitions="Auto,30,*" ColumnDefinitions="252,*">
           <!-- Arrangement header -->
-          <Border Grid.ColumnSpan="2" Classes="header">
+          <Border x:Name="TrackViewHeader" Grid.ColumnSpan="2" Classes="header">
             <Grid ColumnDefinitions="252,*,Auto">
               <StackPanel Orientation="Horizontal" Spacing="2" Margin="8,0" VerticalAlignment="Center">
                 <TextBlock Text="Tracks" Classes="title" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />

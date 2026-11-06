@@ -219,6 +219,7 @@
   <Thickness x:Key="Inset.Panel">8</Thickness>
   <Thickness x:Key="Inset.Section">10,8</Thickness>
   <Thickness x:Key="Inset.Row">8,3</Thickness>
+  <Thickness x:Key="Inset.BrowserLeading">8,0,0,0</Thickness>
 
   <!-- Corner radii. -->
   <CornerRadius x:Key="Radius.None">0</CornerRadius>

@@ -100,6 +100,7 @@
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
   </Style>
   <Style Selector="Border.header">
+    <Setter Property="Height" Value="{StaticResource Height.Header}" />
     <Setter Property="Background" Value="{StaticResource Gradient.Header}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -801,7 +802,7 @@
     <Setter Property="Width" Value="{StaticResource Width.Rail}" />
     <Setter Property="Background" Value="{StaticResource Surface.Chrome}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
-    <Setter Property="Padding" Value="0,6" />
+    <Setter Property="Padding" Value="0,0,0,6" />
   </Style>
   <Style Selector="Border.rail.left">
     <Setter Property="BorderThickness" Value="0,0,1,0" />
@@ -1295,7 +1296,7 @@
     <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="ListBox.browser ListBoxItem">
-    <Setter Property="Padding" Value="10,4,8,4" />
+    <Setter Property="Padding" Value="0,4,8,4" />
     <Setter Property="MinHeight" Value="0" />
   </Style>
   <Style Selector="ListBox.browser ListBoxItem:selected /template/ ContentPresenter">
@@ -1327,14 +1328,14 @@
   </Style>
   <Style Selector="Border.browserFooter">
     <Setter Property="Height" Value="34" />
-    <Setter Property="Padding" Value="10,0,8,0" />
+    <Setter Property="Padding" Value="0,0,8,0" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,1,0,0" />
     <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
   </Style>
   <Style Selector="Ellipse.targetDot">
-    <Setter Property="Width" Value="6" />
-    <Setter Property="Height" Value="6" />
+    <Setter Property="Width" Value="7" />
+    <Setter Property="Height" Value="7" />
     <Setter Property="Margin" Value="0,0,8,0" />
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Fill" Value="{StaticResource Text.Disabled}" />

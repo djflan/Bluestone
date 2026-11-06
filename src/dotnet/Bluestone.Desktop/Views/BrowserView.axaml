@@ -41,7 +41,8 @@
       <ListBox x:Name="ItemList" Classes="browser" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" AutomationProperties.Name="Browser items">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="vm:BrowserItem">
-            <Grid ColumnDefinitions="Auto,*,Auto" Classes="browserRow" ToolTip.Tip="{Binding Detail}" AutomationProperties.Name="{Binding Name}">
+            <Grid ColumnDefinitions="Auto,*,Auto" Classes="browserRow" Margin="{StaticResource Inset.BrowserLeading}"
+                  ToolTip.Tip="{Binding Detail}" AutomationProperties.Name="{Binding Name}">
               <Ellipse Classes="roleDot" Fill="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
               <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
                 <TextBlock Classes="itemName" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
@@ -63,7 +64,7 @@
     </Panel>
 
     <Border Grid.Row="3" Classes="browserFooter">
-      <Grid ColumnDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="{StaticResource Inset.BrowserLeading}">
         <Ellipse Classes="targetDot" Classes.on="{Binding HasTarget}" />
         <TextBlock Grid.Column="1" Classes="caption" Text="{Binding TargetText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                    ToolTip.Tip="Where Return or a double-click puts the selected item. Drag a device onto any Device View to choose the exact place." />
