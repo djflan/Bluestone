@@ -677,9 +677,39 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// </summary>
     public async Task<bool> CaptureStateAsync(DeviceId device, CancellationToken cancellationToken = default)
     {
-        if (!_instances.TryGetValue(device, out var instance) || instance.Status.State != PluginInstanceState.Running)
+        if (await CaptureStateCommandAsync(device, cancellationToken).ConfigureAwait(false) is not { } command)
         {
             return false;
+        }
+
+        _session.Execute(command);
+        return true;
+    }
+
+    /// <summary>
+    /// Reads outgoing plugins' live state without editing the project. Apply the result as an edit's undo preparation
+    /// so Undo restores their current opaque configuration and parameters in the same step as the replacement.
+    /// </summary>
+    public async Task<IProjectCommand> CaptureForUndoAsync(IEnumerable<DeviceId> devices, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(devices);
+        var commands = new List<IProjectCommand>();
+        foreach (var device in devices)
+        {
+            if (await CaptureStateCommandAsync(device, cancellationToken).ConfigureAwait(false) is { } command)
+            {
+                commands.Add(command);
+            }
+        }
+
+        return ProjectCommands.Batch("Capture Plugin Undo State", commands);
+    }
+
+    private async Task<IProjectCommand?> CaptureStateCommandAsync(DeviceId device, CancellationToken cancellationToken)
+    {
+        if (!_instances.TryGetValue(device, out var instance) || instance.Status.State != PluginInstanceState.Running)
+        {
+            return null;
         }
 
         var snapshot = await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false);
@@ -693,8 +723,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
             commands.Add(DeviceCommands.SetParameter(device, new ParameterId(parameter.Id), value));
         }
 
-        _session.Execute(ProjectCommands.Batch("Store Plugin State", commands));
-        return true;
+        return ProjectCommands.Batch("Store Plugin State", commands);
     }
 
     /// <summary>Captures every running plugin's state into the project, before a save.</summary>

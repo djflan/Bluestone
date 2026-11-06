@@ -510,6 +510,112 @@ public sealed class ChainDragTests
         Assert.Same(before, app.Session.Project);
     });
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task APluginRemovedDuringStartup_IsNotCommitted(bool singleDevice) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => host = new PluginDeviceHost(plugins, s, [Sine]));
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Transpose"));
+        var before = app.Session.Project;
+        var definition = PluginDeviceHost.DefinitionOf(Sine);
+        var pending = singleDevice
+            ? view.ReplaceAsync(view.Devices[0].Id, definition)
+            : app.ViewModel.DropDeviceAsync(definition, app.ViewModel.Tracks[0].Id);
+        Assert.False(pending.IsCompleted);
+
+        host!.SetAvailable([]);
+
+        Assert.False(await pending);
+        Assert.Same(before, app.Session.Project);
+        Assert.Empty(plugins.Instances);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("no longer available", StringComparison.Ordinal));
+    });
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public Task APluginDrop_CannotCommitIntoTheSameProjectReopenedOrRecovered(bool replace, bool recovery) => HeadlessApp.RunAsync(async () =>
+    {
+        var directory = Directory.CreateTempSubdirectory("bluestone-pending-drop-").FullName;
+        try
+        {
+            await using var plugins = Plugins();
+            await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [Sine]));
+            var path = Path.Combine(directory, "same.bluestone");
+            await app.Session.SaveAsync(path);
+            if (recovery)
+            {
+                app.Session.Execute(ProjectCommands.RenameProject("Recovery"));
+                await app.Session.AutosaveAsync();
+            }
+
+            var project = app.Session.Project.Id;
+            var pending = app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Sine), replace ? app.ViewModel.Tracks[0].Id : null);
+            Assert.False(pending.IsCompleted);
+            // Keep the drop's UI continuation queued until the same document has finished loading.
+            if (recovery)
+            {
+                app.Session.RestoreRecoveryAsync().GetAwaiter().GetResult();
+            }
+            else
+            {
+                app.Session.OpenAsync(path).GetAwaiter().GetResult();
+            }
+
+            var reopened = app.Session.Project;
+            Assert.Equal(project, reopened.Id);
+            Assert.False(await pending);
+            Assert.Same(reopened, app.Session.Project);
+            Assert.Empty(plugins.Instances);
+            Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("changed while the device was loading", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    });
+
+    [Fact]
+    public Task ReplacingAChain_CapturesLivePluginStateIntoTheSameUndoStep() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        await using var app = await AppUnderTest.OpenAsync(plugins: s => host = new PluginDeviceHost(plugins, s, [Gain]));
+        Assert.True(await app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Gain), null));
+        var track = Assert.Single(app.Session.Project.Sequence.Tracks);
+        var device = Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices);
+        var running = host!.InstanceOf(device.Id)!;
+        await running.SetParameterAsync(0, 0.25);
+        var live = await running.CaptureStateAsync();
+        Assert.Null(app.Session.Project.FindDevice(device.Id)!.Value.Device.State);
+        var undoCount = app.Session.History.UndoCount;
+
+        Assert.True(await app.ViewModel.DropDeviceAsync(BuiltIn("Transpose"), track.Id));
+        await AppUnderTest.WaitUntilAsync(() => host.InstanceOf(device.Id) is null, "the replaced plugin to be destroyed");
+        Assert.Equal(undoCount + 1, app.Session.History.UndoCount);
+        Assert.Equal("Replace Track Devices", app.Session.History.UndoLabel);
+
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        var restored = app.Session.Project.FindDevice(device.Id)!.Value.Device;
+        Assert.Equal(live.State.Data, restored.State!.Data.ToArray());
+        Assert.Equal(0.25, restored.ValueOf(new ParameterId(0))!.Value.ToFraction(), 6);
+        await AppUnderTest.WaitUntilAsync(() => host.InstanceOf(device.Id)?.Status.State == PluginInstanceState.Running, "the outgoing plugin to restart from its undo state");
+        var parameters = await host.InstanceOf(device.Id)!.GetParametersAsync();
+        Assert.Equal(0.25, parameters.Single(p => p.Id == 0).Value, 6);
+        app.ViewModel.RedoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal("Transpose", Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+    });
+
     private static Point PanelMiddle(TopLevel window, DeviceViewControl control, int index)
     {
         var chain = AppUnderTest.Within<ItemsControl>(control, c => c.Name == "Chain");

@@ -39,6 +39,9 @@ public sealed class ProjectSession
 
     public Project Project => History.Current;
 
+    /// <summary>Changes whenever a document is loaded or replaced, even when its saved project ID is the same.</summary>
+    public long Generation { get; private set; }
+
     /// <summary>The file the project was opened from or last saved to, if any.</summary>
     public string? FilePath { get; private set; }
 
@@ -47,7 +50,7 @@ public sealed class ProjectSession
     /// <summary>Raised after any change to the project, file path, or saved state.</summary>
     public event EventHandler? Changed;
 
-    public bool Execute(IProjectCommand command) => History.Execute(command);
+    public bool Execute(IProjectCommand command, IProjectCommand? prepareUndo = null) => History.Execute(command, prepareUndo);
 
     public void New(string name = "Untitled")
     {
@@ -140,6 +143,7 @@ public sealed class ProjectSession
         _document = document;
         _saved = project;
         FilePath = path;
+        Generation++;
         History.Reset(project);
     }
 }

@@ -112,7 +112,11 @@ says so.
 23. **Connection IDs are unique** in `Project` (a file listing one twice is a format error).
 24. **Plugin devices** have definition IDs `plugin:<format>:<module>/<plugin>`; available plugins join the catalog as
     data with the parameters their worker reports. State is captured into the project before every save (not on
-    autosave). Removing a device stops its worker.
+    autosave). Removing a device stops its worker. Arrangement whole-chain replacement first captures outgoing
+    plugins' live state with `PluginDeviceHost.CaptureForUndoAsync`; `EditHistory.Execute` applies that command as
+    undo preparation, atomically with replacement and without another undo step or notification. A failed/no-op edit
+    discards preparation. Pending drops also check `ProjectSession.Generation` (document loads, not saved IDs), their
+    target chain, and current plugin availability before committing.
 25. **Undo merging** is opt-in per command: `IProjectCommand.MergeKey`. Consecutive commands with the same key within
     `EditHistory.MergeWindow` (1 s, measured with an injectable `TimeProvider`) replace the top undo step's result and
     keep its "before" state. Undo, redo, and reset end the run. Keys: `parameter:{device}:{parameter}`,

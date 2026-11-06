@@ -69,21 +69,27 @@ public sealed class EditHistory
     /// <summary>Raised after every change to <see cref="Current"/>.</summary>
     public event EventHandler? Changed;
 
+    /// <summary>
+    /// Executes an edit atomically. Optional preparation enriches its undo baseline (for example with live plugin
+    /// state) without a separate edit or notification; it is discarded if the edit is refused or changes nothing.
+    /// </summary>
     /// <returns>True if the command changed the project.</returns>
-    public bool Execute(IProjectCommand command)
+    public bool Execute(IProjectCommand command, IProjectCommand? prepareUndo = null)
     {
         ArgumentNullException.ThrowIfNull(command);
+        Project before;
         Project next;
         try
         {
-            next = command.Apply(Current);
+            before = prepareUndo?.Apply(Current) ?? Current;
+            next = command.Apply(before);
         }
         catch (Bluestone.Domain.Sequencing.ClipLoopLimitException ex)
         {
             throw new CommandRefusedException(ex.Message, ex);
         }
 
-        if (ReferenceEquals(next, Current))
+        if (ReferenceEquals(next, before))
         {
             return false;
         }
@@ -93,7 +99,7 @@ public sealed class EditHistory
         var merges = command.MergeKey is { } key && key == _mergeKey && _undo.Count > 0 && _time.GetElapsedTime(_mergedAt, now) <= MergeWindow;
         if (!merges)
         {
-            _undo.AddLast((command.Label, Current));
+            _undo.AddLast((command.Label, before));
             if (_undo.Count > _capacity)
             {
                 _undo.RemoveFirst();

@@ -753,11 +753,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public Task InitializeAsync() => SyncAndRefreshAsync();
 
     /// <summary>Runs an edit. An edit the model refuses (it would break routing or hide content) changes nothing and is explained in a message.</summary>
-    internal bool Execute(IProjectCommand command)
+    internal bool Execute(IProjectCommand command, IProjectCommand? prepareUndo = null)
     {
         try
         {
-            return _session.Execute(command);
+            return _session.Execute(command, prepareUndo);
         }
         catch (CommandRefusedException ex)
         {
@@ -1306,7 +1306,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task<bool> DropDeviceAsync(DeviceDefinition definition, TrackId? target)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        var project = Project.Id;
+        var generation = _session.Generation;
         var previousChain = target is { } existing ? Project.ChainOf(existing) : null;
         var device = DeviceInstance.Create(definition.ToReference());
         if (!await StageDeviceAsync(device, definition, "Drop Device", $"{definition.Name} was not loaded"))
@@ -1314,37 +1314,59 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return false;
         }
 
-        var unchanged = Project.Id == project && (target is not { } id
-            || (Project.Sequence.FindTrack(id) is not null && Project.ChainOf(id) == previousChain));
-        if (!unchanged)
+        var committed = false;
+        try
         {
-            AddMessage(MessageSeverity.Warning, "Drop Device", "The project or target chain changed while the device was loading. Drop it again to use the current target.");
-        }
+            IProjectCommand? prepareUndo = null;
+            if (previousChain is not null && PluginHost is { } outgoing)
+            {
+                try
+                {
+                    prepareUndo = await outgoing.CaptureForUndoAsync(previousChain.Devices.Select(d => d.Id));
+                }
+                catch (PluginHostException ex)
+                {
+                    AddMessage(MessageSeverity.Warning, "Drop Device", $"The existing plugins' state could not be captured: {ex.Message}");
+                    return false;
+                }
+            }
 
-        var track = target ?? TrackId.New();
-        var command = target is not null
-            ? DeviceCommands.ReplaceTrackDevices(track, device, Devices.Lookup)
-            : ProjectCommands.Batch("New Track with Device",
-            [
-                TrackSetup.NewTrack(new Track(track, definition.Name[..Math.Min(definition.Name.Length, Track.MaxNameLength)], [], role: TrackRole.Hybrid), Devices.Lookup),
-                DeviceCommands.InsertDevice(track, device, Devices.Lookup),
-            ]);
-        if (!unchanged || !Execute(command))
+            if (_session.Generation != generation || (target is { } id
+                && (Project.Sequence.FindTrack(id) is null || Project.ChainOf(id) != previousChain)))
+            {
+                AddMessage(MessageSeverity.Warning, "Drop Device", "The project or target chain changed while the device was loading. Drop it again to use the current target.");
+                return false;
+            }
+
+            if (definition.Origin == DeviceOrigin.Plugin && PluginHost?.Hosts(definition.Id) != true)
+            {
+                AddMessage(MessageSeverity.Warning, "Drop Device", $"{definition.Name} is no longer available.");
+                return false;
+            }
+
+            var track = target ?? TrackId.New();
+            var command = target is not null
+                ? DeviceCommands.ReplaceTrackDevices(track, device, Devices.Lookup)
+                : ProjectCommands.Batch("New Track with Device",
+                [
+                    TrackSetup.NewTrack(new Track(track, definition.Name[..Math.Min(definition.Name.Length, Track.MaxNameLength)], [], role: TrackRole.Hybrid), Devices.Lookup),
+                    DeviceCommands.InsertDevice(track, device, Devices.Lookup),
+                ]);
+            committed = Execute(command, prepareUndo);
+            if (committed && Tracks.FirstOrDefault(t => t.Id == track) is { } selected)
+            {
+                Select(selected);
+            }
+
+            return committed;
+        }
+        finally
         {
-            if (definition.Origin == DeviceOrigin.Plugin && PluginHost is { } host)
+            if (!committed && definition.Origin == DeviceOrigin.Plugin && PluginHost is { } host)
             {
                 await host.UnstageAsync(device.Id);
             }
-
-            return false;
         }
-
-        if (Tracks.FirstOrDefault(t => t.Id == track) is { } selected)
-        {
-            Select(selected);
-        }
-
-        return true;
     }
 
     internal async Task<bool> StageDeviceAsync(DeviceInstance device, DeviceDefinition definition, string action, string failure)
@@ -1355,15 +1377,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         string? reason;
+        var host = PluginHost;
         try
         {
-            reason = PluginHost is { } host
+            reason = host is not null
                 ? await host.StageAsync(device)
                 : $"{definition.Name} is not available here.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             reason = ex.Message;
+        }
+
+        if (reason is null && host is not null && !host.Hosts(definition.Id))
+        {
+            await host.UnstageAsync(device.Id);
+            reason = $"{definition.Name} is no longer available.";
         }
 
         if (reason is null)
