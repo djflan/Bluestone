@@ -792,7 +792,9 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             RoutingIndicator = destinations.Count == 0 ? string.Empty : "→ " + string.Join(", ", destinations);
 
             var descriptors = definition?.Parameters ?? [];
-            if (!Parameters.Select(p => p.Id).SequenceEqual(descriptors.Select(d => d.Id)))
+            // Panels are reused by position, so a replaced device can share parameter ids with the old one (Event Filter
+            // and Arpeggiator both use 1-4): compare whole descriptors, not ids.
+            if (!Parameters.Select(p => p.Descriptor).SequenceEqual(descriptors))
             {
                 Parameters.Clear();
                 foreach (var descriptor in descriptors)
