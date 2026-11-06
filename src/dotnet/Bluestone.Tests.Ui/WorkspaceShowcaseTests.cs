@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
@@ -21,6 +22,7 @@ namespace Bluestone.Tests.Ui;
 public sealed class WorkspaceShowcaseTests
 {
     private const int Beat = 480;
+    private static readonly string[] RailNames = ["LeftRail", "RightRail"];
 
     private static readonly PluginIdentity Sine = new("bluestone-reference", "bluestone.reference", "reference.sine", "Reference Sine", "Bluestone", PluginKind.Instrument, "1.0.0");
 
@@ -58,6 +60,58 @@ public sealed class WorkspaceShowcaseTests
         var directory = Path.Combine(AppContext.BaseDirectory, "plugin-data", Guid.NewGuid().ToString("N"));
         return new PluginHostManager(new PluginHostOptions { DataDirectory = directory, RequestTimeout = TimeSpan.FromSeconds(15) });
     }
+
+    [Theory]
+    [InlineData(1100, 720)]
+    [InlineData(1280, 800)]
+    [InlineData(1440, 900)]
+    [InlineData(1920, 1080)]
+    public Task TheWorkspace_HeadersShareTheSameHeightAndBaseline(double width, double height) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenSongAsync();
+        app.Window.Width = width;
+        app.Window.Height = height;
+        app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+        app.Settle();
+
+        var trackHeader = app.Find<Border>("TrackViewHeader");
+        var inspectorHeader = AppUnderTest.Within<Border>(app.Find<Panel>("InspectorDock"), b => b.Classes.Contains("dockHeader"));
+        var browserHeader = AppUnderTest.Within<Border>(app.Find<Panel>("BrowserDock"), b => b.Classes.Contains("dockHeader"));
+        var trackHeaderOrigin = app.InWindow(trackHeader, new Point(0, 0));
+        var inspectorHeaderOrigin = app.InWindow(inspectorHeader, new Point(0, 0));
+        var browserHeaderOrigin = app.InWindow(browserHeader, new Point(0, 0));
+
+        Assert.Equal(30, trackHeader.Bounds.Height);
+        Assert.Equal(trackHeader.Bounds.Height, inspectorHeader.Bounds.Height);
+        Assert.Equal(trackHeader.Bounds.Height, browserHeader.Bounds.Height);
+        Assert.Equal(trackHeaderOrigin.Y, inspectorHeaderOrigin.Y);
+        Assert.Equal(trackHeaderOrigin.Y, browserHeaderOrigin.Y);
+        Assert.True(File.Exists(app.SaveFrame($"showcase-headers-{(int)width}")));
+    });
+
+    [Fact]
+    public Task TheWorkspace_RailIconsAlignWithTheHeaderBand() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenSongAsync();
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Workspace.Inspector.CollapseCommand.Execute(null);
+        app.ViewModel.Workspace.Browser.CollapseCommand.Execute(null);
+        app.Settle();
+
+        var header = app.Find<Border>("TrackViewHeader");
+        var headerCenterY = app.InWindow(header, new Point(0, header.Bounds.Height / 2)).Y;
+        foreach (var railName in RailNames)
+        {
+            var rail = app.Find<Border>(railName);
+            var button = AppUnderTest.Within<Button>(rail, b => b.Classes.Contains("railItem"));
+            var icon = AppUnderTest.Within<PathIcon>(button, _ => true);
+            var iconCenterY = app.InWindow(icon, new Point(0, icon.Bounds.Height / 2)).Y;
+            Assert.InRange(Math.Abs(headerCenterY - iconCenterY), 0, 1);
+        }
+
+        Assert.True(File.Exists(app.SaveFrame("showcase-rails-header-alignment")));
+    });
 
     [Theory]
     [InlineData(1100, 720, "narrow")]
