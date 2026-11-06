@@ -126,6 +126,56 @@ public sealed class TrackDeviceDropTests
     });
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(0.5)]
+    [InlineData(1)]
+    public Task TallTrackReplacementPreview_StaysVisibleBeforeAndAfterScrolling(double fraction) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1040;
+        app.Window.Height = 640;
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.ViewModel.IsEditorVisible = true;
+        app.Settle();
+        var expanded = app.ViewModel.Tracks[0];
+        var transpose = app.ViewModel.Browser.Items.Single(i => i.Name == "Transpose").Definition!;
+        for (var index = 0; index < 20; index++)
+        {
+            app.ViewModel.DeviceView!.InsertAt(index, transpose);
+            app.Session.Execute(AutomationCommands.AddLane(expanded.Id, AutomationLane.Create(
+                AutomationTarget.ForDevice(app.ViewModel.DeviceView.Devices[index].Id, BuiltInDevices.TransposeSemitones))));
+        }
+
+        expanded.IsAutomationExpanded = true;
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        var area = app.Find<Control>("TrackDropArea");
+        Assert.True(expanded.RowHeight > 2 * area.Bounds.Height);
+        var scroller = app.Find<ScrollViewer>("TimelineScroller");
+        scroller.Offset = new Vector(0, fraction * (scroller.Extent.Height - scroller.Viewport.Height));
+        app.Settle();
+        var drag = Device(app, "Arpeggiator");
+        var at = At(app, 350, 25);
+
+        Drag(app, at, RawDragEventType.DragEnter, drag);
+
+        var overlay = app.Find<Border>("DeviceDropOverlay");
+        var label = app.Find<TextBlock>("DeviceDropText");
+        Assert.True(overlay.IsVisible);
+        Assert.Equal($"Replace devices on {expanded.Name} with Arpeggiator", label.Text);
+        var areaTop = app.InWindow(area, new Point()).Y;
+        var overlayTop = app.InWindow(overlay, new Point()).Y - areaTop;
+        var labelTop = app.InWindow(label, new Point()).Y - areaTop;
+        Assert.InRange(overlayTop, 0, area.Bounds.Height - overlay.Bounds.Height);
+        Assert.True(label.Bounds.Height > 0);
+        Assert.InRange(labelTop, 0, area.Bounds.Height - label.Bounds.Height);
+        app.SaveFrame($"track-device-tall-preview-{fraction.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        Drag(app, at, RawDragEventType.Drop, drag);
+        Assert.Equal("Arpeggiator", Assert.Single(app.Session.Project.ChainOf(expanded.Id)!.Devices).DisplayName);
+        Assert.Equal(2, app.Session.Project.Sequence.Tracks.Length);
+    });
+
+    [Theory]
     [InlineData(100)]
     [InlineData(350)]
     public Task DropTargets_FollowFoldedGroupsExpandedAutomationAndVerticalScrolling(double x) => HeadlessApp.RunAsync(async () =>

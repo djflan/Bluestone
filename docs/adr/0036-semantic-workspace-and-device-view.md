@@ -78,6 +78,9 @@ outgoing plugins' live opaque state and parameters into `EditHistory.Execute`'s 
 applied atomically with the replacement, without an extra undo step or an intermediate project notification; if the
 edit is refused or changes nothing, neither preparation nor replacement is committed. Undo-only capture does not
 update the host-value cache, so refusing the edit cannot cause a subsequent sync to reset surviving live settings.
+It also holds the host lifecycle gate so audio-rate recreation cannot temporarily hide the outgoing instances, and
+includes the last recoverable state of an outgoing instance that is already unavailable.
+Replacement feedback is centered in the target track's visible portion, not the full height of expanded automation.
 
 ### Design tokens
 

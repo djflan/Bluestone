@@ -569,7 +569,9 @@ public partial class MainWindow : Window
         {
             if (track.RowHeight > 0 && y >= top && y < top + track.RowHeight)
             {
-                return (track, top - TimelineScroller.Offset.Y, track.RowHeight);
+                var visibleTop = Math.Max(0, top - TimelineScroller.Offset.Y);
+                var visibleBottom = Math.Min(TrackDropArea.Bounds.Height, top + track.RowHeight - TimelineScroller.Offset.Y);
+                return (track, visibleTop, Math.Max(0, visibleBottom - visibleTop));
             }
 
             top += track.RowHeight;

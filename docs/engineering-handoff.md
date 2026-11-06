@@ -118,7 +118,9 @@ says so.
     discards preparation; undo-only capture must not update the host's last-applied value cache, or a later sync could
     overwrite surviving live settings after a refused edit. Pending drops also check `ProjectSession.Generation`
     (document loads, not saved IDs), their target chain, current plugin availability, and the staged instance's running
-    state immediately before committing.
+    state immediately before committing. Undo capture holds the host lifecycle gate, waiting for in-flight rate
+    recreation rather than missing temporarily removed outgoing instances, and includes the last recoverable snapshot
+    of an outgoing plugin that is already unavailable.
 25. **Undo merging** is opt-in per command: `IProjectCommand.MergeKey`. Consecutive commands with the same key within
     `EditHistory.MergeWindow` (1 s, measured with an injectable `TimeProvider`) replace the top undo step's result and
     keep its "before" state. Undo, redo, and reset end the run. Keys: `parameter:{device}:{parameter}`,

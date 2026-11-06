@@ -677,7 +677,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// </summary>
     public async Task<bool> CaptureStateAsync(DeviceId device, CancellationToken cancellationToken = default)
     {
-        if (await CaptureStateCommandAsync(device, updateHostValues: true, cancellationToken).ConfigureAwait(false) is not { } command)
+        if (await CaptureStateCommandAsync(device, updateHostValues: true, useLastSnapshot: false, cancellationToken).ConfigureAwait(false) is not { } command)
         {
             return false;
         }
@@ -689,30 +689,46 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// <summary>
     /// Reads outgoing plugins' live state without editing the project or the last-applied host-value cache. Apply the
     /// result as undo preparation so Undo restores their opaque configuration and parameters with the replacement.
+    /// Waits for instance recreation so temporarily removed plugins are not missed.
     /// </summary>
     public async Task<IProjectCommand> CaptureForUndoAsync(IEnumerable<DeviceId> devices, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(devices);
-        var commands = new List<IProjectCommand>();
-        foreach (var device in devices)
+        await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            if (await CaptureStateCommandAsync(device, updateHostValues: false, cancellationToken).ConfigureAwait(false) is { } command)
+            var commands = new List<IProjectCommand>();
+            foreach (var device in devices)
             {
-                commands.Add(command);
+                if (await CaptureStateCommandAsync(device, updateHostValues: false, useLastSnapshot: true, cancellationToken).ConfigureAwait(false) is { } command)
+                {
+                    commands.Add(command);
+                }
             }
-        }
 
-        return ProjectCommands.Batch("Capture Plugin Undo State", commands);
+            return ProjectCommands.Batch("Capture Plugin Undo State", commands);
+        }
+        finally
+        {
+            _syncing.Release();
+        }
     }
 
-    private async Task<IProjectCommand?> CaptureStateCommandAsync(DeviceId device, bool updateHostValues, CancellationToken cancellationToken)
+    private async Task<IProjectCommand?> CaptureStateCommandAsync(DeviceId device, bool updateHostValues, bool useLastSnapshot, CancellationToken cancellationToken)
     {
-        if (!_instances.TryGetValue(device, out var instance) || instance.Status.State != PluginInstanceState.Running)
+        if (!_instances.TryGetValue(device, out var instance))
         {
             return null;
         }
 
-        var snapshot = await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = instance.Status.State == PluginInstanceState.Running
+            ? await instance.CaptureStateAsync(cancellationToken).ConfigureAwait(false)
+            : useLastSnapshot ? instance.LastSnapshot : null;
+        if (snapshot is null)
+        {
+            return null;
+        }
+
         var state = new PluginState(ByteBlock.Copy(snapshot.State.Data.AsSpan()), snapshot.State.Format);
         var commands = new List<IProjectCommand> { DeviceCommands.SetPluginState(device, state) };
         var shown = instance.Parameters.Where(p => p.IsUserFacing).Select(p => p.Id).ToHashSet();
