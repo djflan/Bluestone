@@ -115,8 +115,10 @@ says so.
     autosave). Removing a device stops its worker. Arrangement whole-chain replacement first captures outgoing
     plugins' live state with `PluginDeviceHost.CaptureForUndoAsync`; `EditHistory.Execute` applies that command as
     undo preparation, atomically with replacement and without another undo step or notification. A failed/no-op edit
-    discards preparation. Pending drops also check `ProjectSession.Generation` (document loads, not saved IDs), their
-    target chain, and current plugin availability before committing.
+    discards preparation; undo-only capture must not update the host's last-applied value cache, or a later sync could
+    overwrite surviving live settings after a refused edit. Pending drops also check `ProjectSession.Generation`
+    (document loads, not saved IDs), their target chain, current plugin availability, and the staged instance's running
+    state immediately before committing.
 25. **Undo merging** is opt-in per command: `IProjectCommand.MergeKey`. Consecutive commands with the same key within
     `EditHistory.MergeWindow` (1 s, measured with an injectable `TimeProvider`) replace the top undo step's result and
     keep its "before" state. Undo, redo, and reset end the run. Keys: `parameter:{device}:{parameter}`,

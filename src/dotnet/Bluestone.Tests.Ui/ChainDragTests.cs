@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading.Channels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -615,6 +617,97 @@ public sealed class ChainDragTests
         app.Settle();
         Assert.Equal("Transpose", Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
     });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AStagedPluginLostAfterOutgoingStateCapture_DoesNotReplaceTheWorkingChain(bool reconfigure) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        await using var app = await AppUnderTest.OpenAsync(plugins: s => host = new PluginDeviceHost(plugins, s, [Gain, Sine],
+            hosting: new PluginHostingSettings { Mode = HostingMode.Individually }));
+        Assert.True(await app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Gain), null));
+        var track = Assert.Single(app.Session.Project.Sequence.Tracks);
+        var old = Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices);
+        var running = host!.InstanceOf(old.Id)!;
+        var snapshot = running.LastSnapshot;
+        var before = app.Session.Project;
+        var undoCount = app.Session.History.UndoCount;
+        var context = new PausedUiContext();
+        var pending = context.Run(() => app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Sine), track.Id));
+
+        // Hold only the commit continuation, after staging and the outgoing capture have both succeeded.
+        Action resume;
+        while (true)
+        {
+            resume = await context.NextAsync();
+            if (!ReferenceEquals(snapshot, running.LastSnapshot))
+            {
+                break;
+            }
+
+            context.Run(() =>
+            {
+                resume();
+                return true;
+            });
+            Assert.False(pending.IsCompleted);
+        }
+
+        var staged = plugins.Instances.Single(i => i.Plugin == Sine);
+        Assert.Equal(PluginInstanceState.Running, staged.Status.State);
+        if (reconfigure)
+        {
+            await host.SetSampleRateAsync(44_100);
+            Assert.DoesNotContain(staged, plugins.Instances);
+        }
+        else
+        {
+            Assert.NotEqual(running.WorkerProcessId, staged.WorkerProcessId);
+            using var process = Process.GetProcessById(staged.WorkerProcessId!.Value);
+            process.Kill();
+            await AppUnderTest.WaitUntilAsync(() => staged.Status.State == PluginInstanceState.Unavailable, "the staged plugin's crash to be reported");
+        }
+
+        Assert.True(host.Hosts(PluginDeviceHost.DefinitionOf(Sine).Id));
+        resume();
+        Assert.False(await pending);
+        Assert.Same(before, app.Session.Project);
+        Assert.Equal(undoCount, app.Session.History.UndoCount);
+        Assert.Equal("Reference Gain", Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+        Assert.Equal(PluginInstanceState.Running, host.InstanceOf(old.Id)!.Status.State);
+        Assert.DoesNotContain(plugins.Instances, i => i.Plugin == Sine);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("stopped before the drop could be committed", StringComparison.Ordinal));
+    });
+
+    private sealed class PausedUiContext : SynchronizationContext
+    {
+        private readonly Channel<(SendOrPostCallback Callback, object? State)> _posted = Channel.CreateUnbounded<(SendOrPostCallback, object?)>();
+
+        public override void Post(SendOrPostCallback d, object? state) => Assert.True(_posted.Writer.TryWrite((d, state)));
+
+        public T Run<T>(Func<T> action)
+        {
+            var previous = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                return action();
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
+
+        public async Task<Action> NextAsync()
+        {
+            var work = await _posted.Reader.ReadAsync(TestContext.Current.CancellationToken).AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            return () => work.Callback(work.State);
+        }
+    }
 
     private static Point PanelMiddle(TopLevel window, DeviceViewControl control, int index)
     {

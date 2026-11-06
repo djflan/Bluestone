@@ -116,7 +116,7 @@ Open the Browser with Shift + B. Search or filter devices, plugins, and project 
 
 Drag a device from the Browser into empty arrangement space to create a track named after it, with that device already in its chain and audio routed to the master. Drop it on an existing track's header or arrangement lane (including its automation lanes) to replace **the whole device chain**, not its clips, automation, name, or track routing. The drop preview names the target and action. Undo restores the previous chain and routing in one step; a plugin that fails to start leaves the project unchanged. To add a device without replacing the chain, drop it into a gap in the Device View instead.
 
-Whole-chain replacement captures the outgoing plugins' live settings for Undo, including opaque configuration not exposed as parameters. A pending drop is refused if its plugin disappears in a rescan, its target changes, or a document is opened/recovered again, even if it is the same saved project.
+Whole-chain replacement captures the outgoing plugins' live settings for Undo, including opaque configuration not exposed as parameters. A pending drop is refused if its plugin stops running or disappears in a rescan, its target changes, or a document is opened/recovered again, even if it is the same saved project. A refused drop leaves surviving plugins' live settings intact.
 
 The current alpha exposes hardware profiles under **Hardware** with **Use on Track**, then edits transport details under **External MIDI**. The product roadmap replaces this split workflow with a unified hardware device; that future behavior is not implemented yet.
 

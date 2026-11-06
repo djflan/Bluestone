@@ -1344,6 +1344,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 return false;
             }
 
+            if (definition.Origin == DeviceOrigin.Plugin && PluginHost?.InstanceOf(device.Id)?.Status.State != PluginInstanceState.Running)
+            {
+                AddMessage(MessageSeverity.Warning, "Drop Device", $"{definition.Name} stopped before the drop could be committed. Try the drop again.");
+                return false;
+            }
+
             var track = target ?? TrackId.New();
             var command = target is not null
                 ? DeviceCommands.ReplaceTrackDevices(track, device, Devices.Lookup)
@@ -1389,10 +1395,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             reason = ex.Message;
         }
 
-        if (reason is null && host is not null && !host.Hosts(definition.Id))
+        if (reason is null && host is not null)
         {
-            await host.UnstageAsync(device.Id);
-            reason = $"{definition.Name} is no longer available.";
+            if (!host.Hosts(definition.Id))
+            {
+                reason = $"{definition.Name} is no longer available.";
+            }
+            else if (host.InstanceOf(device.Id)?.Status.State != PluginInstanceState.Running)
+            {
+                reason = $"{definition.Name} stopped before it could be added.";
+            }
+
+            if (reason is not null)
+            {
+                await host.UnstageAsync(device.Id);
+            }
         }
 
         if (reason is null)

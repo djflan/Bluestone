@@ -72,10 +72,12 @@ chain, leaving track content and track-level routing intact. A target preview di
 Both are one undo step. Device View gaps still insert and panel middles still replace just one device. Plugins are
 started before committing a drop; a startup failure or a project/target-chain change during startup leaves the
 current project untouched and reports why. A session generation, not the saved project ID, distinguishes document
-loads and recovery; availability is checked again after startup and before commit. Whole-chain replacement captures
+loads and recovery; availability and the staged instance's running state are checked after startup and before commit.
+Whole-chain replacement captures
 outgoing plugins' live opaque state and parameters into `EditHistory.Execute`'s undo preparation. Preparation is
 applied atomically with the replacement, without an extra undo step or an intermediate project notification; if the
-edit is refused or changes nothing, neither preparation nor replacement is committed.
+edit is refused or changes nothing, neither preparation nor replacement is committed. Undo-only capture does not
+update the host-value cache, so refusing the edit cannot cause a subsequent sync to reset surviving live settings.
 
 ### Design tokens
 

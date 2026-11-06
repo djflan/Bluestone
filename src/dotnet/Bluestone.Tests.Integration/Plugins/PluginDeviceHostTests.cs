@@ -50,6 +50,32 @@ public sealed class PluginDeviceHostTests
     }
 
     [Fact]
+    public async Task UndoOnlyCapture_DoesNotResendStoredValuesToASurvivingPlugin_AfterARefusedEdit()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Live settings");
+        session.Execute(DeviceCommands.SetParameter(device.Id, GainParameter, ControlValue.FromFraction(0.5)));
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var instance = bridge.InstanceOf(device.Id)!;
+        host.Track(instance);
+        await instance.SetParameterAsync(GainParameter.Value, 0.25, Ct);
+        var before = session.Project;
+        var undoCount = session.History.UndoCount;
+
+        var prepare = await bridge.CaptureForUndoAsync([device.Id], Ct);
+        Assert.Throws<CommandRefusedException>(() => session.Execute(
+            new ProjectCommand("Refused Drop", _ => throw new CommandRefusedException("The target changed.")), prepare));
+        await bridge.SyncAsync(session.Project, Ct);
+
+        Assert.Same(before, session.Project);
+        Assert.Equal(undoCount, session.History.UndoCount);
+        Assert.Same(instance, bridge.InstanceOf(device.Id));
+        var parameters = await instance.GetParametersAsync(Ct);
+        Assert.Equal(0.25, parameters.Single(p => p.Id == GainParameter.Value).Value, 6);
+    }
+
+    [Fact]
     public async Task Scenario12_APluginDevice_IsRestoredFromTheProjectsSavedState_AfterReopeningAndAfterARestart()
     {
         await using var host = new PluginTestHost();

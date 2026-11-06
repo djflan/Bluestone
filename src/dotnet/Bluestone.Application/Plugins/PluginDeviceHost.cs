@@ -677,7 +677,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// </summary>
     public async Task<bool> CaptureStateAsync(DeviceId device, CancellationToken cancellationToken = default)
     {
-        if (await CaptureStateCommandAsync(device, cancellationToken).ConfigureAwait(false) is not { } command)
+        if (await CaptureStateCommandAsync(device, updateHostValues: true, cancellationToken).ConfigureAwait(false) is not { } command)
         {
             return false;
         }
@@ -687,8 +687,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     }
 
     /// <summary>
-    /// Reads outgoing plugins' live state without editing the project. Apply the result as an edit's undo preparation
-    /// so Undo restores their current opaque configuration and parameters in the same step as the replacement.
+    /// Reads outgoing plugins' live state without editing the project or the last-applied host-value cache. Apply the
+    /// result as undo preparation so Undo restores their opaque configuration and parameters with the replacement.
     /// </summary>
     public async Task<IProjectCommand> CaptureForUndoAsync(IEnumerable<DeviceId> devices, CancellationToken cancellationToken = default)
     {
@@ -696,7 +696,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
         var commands = new List<IProjectCommand>();
         foreach (var device in devices)
         {
-            if (await CaptureStateCommandAsync(device, cancellationToken).ConfigureAwait(false) is { } command)
+            if (await CaptureStateCommandAsync(device, updateHostValues: false, cancellationToken).ConfigureAwait(false) is { } command)
             {
                 commands.Add(command);
             }
@@ -705,7 +705,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
         return ProjectCommands.Batch("Capture Plugin Undo State", commands);
     }
 
-    private async Task<IProjectCommand?> CaptureStateCommandAsync(DeviceId device, CancellationToken cancellationToken)
+    private async Task<IProjectCommand?> CaptureStateCommandAsync(DeviceId device, bool updateHostValues, CancellationToken cancellationToken)
     {
         if (!_instances.TryGetValue(device, out var instance) || instance.Status.State != PluginInstanceState.Running)
         {
@@ -719,7 +719,11 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
         foreach (var parameter in snapshot.ParameterValues.Where(p => shown.Contains(p.Id)))
         {
             var value = ControlValue.FromFraction(parameter.Value);
-            _hostValues[(device, parameter.Id)] = value.ToFraction();
+            if (updateHostValues)
+            {
+                _hostValues[(device, parameter.Id)] = value.ToFraction();
+            }
+
             commands.Add(DeviceCommands.SetParameter(device, new ParameterId(parameter.Id), value));
         }
 
