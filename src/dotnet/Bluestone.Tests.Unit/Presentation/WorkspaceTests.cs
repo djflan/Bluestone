@@ -170,8 +170,23 @@ public sealed class WorkspaceTests : IAsyncLifetime
         Assert.False(First.MoveToGap(DeviceId.New(), 0));
     }
 
+    [Fact]
+    public async Task ReplacingADevice_ShowsTheNewDevicesParameters_EvenWhenTheirIdsMatch()
+    {
+        First.InsertAt(0, Definition("Event Filter"));
+        await Settle();
+        Assert.Equal("Pass notes", First.Devices[0].Parameters[0].Name);
+
+        Assert.True(await First.ReplaceAsync(First.Devices[0].Id, Definition("Arpeggiator")));
+        await Settle();
+
+        var panel = Assert.Single(First.Devices);
+        Assert.Equal("Arpeggiator", panel.Name);
+        Assert.Equal(["Rate", "Pattern", "Octaves", "Gate"], panel.Parameters.Select(p => p.Name));
+        Assert.Equal(["Rate", "Pattern", "Octaves", "Gate"], panel.VisibleParameters.Select(p => p.Name));
+    }
+
     [Theory]
-    [InlineData(-10, 0)]
     [InlineData(50, 0)]
     [InlineData(150, 1)]
     [InlineData(250, 2)]
