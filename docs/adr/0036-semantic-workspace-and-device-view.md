@@ -66,6 +66,13 @@ or Return inserts into the **most recently active** Device View (`WorkspaceViewM
 selected device, if that view is open and shows a chain; otherwise nothing is inserted and a message says why.
 Bluestone never guesses a destination.
 
+The arrangement is also an explicit drop target for Browser devices: empty space creates a named hybrid track with
+the device and its default master audio path; an existing track's header or lane replaces that track's entire device
+chain, leaving track content and track-level routing intact. A target preview distinguishes creation from replacement.
+Both are one undo step. Device View gaps still insert and panel middles still replace just one device. Plugins are
+started before committing a drop; a startup failure or a project/target-chain change during startup leaves the
+current project untouched and reports why.
+
 ### Design tokens
 
 `Theme/Tokens.axaml` defines the one dark theme as semantic tokens: surfaces, lines, text levels, states (hover,

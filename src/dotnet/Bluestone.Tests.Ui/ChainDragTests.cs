@@ -394,6 +394,122 @@ public sealed class ChainDragTests
         Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not replaced", StringComparison.Ordinal));
     });
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task ABrowserInstrumentDrag_ToTheArrangement_CreatesOrReplacesATrackAtomically(bool replace) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenWithChainAsync(plugins);
+        using var source = RecordingDragSource.Install();
+        var before = app.Session.Project;
+        var released = StartBrowserDrag(app, app.ViewModel.Browser.Items.Single(i => i.Name == Sine.DisplayName));
+        var drag = Assert.Single(source.Drags);
+        var at = app.InWindow(app.Find<Control>("TrackDropArea"), new Point(320, replace ? 25 : 125));
+
+        var effect = source.DropAt(drag, app.Window, at);
+        Assert.Equal(DragDropEffects.Copy, effect);
+        RecordingDragSource.Finish(drag, effect);
+        FinishGesture(app.Window, released);
+        await AppUnderTest.WaitUntilAsync(
+            () => app.Session.Project.Chains.Any(c => c.Devices.Any(d => d.Definition.Id == PluginDeviceHost.DefinitionOf(Sine).Id)),
+            "the dropped instrument to load");
+
+        Assert.Equal(replace ? 2 : 3, app.Session.Project.Sequence.Tracks.Length);
+        var track = replace ? app.Session.Project.Sequence.Tracks[0] : app.Session.Project.Sequence.Tracks[^1];
+        Assert.Equal(Sine.DisplayName, Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+        if (replace)
+        {
+            Assert.Equal(before.Connections, app.Session.Project.Connections);
+        }
+        else
+        {
+            Assert.True(TrackSetup.HasAudioPath(app.Session.Project, track.Id));
+        }
+        Assert.Equal(track.Id, Assert.Single(app.ViewModel.SelectedTracks).Id);
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Same(before, app.Session.Project);
+        app.ViewModel.RedoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(Sine.DisplayName, Assert.Single(app.Session.Project.ChainOf(track.Id)!.Devices).DisplayName);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AFailedArrangementPluginDrop_LeavesBothExistingAndNewTracksUnchanged(bool replace) => HeadlessApp.RunAsync(async () =>
+    {
+        var broken = new PluginIdentity("bluestone-reference", "bluestone.reference", "reference.missing", "Missing Synth", "Bluestone", PluginKind.Instrument, "1.0.0");
+        await using var plugins = Plugins();
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [broken]));
+        var before = app.Session.Project;
+
+        Assert.False(await app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(broken), replace ? before.Sequence.Tracks[0].Id : null));
+
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not loaded", StringComparison.Ordinal));
+    });
+
+    [Theory]
+    [InlineData("project")]
+    [InlineData("chain")]
+    [InlineData("track")]
+    public Task APluginDrop_ThatFinishesAfterItsTargetChanges_DoesNotOverwriteNewerWork(string change) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), s => new PluginDeviceHost(plugins, s, [Sine]));
+        var track = app.ViewModel.Tracks[0].Id;
+        var pending = app.ViewModel.DropDeviceAsync(PluginDeviceHost.DefinitionOf(Sine), change == "project" ? null : track);
+        Assert.False(pending.IsCompleted);
+
+        switch (change)
+        {
+            case "project":
+                app.Session.New();
+                break;
+            case "chain":
+                app.Session.Execute(DeviceCommands.InsertDevice(track, DeviceInstance.Create(BuiltIn("Transpose").ToReference()), BuiltInDevices.Find));
+                break;
+            case "track":
+                app.Session.Execute(ProjectCommands.RemoveTrack(track));
+                break;
+        }
+
+        var before = app.Session.Project;
+        Assert.False(await pending);
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("changed while the device was loading", StringComparison.Ordinal));
+    });
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public Task AnUnavailablePluginDrop_IsRefusedBeforeChangingTheProject(bool replace, bool missingHost) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        PluginDeviceHost? host = null;
+        Func<ProjectSession, PluginDeviceHost>? create = missingHost ? null : s => host = new PluginDeviceHost(plugins, s, [Sine]);
+        await using var app = await AppUnderTest.OpenAsync(TwoTracks(), plugins: create);
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Transpose"));
+        view.InsertAt(1, BuiltIn("Event Filter"));
+        var definition = PluginDeviceHost.DefinitionOf(Sine);
+        // A drag keeps its definition even if a rescan removes the plugin from the Browser.
+        host?.SetAvailable([]);
+        var before = app.Session.Project;
+
+        Assert.False(await app.ViewModel.DropDeviceAsync(definition, replace ? before.Sequence.Tracks[0].Id : null));
+        Assert.Same(before, app.Session.Project);
+        Assert.Contains(app.ViewModel.Messages, m => m.Text.Contains("was not loaded", StringComparison.Ordinal));
+        Assert.False(await view.ReplaceAsync(view.Devices[0].Id, definition));
+        Assert.Same(before, app.Session.Project);
+    });
+
     private static Point PanelMiddle(TopLevel window, DeviceViewControl control, int index)
     {
         var chain = AppUnderTest.Within<ItemsControl>(control, c => c.Name == "Chain");

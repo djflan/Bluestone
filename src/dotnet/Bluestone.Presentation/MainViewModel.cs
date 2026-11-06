@@ -1299,6 +1299,82 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// A Browser device dropped on the arrangement: a new, named track in empty space, or replacement of the target
+    /// track's entire device chain. Plugin startup is checked before changing the project.
+    /// </summary>
+    public async Task<bool> DropDeviceAsync(DeviceDefinition definition, TrackId? target)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        var project = Project.Id;
+        var previousChain = target is { } existing ? Project.ChainOf(existing) : null;
+        var device = DeviceInstance.Create(definition.ToReference());
+        if (!await StageDeviceAsync(device, definition, "Drop Device", $"{definition.Name} was not loaded"))
+        {
+            return false;
+        }
+
+        var unchanged = Project.Id == project && (target is not { } id
+            || (Project.Sequence.FindTrack(id) is not null && Project.ChainOf(id) == previousChain));
+        if (!unchanged)
+        {
+            AddMessage(MessageSeverity.Warning, "Drop Device", "The project or target chain changed while the device was loading. Drop it again to use the current target.");
+        }
+
+        var track = target ?? TrackId.New();
+        var command = target is not null
+            ? DeviceCommands.ReplaceTrackDevices(track, device, Devices.Lookup)
+            : ProjectCommands.Batch("New Track with Device",
+            [
+                TrackSetup.NewTrack(new Track(track, definition.Name[..Math.Min(definition.Name.Length, Track.MaxNameLength)], [], role: TrackRole.Hybrid), Devices.Lookup),
+                DeviceCommands.InsertDevice(track, device, Devices.Lookup),
+            ]);
+        if (!unchanged || !Execute(command))
+        {
+            if (definition.Origin == DeviceOrigin.Plugin && PluginHost is { } host)
+            {
+                await host.UnstageAsync(device.Id);
+            }
+
+            return false;
+        }
+
+        if (Tracks.FirstOrDefault(t => t.Id == track) is { } selected)
+        {
+            Select(selected);
+        }
+
+        return true;
+    }
+
+    internal async Task<bool> StageDeviceAsync(DeviceInstance device, DeviceDefinition definition, string action, string failure)
+    {
+        if (definition.Origin != DeviceOrigin.Plugin)
+        {
+            return true;
+        }
+
+        string? reason;
+        try
+        {
+            reason = PluginHost is { } host
+                ? await host.StageAsync(device)
+                : $"{definition.Name} is not available here.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            reason = ex.Message;
+        }
+
+        if (reason is null)
+        {
+            return true;
+        }
+
+        AddMessage(MessageSeverity.Warning, action, $"{failure}: {reason}");
+        return false;
+    }
+
     [RelayCommand]
     private void SelectAllTracks()
     {

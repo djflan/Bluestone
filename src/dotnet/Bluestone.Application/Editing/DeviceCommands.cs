@@ -28,9 +28,31 @@ public static class DeviceCommands
         });
 
     /// <summary>
+    /// Replaces a track's whole device chain with one device. Track content, automation, and track-level routing stay;
+    /// taps on removed devices go away. Undo restores the entire previous chain and its taps.
+    /// </summary>
+    public static IProjectCommand ReplaceTrackDevices(TrackId track, DeviceInstance device, DeviceDefinitionLookup definitions) =>
+        RoutingGuard.Command("Replace Track Devices", definitions, p =>
+        {
+            ArgumentNullException.ThrowIfNull(device);
+            if (p.Sequence.FindTrack(track) is null)
+            {
+                throw new CommandRefusedException("The track no longer exists.");
+            }
+
+            var chain = p.ChainOf(track) ?? DeviceChain.Create(ChainOwner.ForTrack(track));
+            var removed = chain.Devices.Select(d => SignalNode.Device(d.Id)).ToHashSet();
+            return p.WithChain(chain with { Devices = [device] }) with
+            {
+                Connections = p.Connections.RemoveAll(c => removed.Contains(c.Source)),
+                ParkedConnections = p.ParkedConnections.RemoveAll(c => removed.Contains(c.Source)),
+            };
+        });
+
+    /// <summary>
     /// Gives <paramref name="track"/> its default audio path (<see cref="TrackSetup.WithAudioPath"/>) when any of
     /// <paramref name="added"/> makes audio: every way devices arrive in a track's chain (a device, a preset, a moved
-    /// chain) leaves an inserted instrument audible.
+    /// chain) leaves an inserted instrument audible. Whole-chain replacement instead preserves existing output choices.
     /// </summary>
     private static Project HeardIfAudible(Project project, TrackId track, IEnumerable<DeviceInstance> added, DeviceDefinitionLookup definitions) =>
         added.Any(d => definitions(d.Definition.Id)?.Produces.HasFlag(SignalKinds.Audio) == true)

@@ -388,24 +388,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
         var replacement = DeviceInstance.Create(definition.ToReference());
         var host = _owner.PluginHost;
-        var staged = host?.Hosts(definition.Id) == true;
-        if (staged)
+        var staged = definition.Origin == DeviceOrigin.Plugin && host is not null;
+        if (!await _owner.StageDeviceAsync(replacement, definition, "Replace Device", $"{old.Name} was not replaced"))
         {
-            string? reason;
-            try
-            {
-                reason = await host!.StageAsync(replacement);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                reason = ex.Message;
-            }
-
-            if (reason is not null)
-            {
-                _owner.AddMessage(MessageSeverity.Warning, "Replace Device", $"{old.Name} was not replaced: {reason}");
-                return false;
-            }
+            return false;
         }
 
         if (!_owner.Execute(DeviceCommands.ReplaceDevice(target, replacement, Definitions)))

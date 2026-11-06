@@ -26,6 +26,78 @@ public sealed class ReplaceDeviceTests
     private static DeviceChain ChainOf(EditHistory history, TrackId track) => history.Current.ChainOf(track)!;
 
     [Fact]
+    public void ReplacingATracksDevices_ReplacesTheWholeChain_PreservesTrackState_AndUndoesAtomically()
+    {
+        var (history, track, fx, synth) = Chain();
+        var lane = new AutomationLane(AutomationLaneId.New(), AutomationTarget.ForDevice(synth.Id, new ParameterId(1)), [new AutomationPoint(Tick.Zero, ControlValue.Center)]);
+        var tap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Master);
+        history.Execute(new ProjectCommand("track state", p => p with
+        {
+            Sequence = p.Sequence.WithTrack(p.Sequence.FindTrack(track)!.WithMuted(true).WithAutomation([lane])),
+            Connections = p.Connections.Add(tap),
+            ParkedConnections = p.ParkedConnections.Add(tap with { Id = ConnectionId.New() }),
+        }));
+        var before = history.Current;
+        var replacement = TestDevices.Instance(TestDevices.Synth);
+
+        history.Execute(DeviceCommands.ReplaceTrackDevices(track, replacement, TestDevices.Lookup));
+
+        Assert.Equal(before.ChainOf(track)!.Id, ChainOf(history, track).Id);
+        Assert.Equal([replacement], ChainOf(history, track).Devices);
+        Assert.Same(before.Sequence.FindTrack(track), history.Current.Sequence.FindTrack(track));
+        Assert.Equal(before.Connections.Remove(tap), history.Current.Connections);
+        Assert.Empty(history.Current.ParkedConnections);
+        Assert.Null(history.Current.FindDevice(fx.Id));
+        Assert.Equal(synth.Id, Assert.Single(history.Current.Sequence.FindTrack(track)!.Automation).Target.Device);
+        history.Undo();
+        Assert.Same(before, history.Current);
+        history.Redo();
+        Assert.Equal([replacement], ChainOf(history, track).Devices);
+    }
+
+    [Fact]
+    public void ReplacingAnEmptyTracksChain_WithAnInstrument_PreservesItsRoleAndRouting()
+    {
+        var track = Track.Create("silent", TrackRole.Instrument);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(track) });
+        var before = history.Current;
+
+        history.Execute(DeviceCommands.ReplaceTrackDevices(track.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+
+        Assert.False(TrackSetup.HasAudioPath(history.Current, track.Id));
+        Assert.Same(track, history.Current.Sequence.FindTrack(track.Id));
+        history.Undo();
+        Assert.Same(before, history.Current);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReplacingADisconnectedTracksChain_DoesNotReconnectIt(bool instrument)
+    {
+        var (history, track, _, _) = Chain();
+        history.Execute(TrackSetup.SetAudioDestination([track], null, TestDevices.Lookup));
+        var before = history.Current;
+
+        history.Execute(DeviceCommands.ReplaceTrackDevices(track, TestDevices.Instance(instrument ? TestDevices.Synth : TestDevices.Filter), TestDevices.Lookup));
+
+        Assert.Empty(history.Current.Connections);
+        Assert.Same(before.Sequence.FindTrack(track), history.Current.Sequence.FindTrack(track));
+        history.Undo();
+        Assert.Same(before, history.Current);
+    }
+
+    [Fact]
+    public void ReplacingADeletedTracksDevices_IsRefusedWithoutChangingTheProject()
+    {
+        var history = new EditHistory(Project.CreateNew());
+        var before = history.Current;
+        Assert.Throws<CommandRefusedException>(() => history.Execute(
+            DeviceCommands.ReplaceTrackDevices(TrackId.New(), TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup)));
+        Assert.Same(before, history.Current);
+    }
+
+    [Fact]
     public void AReplacement_TakesTheOldDevicesPlace_WithItsOwnId_InOneUndoStep()
     {
         var (history, track, fx, synth) = Chain();

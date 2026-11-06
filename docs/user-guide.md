@@ -114,6 +114,8 @@ An unlocked Device View follows the selected track. Lock it to keep its current 
 
 Open the Browser with Shift + B. Search or filter devices, plugins, and project racks. Drag a device to an exact gap in the Device View, or double-click/press Return to insert it into the most recently active Device View. Drop a Browser item over a device panel to replace that device in one undo step.
 
+Drag a device from the Browser into empty arrangement space to create a track named after it, with that device already in its chain and audio routed to the master. Drop it on an existing track's header or arrangement lane (including its automation lanes) to replace **the whole device chain**, not its clips, automation, name, or track routing. The drop preview names the target and action. Undo restores the previous chain and routing in one step; a plugin that fails to start leaves the project unchanged. To add a device without replacing the chain, drop it into a gap in the Device View instead.
+
 The current alpha exposes hardware profiles under **Hardware** with **Use on Track**, then edits transport details under **External MIDI**. The product roadmap replaces this split workflow with a unified hardware device; that future behavior is not implemented yet.
 
 Workspace layout, open views, detached windows, locks, collapsed panels, and Browser state are stored locally per project and as defaults for new projects. They do not mark the musical project as edited.
