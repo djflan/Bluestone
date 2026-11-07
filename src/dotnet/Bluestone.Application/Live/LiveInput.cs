@@ -63,6 +63,7 @@ public sealed class LiveInput : IDisposable
     private readonly Lock _gate = new();
     private readonly Dictionary<TrackId, LiveRunner> _runners = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
+    private readonly Dictionary<TrackId, HashSet<int>> _held = [];
     private readonly AutoResetEvent _wake = new(false);
     private Project? _project;
     private DeviceCatalog _devices = DeviceCatalog.BuiltIn;
@@ -194,6 +195,7 @@ public sealed class LiveInput : IDisposable
         bool software;
         lock (_gate)
         {
+            Hold(track, message);
             if (RunnerFor(track) is not { CanPlay: true } runner
                 || (source is not null && runner.ExternalEndpoint is { } endpoint && IsFeedback(source, endpoint)))
             {
@@ -248,15 +250,53 @@ public sealed class LiveInput : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether live notes are held on <paramref name="track"/> now (keys pressed and not released), for the note lamps of
+    /// its chain (ADR 0037). Counts what arrives, whether or not the route could play it. Any thread.
+    /// </summary>
+    public bool HasHeldNotes(TrackId track)
+    {
+        lock (_gate)
+        {
+            return _held.TryGetValue(track, out var keys) && keys.Count > 0;
+        }
+    }
+
     /// <summary>Ends every live note now (panic): routes start again from nothing.</summary>
     public void ReleaseAll()
     {
         lock (_gate)
         {
+            _held.Clear();
             foreach (var track in _runners.Keys.ToList())
             {
                 Replace(track, Create(_runners[track].Plan));
             }
+        }
+    }
+
+    // Under _gate. A key is channel × 128 + note; note-on with velocity 0 is a release.
+    private void Hold(TrackId track, ChannelMessage message)
+    {
+        var kind = message.Status & 0xF0;
+        if (kind is not (0x80 or 0x90))
+        {
+            return;
+        }
+
+        var key = ((message.Status & 0x0F) * 128) + message.Data1;
+        if (kind == 0x90 && message.Data2 > 0)
+        {
+            if (!_held.TryGetValue(track, out var keys))
+            {
+                _held[track] = keys = [];
+            }
+
+            keys.Add(key);
+        }
+        else if (_held.TryGetValue(track, out var keys))
+        {
+            keys.Remove(key);
         }
     }
 

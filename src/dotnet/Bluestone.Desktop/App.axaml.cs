@@ -258,6 +258,8 @@ public partial class App : Avalonia.Application
 
         _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher(), activities: viewModel.Activities);
         viewModel.Mixer.MeterSource = audio.MeterOf;
+        viewModel.JunctionLevelSource = audio.JunctionMeterOf;
+        viewModel.WatchJunctions = audio.WatchJunctions;
         window.AttachAudio(_audio);
         window.Closed += (_, _) => audio.Dispose();
     }

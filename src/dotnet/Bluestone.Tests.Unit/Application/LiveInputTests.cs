@@ -228,6 +228,27 @@ public sealed class LiveInputTests : IAsyncDisposable
         Assert.Equal(BuiltInDevices.Arpeggiator.Id, Assert.Single(plan.Stages).Device!.Definition.Id);
     }
 
+    [Fact]
+    public async Task HeldNotes_AreCountedPerTrack_UntilReleasedOrPanic()
+    {
+        var track = await TrackWith(BuiltInDevices.CreateTranspose(12));
+        _controller.SetThruTrack(track);
+        Assert.False(_controller.Live.HasHeldNotes(track));
+
+        Play(60);
+        Play(64);
+        Assert.True(_controller.Live.HasHeldNotes(track));
+        Release(60);
+        Assert.True(_controller.Live.HasHeldNotes(track));
+        Play(64, velocity: 0);
+        Assert.False(_controller.Live.HasHeldNotes(track));
+
+        Play(67);
+        _controller.Live.ReleaseAll();
+        Assert.False(_controller.Live.HasHeldNotes(track));
+        Assert.False(_controller.Live.HasHeldNotes(TrackId.New()));
+    }
+
     private async Task<TrackId> TrackWith(params DeviceInstance[] devices)
     {
         var track = AddTrack(_synth);

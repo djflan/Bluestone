@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Editing;
+using Bluestone.Audio;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Projects;
@@ -94,6 +95,12 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     public WorkspaceView? Host { get; internal set; }
 
     public ObservableCollection<DevicePanelViewModel> Devices { get; } = [];
+
+    /// <summary>The junction before the first device: what arrives at the chain (ADR 0037).</summary>
+    public JunctionSignal Input { get; } = new();
+
+    /// <summary>Every junction this view shows, in signal order: the input, then the point after each device. Empty without a chain.</summary>
+    internal IEnumerable<JunctionSignal> Junctions => ChainId is null ? [] : Devices.Select(d => d.Output).Prepend(Input);
 
     /// <summary>The device selected in this view. Other views keep their own selection.</summary>
     [ObservableProperty]
@@ -323,6 +330,11 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         OutputDetail = destinations.Count == 0 ? "Nothing leaves this chain yet: give it an audio output in the inspector, or a connection." : string.Join(", ", destinations);
 
         var devices = chain?.Devices ?? [];
+        if (chain is not null)
+        {
+            Junction(Input, chain.Id.Value, SignalFlow.PresenceOf(project, SignalNode.ChainInput(chain.Id), catalog.Lookup));
+        }
+
         var selectedId = SelectedDevice?.Id ?? _restoredSelection;
         _restoredSelection = null;
         while (Devices.Count > devices.Length)
@@ -338,12 +350,41 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             }
 
             Devices[i].Sync(project, devices[i], i, devices.Length, catalog.Find(devices[i].Definition.Id), _owner.DeviceStatus(devices[i]), _collapsed.Contains(devices[i].Id));
+            Junction(Devices[i].Output, devices[i].Id.Value, SignalFlow.PresenceOf(project, SignalNode.Device(devices[i].Id), catalog.Lookup));
         }
 
         SelectedDevice = Devices.FirstOrDefault(d => d.Id == selectedId);
         OnPropertyChanged(nameof(IsEmpty));
         SavePresetCommand.NotifyCanExecuteChanged();
         LoadPresetCommand.NotifyCanExecuteChanged();
+    }
+
+    private static void Junction(JunctionSignal junction, Guid key, SignalPresence presence)
+    {
+        junction.Key = key;
+        junction.CanCarryNotes = presence.Uncertain || (presence.Events & EventClass.Notes) != EventClass.None;
+        junction.CanCarryAudio = presence.Carries(SignalKind.Audio);
+    }
+
+    /// <summary>
+    /// Updates this view's signal indicators. A junction's lamp is lit while the song, playing at <paramref name="tick"/>,
+    /// holds notes there (<paramref name="playing"/>, null when stopped), or while live notes are held on the view's track
+    /// (<paramref name="liveHeld"/>) and can reach it. <paramref name="levels"/> reads a junction's audio. Allocates nothing.
+    /// </summary>
+    internal void RefreshSignals(SignalGraphResult? playing, long tick, Func<TrackId, bool> liveHeld, Func<Guid, MeterReading?> levels, long timestamp)
+    {
+        if (ChainId is null)
+        {
+            return;
+        }
+
+        var live = Track is { } track && liveHeld(track);
+        Input.Update(live || playing?.NotesAt(Input.Key, tick) == true, levels(Input.Key), timestamp);
+        for (var i = 0; i < Devices.Count; i++)
+        {
+            var output = Devices[i].Output;
+            output.Update(live || playing?.NotesAt(output.Key, tick) == true, levels(output.Key), timestamp);
+        }
     }
 
     /// <summary>
@@ -605,6 +646,9 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     public DeviceId Id { get; private set; }
 
     public int Index { get; private set; }
+
+    /// <summary>The junction after this device: its output's signal indicators (ADR 0037).</summary>
+    public JunctionSignal Output { get; } = new();
 
     public DeviceDefinition? Definition { get; private set; }
 
