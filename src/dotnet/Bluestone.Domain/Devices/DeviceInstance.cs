@@ -75,11 +75,24 @@ public sealed record DeviceInstance
 
     public ControlValue? ValueOf(ParameterId id)
     {
-        foreach (var parameter in _parameters)
+        // Plugins can store thousands of values, and panels look each one up, so this must not scan.
+        int low = 0, high = _parameters.Length - 1;
+        while (low <= high)
         {
-            if (parameter.Id == id)
+            var middle = low + ((high - low) / 2);
+            var found = _parameters[middle];
+            if (found.Id.Value == id.Value)
             {
-                return parameter.Value;
+                return found.Value;
+            }
+
+            if (found.Id.Value < id.Value)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
             }
         }
 
@@ -88,6 +101,19 @@ public sealed record DeviceInstance
 
     public DeviceInstance WithParameter(ParameterId id, ControlValue value) =>
         this with { Parameters = [.. _parameters.Where(p => p.Id != id), new ParameterValue(id, value)] };
+
+    /// <summary>Stores several values at once; for a parameter given more than once, the last value wins.</summary>
+    public DeviceInstance WithParameters(IEnumerable<ParameterValue> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var merged = _parameters.ToDictionary(p => p.Id, p => p.Value);
+        foreach (var value in values)
+        {
+            merged[value.Id] = value.Value;
+        }
+
+        return this with { Parameters = [.. merged.Select(p => new ParameterValue(p.Key, p.Value))] };
+    }
 
     /// <summary>An independent copy with a new identity, for presets and duplicated tracks.</summary>
     public DeviceInstance Duplicate() => this with { Id = DeviceId.New() };

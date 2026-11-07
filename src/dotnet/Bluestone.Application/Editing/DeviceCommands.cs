@@ -160,6 +160,44 @@ public static class DeviceCommands
             MergeKey = $"parameter:{device}:{parameter}",
         };
 
+    /// <summary>
+    /// Sets many stored parameter values as one edit, such as the thousands a plugin's own preset moves at once. For
+    /// a parameter given more than once, the last value wins; values for devices not in the project are ignored. A run of
+    /// these on one device in quick succession is one undo step, like a slider drag.
+    /// </summary>
+    public static IProjectCommand SetParameters(IReadOnlyList<(DeviceId Device, ParameterId Parameter, ControlValue Value)> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var devices = values.Select(v => v.Device).Distinct().ToList();
+        return new ProjectCommand("Change Parameters", p =>
+        {
+            foreach (var group in values.GroupBy(v => v.Device))
+            {
+                if (p.FindDevice(group.Key) is not { } found)
+                {
+                    continue;
+                }
+
+                var latest = new Dictionary<ParameterId, ControlValue>();
+                foreach (var (_, parameter, value) in group)
+                {
+                    latest[parameter] = value;
+                }
+
+                var changed = latest.Where(v => found.Device.ValueOf(v.Key) != v.Value).Select(v => new ParameterValue(v.Key, v.Value)).ToList();
+                if (changed.Count > 0)
+                {
+                    p = p.WithChain(found.Chain.Replace(found.Device.WithParameters(changed)));
+                }
+            }
+
+            return p;
+        })
+        {
+            MergeKey = devices.Count == 1 ? $"parameters:{devices[0]}" : null,
+        };
+    }
+
     /// <summary>Renames a rack (or a track's chain, which is shown under its track's name).</summary>
     public static IProjectCommand RenameChain(DeviceChainId chain, string name) =>
         new ProjectCommand("Rename Rack", p =>

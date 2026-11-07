@@ -63,7 +63,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
     // The value each running plugin parameter was last given by the host or recorded from the plugin. The project is
     // compared with this, not with the plugin's latest value, which runs ahead of the project while the plugin's own
-    // edits are on their way to RecordEdit.
+    // edits are on their way to RecordEdits.
     private readonly ConcurrentDictionary<(DeviceId Device, uint Parameter), double> _hostValues = new();
     private readonly SemaphoreSlim _syncing = new(1, 1);
 
@@ -97,7 +97,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
 
     /// <summary>
     /// The plugin changed a parameter itself (in its editor, or by loading one of its presets). Raised on any thread;
-    /// pass it to <see cref="RecordEdit"/> on the UI thread so the project, the authority, holds the value.
+    /// pass it to <see cref="RecordEdits"/> on the UI thread so the project, the authority, holds the value. A plugin
+    /// preset raises this for every parameter it moves, so gather what arrives together and record it at once.
     /// </summary>
     public event EventHandler<PluginParameterEdit>? ParameterEdited;
 
@@ -178,13 +179,48 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     public void RecordEdit(PluginParameterEdit edit)
     {
         ArgumentNullException.ThrowIfNull(edit);
-        if (_session.Project.FindDevice(edit.Device) is not null && _instances.TryGetValue(edit.Device, out var instance)
-            && instance.Parameters.Any(p => p.Id == edit.ParameterId && p.IsUserFacing))
+        RecordEdits([edit]);
+    }
+
+    /// <summary>
+    /// Records edits the plugins made themselves as one project change: a plugin preset can move thousands of
+    /// parameters at once, and an edit (with its undo step and UI refresh) per parameter would stall the UI. The last
+    /// value of a parameter wins; edits of devices that are gone, or of parameters that are not user-facing, are dropped.
+    /// </summary>
+    public void RecordEdits(IReadOnlyCollection<PluginParameterEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+        var userFacing = new Dictionary<DeviceId, HashSet<uint>?>();
+        var accepted = new Dictionary<(DeviceId Device, uint Parameter), ControlValue>();
+        foreach (var edit in edits)
         {
-            var value = ControlValue.FromFraction(edit.Value);
-            _hostValues[(edit.Device, edit.ParameterId)] = value.ToFraction();
-            _session.Execute(DeviceCommands.SetParameter(edit.Device, new ParameterId(edit.ParameterId), value));
+            if (!userFacing.TryGetValue(edit.Device, out var ids))
+            {
+                ids = _session.Project.FindDevice(edit.Device) is not null && _instances.TryGetValue(edit.Device, out var instance)
+                    ? [.. instance.Parameters.Where(p => p.IsUserFacing).Select(p => p.Id)]
+                    : null;
+                userFacing[edit.Device] = ids;
+            }
+
+            if (ids is not null && ids.Contains(edit.ParameterId))
+            {
+                accepted[(edit.Device, edit.ParameterId)] = ControlValue.FromFraction(edit.Value);
+            }
         }
+
+        if (accepted.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (key, value) in accepted)
+        {
+            _hostValues[key] = value.ToFraction();
+        }
+
+        // One command (and merge key) whatever the batch size: a preset's burst can arrive in several batches, and a
+        // batch of one must not split it into separate undo steps.
+        _session.Execute(DeviceCommands.SetParameters([.. accepted.Select(a => (a.Key.Device, new ParameterId(a.Key.Parameter), a.Value))]));
     }
 
     /// <summary>Whether devices of <paramref name="definition"/> are plugins this host runs.</summary>

@@ -78,6 +78,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private ProjectId _workspaceProject;
     private string? _workspacePath;
     private int _statusQueued;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<PluginParameterEdit> _pluginEdits = new();
+    private int _pluginEditsQueued;
 
     public MainViewModel(ProjectSession session, PlaybackController playback, EndpointDirectory endpoints, IUserInteraction ui, IUiDispatcher dispatcher, MidiMonitor? monitor = null, ComputerKeyboardViewModel? keyboard = null, PluginDeviceHost? plugins = null, ActivityLog? activities = null)
     {
@@ -167,7 +169,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             });
 
             // A parameter the plugin changed itself (in its editor) is stored in the project, which stays the authority.
-            _plugins.ParameterEdited += (_, edit) => _dispatcher.Post(() => _plugins.RecordEdit(edit));
+            // A plugin preset moves thousands of parameters at once: what arrives together is recorded as one edit.
+            _plugins.ParameterEdited += (_, edit) =>
+            {
+                _pluginEdits.Enqueue(edit);
+                if (Interlocked.Exchange(ref _pluginEditsQueued, 1) == 0)
+                {
+                    _dispatcher.Post(RecordPluginEdits);
+                }
+            };
 
             // A worker process that ends takes every device in it down; say which ones went together.
             _plugins.Crashed += (_, crash) => _dispatcher.Post(() =>
@@ -425,6 +435,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             AddMessage(MessageSeverity.Warning, "Plugins", $"Plugins could not be started: {ex.Message}");
         }
+    }
+
+    private void RecordPluginEdits()
+    {
+        // A full fence, so an edit enqueued while this drains is either taken below or posts a drain of its own.
+        Interlocked.Exchange(ref _pluginEditsQueued, 0);
+        var edits = new List<PluginParameterEdit>();
+        while (_pluginEdits.TryDequeue(out var edit))
+        {
+            edits.Add(edit);
+        }
+
+        _plugins?.RecordEdits(edits);
     }
 
     private async Task OnPluginsChangedAsync()
