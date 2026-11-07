@@ -99,6 +99,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     /// <summary>The junction before the first device: what arrives at the chain (ADR 0037).</summary>
     public JunctionSignal Input { get; } = new();
 
+    /// <summary>The junction after the last device, where the chain's output leaves; null for an empty chain (its input is the output).</summary>
+    [ObservableProperty]
+    public partial JunctionSignal? LastJunction { get; private set; }
+
     /// <summary>Every junction this view shows, in signal order: the input, then the point after each device. Empty without a chain.</summary>
     internal IEnumerable<JunctionSignal> Junctions => ChainId is null ? [] : Devices.Select(d => d.Output).Prepend(Input);
 
@@ -332,7 +336,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         var devices = chain?.Devices ?? [];
         if (chain is not null)
         {
-            Junction(Input, chain.Id.Value, SignalFlow.PresenceOf(project, SignalNode.ChainInput(chain.Id), catalog.Lookup));
+            Junction(Input, chain.Id.Value, SignalFlow.PresenceOf(project, SignalNode.ChainInput(chain.Id), catalog.Lookup), "Into the chain");
         }
 
         var selectedId = SelectedDevice?.Id ?? _restoredSelection;
@@ -350,8 +354,11 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             }
 
             Devices[i].Sync(project, devices[i], i, devices.Length, catalog.Find(devices[i].Definition.Id), _owner.DeviceStatus(devices[i]), _collapsed.Contains(devices[i].Id));
-            Junction(Devices[i].Output, devices[i].Id.Value, SignalFlow.PresenceOf(project, SignalNode.Device(devices[i].Id), catalog.Lookup));
+            Junction(Devices[i].Output, devices[i].Id.Value, SignalFlow.PresenceOf(project, SignalNode.Device(devices[i].Id), catalog.Lookup), $"After {devices[i].DisplayName}");
+            Devices[i].Arriving = i == 0 ? Input : Devices[i - 1].Output;
         }
+
+        LastJunction = Devices.Count > 0 ? Devices[^1].Output : null;
 
         SelectedDevice = Devices.FirstOrDefault(d => d.Id == selectedId);
         OnPropertyChanged(nameof(IsEmpty));
@@ -359,9 +366,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         LoadPresetCommand.NotifyCanExecuteChanged();
     }
 
-    private static void Junction(JunctionSignal junction, Guid key, SignalPresence presence)
+    private static void Junction(JunctionSignal junction, Guid key, SignalPresence presence, string label)
     {
         junction.Key = key;
+        junction.Label = label;
         junction.CanCarryNotes = presence.Uncertain || (presence.Events & EventClass.Notes) != EventClass.None;
         junction.CanCarryAudio = presence.Carries(SignalKind.Audio);
     }
@@ -649,6 +657,10 @@ public sealed partial class DevicePanelViewModel : ObservableObject
 
     /// <summary>The junction after this device: its output's signal indicators (ADR 0037).</summary>
     public JunctionSignal Output { get; } = new();
+
+    /// <summary>The junction arriving at this device: the chain's input, or the previous device's output. Drawn before the panel.</summary>
+    [ObservableProperty]
+    public partial JunctionSignal? Arriving { get; internal set; }
 
     public DeviceDefinition? Definition { get; private set; }
 

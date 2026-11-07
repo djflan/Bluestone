@@ -16,12 +16,12 @@ internal sealed class LevelMeter : Control
     public static readonly StyledProperty<MeterLevels?> LevelsProperty = AvaloniaProperty.Register<LevelMeter, MeterLevels?>(nameof(Levels));
 
     private const double ClipLight = 4;
-    private static readonly IBrush Track = new SolidColorBrush(Palette.Divider);
+    private static readonly IBrush Track = new SolidColorBrush(Palette.MeterTrack);
     private static readonly IBrush Background = new SolidColorBrush(Palette.Panel);
-    private static readonly IBrush Peak = new SolidColorBrush(Color.Parse("#2F7A4A"));
-    private static readonly IBrush Rms = new SolidColorBrush(Color.Parse("#4CC27A"));
-    private static readonly IBrush Hot = new SolidColorBrush(Color.Parse("#D9A43A"));
-    private static readonly IBrush ClipOn = new SolidColorBrush(Palette.Record);
+    private static readonly IBrush Peak = new SolidColorBrush(Palette.Darken(Palette.MeterLow, 0.45));
+    private static readonly IBrush Rms = new SolidColorBrush(Palette.MeterLow);
+    private static readonly IBrush Hot = new SolidColorBrush(Palette.MeterHot);
+    private static readonly IBrush ClipOn = new SolidColorBrush(Palette.MeterClip);
     private static readonly IBrush ClipOff = new SolidColorBrush(Palette.Raised);
     private static readonly IPen Hold = new Pen(new SolidColorBrush(Palette.Text), 1);
     private static readonly IPen Zero = new Pen(new SolidColorBrush(Palette.TextMuted), 1);

@@ -14,6 +14,10 @@ public sealed partial class JunctionSignal : ObservableObject
     /// <summary>The junction's key: the chain's ID for its input, the device's ID for the point after it.</summary>
     public Guid Key { get; internal set; }
 
+    /// <summary>Where it is, in words: "Into the chain", or "After Polysynth".</summary>
+    [ObservableProperty]
+    public partial string Label { get; internal set; } = string.Empty;
+
     /// <summary>Notes can reach this point (something before it may play or pass them).</summary>
     [ObservableProperty]
     public partial bool CanCarryNotes { get; internal set; }

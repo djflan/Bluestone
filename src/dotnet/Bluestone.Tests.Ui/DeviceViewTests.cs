@@ -425,6 +425,10 @@ public sealed class DeviceViewTests
             (Palette.SignalInstrument, "Signal.InstrumentColor"),
             (Palette.SignalAudio, "Signal.AudioColor"),
             (Palette.SignalOther, "Signal.OtherColor"),
+            (Palette.MeterLow, "Meter.LowColor"),
+            (Palette.MeterHot, "Meter.HotColor"),
+            (Palette.MeterClip, "Meter.ClipColor"),
+            (Palette.MeterTrack, "Meter.TrackColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));

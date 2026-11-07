@@ -144,6 +144,64 @@ public sealed class WorkspaceShowcaseTests
     [Theory]
     [InlineData(1280, 800, "laptop")]
     [InlineData(1440, 900, "normal")]
+    public Task TheDeviceView_ShowsTheSignalAtEveryJunction(double width, double height, string size) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = width;
+        app.Window.Height = height;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3 && view.Devices[1].Parameters.Count > 0, "the chain and the plugin's parameters");
+        await app.SettleTransitionsAsync();
+
+        // Idle: seams are quiet hairlines; only the lamp where notes can be is outlined.
+        app.ViewModel.OnFrame();
+        await app.SettleTransitionsAsync();
+        Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-junctions-idle")));
+        Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-idle-closeup")));
+
+        // Playing: notes held on the track light every lamp they reach; the synth and the effect after it have levels.
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[1].Output.Key] = new(0.62f, 0.55f, 0.32f, 0.28f),
+            [view.Devices[2].Output.Key] = new(0.93f, 0.88f, 0.5f, 0.46f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        var lead = app.ViewModel.Tracks[0].Id;
+        app.Playback.Live.Post(lead, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        app.ViewModel.OnFrame();
+        app.ViewModel.OnFrame();
+        await app.SettleTransitionsAsync();
+
+        Assert.True(view.Input.NotesHeld);
+        Assert.True(view.Devices[2].Output.Levels.IsActive);
+        Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-junctions-playing")));
+        Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-playing-closeup")));
+    });
+
+    // The docked Device View alone, at twice the size, for looking at the seams closely.
+    private static string SaveDeviceView(AppUnderTest app, string name)
+    {
+        var control = app.Find<ContentControl>("DockedDeviceView");
+        var size = new PixelSize((int)(control.Bounds.Width * 2), (int)(control.Bounds.Height * 2));
+        using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(size, new Vector(192, 192));
+        bitmap.Render(control);
+        var directory = Path.Combine(AppContext.BaseDirectory, "frames");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{name}.png");
+        bitmap.Save(path, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        return path;
+    }
+
+    [Theory]
+    [InlineData(1280, 800, "laptop")]
+    [InlineData(1440, 900, "normal")]
     public Task TheWorkspace_AfterAddingANewTrack(double width, double height, string size) => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenSongAsync();

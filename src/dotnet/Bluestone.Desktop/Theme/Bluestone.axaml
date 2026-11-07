@@ -1011,16 +1011,28 @@
     <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
     <Setter Property="HorizontalAlignment" Value="Center" />
   </Style>
-  <!-- The link into each device: a hairline at header height, so the chain reads left to right. -->
+  <!-- The seam between devices (ADR 0037): the gap a panel apart, as tall as a panel. The seam draws the hairline the
+       chain reads along, the note lamp at header height, and the level in the lower body. -->
   <Style Selector="Border.chainLink">
     <Setter Property="Width" Value="{StaticResource DevicePanel.Gap}" />
-    <Setter Property="Height" Value="1" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="VerticalAlignment" Value="Top" />
-    <Setter Property="Margin" Value="0,105,0,0" />
-    <Setter Property="Background" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
-  <Style Selector="Border.chainLink.bypassed">
-    <Setter Property="Background" Value="{StaticResource Line.Border}" />
+  <Style Selector="controls|JunctionSeam">
+    <Setter Property="HeaderHeight" Value="{StaticResource DevicePanel.HeaderHeight}" />
+    <Setter Property="LampSize" Value="{StaticResource DevicePanel.LampSize}" />
+    <Setter Property="LinkY" Value="{StaticResource Junction.LinkY}" />
+    <Setter Property="LevelHeight" Value="{StaticResource Junction.LevelHeight}" />
+    <Setter Property="LevelBottom" Value="{StaticResource Junction.LevelBottom}" />
+    <Setter Property="LevelBarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
+    <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
+    <Setter Property="Cursor" Value="Arrow" />
+  </Style>
+  <Style Selector="controls|JunctionSeam:focus-visible">
+    <Setter Property="Effect">
+      <DropShadowEffect Color="{StaticResource State.FocusColor}" BlurRadius="6" OffsetX="0" OffsetY="0" Opacity="0.9" />
+    </Setter>
   </Style>
   <Style Selector="Border.insertionMarker">
     <Setter Property="Width" Value="3" />
