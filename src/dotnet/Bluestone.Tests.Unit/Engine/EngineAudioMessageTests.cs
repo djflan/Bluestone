@@ -34,6 +34,9 @@ public sealed class EngineAudioMessageTests
         new TestRendered(1, null),
         new TestRendered(2, "No audio device is open."),
         new EngineProblem(-1, "Studio is not available. Playing through the system default output until it returns.", EngineProblemArea.Audio),
+        new AudioStatus(default, [], default) { Junctions = [new StripMeter(Strip, new MeterSpec(0.5f, 0.5f, 0.25f, 0.25f)), new StripMeter(Guid.Empty, default)] },
+        new WatchJunctions([Strip, Guid.Empty]),
+        new WatchJunctions([]),
     ];
 
     public static TheoryData<EngineMessage> Messages() => new(All);
@@ -68,6 +71,11 @@ public sealed class EngineAudioMessageTests
         var status = (AudioStatus)EngineChannel.Decode(Encoded(All[10]));
         Assert.Equal(((AudioStatus)All[10]).Strips, status.Strips);
         Assert.Equal(((AudioStatus)All[10]).Counters, status.Counters);
+
+        var junctions = All.OfType<AudioStatus>().Single(s => !s.Junctions.IsEmpty);
+        Assert.Equal(junctions.Junctions, ((AudioStatus)EngineChannel.Decode(Encoded(junctions))).Junctions);
+        var watch = All.OfType<WatchJunctions>().First();
+        Assert.Equal(watch.Keys, ((WatchJunctions)EngineChannel.Decode(Encoded(watch))).Keys);
     }
 
     public static TheoryData<EngineMessage, string> Malformed() => new()
@@ -128,6 +136,7 @@ public sealed class EngineAudioMessageTests
         var frame = new byte[EngineLimits.MaxFrameBytes];
 
         Assert.Throws<ArgumentException>(() => EngineChannel.Encode(new AudioStatus(default, [.. Enumerable.Repeat(new StripMeter(Strip, default), EngineLimits.MaxMeters + 1)], default), frame));
+        Assert.Throws<ArgumentException>(() => EngineChannel.Encode(new WatchJunctions([.. Enumerable.Repeat(Strip, EngineLimits.MaxWatchedJunctions + 1)]), frame));
         Assert.Throws<ArgumentException>(() => EngineChannel.Encode(new AudioGraphLoaded(1, true, 0, [.. Enumerable.Repeat("x", EngineLimits.MaxGraphProblems + 1)]), frame));
     }
 
@@ -136,14 +145,18 @@ public sealed class EngineAudioMessageTests
     {
         var frame = new byte[EngineLimits.MaxFrameBytes];
 
-        var length = EngineChannel.Encode(new AudioStatus(default, [.. Enumerable.Repeat(new StripMeter(Strip, new MeterSpec(1, 1, 1, 1)), EngineLimits.MaxMeters)], default), frame);
+        var full = new AudioStatus(default, [.. Enumerable.Repeat(new StripMeter(Strip, new MeterSpec(1, 1, 1, 1)), EngineLimits.MaxMeters)], default)
+        {
+            Junctions = [.. Enumerable.Repeat(new StripMeter(Strip, new MeterSpec(1, 1, 1, 1)), EngineLimits.MaxWatchedJunctions)],
+        };
+        var length = EngineChannel.Encode(full, frame);
 
         Assert.InRange(length, 1, EngineLimits.MaxFrameBytes);
     }
 
     [Fact]
     public void AnyBodyOfAnAudioMessageType_DecodesOrIsAProtocolError_NeverAnotherFailure() =>
-        Gen.Select(Gen.UShort[(ushort)EngineMessageType.SetAudio, (ushort)EngineMessageType.TestRendered], Gen.Byte.Array[0, 96]).Sample((type, tail) =>
+        Gen.Select(Gen.UShort[(ushort)EngineMessageType.SetAudio, (ushort)EngineMessageType.WatchJunctions], Gen.Byte.Array[0, 96]).Sample((type, tail) =>
         {
             var body = new byte[2 + tail.Length];
             BinaryPrimitives.WriteUInt16LittleEndian(body, type);

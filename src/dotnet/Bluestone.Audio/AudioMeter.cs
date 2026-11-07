@@ -24,6 +24,17 @@ public sealed class AudioMeter
     private float _heldRight;
     private double _meanSquareLeft;
     private double _meanSquareRight;
+    private volatile bool _watched = true;
+
+    /// <summary>
+    /// Whether the graph measures this meter. A strip's meter always is; a chain junction's only while a Device View shows
+    /// it, so unwatched junctions cost nothing. Set from any thread; read on the audio thread.
+    /// </summary>
+    public bool IsWatched
+    {
+        get => _watched;
+        set => _watched = value;
+    }
 
     public MeterReading Read() => new(
         BitConverter.Int32BitsToSingle(Volatile.Read(ref _peakLeft)),

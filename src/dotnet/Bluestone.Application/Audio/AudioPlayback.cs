@@ -43,6 +43,7 @@ public sealed class AudioPlayback : IAudioPlayback
     private AudioEngine? _engine;
     private IAudioOutput? _output;
     private ProjectAudioGraph? _graph;
+    private IReadOnlyCollection<Guid> _watched = [];
     private Timer? _check;
     private AudioSettings? _wanted;
     private string? _wantedName;
@@ -263,6 +264,19 @@ public sealed class AudioPlayback : IAudioPlayback
             ? (channel is { } id ? graph.StripOf(id)?.Meter.Read() : graph.Master.Meter.Read())
             : null;
 
+    public MeterReading? JunctionMeterOf(Guid junction) =>
+        IsRunning && _graph is { } graph && graph.JunctionMeterOf(junction) is { IsWatched: true } meter ? meter.Read() : null;
+
+    public void WatchJunctions(IReadOnlyCollection<Guid> junctions)
+    {
+        ArgumentNullException.ThrowIfNull(junctions);
+        lock (_gate)
+        {
+            _watched = [.. junctions];
+            _graph?.WatchJunctions(_watched);
+        }
+    }
+
     /// <summary>Builds a graph for the current project and routing and swaps it in. Any thread.</summary>
     public void Rebuild()
     {
@@ -385,6 +399,7 @@ public sealed class AudioPlayback : IAudioPlayback
             _engine = engine;
             _graph = new ProjectAudioGraph(rate, block, _instances);
             _graph.LatencyChanged += (_, _) => _ = Task.Run(Rebuild);
+            _graph.WatchJunctions(_watched);
         }
 
         Rebuild();

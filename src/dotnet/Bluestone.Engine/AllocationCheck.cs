@@ -107,6 +107,7 @@ internal static class AllocationCheck
             // where this check says.
             using var host = new AudioHost(midi.Playback, new TestAudioBackend(), restarted: true, test: false, startThread: false);
             host.Apply(new SetAudio(1, true, null, Rate, Block, 0, Block, false));
+            host.Apply(new WatchJunctions([JunctionInput, JunctionAfterSynth]));
             host.Apply(new LoadAudioGraph(1, Graph(folder, 1, tone, 0), Rate, Block));
             host.RunPending();
             var engine = host.Engine ?? throw new InvalidOperationException("The test device did not open.");
@@ -265,7 +266,11 @@ internal static class AllocationCheck
         }
     }
 
-    // A strip fed by a looping clip and by a plugin instrument whose worker is not running (its failure policy plays).
+    private static readonly Guid JunctionInput = new(4, 0, 0, [0, 0, 0, 0, 0, 0, 0, 4]);
+    private static readonly Guid JunctionAfterSynth = new(5, 0, 0, [0, 0, 0, 0, 0, 0, 0, 5]);
+
+    // A strip fed by a looping clip and by a plugin instrument whose worker is not running (its failure policy plays),
+    // with both of the chain's junctions metered.
     private static string Graph(string folder, int id, string tone, double gain)
     {
         var builder = new AudioGraphDescriptionBuilder();
@@ -281,6 +286,8 @@ internal static class AllocationCheck
         });
         builder.ConnectToStrip(clips, strip);
         builder.ConnectToStrip(synth, strip);
+        builder.AddMeterPoint(JunctionInput, [clips]);
+        builder.AddMeterPoint(JunctionAfterSynth, [clips, synth]);
         var path = Path.Combine(folder, $"graph-{id}.bsgr");
         File.WriteAllBytes(path, AudioGraphImage.ToArray(builder.Build(0, [new Guid(2, 0, 0, [0, 0, 0, 0, 0, 0, 0, 2]), new Guid(3, 0, 0, [0, 0, 0, 0, 0, 0, 0, 3])])));
         return path;

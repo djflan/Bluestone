@@ -46,6 +46,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private IEngineLink? _link;
     private IEngineLink? _graphLink;
     private AudioSettings? _wanted;
+    private ImmutableArray<Guid> _watchedJunctions = [];
     private long _answeredGraph; // the newest graph this engine (link) applied for the current stream; 0 for none yet
     private long _firstGraphOfStream; // graphs described before this id were for an earlier stream or engine
     private bool _testTone;
@@ -287,6 +288,20 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         return meters.Strips.TryGetValue(id.Value, out var reading) ? reading : null;
     }
 
+    public MeterReading? JunctionMeterOf(Guid junction) =>
+        IsRunning && Volatile.Read(ref _meters).Junctions.TryGetValue(junction, out var reading) ? reading : null;
+
+    /// <summary>Sends the set to the engine (at most <see cref="EngineLimits.MaxWatchedJunctions"/>), and again to an engine that restarts.</summary>
+    public void WatchJunctions(IReadOnlyCollection<Guid> junctions)
+    {
+        ArgumentNullException.ThrowIfNull(junctions);
+        lock (_gate)
+        {
+            _watchedJunctions = [.. junctions.Distinct().Take(EngineLimits.MaxWatchedJunctions)];
+            _link?.Send(new WatchJunctions(_watchedJunctions));
+        }
+    }
+
     /// <summary>
     /// Describes the graph for the current project and routing at the open stream's rate and block size, writes it as an
     /// image file, and tells the engine to play it. Does nothing until the engine reports an open stream. Any thread.
@@ -414,6 +429,11 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _graphLink = null;
             ForgetAnsweredGraphs();
             Volatile.Write(ref _meters, Meters.None);
+            if (!_watchedJunctions.IsEmpty)
+            {
+                link.Send(new WatchJunctions(_watchedJunctions));
+            }
+
             if (_wanted is { } wanted)
             {
                 // The graph follows once the engine reports the stream it opened.
@@ -449,7 +469,13 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
                     strips[strip.Key] = Reading(strip.Levels);
                 }
 
-                Volatile.Write(ref _meters, new Meters(Reading(status.Master), strips, status.Counters, status.Live));
+                var junctions = new Dictionary<Guid, MeterReading>(status.Junctions.Length);
+                foreach (var junction in status.Junctions)
+                {
+                    junctions[junction.Key] = Reading(junction.Levels);
+                }
+
+                Volatile.Write(ref _meters, new Meters(Reading(status.Master), strips, status.Counters, status.Live) { Junctions = junctions });
                 break;
             case TestRendered rendered:
                 TaskCompletionSource<string?>? done;
@@ -638,5 +664,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private sealed record Meters(MeterReading Master, Dictionary<Guid, MeterReading> Strips, AudioCounters? Counters, LiveLatencySpec Live = default)
     {
         public static Meters None { get; } = new(default, [], null);
+
+        public Dictionary<Guid, MeterReading> Junctions { get; init; } = [];
     }
 }

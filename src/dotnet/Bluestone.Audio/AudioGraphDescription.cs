@@ -46,6 +46,13 @@ public sealed record DescribedPluginLink(ExchangeOptions Shape, int PipelineDept
 /// <summary>A mixer strip by its channel's id, with its fader, pan, mute, and solo.</summary>
 public sealed record DescribedStrip(Guid Key, MixerStripSettings Settings);
 
+/// <summary>
+/// A chain junction's meter (ADR 0037): the sum of the described nodes <see cref="Nodes"/> (indices into
+/// <see cref="AudioGraphDescription.Nodes"/>), measured while the junction is watched. <see cref="Key"/> names the junction:
+/// the device it follows, or the chain for its input.
+/// </summary>
+public sealed record DescribedMeterPoint(Guid Key, ImmutableArray<int> Nodes);
+
 /// <summary>One call made while describing a graph, replayed in order by the realizer (see <see cref="AudioGraphDescription"/>).</summary>
 public readonly record struct DescribedStep(DescribedStepKind Kind, int A, int B = 0, double Level = 0, bool PreFader = false);
 
@@ -96,6 +103,9 @@ public sealed record AudioGraphDescription(
     ImmutableHashSet<Guid> Retained)
 {
     public static AudioGraphDescription Empty { get; } = new([], [], [], 0, []);
+
+    /// <summary>The chain junctions that can be metered, at most one per key.</summary>
+    public ImmutableArray<DescribedMeterPoint> MeterPoints { get; init; } = [];
 }
 
 /// <summary>
@@ -109,6 +119,8 @@ public sealed class AudioGraphDescriptionBuilder
     private readonly List<DescribedStrip> _strips = [];
     private readonly List<DescribedStep> _steps = [];
     private readonly HashSet<(int Strip, int Destination)> _sends = [];
+    private readonly List<DescribedMeterPoint> _meterPoints = [];
+    private readonly HashSet<Guid> _meterKeys = [];
 
     /// <returns>The node's index.</returns>
     public int AddNode(DescribedNode node)
@@ -172,8 +184,26 @@ public sealed class AudioGraphDescriptionBuilder
         _steps.Add(new(DescribedStepKind.SendStrip, strip, destination, levelDecibels, preFader));
     }
 
+    /// <summary>A junction's meter over the sum of <paramref name="nodes"/> (see <see cref="DescribedMeterPoint"/>).</summary>
+    public void AddMeterPoint(Guid key, IEnumerable<int> nodes)
+    {
+        ArgumentNullException.ThrowIfNull(nodes);
+        ImmutableArray<int> members = [.. nodes.Distinct()];
+        foreach (var node in members)
+        {
+            CheckNode(node);
+        }
+
+        if (!_meterKeys.Add(key))
+        {
+            throw new ArgumentException($"Meter point {key} is described twice.", nameof(key));
+        }
+
+        _meterPoints.Add(new DescribedMeterPoint(key, members));
+    }
+
     public AudioGraphDescription Build(double masterGainDecibels, IEnumerable<Guid> retained) =>
-        new([.. _nodes], [.. _strips], [.. _steps], masterGainDecibels, [.. retained]);
+        new([.. _nodes], [.. _strips], [.. _steps], masterGainDecibels, [.. retained]) { MeterPoints = [.. _meterPoints] };
 
     private void CheckNode(int node) => ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)node, (uint)_nodes.Count, nameof(node));
 

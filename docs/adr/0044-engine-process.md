@@ -302,7 +302,11 @@ exactly as before, and every existing test uses that path.
   and the master's, and the stream's figures: callbacks, xruns, discontinuities, late renders, render-ahead underruns,
   render faults, the longest render, the device's output latency, plugin blocks that followed the failure policy, and
   the graph's latency. `EngineAudio` mirrors them; the mixer's meters and the Audio window read them through
-  `IAudioPlayback`, which `AudioPlayback` also implements (as step 5 did with `IPlaybackTransport`).
+  `IAudioPlayback`, which `AudioPlayback` also implements (as step 5 did with `IPlaybackTransport`). Chain junction
+  meters (ADR 0037) are measured only for the junctions Bluestone watches: `WatchJunctions` (protocol version 10,
+  at most 512 keys) replaces the set, the engine applies it at once rather than queueing it behind a device that is
+  opening, and sends it again to a restarted engine; `AudioStatus` carries the watched junctions' meters. The graph
+  image is version 3: it adds the meter points and the nodes each sums.
 - **The plugin data plane.** Plugin workers stay Bluestone's: launch, control channel, scanning, editors, state,
   restart, and supervision. Each described plugin node now carries its instance's link: the exchange's shape, the
   pipeline depth, collect wait, failure policy, latency, and the running worker's exchange file and generation (none
@@ -332,7 +336,8 @@ swaps in a new graph; the rendering thread allocates nothing, in the JIT and Nat
 graphs, opening devices, and attaching exchanges happen on the engine's audio thread, never in the callback; the
 control thread only queues audio commands for it, and the sender thread only sends what it left, so neither waits for a
 device to open or a graph to be realized. The audio thread allocates each `AudioStatus` (about 30 a second, a few
-hundred bytes plus 32 bytes a strip), which adds to the collections the `--engine` probe must measure (step 8).
+hundred bytes plus 32 bytes a strip or watched junction), which adds to the collections the `--engine` probe must
+measure (step 8). `--check-allocations` watches both junctions of its graph, so measuring them is covered.
 
 **Tests.** Integration tests run real engine processes with a stand-in audio device (`--test-audio`, honoured only
 with test commands) that never calls back; `TestRender` plays the current graph from the song's start through the

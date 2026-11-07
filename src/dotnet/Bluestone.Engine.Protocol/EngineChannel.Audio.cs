@@ -76,6 +76,23 @@ public sealed partial class EngineChannel
                 writer.Int64(status.Live.Min);
                 writer.Int64(status.Live.Max);
                 writer.Int64(status.Live.DeadlineMisses);
+                var junctions = status.Junctions.IsDefault ? [] : status.Junctions;
+                WriteCount(ref writer, junctions.Length, EngineLimits.MaxWatchedJunctions);
+                foreach (var junction in junctions)
+                {
+                    writer.Guid(junction.Key);
+                    WriteMeter(ref writer, junction.Levels);
+                }
+
+                break;
+            case WatchJunctions watch:
+                var keys = watch.Keys.IsDefault ? [] : watch.Keys;
+                WriteCount(ref writer, keys.Length, EngineLimits.MaxWatchedJunctions);
+                foreach (var key in keys)
+                {
+                    writer.Guid(key);
+                }
+
                 break;
             case TestRender render:
                 writer.Int64(render.Id);
@@ -184,7 +201,24 @@ public sealed partial class EngineChannel
                         reader.Int32In(0, EngineLimits.MaxQueuedFrames),
                         reader.Bool());
                     var live = new LiveLatencySpec(reader.NonNegative(), reader.Int64(), reader.Int64(), reader.Int64(), reader.NonNegative());
-                    return new AudioStatus(master, strips.MoveToImmutable(), counters, live);
+                    var junctions = ImmutableArray.CreateBuilder<StripMeter>(reader.Count(EngineLimits.MaxWatchedJunctions));
+                    for (var i = 0; i < junctions.Capacity; i++)
+                    {
+                        junctions.Add(new StripMeter(reader.Guid(), ReadMeter(ref reader)));
+                    }
+
+                    return new AudioStatus(master, strips.MoveToImmutable(), counters, live) { Junctions = junctions.MoveToImmutable() };
+                }
+
+            case EngineMessageType.WatchJunctions:
+                {
+                    var keys = ImmutableArray.CreateBuilder<Guid>(reader.Count(EngineLimits.MaxWatchedJunctions));
+                    for (var i = 0; i < keys.Capacity; i++)
+                    {
+                        keys.Add(reader.Guid());
+                    }
+
+                    return new WatchJunctions(keys.MoveToImmutable());
                 }
 
             case EngineMessageType.TestRender:
