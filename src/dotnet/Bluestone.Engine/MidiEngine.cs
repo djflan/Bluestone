@@ -46,7 +46,8 @@ internal sealed class MidiEngine : IDisposable
     // Live routes: the input callbacks, the live thread, and the control thread, under _routes.
     private readonly Lock _routes = new();
     private readonly Dictionary<int, EngineRoute> _routeById = [];
-    private readonly Dictionary<Guid, EngineRoute> _routeByTrack = [];
+    // Every live route of each track (a layered chain, several outputs: ADR 0037), rebuilt off the input path.
+    private readonly Dictionary<Guid, EngineRoute[]> _routeByTrack = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
     private IReadOnlyDictionary<Guid, (PluginNode Node, int DelayToMaster)> _instruments = new Dictionary<Guid, (PluginNode, int)>();
     private readonly PluginRegistry _plugins;
@@ -169,10 +170,7 @@ internal sealed class MidiEngine : IDisposable
                         if (_routeById.Remove(remove.Route, out var removed))
                         {
                             Retire(removed);
-                            if (_routeByTrack.TryGetValue(removed.Track, out var current) && ReferenceEquals(current, removed))
-                            {
-                                _routeByTrack.Remove(removed.Track);
-                            }
+                            Index(removed.Track);
                         }
 
                         UseRoutePlugins();
@@ -353,13 +351,22 @@ internal sealed class MidiEngine : IDisposable
 
         lock (_routes)
         {
-            if (!_routeByTrack.TryGetValue(track, out var route) || route.Released)
+            if (!_routeByTrack.TryGetValue(track, out var routes))
             {
                 return false;
             }
 
-            Play(route, e, timestamp);
-            return true;
+            var played = false;
+            foreach (var route in routes)
+            {
+                if (!route.Released)
+                {
+                    Play(route, e, timestamp);
+                    played = true;
+                }
+            }
+
+            return played;
         }
     }
 
@@ -621,7 +628,7 @@ internal sealed class MidiEngine : IDisposable
             }
 
             _routeById[spec.Route] = route;
-            _routeByTrack[spec.Track] = route;
+            Index(spec.Track);
             route.StoppedTempo = StoppedTempo();
             Bind(route);
             UseRoutePlugins();
@@ -629,6 +636,20 @@ internal sealed class MidiEngine : IDisposable
             {
                 problems.Add(new EngineProblem(-1, $"The engine has no live processor for {unknown}; it passes events through."));
             }
+        }
+    }
+
+    // Under _routes, on the control thread: the track's routes, in the order Bluestone added them (nearest first).
+    private void Index(Guid track)
+    {
+        EngineRoute[] routes = [.. _routeById.OrderBy(r => r.Key).Select(r => r.Value).Where(r => r.Track == track)];
+        if (routes.Length == 0)
+        {
+            _routeByTrack.Remove(track);
+        }
+        else
+        {
+            _routeByTrack[track] = routes;
         }
     }
 
@@ -675,21 +696,34 @@ internal sealed class MidiEngine : IDisposable
             if (input.Held[slot] is { } holding)
             {
                 input.Held[slot] = null;
-                Play(holding, e, timestamp);
+                foreach (var route in holding)
+                {
+                    if (!IsFeedback(input, route))
+                    {
+                        Play(route, e, timestamp);
+                    }
+                }
             }
 
             return;
         }
 
-        if (!_hasThru || !_routeByTrack.TryGetValue(_thruTrack, out var route) || route.Released || IsFeedback(input, route))
+        if (!_hasThru || !_routeByTrack.TryGetValue(_thruTrack, out var routes))
         {
             return;
         }
 
-        Play(route, e, timestamp);
+        foreach (var route in routes)
+        {
+            if (!route.Released && !IsFeedback(input, route))
+            {
+                Play(route, e, timestamp);
+            }
+        }
+
         if (message.IsNoteOn)
         {
-            input.Held[slot] = route;
+            input.Held[slot] = routes;
         }
     }
 
@@ -699,10 +733,13 @@ internal sealed class MidiEngine : IDisposable
         {
             for (var slot = 0; slot < input.Held.Length; slot++)
             {
-                if (input.Held[slot] is { } route)
+                if (input.Held[slot] is { } routes)
                 {
                     input.Held[slot] = null;
-                    Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
+                    foreach (var route in routes)
+                    {
+                        Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
+                    }
                 }
             }
         }
@@ -787,6 +824,7 @@ internal sealed class MidiEngine : IDisposable
 
         public string Name { get; } = name;
 
-        public EngineRoute?[] Held { get; } = new EngineRoute?[LiveEvent.NoteSlots];
+        /// <summary>For each held key, the routes its note went to: the release goes there too.</summary>
+        public EngineRoute[]?[] Held { get; } = new EngineRoute[]?[LiveEvent.NoteSlots];
     }
 }

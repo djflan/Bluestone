@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Bluestone.Audio.Plugins;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Projects;
@@ -61,7 +62,8 @@ public sealed class LiveInput : IDisposable
     private readonly IMonotonicClock _clock;
     private readonly ILiveRemote? _remote;
     private readonly Lock _gate = new();
-    private readonly Dictionary<TrackId, LiveRunner> _runners = [];
+    // Every way each track's live input is heard (LiveRoutePlan.FindAll), nearest first; never empty.
+    private readonly Dictionary<TrackId, LiveRunner[]> _runners = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
     private readonly Dictionary<TrackId, HashSet<int>> _held = [];
     private readonly AutoResetEvent _wake = new(false);
@@ -75,6 +77,7 @@ public sealed class LiveInput : IDisposable
     private Func<PluginNode, int> _delayToMaster = _ => 0;
     private TrackId? _monitored;
     private DeviceId? _monitoredInstrument;
+    private ImmutableHashSet<DeviceId> _monitoredInstruments = [];
     private long _lastSoftwareInput;
     private Thread? _thread;
     private volatile bool _running;
@@ -120,7 +123,7 @@ public sealed class LiveInput : IDisposable
                 _monitored = value;
                 if (value is { } track)
                 {
-                    RunnerFor(track);
+                    RunnersFor(track);
                 }
             }
 
@@ -128,8 +131,11 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    /// <summary>The plugin instrument the monitored track plays live, if any.</summary>
+    /// <summary>The nearest plugin instrument the monitored track plays live, if any.</summary>
     public DeviceId? MonitoredInstrument => _monitoredInstrument;
+
+    /// <summary>Every plugin instrument the monitored track plays live (ADR 0037: a layered chain plays them all).</summary>
+    public ImmutableHashSet<DeviceId> MonitoredInstruments => Volatile.Read(ref _monitoredInstruments);
 
     /// <summary>Plugin instances, for plugin MIDI effects on live routes (the plugin bridge).</summary>
     public void UsePlugins(Func<DeviceId, PluginInstance?> plugins)
@@ -171,12 +177,21 @@ public sealed class LiveInput : IDisposable
         UpdateMonitoredInstrument();
     }
 
-    /// <summary>The route live input on <paramref name="track"/> takes now.</summary>
+    /// <summary>The nearest way live input on <paramref name="track"/> is heard now (the first of <see cref="PlansOf"/>).</summary>
     public LiveRoutePlan? PlanOf(TrackId track)
     {
         lock (_gate)
         {
-            return RunnerFor(track)?.Plan;
+            return RunnersFor(track) is [var first, ..] ? first.Plan : null;
+        }
+    }
+
+    /// <summary>Every way live input on <paramref name="track"/> is heard now, nearest first.</summary>
+    public ImmutableArray<LiveRoutePlan> PlansOf(TrackId track)
+    {
+        lock (_gate)
+        {
+            return [.. (RunnersFor(track) ?? []).Select(r => r.Plan)];
         }
     }
 
@@ -192,33 +207,45 @@ public sealed class LiveInput : IDisposable
             return false;
         }
 
-        bool software;
+        var software = false;
+        var played = false;
         lock (_gate)
         {
             Hold(track, message);
-            if (RunnerFor(track) is not { CanPlay: true } runner
-                || (source is not null && runner.ExternalEndpoint is { } endpoint && IsFeedback(source, endpoint)))
+            foreach (var runner in RunnersFor(track) ?? [])
             {
-                return false;
-            }
-
-            if (runner.IsRemote)
-            {
-                // The engine already played input from its own inputs on its thru route; the rest is sent there.
-                if (runner.RemoteRoute >= 0 && !(source is not null && _remote!.IsEngineInput(source)))
+                if (!runner.CanPlay || (source is not null && runner.ExternalEndpoint is { } endpoint && IsFeedback(source, endpoint)))
                 {
-                    _remote!.Post(runner.RemoteRoute, message, timestamp);
+                    continue;
                 }
 
-                return true;
-            }
+                played = true;
+                if (runner.IsRemote)
+                {
+                    // The engine already played input from its own inputs on its thru routes; the rest is sent there.
+                    if (runner.RemoteRoute >= 0 && !(source is not null && _remote!.IsEngineInput(source)))
+                    {
+                        _remote!.Post(runner.RemoteRoute, message, timestamp);
+                    }
 
-            runner.Enqueue(e, timestamp);
-            software = runner.IsAudioDriven;
-            if (!software)
-            {
-                runner.Pump(_clock.Now, Tempo());
+                    continue;
+                }
+
+                runner.Enqueue(e, timestamp);
+                if (runner.IsAudioDriven)
+                {
+                    software = true;
+                }
+                else
+                {
+                    runner.Pump(_clock.Now, Tempo());
+                }
             }
+        }
+
+        if (!played)
+        {
+            return false;
         }
 
         if (software)
@@ -242,10 +269,13 @@ public sealed class LiveInput : IDisposable
             var now = _clock.Now;
             var tempo = Tempo();
             var stopped = StoppedTempo();
-            foreach (var runner in _runners.Values)
+            foreach (var runners in _runners.Values)
             {
-                runner.StoppedTempo = stopped;
-                runner.Pump(now, tempo);
+                foreach (var runner in runners)
+                {
+                    runner.StoppedTempo = stopped;
+                    runner.Pump(now, tempo);
+                }
             }
         }
     }
@@ -270,7 +300,7 @@ public sealed class LiveInput : IDisposable
             _held.Clear();
             foreach (var track in _runners.Keys.ToList())
             {
-                Replace(track, Create(_runners[track].Plan));
+                Replace(track, [.. _runners[track].Select(r => Create(r.Plan))]);
             }
         }
     }
@@ -322,7 +352,7 @@ public sealed class LiveInput : IDisposable
         _thread = null;
         lock (_gate)
         {
-            foreach (var runner in _runners.Values)
+            foreach (var runner in _runners.Values.SelectMany(r => r))
             {
                 Retire(runner);
             }
@@ -338,15 +368,16 @@ public sealed class LiveInput : IDisposable
     {
         lock (_gate)
         {
-            RunnerFor(track);
+            RunnersFor(track);
         }
     }
 
+    /// <summary>The nearest way's runner (tests).</summary>
     internal LiveRunner? RunnerOf(TrackId track)
     {
         lock (_gate)
         {
-            return _runners.GetValueOrDefault(track);
+            return _runners.GetValueOrDefault(track) is [var first, ..] ? first : null;
         }
     }
 
@@ -362,12 +393,12 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    // The runner for a track, made when first needed. Under _gate.
-    private LiveRunner? RunnerFor(TrackId track)
+    // The runners for a track, made when first needed. Under _gate.
+    private LiveRunner[]? RunnersFor(TrackId track)
     {
-        if (_runners.TryGetValue(track, out var runner))
+        if (_runners.TryGetValue(track, out var runners))
         {
-            return runner;
+            return runners;
         }
 
         if (_project?.Sequence.FindTrack(track) is null)
@@ -375,10 +406,14 @@ public sealed class LiveInput : IDisposable
             return null;
         }
 
-        runner = Create(LiveRoutePlan.Find(_project, track, _devices, _endpoints));
-        Attach(runner);
-        _runners[track] = runner;
-        return runner;
+        runners = [.. LiveRoutePlan.FindAll(_project, track, _devices, _endpoints).Select(Create)];
+        foreach (var runner in runners)
+        {
+            Attach(runner);
+        }
+
+        _runners[track] = runners;
+        return runners;
     }
 
     private LiveRunner Create(LiveRoutePlan plan)
@@ -412,26 +447,35 @@ public sealed class LiveInput : IDisposable
             var current = _runners[track];
             if (project.Sequence.FindTrack(track) is null)
             {
-                Retire(current);
+                foreach (var runner in current)
+                {
+                    Retire(runner);
+                }
+
                 _runners.Remove(track);
                 continue;
             }
 
-            var plan = LiveRoutePlan.Find(project, track, _devices, _endpoints);
-            var next = Create(plan);
-            if (!plan.IsSameAs(current.Plan) || !SameBinding(current, next))
+            LiveRunner[] next = [.. LiveRoutePlan.FindAll(project, track, _devices, _endpoints).Select(Create)];
+            if (next.Length != current.Length || next.Zip(current).Any(p => !p.First.Plan.IsSameAs(p.Second.Plan) || !SameBinding(p.Second, p.First)))
             {
                 Replace(track, next);
             }
-            else if (current.Node is { } node)
+            else
             {
-                current.DelayToMasterFrames = _delayToMaster(node);
+                foreach (var kept in current)
+                {
+                    if (kept.Node is { } node)
+                    {
+                        kept.DelayToMasterFrames = _delayToMaster(node);
+                    }
+                }
             }
         }
 
         if (_monitored is { } monitored)
         {
-            RunnerFor(monitored);
+            RunnersFor(monitored);
         }
     }
 
@@ -443,12 +487,19 @@ public sealed class LiveInput : IDisposable
         && a.CanPlay == b.CanPlay
         && a.PluginStages.Select(s => s.Instance).SequenceEqual(b.PluginStages.Select(s => s.Instance));
 
-    private void Replace(TrackId track, LiveRunner next)
+    private void Replace(TrackId track, LiveRunner[] next)
     {
-        Attach(next);
+        foreach (var runner in next)
+        {
+            Attach(runner);
+        }
+
         if (_runners.TryGetValue(track, out var old))
         {
-            Retire(old);
+            foreach (var runner in old)
+            {
+                Retire(runner);
+            }
         }
 
         _runners[track] = next;
@@ -509,15 +560,21 @@ public sealed class LiveInput : IDisposable
 
     private void UpdateMonitoredInstrument()
     {
+        ImmutableHashSet<DeviceId> instruments;
         DeviceId? instrument;
         lock (_gate)
         {
-            instrument = _monitored is { } track && _runners.GetValueOrDefault(track)?.Plan is { Target: LiveTargetKind.Software } plan ? plan.Instrument : null;
+            var software = _monitored is { } track && _runners.TryGetValue(track, out var runners)
+                ? runners.Select(r => r.Plan).Where(p => p.Target == LiveTargetKind.Software).Select(p => p.Instrument!.Value).ToList()
+                : [];
+            instrument = software.Count > 0 ? software[0] : null;
+            instruments = [.. software];
         }
 
-        if (instrument != _monitoredInstrument)
+        if (instrument != _monitoredInstrument || !instruments.SetEquals(_monitoredInstruments))
         {
             _monitoredInstrument = instrument;
+            Volatile.Write(ref _monitoredInstruments, instruments);
             MonitoredInstrumentChanged?.Invoke(this, EventArgs.Empty);
         }
     }

@@ -249,6 +249,27 @@ public sealed class LiveInputTests : IAsyncDisposable
         Assert.False(_controller.Live.HasHeldNotes(TrackId.New()));
     }
 
+    [Fact]
+    public async Task LiveInput_ReachesEveryOutputTheTrackIsConnectedTo_AsPlaybackDoes()
+    {
+        // The track's own output (Synth) and a second connection, from after its transposer, to Bass.
+        var bass = _provider.CreatePort("Bass", "bass");
+        var transpose = BuiltInDevices.CreateTranspose(12);
+        var track = await TrackWith(transpose);
+        var instrument = ExternalInstrument.Create("Bass", new EndpointReference(LoopbackMidiProvider.ProviderId, bass.OutputId.Value, "Bass"));
+        _session.Execute(RoutingCommands.AddInstrument(instrument));
+        _session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.Device(transpose.Id), SignalNode.ExternalPart(instrument.Id)), Definitions));
+        await _controller.RefreshAsync(Ct);
+        _controller.SetThruTrack(track);
+
+        Play(60);
+        Advance(1);
+
+        Assert.Equal(2, _controller.Live.PlansOf(track).Length);
+        Assert.Equal(1, Count(0x90, 72));
+        Assert.Single(bass.Sent, m => m.Bytes[0] == 0x90 && m.Bytes[1] == 72);
+    }
+
     private async Task<TrackId> TrackWith(params DeviceInstance[] devices)
     {
         var track = AddTrack(_synth);

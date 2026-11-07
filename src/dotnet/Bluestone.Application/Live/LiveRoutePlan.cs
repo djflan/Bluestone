@@ -32,11 +32,12 @@ public sealed record LiveRouteStage(DeviceInstance? Device, MidiChannel? Channel
 }
 
 /// <summary>
-/// What live input on a track passes through and where it ends (ADR 0035): breadth-first from the track along event
-/// connections, the nearest playable instrument wins (decision 21 in docs/engineering-handoff.md). On the way, every device that
-/// is not bypassed and consumes events is a stage, in chain order (built-in devices and plugin MIDI effects alike), and
-/// every connection's forced channel is a stage where the connection is. A plugin instrument in a chain ends the route
-/// there (it takes the notes, as at plan time); otherwise the first usable external instrument port does.
+/// One way live input on a track is heard (ADR 0035, ADR 0037): the devices it passes through and where it ends. Live input
+/// fans out like playback does (<see cref="FindAll"/>): through the whole chain, so every plugin instrument in it plays and
+/// note effects after an instrument work on the notes it passes on, and along every event connection, from the chain's
+/// output or from any point inside it, to other tracks and racks and to every usable external instrument port. On the
+/// way, every device that is not bypassed and consumes events is a stage, in chain order (built-in devices and plugin MIDI
+/// effects alike), and every connection's forced channel is a stage where the connection is.
 /// </summary>
 public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage> Stages, LiveTargetKind Target, EndpointDescriptor? Endpoint, DeviceId? Instrument)
 {
@@ -49,16 +50,26 @@ public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage>
         && Instrument == other.Instrument
         && Stages.SequenceEqual(other.Stages);
 
-    /// <summary>The route for <paramref name="track"/> in <paramref name="project"/>; <see cref="LiveTargetKind.None"/> when nothing playable is reached.</summary>
+    /// <summary>The first of <see cref="FindAll"/>: the nearest target, or <see cref="LiveTargetKind.None"/>.</summary>
+    public static LiveRoutePlan Find(Project project, TrackId track, DeviceCatalog devices, Func<ExternalInstrumentId, string?, EndpointDescriptor?> endpoints) =>
+        FindAll(project, track, devices, endpoints)[0];
+
+    /// <summary>
+    /// Every way live input on <paramref name="track"/> is heard, nearest first (breadth-first along connections, chain
+    /// order within a chain); one <see cref="LiveTargetKind.None"/> plan when nothing playable is reached. A plugin
+    /// instrument is played once, by the first way that reaches it.
+    /// </summary>
     /// <param name="project">The project.</param>
     /// <param name="track">The track played live.</param>
     /// <param name="devices">The device catalog (what each device consumes and produces).</param>
     /// <param name="endpoints">The endpoint an external instrument's port reaches now, or null when it is not usable.</param>
-    public static LiveRoutePlan Find(Project project, TrackId track, DeviceCatalog devices, Func<ExternalInstrumentId, string?, EndpointDescriptor?> endpoints)
+    public static ImmutableArray<LiveRoutePlan> FindAll(Project project, TrackId track, DeviceCatalog devices, Func<ExternalInstrumentId, string?, EndpointDescriptor?> endpoints)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(devices);
         ArgumentNullException.ThrowIfNull(endpoints);
+        var plans = ImmutableArray.CreateBuilder<LiveRoutePlan>();
+        var played = new HashSet<DeviceId>();
         var queue = new Queue<(SignalNode Node, ImmutableArray<LiveRouteStage> Stages)>();
         var start = SignalNode.Track(track);
         var seen = new HashSet<SignalNode> { start };
@@ -67,34 +78,63 @@ public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage>
         {
             var (node, stages) = queue.Dequeue();
             var chain = node.Kind == SignalNodeKind.Track ? project.ChainOf(node.AsTrack()) : project.FindChain(node.AsRack());
-            foreach (var device in chain?.Devices ?? [])
+
+            // The stages in front of each junction of the chain: [0] its input, [i + 1] after device i. Null once notes have ended.
+            var devicesInChain = chain?.Devices ?? [];
+            var at = new ImmutableArray<LiveRouteStage>?[devicesInChain.Length + 1];
+            at[0] = stages;
+            ImmutableArray<LiveRouteStage>? current = stages;
+            for (var i = 0; i < devicesInChain.Length; i++)
             {
-                if (device.IsBypassed || devices.Find(device.Definition.Id) is not { } definition
-                    || !definition.Consumes.HasFlag(SignalKinds.Events) || definition.Handles == EventClass.None)
+                var device = devicesInChain[i];
+                if (current is { } before && !device.IsBypassed && devices.Find(device.Definition.Id) is { } definition
+                    && definition.Consumes.HasFlag(SignalKinds.Events) && definition.Handles != EventClass.None)
                 {
-                    continue;
+                    if (definition.Produces.HasFlag(SignalKinds.Events))
+                    {
+                        current = before.Add(LiveRouteStage.Run(device));
+                    }
+                    else
+                    {
+                        // An instrument plays the notes; only a plugin instrument makes sound. It passes them on unless its
+                        // definition ends the note path (ADR 0037).
+                        if (definition.Produces.HasFlag(SignalKinds.Audio) && device.Definition.Id.Value.StartsWith(PluginDeviceHost.DefinitionPrefix, StringComparison.Ordinal) && played.Add(device.Id))
+                        {
+                            plans.Add(new LiveRoutePlan(track, before, LiveTargetKind.Software, null, device.Id));
+                        }
+
+                        if ((definition.PassesThrough & EventClass.Notes) == EventClass.None)
+                        {
+                            current = null;
+                        }
+                    }
                 }
 
-                if (definition.Produces.HasFlag(SignalKinds.Events))
-                {
-                    stages = stages.Add(LiveRouteStage.Run(device));
-                    continue;
-                }
-
-                // An instrument takes the notes. Only a plugin instrument makes sound; anything else ends the route silent.
-                var software = definition.Produces.HasFlag(SignalKinds.Audio) && device.Definition.Id.Value.StartsWith(PluginDeviceHost.DefinitionPrefix, StringComparison.Ordinal);
-                return new LiveRoutePlan(track, stages, software ? LiveTargetKind.Software : LiveTargetKind.None, null, software ? device.Id : null);
+                at[i + 1] = current;
             }
 
-            foreach (var connection in project.ConnectionsFrom(node).Where(c => c.Kind == SignalKind.Events))
+            foreach (var connection in project.Connections.Where(c => c.Kind == SignalKind.Events))
             {
-                var next = connection.Mapping.Force is { } forced ? stages.Add(LiveRouteStage.Force(forced)) : stages;
+                var from = connection.Source == node ? at[^1]
+                    : chain is not null && connection.Source.Kind == SignalNodeKind.ChainInput && connection.Source.AsChain() == chain.Id ? at[0]
+                    : chain is not null && connection.Source.Kind == SignalNodeKind.Device && chain.IndexOf(connection.Source.AsDevice()) is var index and >= 0 ? at[index + 1]
+                    : null;
+                if (from is not { } prefix)
+                {
+                    continue;
+                }
+
+                var next = connection.Mapping.Force is { } forced ? prefix.Add(LiveRouteStage.Force(forced)) : prefix;
                 var destination = connection.Destination;
                 if (destination.Kind == SignalNodeKind.ExternalInstrument)
                 {
                     if (endpoints(destination.AsInstrument(), destination.Port) is { } endpoint)
                     {
-                        return new LiveRoutePlan(track, next, LiveTargetKind.External, endpoint, null);
+                        var plan = new LiveRoutePlan(track, next, LiveTargetKind.External, endpoint, null);
+                        if (!plans.Any(p => p.IsSameAs(plan)))
+                        {
+                            plans.Add(plan);
+                        }
                     }
                 }
                 else if (destination.Kind is SignalNodeKind.Track or SignalNodeKind.Rack && seen.Add(destination))
@@ -104,6 +144,6 @@ public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage>
             }
         }
 
-        return new LiveRoutePlan(track, [], LiveTargetKind.None, null, null);
+        return plans.Count > 0 ? plans.ToImmutable() : [new LiveRoutePlan(track, [], LiveTargetKind.None, null, null)];
     }
 }

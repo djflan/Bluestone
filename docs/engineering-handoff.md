@@ -104,7 +104,8 @@ says so.
 21. **Live notes** (audition, thru, on-screen keyboard, metronome, instrument setup) follow the nearest playable
     instrument through connections (breadth-first), with the last forced channel and the Transpose devices on the way.
     Since ADR 0035 every device on the way that consumes events is a live stage, plugin MIDI effects included, and a
-    plugin instrument in a chain ends the route.
+    plugin instrument in a chain ends the route. Since ADR 0037 the route fans out instead: every plugin instrument in the
+    chain and every usable external port reached is played, each with the stages in front of it.
 22. **Edits that add a routing error are refused** (`CommandRefusedException`, shown as a message by
     `MainViewModel.Execute`): device moves, bypass, inserts, connections, instrument and mixer edits, role changes,
     adding audio, and inspector output edits. Events that would land inside an audio clip are refused; a recording

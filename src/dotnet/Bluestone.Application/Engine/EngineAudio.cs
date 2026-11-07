@@ -338,9 +338,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             else
             {
                 var directory = _session.FilePath is { } file ? Path.GetDirectoryName(Path.GetFullPath(file)) : null;
-                var live = _playback.Live.MonitoredInstrument;
-                _describer.Monitored = _wanted?.LowLatencyMonitoring == true && live is { } monitored ? [monitored] : [];
-                _describer.LivePlayed = live is { } played ? [played] : [];
+                var live = _playback.Live.MonitoredInstruments;
+                _describer.Monitored = _wanted?.LowLatencyMonitoring == true ? live : [];
+                _describer.LivePlayed = live;
                 (description, problems) = _describer.Describe(_session.Project, routing.Graph, _playback.Devices, directory);
             }
 

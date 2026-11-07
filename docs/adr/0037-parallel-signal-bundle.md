@@ -66,9 +66,13 @@ conversion point.
 - `ChainRunnerTests` and `SignalGraphTests` cover pass-through, layering, note effects after instruments, explicit
   thru, and the diagnostic change; `SignalRoutingValidatorTests` cover routing from after an instrument, with the
   default thru and with `EventThru = None`.
-- **Live input still ends at the first plugin instrument.** `LiveRoutePlan` (ADR 0035) stops its route at the first
-  instrument that takes the notes, so playing live sounds the first instrument of a layered chain only. Extending
-  the live route to fan out to every instrument on the chain is follow-up work.
+- **Live input fans out like playback.** `LiveRoutePlan.FindAll` follows the whole chain (every plugin instrument plays,
+  note effects after an instrument get the notes it passes on, an instrument whose `EventThru` ends the note path
+  stops it) and every event connection, from the chain's output or any point inside it, to every usable external port,
+  each target with the stages in front of it; a plugin instrument is played once. `LiveInput` keeps one runner per
+  target, and the engine plays thru on every route of the track. Every plugin instrument the monitored track plays is
+  monitored and live-played (ADR 0043 decision 6). Each target runs its own copy of the stages before it, so an
+  arpeggiator in front of two instruments runs twice, in step.
 - Plugins that put out MIDI are still not routed on (ADR 0033); a future note-producing instrument would add its
   output to the bundle as a note effect does.
 - Per-note expression, audio-rate modulation, and multichannel (beyond mono and stereo) buses are not implemented,
