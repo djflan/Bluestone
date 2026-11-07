@@ -34,6 +34,7 @@ public sealed class AudioGraphRealizer : IDisposable
     private readonly Lock _watchGate = new();
     private ImmutableHashSet<Guid> _watched = [];
     private readonly Dictionary<Guid, PluginNode> _plugins = [];
+    private readonly Dictionary<Guid, GainNode> _gains = [];
     private readonly Dictionary<Guid, (ImmutableArray<AudioClipRegion> Regions, ClipPlayerNode Node, IReadOnlyList<string> Problems)> _clips = [];
     private readonly List<ClipPlayerNode> _retired = [];
     private readonly LatencyCompensation _compensation = new();
@@ -145,6 +146,12 @@ public sealed class AudioGraphRealizer : IDisposable
             }
         }
 
+        var gains = description.Nodes.Where(n => n.Kind == DescribedNodeKind.Gain).Select(n => n.Key).ToHashSet();
+        foreach (var gone in _gains.Keys.Where(key => !gains.Contains(key)).ToList())
+        {
+            _gains.Remove(gone);
+        }
+
         lock (_watchGate)
         {
             var points = description.MeterPoints.IsDefault ? [] : description.MeterPoints;
@@ -191,8 +198,20 @@ public sealed class AudioGraphRealizer : IDisposable
         {
             DescribedNodeKind.Clips => ClipsFor(described, problems),
             DescribedNodeKind.Plugin => PluginFor(described, problems, latency),
+            DescribedNodeKind.Gain => GainFor(described),
             _ => throw new ArgumentException($"Unknown node kind {described.Kind}.", nameof(described)),
         };
+
+    private GainNode GainFor(DescribedNode described)
+    {
+        if (_gains.TryGetValue(described.Key, out var node))
+        {
+            node.Gain = described.Gain;
+            return node;
+        }
+
+        return _gains[described.Key] = new GainNode(described.Name, described.Gain);
+    }
 
     private ClipPlayerNode ClipsFor(DescribedNode described, ImmutableArray<string>.Builder problems)
     {

@@ -39,11 +39,16 @@ public sealed class DeviceCatalog
         ImmutableDictionary<DeviceDefinitionId, LiveProcessorFactory>.Empty,
         null);
 
-    /// <summary>The devices that ship with Bluestone: Transpose, Event Filter, and Arpeggiator, each with its plan-time and live processor.</summary>
+    /// <summary>
+    /// The devices that ship with Bluestone: Transpose, Event Filter, Arpeggiator, and Note Receiver, each with its plan-time
+    /// and live processor, and Audio Receiver, which the audio graph builds (ADR 0037).
+    /// </summary>
     public static DeviceCatalog BuiltIn { get; } = Empty
         .With(BuiltInDevices.Transpose, _ => new TransposeProcessor(), _ => new LiveTransposeProcessor())
         .With(BuiltInDevices.EventFilter, _ => new EventFilterProcessor(), _ => new LiveEventFilterProcessor())
-        .With(BuiltInDevices.Arpeggiator, ppqn => new ArpeggiatorProcessor(ppqn), ppqn => new LiveArpeggiatorProcessor(ppqn));
+        .With(BuiltInDevices.Arpeggiator, ppqn => new ArpeggiatorProcessor(ppqn), ppqn => new LiveArpeggiatorProcessor(ppqn))
+        .With(BuiltInDevices.NoteReceiver, _ => new NoteReceiverProcessor(), _ => new LiveNoteReceiverProcessor())
+        .With(BuiltInDevices.AudioReceiver);
 
     /// <summary>Every definition, in ID order.</summary>
     public ImmutableArray<DeviceDefinition> Definitions => [.. _definitions.Values.OrderBy(d => d.Id.Value, StringComparer.Ordinal)];

@@ -257,6 +257,8 @@ public static class AudioGraphImage
                     Schedule = scheduled.Count == 0 && changes.Count == 0 ? PluginSchedule.Empty : new PluginSchedule(scheduled, changes),
                     Link = node.Link == -1 ? null : Link(links[node.Link], strings, bytes),
                 };
+            case DescribedNodeKind.Gain:
+                return new DescribedNode(DescribedNodeKind.Gain, node.Key, name) { Gain = Finite(node.Gain) };
             default:
                 throw new InvalidDataException($"The audio graph image is damaged: unknown node kind {node.Kind}.");
         }
@@ -371,7 +373,7 @@ public static class AudioGraphImage
             _description = description;
             foreach (var node in description.Nodes)
             {
-                var entry = new NodeEntry { Key = node.Key, Kind = (int)node.Kind, Name = String(node.Name), FirstRegion = _regions.Count, FirstEvent = _events.Count, FirstParameter = _parameters.Count, Link = -1 };
+                var entry = new NodeEntry { Key = node.Key, Kind = (int)node.Kind, Name = String(node.Name), FirstRegion = _regions.Count, FirstEvent = _events.Count, FirstParameter = _parameters.Count, Link = -1, Gain = node.Gain };
                 if (node.Link is { } link)
                 {
                     entry.Link = _links.Count;
@@ -534,7 +536,7 @@ public static class AudioGraphImage
         public int FirstParameter;
         public int ParameterCount;
         public int Link;
-        public int Padding;
+        public float Gain;
     }
 
     [StructLayout(LayoutKind.Sequential)]

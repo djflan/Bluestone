@@ -16,8 +16,11 @@ public sealed class BuiltInProcessorTests
     {
         var catalog = DeviceCatalog.BuiltIn;
 
-        Assert.Equal(["bluestone.midi.arpeggiator", "bluestone.midi.event-filter", "bluestone.midi.transpose"], catalog.Definitions.Select(d => d.Id.Value));
-        Assert.All(catalog.Definitions, d => Assert.True(catalog.CanProcess(d.Id)));
+        Assert.Equal(["bluestone.midi.arpeggiator", "bluestone.midi.event-filter", "bluestone.midi.transpose", "bluestone.routing.audio-receiver", "bluestone.routing.note-receiver"], catalog.Definitions.Select(d => d.Id.Value));
+
+        // Every event device runs in process; the Audio Receiver is built by the audio graph.
+        Assert.All(catalog.Definitions.Where(d => d.Consumes.HasFlag(SignalKinds.Events)), d => Assert.True(catalog.CanProcess(d.Id)));
+        Assert.False(catalog.CanProcess(BuiltInDevices.AudioReceiver.Id));
         Assert.All(catalog.Definitions, d => Assert.Equal(DeviceOrigin.BuiltIn, d.Origin));
     }
 

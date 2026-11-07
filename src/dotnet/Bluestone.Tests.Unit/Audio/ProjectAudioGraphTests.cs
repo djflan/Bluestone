@@ -307,6 +307,36 @@ public sealed class ProjectAudioGraphTests : IDisposable
         Assert.Equal(_tone[100], Left(Render(dry, Rate / 4, out _))[100], 4);
     }
 
+    [Theory]
+    [InlineData(true, 0.5)]
+    [InlineData(false, 1.5)]
+    public void AnAudioReceiver_BringsAnotherTracksAudioIn_AtItsGain_MixedOrReplacing(bool replace, double expected)
+    {
+        // Vocal's clip plays only through Bus's receiver at -6 dB; Bus also plays the same clip itself.
+        var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference())
+            .WithParameter(BuiltInDevices.ReceiverReplace, replace ? ControlValue.Max : ControlValue.Min)
+            .WithParameter(BuiltInDevices.ReceiverGain, BuiltInDevices.AudioReceiver.Parameters[1].ToStored(-6.0206));
+        var bus = Track.Create("Bus", TrackRole.Audio).WithClip(project.Sequence.FindTrack(vocal.Id)!.Clips[0].CopyTo(Tick.Zero));
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(bus.Id)) with { Devices = [receiver] }) with
+        {
+            Sequence = project.Sequence.WithTrack(bus),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master),
+            ],
+        };
+
+        var output = Left(Render(project, Rate / 4, out var result));
+
+        Assert.Empty(result.Problems);
+        for (var n = 0; n < Rate / 4; n += 101)
+        {
+            Assert.Equal(expected * _tone[n], output[n], 3);
+        }
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)

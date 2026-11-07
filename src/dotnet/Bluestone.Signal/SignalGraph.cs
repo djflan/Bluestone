@@ -130,7 +130,7 @@ public static class SignalGraph
         return mapped.ToImmutable();
     }
 
-    private sealed class Evaluation(Project project, DeviceCatalog catalog) : IChainObserver
+    private sealed class Evaluation(Project project, DeviceCatalog catalog) : IChainObserver, IChainReceiver
     {
         private readonly List<SignalDiagnostic> _diagnostics = [];
         private readonly Dictionary<ConnectionId, ImmutableArray<SignalEvent>> _delivered = [];
@@ -142,6 +142,7 @@ public static class SignalGraph
         private readonly HashSet<TrackId> _playing = [];
         private readonly ImmutableDictionary<Guid, NoteActivity>.Builder _activity = ImmutableDictionary.CreateBuilder<Guid, NoteActivity>();
         private DeviceChainId _currentChain;
+        private SignalEvent[] _currentInput = [];
 
         public SignalGraphResult Run()
         {
@@ -170,6 +171,25 @@ public static class SignalGraph
             if (_tapped.Contains(device))
             {
                 _taps[device] = [.. events];
+            }
+        }
+
+        // A device's event input: what connections deliver into it. One from an earlier point of the same chain is read from
+        // what this run has seen; one from elsewhere was delivered when its owner was evaluated, which Order put first.
+        public void Receive(DeviceId device, SignalBuffer output)
+        {
+            foreach (var connection in _connections)
+            {
+                if (connection.Destination.Kind != SignalNodeKind.DeviceInput || connection.Destination.AsDevice() != device)
+                {
+                    continue;
+                }
+
+                var source = connection.Source;
+                ReadOnlySpan<SignalEvent> events = source.Kind == SignalNodeKind.ChainInput && source.AsChain() == _currentChain ? _currentInput
+                    : source.Kind == SignalNodeKind.Device && project.FindChain(_currentChain)?.Find(source.AsDevice()) is not null ? _taps.GetValueOrDefault(source.AsDevice(), []).AsSpan()
+                    : _delivered.GetValueOrDefault(connection.Id, []).AsSpan();
+                output.AddRange(Map(events, connection.Mapping).AsSpan());
             }
         }
 
@@ -352,6 +372,7 @@ public static class SignalGraph
                 var chainChanges = changes.Where(c => chain.Find(c.Device) is not null).ToArray();
                 var result = new SignalBuffer(ordered.Length);
                 _currentChain = chain.Id;
+                _currentInput = ordered;
                 Record(chain.Id.Value, ordered);
                 runner.Run(SignalBlock.Everything, ordered, result, chainChanges, this);
                 _diagnostics.AddRange(runner.TakeReports().Select(r => r with { Track = track?.Id }));
@@ -359,7 +380,8 @@ public static class SignalGraph
             }
 
             var sent = false;
-            foreach (var connection in _connections.Where(c => c.Source == node || (chain is not null && c.Source.IsInside(chain))))
+            // A connection into a device of this same chain was taken in while it ran.
+            foreach (var connection in _connections.Where(c => (c.Source == node || (chain is not null && c.Source.IsInside(chain))) && !(chain is not null && c.Destination.IsInside(chain))))
             {
                 var from = connection.Source == node ? output
                     : connection.Source.Kind == SignalNodeKind.ChainInput ? ordered

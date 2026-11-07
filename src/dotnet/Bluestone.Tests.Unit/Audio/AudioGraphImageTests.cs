@@ -221,6 +221,9 @@ public sealed class AudioGraphImageTests : IDisposable
         builder.Connect(clips, effect);
         builder.ConnectToStrip(effect, channel);
         builder.ConnectToMaster(clips);
+        var gain = builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, Key(), "Receiver") { Gain = 0.5f });
+        builder.Connect(clips, gain);
+        builder.ConnectToMaster(gain);
         builder.AddMeterPoint(Key(), []);
         builder.AddMeterPoint(Key(), [synth, clips]);
         builder.AddMeterPoint(Key(), [effect]);
@@ -240,6 +243,7 @@ public sealed class AudioGraphImageTests : IDisposable
             Assert.Equal((e.Kind, e.Key, e.Name), (a.Kind, a.Key, a.Name));
             Assert.Equal(e.Regions, a.Regions);
             Assert.Equal(e.Link, a.Link);
+            Assert.Equal(e.Gain, a.Gain);
             Assert.True(e.Schedule.HasSameContent(a.Schedule), $"{e.Name}'s schedule differs.");
         }
     }

@@ -157,6 +157,18 @@ public sealed partial class ConnectionsViewModel : ObservableObject
             }
         }
 
+        // Device inputs (a receiver's source, a plugin's sidechain), anywhere in the project, in chain order.
+        foreach (var other in project.Chains)
+        {
+            foreach (var device in other.Devices)
+            {
+                foreach (var port in _owner.Devices.Find(device.Definition.Id)?.Inputs ?? [])
+                {
+                    Destinations.Add(new DestinationOption(SignalNode.DeviceInput(device.Id, port.Id), port.Kind, $"Device: {SignalRoutingValidator.Describe(project, SignalNode.Device(device.Id))} · {port.Name}"));
+                }
+            }
+        }
+
         foreach (var channel in project.Mixer.Channels)
         {
             Destinations.Add(new DestinationOption(SignalNode.Mixer(channel.Id), SignalKind.Audio, $"Mixer: {channel.Name}"));

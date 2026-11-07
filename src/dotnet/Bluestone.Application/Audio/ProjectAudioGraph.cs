@@ -382,7 +382,11 @@ public sealed class ProjectAudioGraph : IDisposable
             {
                 var device = chain.Devices[i];
                 var definition = device.IsBypassed ? null : devices.Find(device.Definition.Id);
-                if (definition is not null && definition.Produces.HasFlag(SignalKinds.Audio))
+                if (definition?.Id == BuiltInDevices.AudioReceiver.Id)
+                {
+                    audio = Receive(chain, points, i, device, audio);
+                }
+                else if (definition is not null && definition.Produces.HasFlag(SignalKinds.Audio))
                 {
                     if (NodeOf(device) is { } plugin)
                     {
@@ -424,6 +428,35 @@ public sealed class ProjectAudioGraph : IDisposable
 
             _chains[chain.Id] = points;
             return points;
+        }
+
+        // An Audio Receiver at chain index `at` (ADR 0037): what its input receives, at its gain, mixed with the chain's audio
+        // or replacing it. A source earlier in the same chain is that junction's audio; validation keeps it earlier.
+        private List<int> Receive(DeviceChain chain, List<int>[] points, int at, DeviceInstance device, List<int> audio)
+        {
+            var input = SignalNode.DeviceInput(device.Id, DeviceInputPort.Receive);
+            var received = new List<int>();
+            foreach (var connection in _audio.Where(c => c.Destination == input))
+            {
+                received.AddRange(SignalFlow.JunctionOf(project, connection.Source) is var (source, junction) && source.Id == chain.Id
+                    ? junction <= at ? points[junction] : []
+                    : Output(connection.Source));
+            }
+
+            received = [.. received.Distinct()];
+            var gain = BuiltInDevices.ReceiverGainOf(device);
+            if (received.Count > 0 && Math.Abs(gain) > 1e-9)
+            {
+                var node = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, device.Id.Value, device.DisplayName) { Gain = (float)Math.Pow(10, gain / 20) });
+                foreach (var source in received)
+                {
+                    _builder.Connect(source, node);
+                }
+
+                received = [node];
+            }
+
+            return BuiltInDevices.ReplacesOf(device) ? received : [.. audio, .. received];
         }
 
         // A track's own audio: its clips, when it plays, and audio connected into it.

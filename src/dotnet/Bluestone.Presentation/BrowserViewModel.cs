@@ -217,7 +217,8 @@ public sealed partial class BrowserViewModel : ObservableObject
         var hasInstrument = chain.Any(d => d?.Category == DeviceCategory.Instrument);
         foreach (var item in _all)
         {
-            item.IsRecommended = target is not null && item.Definition is { } definition && definition.Category switch
+            // Receivers are routing tools, chosen for a purpose, never suggested.
+            item.IsRecommended = target is not null && item.Definition is { } definition && definition.FindInput(DeviceInputPort.Receive) is null && definition.Category switch
             {
                 // An empty or note-only chain most likely wants something to make sound; after that, effects.
                 DeviceCategory.Instrument => !hasInstrument,
