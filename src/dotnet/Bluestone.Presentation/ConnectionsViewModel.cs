@@ -114,7 +114,8 @@ public sealed partial class ConnectionsViewModel : ObservableObject
             }
             else if (connection.Destination == node || (chain is not null && connection.Destination.IsInside(chain)))
             {
-                Incoming.Add(new ConnectionRow(connection.Id, $"{Kind(connection.Kind)} ← {SignalRoutingValidator.Describe(project, connection.Source)}", Mapping(connection), true));
+                var into = connection.Destination == node ? string.Empty : $" (into {SignalRoutingValidator.Describe(project, connection.Destination)})";
+                Incoming.Add(new ConnectionRow(connection.Id, $"{Kind(connection.Kind)} ← {SignalRoutingValidator.Describe(project, connection.Source)}{into}", Mapping(connection), true));
             }
         }
 
