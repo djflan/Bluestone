@@ -469,8 +469,9 @@ authority (ADR 0025).
   the bridge last sent or recorded. `RecordEdits` stores edits the plugin made itself (from `ParameterEdited`
   notifications) as one undoable parameter change and never sends them back, so a plugin that keeps moving is not
   pulled back to an older value. The app gathers the notifications that arrive together and records them at once: a
-  plugin preset can move thousands of parameters, and one edit per parameter would stall the UI. The plugin's own
-  edits of one device within a second of each other are one undo step, however they were batched.
+  plugin preset can move thousands of parameters, and one edit per parameter would stall the UI. Consecutive batches
+  that each change one device, within a second of each other, are one undo step; a batch that changes several devices
+  stands alone.
 - `CaptureStateAsync` and `CaptureAllAsync` store a running plugin's state and parameter values in the project as one
   undoable step; the app does this before every save (not on autosave). A crashed plugin is never asked; the last
   stored state stays.
