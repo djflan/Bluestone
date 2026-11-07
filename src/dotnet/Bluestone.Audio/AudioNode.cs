@@ -38,7 +38,7 @@ public readonly record struct AudioRenderContext(int Frames, int SampleRate, boo
 
 /// <summary>
 /// A source or processor in the render graph (a test tone, a track's audio clips, a plugin). Output is stereo.
-/// <see cref="Render"/> runs on the audio thread: no blocking, allocation, I/O, logging, or throwing.
+/// <c>Render</c> runs on the audio thread: no blocking, allocation, I/O, logging, or throwing.
 /// A node object lives across graph snapshots, so state such as phase or a read position survives edits.
 /// </summary>
 public abstract class AudioNode
@@ -57,4 +57,11 @@ public abstract class AudioNode
     /// the sum of the nodes connected into this one, or silence.
     /// </summary>
     public abstract void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output);
+
+    /// <summary>
+    /// Renders one block with a sidechain (ADR 0037): <paramref name="sidechain"/> is the sum of the nodes connected to
+    /// this node's sidechain, or empty (no frames) when none is. A node that has no use for it ignores it.
+    /// </summary>
+    public virtual void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer sidechain, StereoBuffer output) =>
+        Render(context, input, output);
 }

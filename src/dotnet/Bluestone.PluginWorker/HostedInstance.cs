@@ -23,6 +23,7 @@ internal sealed class HostedInstance : IDisposable
     private readonly WorkerBlockExchange _exchange;
     private readonly double _sampleRate;
     private readonly float[] _input;
+    private readonly float[] _sidechain;
     private readonly float[] _output;
     private readonly PluginEvent[] _events;
     private readonly ParameterChange[] _changes;
@@ -38,6 +39,7 @@ internal sealed class HostedInstance : IDisposable
         _sampleRate = sampleRate;
         var options = exchange.Options;
         _input = new float[options.InputChannels * options.MaxFrames];
+        _sidechain = new float[options.SidechainChannels * options.MaxFrames];
         _output = new float[options.OutputChannels * options.MaxFrames];
         _events = new PluginEvent[options.EventCapacity];
         _changes = new ParameterChange[options.ParameterChangeCapacity];
@@ -239,6 +241,11 @@ internal sealed class HostedInstance : IDisposable
                 block.Input(c).CopyTo(_input.AsSpan(c * frames, frames));
             }
 
+            for (var c = 0; c < options.SidechainChannels; c++)
+            {
+                block.Sidechain(c).CopyTo(_sidechain.AsSpan(c * frames, frames));
+            }
+
             var eventCount = 0;
             for (var i = 0; i < block.InputEventCount; i++)
             {
@@ -265,7 +272,7 @@ internal sealed class HostedInstance : IDisposable
             var started = Stopwatch.GetTimestamp();
             try
             {
-                _plugin.Process(new ProcessArgs(frames, _input.AsSpan(0, options.InputChannels * frames), output, _events.AsSpan(0, eventCount), _changes.AsSpan(0, changeCount), block.Transport), _outputEvents);
+                _plugin.Process(new ProcessArgs(frames, _input.AsSpan(0, options.InputChannels * frames), output, _events.AsSpan(0, eventCount), _changes.AsSpan(0, changeCount), block.Transport, _sidechain.AsSpan(0, options.SidechainChannels * frames)), _outputEvents);
                 if (Stopwatch.GetElapsedTime(started).TotalSeconds > frames / _sampleRate)
                 {
                     status = BlockStatus.DeadlineMissed;

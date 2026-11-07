@@ -53,7 +53,10 @@ pub struct BphProcess {
     pub position: i64,
     pub tempo: f64,
     pub playing: u32,
-    pub reserved: u32,
+    /// Channels in `sidechain` (0 for none): audio for the plugin's first auxiliary input bus (ABI version 3).
+    pub sidechain_channels: u32,
+    /// Planar float32 like `input`, `sidechain_channels` channels of `frames`; may be null when there are none.
+    pub sidechain: *const f32,
 }
 
 impl BphProcess {
@@ -76,6 +79,11 @@ impl BphProcess {
     pub fn input_channel(&self, channel: u32) -> *const f32 {
         // SAFETY: the caller passes `input_channels * frames` samples.
         unsafe { self.input.add((channel * self.frames) as usize) }
+    }
+
+    pub fn sidechain_channel(&self, channel: u32) -> *const f32 {
+        // SAFETY: the caller passes `sidechain_channels * frames` samples.
+        unsafe { self.sidechain.add((channel * self.frames) as usize) }
     }
 
     pub fn output_channel(&mut self, channel: u32) -> &mut [f32] {
@@ -178,6 +186,8 @@ pub trait Instance {
     ) -> Result<(), String>;
     fn process(&self, block: &mut BphProcess) -> bool;
     fn latency(&self) -> u32;
+    /// The channels of the plugin's sidechain (first auxiliary input bus) once activated; 0 when it has none.
+    fn sidechain_channels(&self) -> u32;
     fn save_state(&self) -> Result<Vec<u8>, String>;
     fn load_state(&self, data: &[u8]) -> Result<(), String>;
     fn idle(&self, notifications: &mut Vec<BphNotification>);
@@ -247,7 +257,8 @@ impl ChannelAdapter {
         adapter
     }
 
-    /// Points the plugin's inputs at the host's input (main bus) or at silence (other buses).
+    /// Points the plugin's inputs at the host's input (main bus), the host's sidechain (the first auxiliary bus), or
+    /// at silence (other buses). A bus with more channels than the host sends repeats the host's last channel.
     pub fn prepare_inputs(&mut self, block: &BphProcess) {
         self.input_scratch.iter_mut().for_each(|s| *s = 0.0);
         let silence = self.input_scratch.as_mut_ptr();
@@ -258,12 +269,21 @@ impl ChannelAdapter {
                     if bus == 0 && block.input_channels > 0 && !block.input.is_null() {
                         let host = (c as u32).min(block.input_channels - 1);
                         block.input_channel(host) as *mut f32
+                    } else if bus == 1 && block.sidechain_channels > 0 && !block.sidechain.is_null()
+                    {
+                        let host = (c as u32).min(block.sidechain_channels - 1);
+                        block.sidechain_channel(host) as *mut f32
                     } else {
                         silence
                     };
                 index += 1;
             }
         }
+    }
+
+    /// The channels of the plugin's first auxiliary input bus (its sidechain), or 0 when it has none.
+    pub fn sidechain_channels(&self) -> u32 {
+        self.input_buses.get(1).copied().unwrap_or(0) as u32
     }
 
     /// Copies the plugin's main output bus into the host's output.
@@ -373,5 +393,62 @@ mod tests {
             .map(|p| p["default"].as_f64().expect("a number"))
             .collect();
         assert_eq!(defaults, [0.0, 0.0, 0.0, 0.25]);
+    }
+}
+
+#[cfg(test)]
+mod sidechain_tests {
+    use super::*;
+
+    fn block(input: &[f32], sidechain: &[f32], frames: u32, sidechain_channels: u32) -> BphProcess {
+        BphProcess {
+            frames,
+            input_channels: 2,
+            output_channels: 0,
+            event_count: 0,
+            input: input.as_ptr(),
+            output: std::ptr::null_mut(),
+            events: std::ptr::null(),
+            changes: std::ptr::null(),
+            change_count: 0,
+            out_event_capacity: 0,
+            out_events: std::ptr::null_mut(),
+            out_event_count: 0,
+            out_events_dropped: 0,
+            position: 0,
+            tempo: 120.0,
+            playing: 0,
+            sidechain_channels,
+            sidechain: if sidechain.is_empty() {
+                std::ptr::null()
+            } else {
+                sidechain.as_ptr()
+            },
+        }
+    }
+
+    #[test]
+    fn the_first_auxiliary_bus_gets_the_hosts_sidechain_and_later_buses_get_silence() {
+        let input = [1.0f32, 1.0, 2.0, 2.0];
+        let sidechain = [3.0f32, 3.0];
+        let mut adapter = ChannelAdapter::new(2, vec![2, 2, 1], vec![2]);
+        assert_eq!(adapter.sidechain_channels(), 2);
+
+        // A mono sidechain feeds both channels of a stereo aux bus.
+        adapter.prepare_inputs(&block(&input, &sidechain, 2, 1));
+        let read = |pointer: *mut f32| unsafe { *pointer };
+        assert_eq!(read(adapter.input_pointers[0]), 1.0);
+        assert_eq!(read(adapter.input_pointers[1]), 2.0);
+        assert_eq!(read(adapter.input_pointers[2]), 3.0);
+        assert_eq!(read(adapter.input_pointers[3]), 3.0);
+        assert_eq!(read(adapter.input_pointers[4]), 0.0);
+
+        // Without one, the aux bus is silent.
+        adapter.prepare_inputs(&block(&input, &[], 2, 0));
+        assert_eq!(read(adapter.input_pointers[2]), 0.0);
+        assert_eq!(
+            ChannelAdapter::new(2, vec![2], vec![2]).sidechain_channels(),
+            0
+        );
     }
 }

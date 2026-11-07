@@ -40,7 +40,7 @@ verified is listed under [Not done](#not-done).
 | `Bluestone.Application/Plugins` | Bluestone | Plugins | `PluginLibrary`, `PluginDeviceHost`, `PluginEventRenderer`, `PluginHostingSettings`: the bridge to the project |
 | `Bluestone.Engine` | engine | Plugins, Protocol | With the engine process (ADR 0044), drives the data plane through its own handle on each exchange; Bluestone keeps the control plane ([Data plane](#data-plane)) |
 | `Bluestone.PluginWorker` | worker | Protocol, `bluestone_plugin_host` | Instance-host mode and scan mode; the reference plugins; `NativePlugin` over the Rust host |
-| `src/native/crates/bluestone_plugin_host` | worker | (Rust) `vst3`, `clap-sys` | Loads VST 3 and CLAP modules: instances, parameters, state, processing, host callbacks, editor windows and their header; C ABI version 2 |
+| `src/native/crates/bluestone_plugin_host` | worker | (Rust) `vst3`, `clap-sys` | Loads VST 3 and CLAP modules: instances, parameters, state, processing (with a sidechain), host callbacks, editor windows and their header; C ABI version 3 |
 | `src/native/crates/bluestone_test_plugins` | tests only | (Rust) `vst3`, `clap-sys` | Test Gain, Test Sine, Test Transpose as a `.vst3` bundle and a `.clap` module, packaged by `src/dotnet/NativeTestPlugins.targets` |
 
 Everything is C# except the plugin host, which is Rust because it loads native plugin binaries (ADR 0026's
@@ -200,10 +200,11 @@ Each instance has one file, created by the worker in the data directory and name
 file-backed on every platform. The layout (`ExchangeLayout`):
 
 - **Header** (128 bytes): magic, layout version, **generation**, slot count, max frames, channel counts, event and
-  parameter-change capacities, record and slot sizes, the worker's heartbeat counter, and state flags (**faulted**,
-  **closed**).
+  parameter-change capacities, record and slot sizes, the worker's heartbeat counter, state flags (**faulted**,
+  **closed**), and sidechain channels (0 when there is none; protocol version 6).
 - **Slots** (`SlotCount`), each with a state word, a block header (block index, frames, transport position, tempo,
-  playing, event and parameter-change counts, dropped-event counters, block status), planar float32 input audio,
+  playing, event and parameter-change counts, dropped-event counters, block status), planar float32 input audio (the
+  sidechain's channels after the input's),
   timestamped input events, timestamped parameter changes, planar float32 output audio, and output events.
 
 Events are fixed-size `PluginEvent` records: sample offset, kind, channel, two data bytes, and up to 256 bytes of
@@ -583,6 +584,11 @@ block size, or they are reported and left silent.
   `SoftwareInstrumentAudioTests.AMixerEdit_*`).
 - A worker that fails gives silence under the instance's failure policy, never stale audio, and the engine carries on
   (`AudioPluginTests.AKilledWorker_LeavesExactSilence_*`).
+- **Sidechain** (ADR 0037): an audio effect's device has a `sidechain` input. Audio connected to it is summed apart
+  from the chain's audio, compensated like any input, and handed over with each block (`ProcessBlock`'s sidechain);
+  the worker feeds it to the plugin's first auxiliary input bus. Every audio effect instance gets two sidechain
+  channels in its exchange; `PluginInstance.PluginSidechainChannels` says whether the plugin has a bus to take them,
+  and a plugin without one ignores them (`NativePluginTests.ASidechain_*`, `LatencyCompensationTests.ASidechain_*`).
 - **Delay compensation** (ADR 0035; see [architecture.md](architecture.md#delay-compensation)): each node's latency
   (`ReportedLatencyFrames`: pipelining plus the plugin's own) is compensated across the graph. A `LatencyChanged`
   notification gets the graph rebuilt, and a once-a-second check catches a latency that changed without one (a
@@ -696,7 +702,8 @@ Not verified:
 Not built:
 
 - **VST 3 and CLAP features**: system exclusive to native plugins, VST 3 note expression, CLAP note expressions and
-  parameter modulation, MPE, audio-port configurations, side-chain inputs, routing an instrument plugin's MIDI output,
+  parameter modulation, MPE, audio-port configurations, side-chain inputs for instruments (effects have them, ADR
+  0037), routing an instrument plugin's MIDI output,
   reloading a VST 3 component on `kReloadComponent`, a protocol message for a failed worker idle handler (today it is
   logged and that instance's notifications stop).
 - **Workers for a second architecture** (Rosetta).

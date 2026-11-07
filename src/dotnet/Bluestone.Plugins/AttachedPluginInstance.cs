@@ -99,6 +99,8 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
 
     public int OutputChannels => Shape.OutputChannels;
 
+    public int SidechainChannels => Shape.SidechainChannels;
+
     public int EventCapacity => Shape.EventCapacity;
 
     /// <summary>The plugin's own latency, as Bluestone last reported it. Any thread.</summary>
@@ -180,7 +182,7 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
     /// </summary>
     public void SweepBeforeNextBlock() => Volatile.Write(ref _sweep, 1);
 
-    public BlockOutcome ProcessBlock(int frames, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<PluginEvent> inputEvents, Span<PluginEvent> outputEvents, in TransportState transport)
+    public BlockOutcome ProcessBlock(int frames, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<PluginEvent> inputEvents, Span<PluginEvent> outputEvents, in TransportState transport, ReadOnlySpan<float> sidechain = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(frames, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(frames, Shape.MaxFrames);
@@ -200,7 +202,12 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
         }
 
         var live = _pipeline.PipelineDepth == 1;
-        var outcome = _pipeline.Process(Volatile.Read(ref _exchange), frames, input, output[..(Shape.OutputChannels * frames)], inputEvents, outputEvents, transport);
+        if (!sidechain.IsEmpty && sidechain.Length != Shape.SidechainChannels * frames)
+        {
+            sidechain = default;
+        }
+
+        var outcome = _pipeline.Process(Volatile.Read(ref _exchange), frames, input, output[..(Shape.OutputChannels * frames)], inputEvents, outputEvents, transport, sidechain);
         var block = _blocks++;
         if (live && outcome.Outcome == ProcessOutcome.Late)
         {

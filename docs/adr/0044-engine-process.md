@@ -306,7 +306,8 @@ exactly as before, and every existing test uses that path.
   meters (ADR 0037) are measured only for the junctions Bluestone watches: `WatchJunctions` (protocol version 10,
   at most 512 keys) replaces the set, the engine applies it at once rather than queueing it behind a device that is
   opening, and sends it again to a restarted engine; `AudioStatus` carries the watched junctions' meters. The graph
-  image is version 3: it adds the meter points and the nodes each sums.
+  image is version 3: it adds the meter points and the nodes each sums, gain nodes (an Audio Receiver's level), sidechain
+  connections (`ConnectSidechain` steps), and each plugin link's sidechain channels.
 - **The plugin data plane.** Plugin workers stay Bluestone's: launch, control channel, scanning, editors, state,
   restart, and supervision. Each described plugin node now carries its instance's link: the exchange's shape, the
   pipeline depth, collect wait, failure policy, latency, and the running worker's exchange file and generation (none

@@ -174,6 +174,9 @@ public static class AudioGraphImage
                     case DescribedStepKind.Connect:
                         builder.Connect(step.A, step.B);
                         break;
+                    case DescribedStepKind.ConnectSidechain:
+                        builder.ConnectSidechain(step.A, step.B);
+                        break;
                     case DescribedStepKind.Monitor:
                         builder.Monitor(step.A);
                         break;
@@ -267,7 +270,7 @@ public static class AudioGraphImage
     // The exchange's shape is checked by ExchangeOptions (an ArgumentException, so a damaged image).
     private static DescribedPluginLink Link(in LinkEntry link, ReadOnlySpan<StringEntry> strings, ReadOnlySpan<byte> bytes)
     {
-        var shape = new ExchangeOptions(link.MaxFrames, link.InputChannels, link.OutputChannels, link.SlotCount, link.EventCapacity, link.ParameterCapacity);
+        var shape = new ExchangeOptions(link.MaxFrames, link.InputChannels, link.OutputChannels, link.SlotCount, link.EventCapacity, link.ParameterCapacity, link.SidechainChannels);
         if (link.PipelineDepth < 1 || link.PipelineDepth > shape.SlotCount || link.CollectWaitTicks < 0 || link.CollectWaitTicks > MaxCollectWaitTicks
             || link.LatencyFrames < 0 || link.Bypass is not (0 or 1) || link.Path < -1)
         {
@@ -388,6 +391,7 @@ public static class AudioGraphImage
                         SlotCount = link.Shape.SlotCount,
                         EventCapacity = link.Shape.EventCapacity,
                         ParameterCapacity = link.Shape.ParameterChangeCapacity,
+                        SidechainChannels = link.Shape.SidechainChannels,
                         PipelineDepth = link.PipelineDepth,
                         LatencyFrames = link.LatencyFrames,
                         Bypass = link.BypassOnFailure ? 1 : 0,
@@ -620,7 +624,7 @@ public static class AudioGraphImage
         public int PipelineDepth;
         public int LatencyFrames;
         public int Bypass;
-        public int Padding;
+        public int SidechainChannels;
     }
 
     [StructLayout(LayoutKind.Sequential)]

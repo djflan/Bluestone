@@ -206,7 +206,7 @@ internal sealed class InstanceHostSession(Stream pipe, WorkerMainThread mainThre
             });
         }
 
-        return new InstanceCreated(request.InstanceId, plugin.LatencyFrames, plugin.Parameters, exchange.Path, request.Generation, stateError);
+        return new InstanceCreated(request.InstanceId, plugin.LatencyFrames, plugin.Parameters, exchange.Path, request.Generation, stateError) { SidechainChannels = plugin.SidechainChannels };
     }
 
     private ProtocolMessage Destroy(PluginInstanceId id)

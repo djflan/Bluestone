@@ -171,6 +171,7 @@ public static class FrameCodec
                 w.WriteString(m.DataPlanePath);
                 w.WriteUInt32(m.Generation);
                 w.WriteOptionalString(m.StateRestoreError);
+                w.WriteInt32(m.SidechainChannels);
                 break;
             case DestroyInstance m:
                 w.WriteGuid(m.InstanceId.Value);
@@ -368,7 +369,8 @@ public static class FrameCodec
                     var path = r.ReadString();
                     var generation = ReadGeneration(ref r);
                     var error = r.ReadOptionalString();
-                    return new InstanceCreated(id, latency, parameters.MoveToImmutable(), path, generation, error);
+                    var sidechain = r.ReadInt32InRange(0, ProtocolLimits.MaxChannels, "Sidechain channels");
+                    return new InstanceCreated(id, latency, parameters.MoveToImmutable(), path, generation, error) { SidechainChannels = sidechain };
                 }
 
             case MessageType.DestroyInstance:
@@ -663,10 +665,11 @@ public static class FrameCodec
         w.WriteInt32(options.SlotCount);
         w.WriteInt32(options.EventCapacity);
         w.WriteInt32(options.ParameterChangeCapacity);
+        w.WriteInt32(options.SidechainChannels);
     }
 
     private static ExchangeOptions ReadExchangeOptions(ref WireReader r) =>
-        new(r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
+        new(r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
 
     private static void WriteState(WireWriter w, PluginStateData state)
     {

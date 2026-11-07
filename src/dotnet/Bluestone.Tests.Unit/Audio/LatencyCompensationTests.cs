@@ -93,6 +93,31 @@ public sealed class LatencyCompensationTests
     }
 
     [Fact]
+    public void ASidechain_IsSummedApartFromTheInput_AndAlignedWithIt()
+    {
+        // Main input: an impulse straight in. Sidechain: an impulse through 40 frames and one straight in, summed.
+        var builder = new AudioGraphBuilder();
+        var dry = builder.AddNode(new ImpulseNode());
+        var keyed = Path(builder, latency: 40);
+        var direct = builder.AddNode(new ImpulseNode());
+        var key = new KeyNode();
+        var node = builder.AddNode(key);
+        builder.Connect(dry, node);
+        builder.ConnectSidechain(keyed, node);
+        builder.ConnectSidechain(direct, node);
+        builder.ConnectToMaster(node);
+        var graph = builder.Build(Block, new MixerStripState());
+
+        var left = Left(Render(graph, 256));
+
+        // The node puts out its sidechain: both impulses at the graph's latency, and its input arrived there too.
+        Assert.Equal(40, graph.LatencyFrames);
+        Assert.Equal([40], Impulses(left));
+        Assert.Equal(2f, left[40]);
+        Assert.Equal(40, key.InputImpulse);
+    }
+
+    [Fact]
     public void ALatencyChange_MakesTheGraphStale_AndARebuildAlignsAtTheNewLatency()
     {
         var compensation = new LatencyCompensation();
@@ -362,6 +387,32 @@ public sealed class LatencyCompensationTests
                 output.Right[i] = value;
                 _written++;
             }
+        }
+    }
+
+    /// <summary>Puts out its sidechain, and remembers where its first input impulse came.</summary>
+    private sealed class KeyNode : AudioNode
+    {
+        private long _position;
+
+        public long InputImpulse { get; private set; } = -1;
+
+        public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output) => throw new InvalidOperationException("A sidechain was expected.");
+
+        public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer sidechain, StereoBuffer output)
+        {
+            for (var i = 0; i < context.Frames; i++)
+            {
+                if (InputImpulse < 0 && input.Left[i] != 0)
+                {
+                    InputImpulse = _position + i;
+                }
+
+                output.Left[i] = sidechain.Left[i];
+                output.Right[i] = sidechain.Right[i];
+            }
+
+            _position += context.Frames;
         }
     }
 

@@ -39,7 +39,7 @@ use std::time::Duration;
 use common::Instance;
 pub use common::{BphEvent, BphNotification, BphParamChange, BphProcess};
 
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 
 pub const FORMAT_VST3: u32 = 1;
 pub const FORMAT_CLAP: u32 = 2;
@@ -395,6 +395,19 @@ pub unsafe extern "C" fn bph_plugin_latency(plugin: *mut PluginHandle) -> u32 {
     // SAFETY: per the contract above.
     unsafe { self::plugin(plugin) }
         .map(|p| p.instance.latency())
+        .unwrap_or(0)
+}
+
+/// The channels of the plugin's sidechain (its first auxiliary input bus) once activated, or 0 when it has none.
+/// Main thread.
+///
+/// # Safety
+/// `plugin` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bph_plugin_sidechain_channels(plugin: *mut PluginHandle) -> u32 {
+    // SAFETY: per the contract above.
+    unsafe { self::plugin(plugin) }
+        .map(|p| p.instance.sidechain_channels())
         .unwrap_or(0)
 }
 

@@ -11,7 +11,7 @@ namespace Bluestone.PluginWorker.Native;
 internal static unsafe partial class NativeMethods
 {
     public const string Library = "bluestone_plugin_host";
-    public const uint AbiVersion = 2;
+    public const uint AbiVersion = 3;
     public const uint FormatVst3 = 1;
     public const uint FormatClap = 2;
 
@@ -68,6 +68,9 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "bph_plugin_latency")]
     public static partial uint PluginLatency(nint plugin);
+
+    [LibraryImport(Library, EntryPoint = "bph_plugin_sidechain_channels")]
+    public static partial uint PluginSidechainChannels(nint plugin);
 
     [LibraryImport(Library, EntryPoint = "bph_plugin_save_state")]
     public static partial int PluginSaveState(nint plugin, out nint data, out nuint length, out nint error);
@@ -150,9 +153,10 @@ internal static unsafe partial class NativeMethods
     }
 
     /// <summary>Processes one block with the buffers pinned; the library reads and writes them during the call only.</summary>
-    public static int Process(nint plugin, ref NativeBlock block, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<NativeEvent> events, ReadOnlySpan<NativeParameterChange> changes, Span<NativeEvent> outputEvents)
+    public static int Process(nint plugin, ref NativeBlock block, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<NativeEvent> events, ReadOnlySpan<NativeParameterChange> changes, Span<NativeEvent> outputEvents, ReadOnlySpan<float> sidechain = default)
     {
         fixed (float* inputPointer = input)
+        fixed (float* sidechainPointer = sidechain)
         fixed (float* outputPointer = output)
         fixed (NativeEvent* eventPointer = events)
         fixed (NativeParameterChange* changePointer = changes)
@@ -164,6 +168,7 @@ internal static unsafe partial class NativeMethods
             block.Events = (nint)eventPointer;
             block.Changes = (nint)changePointer;
             block.OutputEvents = (nint)outputEventPointer;
+            block.Sidechain = (nint)sidechainPointer;
             return PluginProcess(plugin, blockPointer);
         }
     }
@@ -198,7 +203,7 @@ internal struct NativeNotification
     public double Value;
 }
 
-/// <summary>Mirrors <c>BphProcess</c> (96 bytes on 64-bit platforms). The pointers are set by <see cref="NativeMethods.Process"/>.</summary>
+/// <summary>Mirrors <c>BphProcess</c> (104 bytes on 64-bit platforms). The pointers are set by <see cref="NativeMethods.Process"/>.</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct NativeBlock
 {
@@ -218,5 +223,6 @@ internal struct NativeBlock
     public long Position;
     public double Tempo;
     public uint Playing;
-    public uint Reserved;
+    public uint SidechainChannels;
+    public nint Sidechain;
 }

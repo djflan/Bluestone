@@ -9,10 +9,11 @@ use vst3::{Class, ComRef, ComWrapper, uid};
 
 use crate::{Core, Input, Kind, Output};
 
-const CLASS_IDS: [TUID; 3] = [
+const CLASS_IDS: [TUID; 4] = [
     uid(0x42535447, 0x41494E00, 0x8C1A0001, 0x0B1E5701),
     uid(0x42535453, 0x494E4500, 0x8C1A0002, 0x0B1E5702),
     uid(0x42535454, 0x52414E00, 0x8C1A0003, 0x0B1E5703),
+    uid(0x4253544B, 0x45590000, 0x8C1A0004, 0x0B1E5704),
 ];
 
 const EVENT_NOTE_ON: u16 = Event_::EventTypes_::kNoteOnEvent as u16;
@@ -108,15 +109,19 @@ impl IComponentTrait for Plugin {
         index: int32,
         bus: *mut BusInfo,
     ) -> tresult {
-        if index != 0 || bus.is_null() || index >= unsafe { self.getBusCount(media_type, dir) } {
+        if index < 0 || bus.is_null() || index >= unsafe { self.getBusCount(media_type, dir) } {
             return kInvalidArgument;
         }
+        let audio = media_type == MediaTypes_::kAudio as MediaType;
+        let sidechain = audio && dir == BusDirections_::kInput as BusDirection && index == 1;
         // SAFETY: checked non-null.
         let bus = unsafe { &mut *bus };
         bus.mediaType = media_type;
         bus.direction = dir;
         let channels = *self.channels.lock().unwrap_or_else(|e| e.into_inner());
-        bus.channelCount = if media_type == MediaTypes_::kAudio as MediaType {
+        bus.channelCount = if sidechain {
+            2
+        } else if media_type == MediaTypes_::kAudio as MediaType {
             if dir == BusDirections_::kInput as BusDirection {
                 channels.0
             } else {
@@ -126,15 +131,26 @@ impl IComponentTrait for Plugin {
             16
         };
         copy_w(
-            if media_type == MediaTypes_::kAudio as MediaType {
+            if sidechain {
+                "Sidechain"
+            } else if media_type == MediaTypes_::kAudio as MediaType {
                 "Audio"
             } else {
                 "MIDI"
             },
             &mut bus.name,
         );
-        bus.busType = BusTypes_::kMain as BusType;
-        bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32;
+        // A sidechain is an auxiliary bus, inactive until the host turns it on, as plugins usually make it.
+        bus.busType = if sidechain {
+            BusTypes_::kAux as BusType
+        } else {
+            BusTypes_::kMain as BusType
+        };
+        bus.flags = if sidechain {
+            0
+        } else {
+            BusInfo_::BusFlags_::kDefaultActive as u32
+        };
         kResultOk
     }
 
@@ -248,11 +264,15 @@ impl IAudioProcessorTrait for Plugin {
         index: int32,
         arrangement: *mut SpeakerArrangement,
     ) -> tresult {
-        if index != 0 || arrangement.is_null() {
+        let input = dir == BusDirections_::kInput as BusDirection;
+        let sidechain = input && index == 1 && self.kind.audio_inputs() == 2;
+        if !(index == 0 || sidechain) || arrangement.is_null() {
             return kInvalidArgument;
         }
         let channels = *self.channels.lock().unwrap_or_else(|e| e.into_inner());
-        let count = if dir == BusDirections_::kInput as BusDirection {
+        let count = if sidechain {
+            2
+        } else if input {
             channels.0
         } else {
             channels.1
@@ -358,12 +378,12 @@ impl IAudioProcessorTrait for Plugin {
         }
         events.sort_by_key(|e| e.0);
         let frames = data.numSamples.max(0) as usize;
-        let channels = |buses: *mut AudioBusBuffers, count: i32| -> Vec<*mut f32> {
-            if buses.is_null() || count < 1 {
+        let channels = |buses: *mut AudioBusBuffers, count: i32, index: i32| -> Vec<*mut f32> {
+            if buses.is_null() || count <= index {
                 return Vec::new();
             }
             // SAFETY: the host passes `count` buses with valid channel pointers.
-            let bus = unsafe { &*buses };
+            let bus = unsafe { &*buses.add(index as usize) };
             if bus.numChannels < 1 || unsafe { bus.__field0.channelBuffers32 }.is_null() {
                 return Vec::new();
             }
@@ -371,10 +391,16 @@ impl IAudioProcessorTrait for Plugin {
                 .map(|c| unsafe { *bus.__field0.channelBuffers32.add(c) })
                 .collect()
         };
-        let input_pointers = channels(data.inputs, data.numInputs);
-        let output_pointers = channels(data.outputs, data.numOutputs);
+        let input_pointers = channels(data.inputs, data.numInputs, 0);
+        let sidechain_pointers = channels(data.inputs, data.numInputs, 1);
+        let output_pointers = channels(data.outputs, data.numOutputs, 0);
         // SAFETY: each channel holds `frames` samples for the call.
         let inputs: Vec<&[f32]> = input_pointers
+            .iter()
+            .map(|&p| unsafe { std::slice::from_raw_parts(p as *const f32, frames) })
+            .collect();
+        // SAFETY: as above.
+        let sidechain: Vec<&[f32]> = sidechain_pointers
             .iter()
             .map(|&p| unsafe { std::slice::from_raw_parts(p as *const f32, frames) })
             .collect();
@@ -387,6 +413,7 @@ impl IAudioProcessorTrait for Plugin {
         core.process(
             frames,
             &inputs,
+            &sidechain,
             &mut outputs,
             &events,
             &mut |offset, output| {
@@ -609,7 +636,7 @@ impl IPluginFactory2Trait for Factory {
         copy_c(kind.name(), &mut info.name);
         info.classFlags = 0;
         copy_c(
-            if *kind == Kind::Gain {
+            if matches!(*kind, Kind::Gain | Kind::Key) {
                 "Fx"
             } else {
                 "Instrument"

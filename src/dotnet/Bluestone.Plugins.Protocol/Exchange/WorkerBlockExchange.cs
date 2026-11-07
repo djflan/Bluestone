@@ -58,6 +58,7 @@ public sealed class WorkerBlockExchange : IDisposable
             BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.MaxFramesOffset..], options.MaxFrames);
             BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.InputChannelsOffset..], options.InputChannels);
             BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.OutputChannelsOffset..], options.OutputChannels);
+            BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.SidechainChannelsOffset..], options.SidechainChannels);
             BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.EventCapacityOffset..], options.EventCapacity);
             BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.ParameterCapacityOffset..], options.ParameterChangeCapacity);
             BinaryPrimitives.WriteInt32LittleEndian(header[ExchangeLayout.EventRecordBytesOffset..], PluginEvent.RecordBytes);
@@ -202,6 +203,14 @@ public ref struct WorkerBlock
         ArgumentOutOfRangeException.ThrowIfNegative(channel);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(channel, _layout.Options.InputChannels);
         return Floats(_layout.InputAudioOffset, channel);
+    }
+
+    /// <summary>A channel of the sidechain's audio (see <see cref="ExchangeOptions.SidechainChannels"/>).</summary>
+    public readonly ReadOnlySpan<float> Sidechain(int channel)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(channel);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(channel, _layout.Options.SidechainChannels);
+        return Floats(_layout.InputAudioOffset, _layout.Options.InputChannels + channel);
     }
 
     public readonly Span<float> Output(int channel)

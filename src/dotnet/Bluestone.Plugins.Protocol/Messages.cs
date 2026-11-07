@@ -138,6 +138,9 @@ public sealed record InstanceCreated(
     string? StateRestoreError) : ProtocolMessage
 {
     public override MessageType Type => MessageType.InstanceCreated;
+
+    /// <summary>The channels of the plugin's sidechain (its first auxiliary input bus), or 0 when it has none.</summary>
+    public int SidechainChannels { get; init; }
 }
 
 public sealed record DestroyInstance(PluginInstanceId InstanceId) : ProtocolMessage

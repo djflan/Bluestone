@@ -20,6 +20,7 @@ public sealed class PluginNode : AudioNode
     private const int NoteSlots = 16 * 128;
     private readonly IPluginProcessor _instance;
     private readonly float[] _input;
+    private readonly float[] _sidechain;
     private readonly float[] _output;
     private readonly PluginEvent[] _events;
     private readonly PluginEvent[] _outputEvents;
@@ -48,6 +49,7 @@ public sealed class PluginNode : AudioNode
         }
 
         _input = new float[instance.InputChannels * instance.MaxBlockFrames];
+        _sidechain = new float[instance.SidechainChannels * instance.MaxBlockFrames];
         _output = new float[instance.OutputChannels * instance.MaxBlockFrames];
         _events = new PluginEvent[instance.EventCapacity];
         _outputEvents = new PluginEvent[instance.EventCapacity];
@@ -91,7 +93,11 @@ public sealed class PluginNode : AudioNode
     /// <summary>Events that did not fit in a block's event capacity.</summary>
     public long DroppedEvents => Interlocked.Read(ref _droppedEvents);
 
-    public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output)
+    public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output) =>
+        Render(context, input, default, output);
+
+    /// <summary>Plays the block; a connected <paramref name="sidechain"/> goes to the plugin's sidechain (ADR 0037).</summary>
+    public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer sidechain, StereoBuffer output)
     {
         var frames = context.Frames;
         var count = 0;
@@ -123,7 +129,14 @@ public sealed class PluginNode : AudioNode
         var inputAudio = _input.AsSpan(0, inputChannels * frames);
         Deinterleave(input, inputAudio, inputChannels, frames);
         var outputAudio = _output.AsSpan(0, outputChannels * frames);
-        var outcome = _instance.ProcessBlock(frames, inputAudio, outputAudio, _events.AsSpan(0, count), _outputEvents, new TransportState(context.SongFrame, context.Tempo, context.Playing));
+        var sidechainChannels = _instance.SidechainChannels;
+        var sidechainAudio = sidechainChannels > 0 && sidechain.Left.Length == frames ? _sidechain.AsSpan(0, sidechainChannels * frames) : default;
+        if (!sidechainAudio.IsEmpty)
+        {
+            Deinterleave(sidechain, sidechainAudio, sidechainChannels, frames);
+        }
+
+        var outcome = _instance.ProcessBlock(frames, inputAudio, outputAudio, _events.AsSpan(0, count), _outputEvents, new TransportState(context.SongFrame, context.Tempo, context.Playing), sidechainAudio);
         Interlocked.Increment(ref _blocks);
         if (outcome.Outcome is not (ProcessOutcome.Processed or ProcessOutcome.Priming))
         {

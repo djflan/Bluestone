@@ -126,6 +126,9 @@ public sealed class AudioGraphRealizer : IDisposable
                 case DescribedStepKind.Connect:
                     builder.Connect(indices[step.A], indices[step.B]);
                     break;
+                case DescribedStepKind.ConnectSidechain:
+                    builder.ConnectSidechain(indices[step.A], indices[step.B]);
+                    break;
                 case DescribedStepKind.Monitor:
                     builder.Monitor(indices[step.A]);
                     break;

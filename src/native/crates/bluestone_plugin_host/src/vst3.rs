@@ -507,7 +507,8 @@ impl Vst3Instance {
             position,
             tempo,
             playing,
-            reserved: 0,
+            sidechain_channels: 0,
+            sidechain: std::ptr::null(),
         };
         self.process_locked(audio, &mut block);
         let produced = block.out_event_count as usize;
@@ -1029,6 +1030,14 @@ impl Instance for Vst3Instance {
     fn latency(&self) -> u32 {
         // SAFETY: plain query.
         unsafe { self.processor.getLatencySamples() }
+    }
+
+    fn sidechain_channels(&self) -> u32 {
+        self.audio
+            .lock()
+            .ok()
+            .and_then(|a| a.as_ref().map(|a| a.adapter.sidechain_channels()))
+            .unwrap_or(0)
     }
 
     fn save_state(&self) -> Result<Vec<u8>, String> {

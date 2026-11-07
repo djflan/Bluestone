@@ -243,7 +243,8 @@ fn block(frames: u32, changes: &[BphParamChange]) -> BphProcess {
         position: 0,
         tempo: 120.0,
         playing: 0,
-        reserved: 0,
+        sidechain_channels: 0,
+        sidechain: std::ptr::null(),
     }
 }
 

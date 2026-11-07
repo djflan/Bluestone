@@ -22,6 +22,8 @@ public sealed class FrameCodecTests
         new CreateInstance(Instance, Gain, 44_100, new ExchangeOptions(64, 0, 1), 1, "d", null),
         new InstanceCreated(Instance, 12, [new ParameterDescriptor(0, "Gain", 0.5), new ParameterDescriptor(9, "Invert", 0, 1)], "/data/dir/file", 7, null),
         new InstanceCreated(Instance, 0, [], "p", 2, "bad state"),
+        new CreateInstance(Instance, Gain, 48_000, new ExchangeOptions(256, 2, 2, 3, 64, 32, sidechainChannels: 2), 7, "/data/dir", null),
+        new InstanceCreated(Instance, 0, [], "p", 2, null) { SidechainChannels = 2 },
         new DestroyInstance(Instance),
         new CaptureState(Instance),
         new StateResult(Instance, State),
@@ -188,6 +190,15 @@ public sealed class FrameCodecTests
         Assert.Equal(77u, decoded.RequestId);
         Assert.Equal(message.GetType(), decoded.Message.GetType());
         Assert.Equal(encoded, FrameCodec.Encode(77, decoded.Message));
+        switch ((message, decoded.Message))
+        {
+            case (CreateInstance sent, CreateInstance read):
+                Assert.Equal(sent.Exchange, read.Exchange);
+                break;
+            case (InstanceCreated sent, InstanceCreated read):
+                Assert.Equal(sent.SidechainChannels, read.SidechainChannels);
+                break;
+        }
     }
 
     [Fact]

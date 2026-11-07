@@ -89,6 +89,7 @@ public sealed class HostBlockExchange : IDisposable
             Require(Int(header, ExchangeLayout.MaxFramesOffset) == expectedOptions.MaxFrames, "max frames differ");
             Require(Int(header, ExchangeLayout.InputChannelsOffset) == expectedOptions.InputChannels, "input channels differ");
             Require(Int(header, ExchangeLayout.OutputChannelsOffset) == expectedOptions.OutputChannels, "output channels differ");
+            Require(Int(header, ExchangeLayout.SidechainChannelsOffset) == expectedOptions.SidechainChannels, "sidechain channels differ");
             Require(Int(header, ExchangeLayout.EventCapacityOffset) == expectedOptions.EventCapacity, "event capacity differs");
             Require(Int(header, ExchangeLayout.ParameterCapacityOffset) == expectedOptions.ParameterChangeCapacity, "parameter capacity differs");
             Require(Int(header, ExchangeLayout.EventRecordBytesOffset) == PluginEvent.RecordBytes, "event record size differs");
@@ -117,6 +118,7 @@ public sealed class HostBlockExchange : IDisposable
     /// Writes block <paramref name="blockIndex"/> into its slot (<c>blockIndex % SlotCount</c>) and hands it to the
     /// worker. <paramref name="input"/> is planar: channel c occupies <c>[c * frames, (c + 1) * frames)</c>. Events and
     /// parameter changes that do not fit or are out of range are dropped and counted, never thrown.
+    /// <paramref name="sidechain"/> is the sidechain's audio, planar in the same way, or empty for silence.
     /// </summary>
     public ExchangeStatus TrySubmit(
         long blockIndex,
@@ -124,10 +126,12 @@ public sealed class HostBlockExchange : IDisposable
         in TransportState transport,
         ReadOnlySpan<float> input,
         ReadOnlySpan<PluginEvent> events,
-        ReadOnlySpan<ParameterChange> changes)
+        ReadOnlySpan<ParameterChange> changes,
+        ReadOnlySpan<float> sidechain = default)
     {
         var options = _layout.Options;
-        if (blockIndex < 0 || frames < 1 || frames > options.MaxFrames || input.Length != options.InputChannels * frames)
+        if (blockIndex < 0 || frames < 1 || frames > options.MaxFrames || input.Length != options.InputChannels * frames
+            || (!sidechain.IsEmpty && sidechain.Length != options.SidechainChannels * frames))
         {
             return ExchangeStatus.Rejected;
         }
@@ -176,6 +180,19 @@ public sealed class HostBlockExchange : IDisposable
             for (var c = 0; c < options.InputChannels; c++)
             {
                 input.Slice(c * frames, frames).CopyTo(Floats(slot, _layout.InputAudioOffset + ((long)c * options.MaxFrames * sizeof(float)), frames));
+            }
+
+            for (var c = 0; c < options.SidechainChannels; c++)
+            {
+                var into = Floats(slot, _layout.InputAudioOffset + ((long)(options.InputChannels + c) * options.MaxFrames * sizeof(float)), frames);
+                if (sidechain.IsEmpty)
+                {
+                    into.Clear();
+                }
+                else
+                {
+                    sidechain.Slice(c * frames, frames).CopyTo(into);
+                }
             }
 
             var eventCount = 0;

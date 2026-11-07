@@ -396,6 +396,11 @@ public sealed class ProjectAudioGraph : IDisposable
                             _builder.Monitor(node);
                         }
 
+                        foreach (var source in Sources(chain, points, i, SignalNode.DeviceInput(device.Id, DeviceInputPort.Sidechain)))
+                        {
+                            _builder.ConnectSidechain(source, node);
+                        }
+
                         if (definition.Consumes.HasFlag(SignalKinds.Audio))
                         {
                             foreach (var source in audio)
@@ -434,16 +439,7 @@ public sealed class ProjectAudioGraph : IDisposable
         // or replacing it. A source earlier in the same chain is that junction's audio; validation keeps it earlier.
         private List<int> Receive(DeviceChain chain, List<int>[] points, int at, DeviceInstance device, List<int> audio)
         {
-            var input = SignalNode.DeviceInput(device.Id, DeviceInputPort.Receive);
-            var received = new List<int>();
-            foreach (var connection in _audio.Where(c => c.Destination == input))
-            {
-                received.AddRange(SignalFlow.JunctionOf(project, connection.Source) is var (source, junction) && source.Id == chain.Id
-                    ? junction <= at ? points[junction] : []
-                    : Output(connection.Source));
-            }
-
-            received = [.. received.Distinct()];
+            var received = Sources(chain, points, at, SignalNode.DeviceInput(device.Id, DeviceInputPort.Receive));
             var gain = BuiltInDevices.ReceiverGainOf(device);
             if (received.Count > 0 && Math.Abs(gain) > 1e-9)
             {
@@ -457,6 +453,21 @@ public sealed class ProjectAudioGraph : IDisposable
             }
 
             return BuiltInDevices.ReplacesOf(device) ? received : [.. audio, .. received];
+        }
+
+        // The audio nodes connected into a device input at chain index `at`: a source earlier in the same chain is that
+        // junction's audio (validation keeps it earlier); any other is its owner's output, or the point after its device.
+        private List<int> Sources(DeviceChain chain, List<int>[] points, int at, SignalNode input)
+        {
+            var sources = new List<int>();
+            foreach (var connection in _audio.Where(c => c.Destination == input))
+            {
+                sources.AddRange(SignalFlow.JunctionOf(project, connection.Source) is var (source, junction) && source.Id == chain.Id
+                    ? junction <= at ? points[junction] : []
+                    : Output(connection.Source));
+            }
+
+            return [.. sources.Distinct()];
         }
 
         // A track's own audio: its clips, when it plays, and audio connected into it.

@@ -8,6 +8,8 @@
 //! - **Test Transpose** (MIDI effect): Semitones (id 0) maps [0, 1] to -24..+24 in 48 steps (0.5 is no change). Notes
 //!   are transposed; a note-off follows its note-on's transposition; notes pushed outside 0..127 are dropped. In CLAP,
 //!   other MIDI messages pass through unchanged.
+//! - **Test Key** (audio effect with a sidechain): a main input bus and an auxiliary (sidechain) input bus; Mix (id 0)
+//!   blends them, `main * (1 - Mix) + sidechain * Mix`, so at its default (1) the output is exactly the sidechain.
 //!
 //! State is the parameter values: `BTPS`, a little-endian u16 version (1), a u16 count, then that many f64 values.
 
@@ -25,16 +27,18 @@ pub enum Kind {
     Gain,
     Sine,
     Transpose,
+    Key,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 3] = [Kind::Gain, Kind::Sine, Kind::Transpose];
+    pub const ALL: [Kind; 4] = [Kind::Gain, Kind::Sine, Kind::Transpose, Kind::Key];
 
     pub fn name(self) -> &'static str {
         match self {
             Kind::Gain => "Test Gain",
             Kind::Sine => "Test Sine",
             Kind::Transpose => "Test Transpose",
+            Kind::Key => "Test Key",
         }
     }
 
@@ -62,11 +66,21 @@ impl Kind {
                 default: 0.5,
                 steps: 48,
             }],
+            Kind::Key => &[ParameterSpec {
+                name: "Mix",
+                default: 1.0,
+                steps: 0,
+            }],
         }
     }
 
+    /// Audio input buses: the main one, and for Test Key a sidechain after it.
     pub fn audio_inputs(self) -> u32 {
-        if self == Kind::Gain { 1 } else { 0 }
+        match self {
+            Kind::Gain => 1,
+            Kind::Key => 2,
+            _ => 0,
+        }
     }
 
     pub fn audio_outputs(self) -> u32 {
@@ -74,7 +88,11 @@ impl Kind {
     }
 
     pub fn event_inputs(self) -> u32 {
-        if self == Kind::Gain { 0 } else { 1 }
+        if matches!(self, Kind::Gain | Kind::Key) {
+            0
+        } else {
+            1
+        }
     }
 
     pub fn event_outputs(self) -> u32 {
@@ -202,11 +220,14 @@ impl Core {
         true
     }
 
-    /// Renders `frames` frames. `events` are sorted by offset; each takes effect from its own sample.
+    /// Renders `frames` frames. `events` are sorted by offset; each takes effect from its own sample. `sidechain` is the
+    /// auxiliary input bus's channels (empty when the host gave none).
+    #[allow(clippy::too_many_arguments)]
     pub fn process(
         &mut self,
         frames: usize,
         inputs: &[&[f32]],
+        sidechain: &[&[f32]],
         outputs: &mut [&mut [f32]],
         events: &[(u32, Input)],
         emit: &mut dyn FnMut(u32, Output),
@@ -223,7 +244,7 @@ impl Core {
                 .map(|e| e.0 as usize)
                 .unwrap_or(frames)
                 .clamp(position + 1, frames);
-            self.render(position, end, inputs, outputs);
+            self.render(position, end, inputs, sidechain, outputs);
             position = end;
         }
         while next < events.len() {
@@ -257,7 +278,7 @@ impl Core {
                         );
                     }
                 }
-                Kind::Gain => {}
+                Kind::Gain | Kind::Key => {}
             },
             Input::Midi(bytes) => {
                 let status = bytes[0] & 0xF0;
@@ -328,8 +349,26 @@ impl Core {
         }
     }
 
-    fn render(&mut self, start: usize, end: usize, inputs: &[&[f32]], outputs: &mut [&mut [f32]]) {
+    fn render(
+        &mut self,
+        start: usize,
+        end: usize,
+        inputs: &[&[f32]],
+        sidechain: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+    ) {
         match self.kind {
+            Kind::Key => {
+                let mix = self.get(0).unwrap_or(1.0) as f32;
+                for (c, output) in outputs.iter_mut().enumerate() {
+                    let main = inputs.get(c).or(inputs.last());
+                    let side = sidechain.get(c).or(sidechain.last());
+                    for (i, sample) in output.iter_mut().enumerate().take(end).skip(start) {
+                        *sample = main.map(|x| x[i]).unwrap_or(0.0) * (1.0 - mix)
+                            + side.map(|x| x[i]).unwrap_or(0.0) * mix;
+                    }
+                }
+            }
             Kind::Gain => {
                 let mut gain = (self.get(0).unwrap_or(0.5) * 2.0) as f32;
                 if self.get(1).unwrap_or(0.0) >= 0.5 {
