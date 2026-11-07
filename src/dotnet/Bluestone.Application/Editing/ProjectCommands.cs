@@ -198,6 +198,7 @@ public static class ProjectCommands
                 var name = track.Name.Length + 5 <= Track.MaxNameLength ? track.Name + " copy" : track.Name;
                 var copyId = TrackId.New();
                 var devices = new Dictionary<DeviceId, DeviceId>();
+                var chains = new Dictionary<DeviceChainId, DeviceChainId>();
                 if (result.ChainOf(id) is { } chain)
                 {
                     var copies = chain.Devices.Select(d => d.Duplicate()).ToList();
@@ -206,7 +207,9 @@ public static class ProjectCommands
                         devices[chain.Devices[i].Id] = copies[i].Id;
                     }
 
-                    result = result.WithChain(DeviceChain.Create(ChainOwner.ForTrack(copyId), chain.Name) with { Devices = [.. copies] });
+                    var copiedChain = DeviceChain.Create(ChainOwner.ForTrack(copyId), chain.Name) with { Devices = [.. copies] };
+                    chains[chain.Id] = copiedChain.Id;
+                    result = result.WithChain(copiedChain);
                 }
 
                 var copy = new Track(
@@ -224,12 +227,24 @@ public static class ProjectCommands
                     track.IsFolded);
                 var index = result.Sequence.Tracks.IndexOf(track) + 1;
                 result = result with { Sequence = result.Sequence.InsertTrack(index, copy) };
+                // The copy sends where the original sends, from the same points of its chain, and its devices' inputs
+                // (a receiver's source) are connected as the original's are.
+                SignalNode Copied(SignalNode node) => node.Kind switch
+                {
+                    SignalNodeKind.Track when node.AsTrack() == id => SignalNode.Track(copyId),
+                    SignalNodeKind.Device when devices.TryGetValue(node.AsDevice(), out var to) => SignalNode.Device(to),
+                    SignalNodeKind.DeviceInput when devices.TryGetValue(node.AsDevice(), out var to) => SignalNode.DeviceInput(to, node.Port!),
+                    SignalNodeKind.ChainInput when chains.TryGetValue(node.AsChain(), out var to) => SignalNode.ChainInput(to),
+                    _ => node,
+                };
+
                 var outgoing = result.Connections
-                    .Where(c => c.Source == SignalNode.Track(id) || (c.Source.Kind == SignalNodeKind.Device && devices.ContainsKey(c.Source.AsDevice())))
+                    .Where(c => Copied(c.Source) != c.Source || (c.Destination.Kind == SignalNodeKind.DeviceInput && Copied(c.Destination) != c.Destination))
                     .Select(c => c with
                     {
                         Id = ConnectionId.New(),
-                        Source = c.Source.Kind == SignalNodeKind.Device ? SignalNode.Device(devices[c.Source.AsDevice()]) : SignalNode.Track(copyId),
+                        Source = Copied(c.Source),
+                        Destination = c.Destination.Kind == SignalNodeKind.DeviceInput ? Copied(c.Destination) : c.Destination,
                     })
                     .ToList();
                 var parked = result.ParkedConnections

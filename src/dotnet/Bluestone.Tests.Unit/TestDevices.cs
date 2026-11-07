@@ -48,7 +48,29 @@ internal static class TestDevices
         Parameters = [new ParameterDescriptor(new ParameterId(1), "Feedback", 0, 1, 0.4)],
     };
 
-    public static ImmutableArray<DeviceDefinition> All => [MidiFx, Synth, Filter, Delay];
+    /// <summary>An audio effect with a sidechain input (a compressor keyed from elsewhere).</summary>
+    public static readonly DeviceDefinition Ducker = new()
+    {
+        Id = new DeviceDefinitionId("test.ducker"),
+        Name = "Ducker",
+        Consumes = SignalKinds.Audio,
+        Produces = SignalKinds.Audio,
+        Inputs = [new DeviceInputPort(DeviceInputPort.Sidechain, "Sidechain", SignalKind.Audio)],
+    };
+
+    /// <summary>A note effect that takes events from elsewhere in the project (a receiver).</summary>
+    public static readonly DeviceDefinition EventInlet = new()
+    {
+        Id = new DeviceDefinitionId("test.event-inlet"),
+        Name = "Event Inlet",
+        Consumes = SignalKinds.Events,
+        Produces = SignalKinds.Events,
+        Handles = EventClass.Notes,
+        EventThru = EventClass.Notes,
+        Inputs = [new DeviceInputPort(DeviceInputPort.Receive, "Source", SignalKind.Events)],
+    };
+
+    public static ImmutableArray<DeviceDefinition> All => [MidiFx, Synth, Filter, Delay, Ducker, EventInlet];
 
     public static DeviceDefinition? Lookup(DeviceDefinitionId id) => All.FirstOrDefault(d => d.Id == id);
 

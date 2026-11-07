@@ -279,9 +279,11 @@ public static class SignalGraph
                 _diagnostics.Add(new SignalDiagnostic(SignalDiagnosticCode.InvalidConnection, $"A connection was left out: {SignalRoutingValidator.Describe(project, orphan.Source)} belongs to a chain without a track.") { Connection = orphan.Id });
             }
 
+            // A connection into a device's input orders the device's owner. One from the same chain is ordered by the chain.
             var edges = _connections
-                .Where(c => known.Contains(c.Destination))
-                .Select(c => (Connection: c, From: OwnerOf(c.Source)!.Value, To: c.Destination))
+                .Select(c => (Connection: c, From: OwnerOf(c.Source)!.Value, To: OwnerOf(c.Destination)))
+                .Where(e => e.To is { } to && known.Contains(to) && !(e.Connection.Destination.Kind == SignalNodeKind.DeviceInput && e.To == e.From))
+                .Select(e => (e.Connection, e.From, To: e.To!.Value))
                 .ToList();
 
             var order = new List<SignalNode>();
@@ -344,9 +346,11 @@ public static class SignalGraph
             }
 
             var sent = false;
-            foreach (var connection in _connections.Where(c => c.Source == node || (c.Source.Kind == SignalNodeKind.Device && chain?.Find(c.Source.AsDevice()) is not null)))
+            foreach (var connection in _connections.Where(c => c.Source == node || (chain is not null && c.Source.IsInside(chain))))
             {
-                var from = connection.Source == node ? output : _taps.GetValueOrDefault(connection.Source.AsDevice(), []).AsSpan();
+                var from = connection.Source == node ? output
+                    : connection.Source.Kind == SignalNodeKind.ChainInput ? ordered
+                    : _taps.GetValueOrDefault(connection.Source.AsDevice(), []).AsSpan();
                 Deliver(connection, Map(from, connection.Mapping));
                 sent = true;
             }
@@ -407,14 +411,17 @@ public static class SignalGraph
                 .Select(g => new ParameterFeed(g.Key, [.. g])),
         ];
 
-        // The track or rack whose chain a connection's source belongs to.
-        private SignalNode? OwnerOf(SignalNode source) => source.Kind switch
+        // The track or rack whose chain a connection's end belongs to.
+        private SignalNode? OwnerOf(SignalNode node) => node.Kind switch
         {
-            SignalNodeKind.Track or SignalNodeKind.Rack => source,
-            SignalNodeKind.Device when project.FindDevice(source.AsDevice()) is { } found =>
-                found.Chain.Owner.Kind == ChainOwnerKind.Track ? SignalNode.Track(found.Chain.Owner.Track) : SignalNode.Rack(found.Chain.Id),
+            SignalNodeKind.Track or SignalNodeKind.Rack => node,
+            SignalNodeKind.Device or SignalNodeKind.DeviceInput when project.FindDevice(node.AsDevice()) is { } found => OwnerOf(found.Chain),
+            SignalNodeKind.ChainInput when project.FindChain(node.AsChain()) is { } chain => OwnerOf(chain),
             _ => null,
         };
+
+        private static SignalNode OwnerOf(DeviceChain chain) =>
+            chain.Owner.Kind == ChainOwnerKind.Track ? SignalNode.Track(chain.Owner.Track) : SignalNode.Rack(chain.Id);
 
         private void Report(SignalDiagnosticCode code, Track track, string message) =>
             _diagnostics.Add(new SignalDiagnostic(code, message) { Track = track.Id });

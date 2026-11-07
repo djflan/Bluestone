@@ -13,7 +13,7 @@ namespace Bluestone.Tests.Unit.Application;
 
 public sealed class DeviceAndRoutingCommandsTests
 {
-    private static readonly DeviceDefinitionLookup Definitions = DeviceCatalog.BuiltIn.With(TestDevices.Synth).With(TestDevices.Filter).With(TestDevices.Delay).With(TestDevices.MidiFx).Lookup;
+    private static readonly DeviceDefinitionLookup Definitions = DeviceCatalog.BuiltIn.With(TestDevices.Synth).With(TestDevices.Filter).With(TestDevices.Delay).With(TestDevices.MidiFx).With(TestDevices.Ducker).With(TestDevices.EventInlet).Lookup;
 
     private static (EditHistory History, Track A, Track B) TwoTracks()
     {
@@ -138,6 +138,63 @@ public sealed class DeviceAndRoutingCommandsTests
         Assert.Empty(history.Current.ChainOf(a.Id)!.Devices);
         Assert.Empty(history.Current.Connections);
         Assert.Single(history.Current.Sequence.FindTrack(a.Id)!.Automation);
+    }
+
+    [Fact]
+    public void RemovingADevice_RemovesConnectionsIntoItsInputs()
+    {
+        var (history, a, b) = TwoTracks();
+        var synth = TestDevices.Instance(TestDevices.Synth);
+        var ducker = TestDevices.Instance(TestDevices.Ducker);
+        history.Execute(DeviceCommands.InsertDevice(a.Id, synth, Definitions));
+        history.Execute(DeviceCommands.InsertDevice(b.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
+        history.Execute(DeviceCommands.InsertDevice(b.Id, ducker, Definitions));
+        var before = history.Current.Connections.Length;
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), Definitions));
+
+        history.Execute(DeviceCommands.RemoveDevice(ducker.Id, Definitions));
+
+        Assert.Equal(before, history.Current.Connections.Length);
+        Assert.DoesNotContain(history.Current.Connections, c => c.Destination.Kind == SignalNodeKind.DeviceInput);
+    }
+
+    [Fact]
+    public void ReplacingADevice_KeepsConnectionsIntoAnInputTheReplacementAlsoHas()
+    {
+        var (history, a, b) = TwoTracks();
+        var ducker = TestDevices.Instance(TestDevices.Ducker);
+        history.Execute(DeviceCommands.InsertDevice(a.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
+        history.Execute(DeviceCommands.InsertDevice(b.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
+        history.Execute(DeviceCommands.InsertDevice(b.Id, ducker, Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), Definitions));
+
+        var same = TestDevices.Instance(TestDevices.Ducker);
+        history.Execute(DeviceCommands.ReplaceDevice(ducker.Id, same, Definitions));
+        Assert.Contains(history.Current.Connections, c => c.Destination == SignalNode.DeviceInput(same.Id, DeviceInputPort.Sidechain));
+
+        var filter = TestDevices.Instance(TestDevices.Filter);
+        history.Execute(DeviceCommands.ReplaceDevice(same.Id, filter, Definitions));
+        Assert.DoesNotContain(history.Current.Connections, c => c.Destination.Kind == SignalNodeKind.DeviceInput);
+    }
+
+    [Fact]
+    public void DuplicatingATrack_CopiesConnectionsFromItsChainInput_AndIntoItsDevicesInputs()
+    {
+        var (history, a, b) = TwoTracks();
+        var inlet = TestDevices.Instance(TestDevices.EventInlet);
+        history.Execute(DeviceCommands.InsertDevice(a.Id, inlet, Definitions));
+        var chain = history.Current.ChainOf(a.Id)!;
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.ChainInput(chain.Id), SignalNode.Track(b.Id)), Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.ChainInput(chain.Id), SignalNode.DeviceInput(inlet.Id, DeviceInputPort.Receive)), Definitions));
+
+        history.Execute(ProjectCommands.DuplicateTracks([a.Id]));
+
+        var copy = history.Current.Sequence.Tracks[1];
+        var copyChain = history.Current.ChainOf(copy.Id)!;
+        var copyInlet = SignalNode.DeviceInput(copyChain.Devices[0].Id, DeviceInputPort.Receive);
+        Assert.Contains(history.Current.Connections, c => c.Source == SignalNode.ChainInput(copyChain.Id) && c.Destination == SignalNode.Track(b.Id));
+        Assert.Contains(history.Current.Connections, c => c.Source == SignalNode.ChainInput(copyChain.Id) && c.Destination == copyInlet);
+        Assert.Empty(SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(history.Current, Definitions)));
     }
 
     [Fact]

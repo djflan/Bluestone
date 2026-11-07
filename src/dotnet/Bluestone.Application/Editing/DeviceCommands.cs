@@ -41,11 +41,12 @@ public static class DeviceCommands
             }
 
             var chain = p.ChainOf(track) ?? DeviceChain.Create(ChainOwner.ForTrack(track));
-            var removed = chain.Devices.Select(d => SignalNode.Device(d.Id)).ToHashSet();
+            var old = chain;
+            bool Gone(SignalConnection c) => (c.Source.Kind == SignalNodeKind.Device && c.Source.IsInside(old)) || (c.Destination.Kind == SignalNodeKind.DeviceInput && c.Destination.IsInside(old));
             return p.WithChain(chain with { Devices = [device] }) with
             {
-                Connections = p.Connections.RemoveAll(c => removed.Contains(c.Source)),
-                ParkedConnections = p.ParkedConnections.RemoveAll(c => removed.Contains(c.Source)),
+                Connections = p.Connections.RemoveAll(Gone),
+                ParkedConnections = p.ParkedConnections.RemoveAll(Gone),
             };
         });
 
@@ -69,8 +70,8 @@ public static class DeviceCommands
         });
 
     /// <summary>
-    /// Removes a device, and the connections that tap its output (they have nothing left to tap). Automation
-    /// lanes that target it are kept and reported, so nothing the musician drew is lost.
+    /// Removes a device, and the connections that tap its output or end at its inputs (they have nothing left to
+    /// connect to). Automation lanes that target it are kept and reported, so nothing the musician drew is lost.
     /// </summary>
     public static IProjectCommand RemoveDevice(DeviceId device, DeviceDefinitionLookup definitions) =>
         RoutingGuard.Command("Remove Device", definitions, p =>
@@ -80,9 +81,12 @@ public static class DeviceCommands
                 return p;
             }
 
-            var tap = SignalNode.Device(device);
-            return p.WithChain(found.Chain.Remove(device)) with { Connections = p.Connections.RemoveAll(c => c.Source == tap) };
+            return p.WithChain(found.Chain.Remove(device)) with { Connections = p.Connections.RemoveAll(c => IsAt(c.Source, device) || IsAt(c.Destination, device)) };
         });
+
+    // The node is the output or an input port of the device.
+    private static bool IsAt(SignalNode node, DeviceId device) =>
+        node.Kind is SignalNodeKind.Device or SignalNodeKind.DeviceInput && node.AsDevice() == device;
 
     /// <summary>
     /// Replaces <paramref name="device"/> with <paramref name="replacement"/> at the same place in its chain, in one step.
@@ -90,7 +94,8 @@ public static class DeviceCommands
     /// is the same device (the same built-in or the same plugin), when its lanes follow it. Other lanes keep targeting the
     /// old device and stay in the project (shown as having no device), so nothing is lost and Undo restores everything.
     /// The old device's taps (connections from it) move to the replacement when it produces that kind of signal, and are
-    /// removed otherwise. A track that had no audio path gets one when the replacement makes sound, as an insertion does.
+    /// removed otherwise; connections into its inputs move when the replacement has the same input. A track that had no
+    /// audio path gets one when the replacement makes sound, as an insertion does.
     /// </summary>
     public static IProjectCommand ReplaceDevice(DeviceId device, DeviceInstance replacement, DeviceDefinitionLookup definitions) =>
         RoutingGuard.Command("Replace Device", definitions, p =>
@@ -103,11 +108,18 @@ public static class DeviceCommands
 
             var index = found.Chain.Devices.IndexOf(found.Device);
             var chain = found.Chain.Remove(device).Insert(index, replacement);
-            var produces = definitions(replacement.Definition.Id)?.Produces ?? SignalKinds.None;
+            var definition = definitions(replacement.Definition.Id);
+            var produces = definition?.Produces ?? SignalKinds.None;
             var tap = SignalNode.Device(device);
+
+            // Inputs follow when the replacement has the same port for the same kind of signal.
+            bool Keeps(SignalConnection c) =>
+                (c.Source != tap || produces.Includes(c.Kind))
+                && (!IsAt(c.Destination, device) || definition?.FindInput(c.Destination.Port) is { } port && port.Kind == c.Kind);
             var connections = p.Connections
-                .Where(c => c.Source != tap || produces.Includes(c.Kind))
-                .Select(c => c.Source == tap ? c with { Source = SignalNode.Device(replacement.Id) } : c);
+                .Where(Keeps)
+                .Select(c => c.Source == tap ? c with { Source = SignalNode.Device(replacement.Id) } : c)
+                .Select(c => IsAt(c.Destination, device) ? c with { Destination = SignalNode.DeviceInput(replacement.Id, c.Destination.Port!) } : c);
             var project = p.WithChain(chain) with { Connections = [.. connections] };
             if (replacement.Definition.Id == found.Device.Definition.Id)
             {
@@ -273,8 +285,7 @@ public static class DeviceCommands
             var node = SignalNode.Rack(rack);
             return p.WithoutChain(rack) with
             {
-                Connections = p.Connections.RemoveAll(c => c.Source == node || c.Destination == node
-                    || (c.Source.Kind == SignalNodeKind.Device && found.Find(c.Source.AsDevice()) is not null)),
+                Connections = p.Connections.RemoveAll(c => c.Source == node || c.Destination == node || c.Source.IsInside(found) || c.Destination.IsInside(found)),
             };
         });
 

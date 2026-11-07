@@ -39,6 +39,11 @@ with its output, and a note effect leaves audio alone. Only the event side was e
 - The internal note model stays independent of raw MIDI; MIDI 1.0, MPE, MIDI 2.0, and plugin formats remain
   boundary concerns (ADR 0018). Nothing here ties the bundle to stereo or to MIDI channel semantics.
 
+- **Junctions.** A chain of n devices has n + 1 junctions, as in Bitwig's device panel: its input (before the first
+  device), the output of each device, and the last one, which is the chain's output. Each carries the whole bundle.
+  Every junction is a routing source (ADR 0023), and a device can declare input ports that bring signal from elsewhere
+  into the chain at that device (receivers, sidechains).
+
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
 other), the chain runs between fixed input and output nodes, and nothing in the chain suggests a MIDI-to-audio
 conversion point.

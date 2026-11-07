@@ -160,9 +160,10 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
   `id`, a `definition` reference (ID plus the name and version last seen, so a missing plugin can still
   be named), an optional `name`, normalized parameter `value`s, `bypassed` (written only when true), and
   an opaque plugin `state` (base64 `data`, with its `format`).
-- `connections` are the one routing model: `events` or `audio`, from a `source` (`track`, `rack`, or a
-  `device` tap) to a `destination` (`track`, `rack`, `instrument` with a `port`, `mixer` channel, or
-  `master`, which has no `id`). An optional channel `mapping` has `only` (the channels that pass), then
+- `connections` are the one routing model: `events` or `audio`, from a `source` (`track` or `rack`, the end of its
+  chain; `chainInput`, a chain by its `id`, before its first device; or a `device` tap, after that device) to a
+  `destination` (`track`, `rack`, `deviceInput` with the device's `id` and the input's `port` (at most 64
+  characters), `instrument` with a `port`, `mixer` channel, or `master`, which has no `id`). An optional channel `mapping` has `only` (the channels that pass), then
   `force` (one channel) or `remap` (`from` and `to` pairs), not both; `voice` selects a profile bank by ID and a
   `program`. Connections that do not validate are kept and reported, never dropped on load.
 - `parkedConnections` (optional; omitted when empty) are a grouped track's own outputs, set aside when it
@@ -206,6 +207,12 @@ used, so files without them are unchanged:
 | Track `folded`, `parkedConnections` | 0030 | Ignores them, and drops them if it saves the file |
 | Instrument automation targets (`"type": "instrument"`) | 0031 | Refuses the file, with the path of the target's `type`, and never overwrites it |
 | Mixer channel `sends`; audio clip `gain`, `fadeIn`, `fadeOut`, `fadeShape` | 0032 | Ignores them (no sends, clip gain, or fades), and drops them if it saves the file |
+
+Format 5 has since gained, in the same way:
+
+| Added | ADR | A format 5 reader that predates it |
+| ----- | --- | ---------------------------------- |
+| Connection nodes `chainInput` and `deviceInput` | 0023 | Refuses the file, with the path of the node's `type`, and never overwrites it |
 
 Format 3 put each track's events in clips. A format 2 track's events move into one note clip, with
 the track's ID, from the bar of its first event to the bar line after its latest end, so it plays

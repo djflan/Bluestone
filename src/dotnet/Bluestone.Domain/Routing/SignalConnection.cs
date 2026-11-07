@@ -32,6 +32,18 @@ public enum SignalNodeKind
 
     /// <summary>The master bus. Audio destination only.</summary>
     Master,
+
+    /// <summary>
+    /// The start of a chain, before its first device: the signal arriving at the chain (a track's own content plus
+    /// what is connected into it). Named by the chain's ID. Source only.
+    /// </summary>
+    ChainInput,
+
+    /// <summary>
+    /// An input port of a device inside a chain, such as a receiver's <c>receive</c> or a plugin's <c>sidechain</c>
+    /// (<see cref="DeviceInputPort"/>). Named by the device's ID and the port's ID. Destination only.
+    /// </summary>
+    DeviceInput,
 }
 
 /// <summary>
@@ -51,7 +63,10 @@ public readonly record struct SignalNode
 
     public Guid Id { get; }
 
-    /// <summary>The external instrument port; null means the instrument's first port.</summary>
+    /// <summary>
+    /// The external instrument's port (null means its first port), or the device's input port for
+    /// <see cref="SignalNodeKind.DeviceInput"/>.
+    /// </summary>
     public string? Port { get; }
 
     public static SignalNode Track(TrackId track) => new(SignalNodeKind.Track, track.Value, null);
@@ -66,15 +81,43 @@ public readonly record struct SignalNode
 
     public static SignalNode Master { get; } = new(SignalNodeKind.Master, Guid.Empty, null);
 
+    /// <summary>The start of <paramref name="chain"/>, before its first device.</summary>
+    public static SignalNode ChainInput(DeviceChainId chain) => new(SignalNodeKind.ChainInput, chain.Value, null);
+
+    /// <summary>The input port <paramref name="port"/> of <paramref name="device"/>.</summary>
+    public static SignalNode DeviceInput(DeviceId device, string port)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(port);
+        return new(SignalNodeKind.DeviceInput, device.Value, port);
+    }
+
     public TrackId AsTrack() => new(Id);
 
     public DeviceChainId AsRack() => new(Id);
+
+    /// <summary>The chain a <see cref="SignalNodeKind.ChainInput"/> or <see cref="SignalNodeKind.Rack"/> names.</summary>
+    public DeviceChainId AsChain() => new(Id);
 
     public DeviceId AsDevice() => new(Id);
 
     public ExternalInstrumentId AsInstrument() => new(Id);
 
     public MixerChannelId AsMixerChannel() => new(Id);
+
+    /// <summary>
+    /// Whether this node is a point inside <paramref name="chain"/>: its input, the output of one of its devices, or
+    /// an input port of one of its devices. The chain's owner (its track or rack) is not inside it.
+    /// </summary>
+    public bool IsInside(DeviceChain chain)
+    {
+        ArgumentNullException.ThrowIfNull(chain);
+        return Kind switch
+        {
+            SignalNodeKind.Device or SignalNodeKind.DeviceInput => chain.Find(AsDevice()) is not null,
+            SignalNodeKind.ChainInput => Id == chain.Id.Value,
+            _ => false,
+        };
+    }
 
     public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{Kind}:{Id}{(Port is null ? string.Empty : "/" + Port)}");
 }
@@ -85,8 +128,9 @@ public readonly record struct SignalNode
 /// </summary>
 /// <remarks>
 /// <para>
-/// Sources are a track's output, a rack's output, or a tap after one device. Destinations are a track's or
-/// rack's input, an external instrument's port, a mixer channel, or the master bus. One source may have
+/// Sources are junctions of a chain: its input (before the first device), the point after one device (a tap), or its
+/// output (a track's or rack's). Destinations are a track's or rack's input, an input port of a device inside a chain
+/// (a receiver or a sidechain), an external instrument's port, a mixer channel, or the master bus. One source may have
 /// many connections (one-to-many) and one destination may receive many (many-to-one); several tracks
 /// feeding one instrument or one mixer channel is the ordinary case, not a special one.
 /// </para>

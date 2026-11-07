@@ -205,7 +205,7 @@ public static class PlaybackRouting
         return [new SignalEvent(new ProgramEvent(Tick.Zero, channel, bank.Select(voice.Program)), origin, -1)];
     }
 
-    // Parts are ordered by the track they come from (taps count as their chain's track), racks last.
+    // Parts are ordered by the track they come from (points inside a chain count as their chain's track), racks last.
     private static int SourceOrder(Project project, SignalNode source, Dictionary<TrackId, int> trackIndex) =>
         SourceTrack(project, source) is { } track && trackIndex.TryGetValue(track, out var index) ? index : int.MaxValue;
 
@@ -213,6 +213,7 @@ public static class PlaybackRouting
     {
         SignalNodeKind.Track => source.AsTrack(),
         SignalNodeKind.Device when project.FindDevice(source.AsDevice()) is { Chain.Owner.Kind: ChainOwnerKind.Track } found => found.Chain.Owner.Track,
+        SignalNodeKind.ChainInput when project.FindChain(source.AsChain()) is { Owner.Kind: ChainOwnerKind.Track } chain => chain.Owner.Track,
         _ => null,
     };
 

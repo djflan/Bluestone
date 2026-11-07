@@ -334,4 +334,97 @@ public sealed class SignalRoutingValidatorTests
         Assert.All(issues, i => Assert.Equal(RoutingSeverity.Warning, i.Severity));
         Assert.Equal(3, project.Sequence.FindTrack(piano.Id)!.Automation.Length);
     }
+
+    [Fact]
+    public void ChainInput_CarriesWhatArrivesBeforeTheFirstDevice()
+    {
+        // Notes reach the chain's input even though the instrument would end them at its output if it did not pass them on.
+        var piano = NoteTrack("Piano");
+        var other = NoteTrack("Other");
+        var project = Empty().WithTrackChain(piano, TestDevices.Synth).WithTrackChain(other);
+        var chain = project.ChainOf(piano.Id)!;
+        project = project
+            .Connect(SignalKind.Events, SignalNode.ChainInput(chain.Id), SignalNode.Track(other.Id))
+            .Connect(SignalKind.Audio, SignalNode.ChainInput(chain.Id), SignalNode.Master);
+
+        var error = Assert.Single(project.Errors());
+        Assert.Equal(RoutingIssueCode.NothingToCarry, error.Code);
+        Assert.Contains("input of \"Piano\"", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ChainInput_CannotBeADestination_AndAMissingChainIsUnknown()
+    {
+        var piano = NoteTrack("Piano");
+        var project = Empty().WithTrackChain(piano, TestDevices.MidiFx).WithRack(out var rack, "Rack", TestDevices.Synth);
+        project = project
+            .Connect(SignalKind.Events, SignalNode.Track(piano.Id), SignalNode.ChainInput(rack.Id))
+            .Connect(SignalKind.Events, SignalNode.ChainInput(new DeviceChainId(Guid.NewGuid())), SignalNode.Rack(rack.Id));
+
+        Assert.Equal([RoutingIssueCode.InvalidDestination, RoutingIssueCode.UnknownSource], project.Errors().Select(e => e.Code));
+    }
+
+    [Fact]
+    public void DeviceInput_TakesItsPortsKind_FromAnotherTrack()
+    {
+        var drums = NoteTrack("Drums", TrackRole.Hybrid);
+        var bass = NoteTrack("Bass");
+        var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(bass, TestDevices.Synth, TestDevices.Ducker);
+        var ducker = project.ChainOf(bass.Id)!.Devices[1];
+        var sidechain = SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain);
+
+        Assert.Empty(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), sidechain).Validate());
+        Assert.Equal(RoutingIssueCode.KindMismatch, Assert.Single(project.Connect(SignalKind.Events, SignalNode.Track(drums.Id), sidechain).Errors()).Code);
+        Assert.Equal(RoutingIssueCode.UnknownPort, Assert.Single(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, "other")).Errors()).Code);
+        Assert.Equal(RoutingIssueCode.UnknownDestination, Assert.Single(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(DeviceId.New(), DeviceInputPort.Sidechain)).Errors()).Code);
+    }
+
+    [Fact]
+    public void DeviceInput_OfADeviceThatIsNotInstalled_IsKept()
+    {
+        var drums = NoteTrack("Drums", TrackRole.Hybrid);
+        var bass = NoteTrack("Bass");
+        var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(bass, TestDevices.Synth, TestDevices.Ducker);
+        var ducker = project.ChainOf(bass.Id)!.Devices[1];
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, "anything"));
+
+        Assert.DoesNotContain(project.Validate(id => id == TestDevices.Ducker.Id ? null : TestDevices.Lookup(id)), i => i.Severity == RoutingSeverity.Error);
+    }
+
+    [Fact]
+    public void DeviceInput_InTheSameChain_TakesOnlyFromEarlierPoints()
+    {
+        var piano = NoteTrack("Piano");
+        var project = Empty().WithTrackChain(piano, TestDevices.MidiFx, TestDevices.EventInlet, TestDevices.Synth);
+        var chain = project.ChainOf(piano.Id)!;
+        var inlet = SignalNode.DeviceInput(chain.Devices[1].Id, DeviceInputPort.Receive);
+
+        // Before it (the chain's input, after the effect, and what arrives at it) is fine and not a cycle between owners.
+        Assert.Empty(project.Connect(SignalKind.Events, SignalNode.ChainInput(chain.Id), inlet).Validate());
+        Assert.Empty(project.Connect(SignalKind.Events, SignalNode.Device(chain.Devices[0].Id), inlet).Validate());
+
+        // Its own output, anything after it, and the chain's output would feed back.
+        foreach (var later in new[] { SignalNode.Device(chain.Devices[1].Id), SignalNode.Device(chain.Devices[2].Id), SignalNode.Track(piano.Id) })
+        {
+            var error = Assert.Single(project.Connect(SignalKind.Events, later, inlet).Errors());
+            Assert.Equal(RoutingIssueCode.Cycle, error.Code);
+        }
+    }
+
+    [Fact]
+    public void DeviceInput_FedThroughAnotherTrack_ClosesALoop()
+    {
+        // A → B's inlet, and B's output → A: the owners feed each other.
+        var a = NoteTrack("A");
+        var b = NoteTrack("B");
+        var project = Empty().WithTrackChain(a).WithTrackChain(b, TestDevices.EventInlet);
+        var inlet = SignalNode.DeviceInput(project.ChainOf(b.Id)!.Devices[0].Id, DeviceInputPort.Receive);
+        project = project
+            .Connect(SignalKind.Events, SignalNode.Track(a.Id), inlet)
+            .Connect(SignalKind.Events, SignalNode.Track(b.Id), SignalNode.Track(a.Id));
+
+        var error = Assert.Single(project.Errors());
+        Assert.Equal(RoutingIssueCode.Cycle, error.Code);
+        Assert.Equal(2, error.Connections.Length);
+    }
 }
