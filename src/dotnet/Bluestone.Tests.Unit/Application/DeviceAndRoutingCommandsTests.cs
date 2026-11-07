@@ -141,6 +141,35 @@ public sealed class DeviceAndRoutingCommandsTests
     }
 
     [Fact]
+    public void SettingManyParametersAtOnce_IsOneEdit_AndARunOnOneDeviceIsOneUndoStep()
+    {
+        var (history, a, _) = TwoTracks();
+        var synth = TestDevices.Instance(TestDevices.Synth).WithParameter(new ParameterId(5), ControlValue.Min);
+        history.Execute(DeviceCommands.InsertDevice(a.Id, synth, Definitions));
+        var undoBefore = history.UndoCount;
+        var changes = 0;
+        history.Changed += (_, _) => changes++;
+
+        // A plugin preset moves thousands of parameters; the same parameter twice keeps its last value.
+        (DeviceId, ParameterId, ControlValue)[] preset = [.. Enumerable.Range(0, 3000).Select(i => (synth.Id, new ParameterId((uint)i), ControlValue.FromFraction(i % 2 == 0 ? 0.25 : 0.75))), (synth.Id, new ParameterId(5), ControlValue.Max)];
+        Assert.True(history.Execute(DeviceCommands.SetParameters(preset)));
+        Assert.True(history.Execute(DeviceCommands.SetParameters([(synth.Id, new ParameterId(7), ControlValue.Center)])));
+
+        var device = history.Current.FindDevice(synth.Id)!.Value.Device;
+        Assert.Equal(2, changes);
+        Assert.Equal(3000, device.Parameters.Length);
+        Assert.Equal(ControlValue.Max, device.ValueOf(new ParameterId(5)));
+        Assert.Equal(ControlValue.Center, device.ValueOf(new ParameterId(7)));
+        Assert.Equal(ControlValue.FromFraction(0.25), device.ValueOf(new ParameterId(2998)));
+        Assert.Equal(undoBefore + 1, history.UndoCount);
+        Assert.False(history.Execute(DeviceCommands.SetParameters([(synth.Id, new ParameterId(5), ControlValue.Max), (DeviceId.New(), new ParameterId(1), ControlValue.Max)])));
+
+        history.Undo();
+        Assert.Equal(ControlValue.Min, history.Current.FindDevice(synth.Id)!.Value.Device.ValueOf(new ParameterId(5)));
+        Assert.Single(history.Current.FindDevice(synth.Id)!.Value.Device.Parameters);
+    }
+
+    [Fact]
     public void BypassAndParameterEdits_AreUndoable()
     {
         var (history, a, _) = TwoTracks();

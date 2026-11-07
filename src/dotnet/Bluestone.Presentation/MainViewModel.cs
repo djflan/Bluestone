@@ -167,7 +167,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             });
 
             // A parameter the plugin changed itself (in its editor) is stored in the project, which stays the authority.
-            _plugins.ParameterEdited += (_, edit) => _dispatcher.Post(() => _plugins.RecordEdit(edit));
+            // A plugin preset moves thousands of parameters at once: what arrives together is recorded as one edit.
+            var pluginEdits = new UiBatcher<PluginParameterEdit>(_dispatcher, _plugins.RecordEdits);
+            _plugins.ParameterEdited += (_, edit) => pluginEdits.Add(edit);
 
             // A worker process that ends takes every device in it down; say which ones went together.
             _plugins.Crashed += (_, crash) => _dispatcher.Post(() =>

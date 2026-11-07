@@ -466,9 +466,12 @@ authority (ADR 0025).
   instances whose device is gone. A device whose plugin is missing gets no worker, keeps its state, and shows "Not
   installed".
 - Parameter values changed in the project go to running plugins on the next sync, only where they differ from what
-  the bridge last sent or recorded. `RecordEdit` stores an edit the plugin made itself (from a `ParameterEdited`
-  notification) as an undoable parameter change, merged per parameter like the strip's sliders, and never sends it
-  back, so a plugin that keeps moving is not pulled back to an older value.
+  the bridge last sent or recorded. `RecordEdits` stores edits the plugin made itself (from `ParameterEdited`
+  notifications) as one undoable parameter change and never sends them back, so a plugin that keeps moving is not
+  pulled back to an older value. The app gathers the notifications that arrive together and records them at once: a
+  plugin preset can move thousands of parameters, and one edit per parameter would stall the UI. Consecutive batches
+  that each change one device, within a second of each other, are one undo step; a batch that changes several devices
+  stands alone.
 - `CaptureStateAsync` and `CaptureAllAsync` store a running plugin's state and parameter values in the project as one
   undoable step; the app does this before every save (not on autosave). A crashed plugin is never asked; the last
   stored state stays.

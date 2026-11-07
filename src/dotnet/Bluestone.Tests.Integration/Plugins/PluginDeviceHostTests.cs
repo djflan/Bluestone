@@ -348,4 +348,35 @@ public sealed class PluginDeviceHostTests
         await bridge.SyncAsync(session.Project, Ct);
         Assert.Equal(0.25, await PluginGain(), 6);
     }
+
+    [Fact]
+    public async Task EditsThePluginMadeTogether_AreOneProjectChange_AndOneUndoStep()
+    {
+        await using var host = new PluginTestHost();
+        var (session, _, device) = ProjectWithGainOn("Preset");
+        await using var bridge = new PluginDeviceHost(host.Manager, session, [Gain], maxBlockFrames: Frames);
+        await bridge.SyncAsync(session.Project, Ct);
+        var instance = bridge.InstanceOf(device.Id)!;
+        host.Track(instance);
+        await instance.SetParameterAsync(GainParameter.Value, 0.4, Ct);
+        var undoBefore = session.History.UndoCount;
+        var changes = 0;
+        session.Changed += (_, _) => changes++;
+
+        // What a preset change sends at once: the same parameter more than once, a parameter the plugin does not have,
+        // and a device that is not in the project. Only the gain's last value is kept.
+        bridge.RecordEdits([
+            new PluginParameterEdit(device.Id, GainParameter.Value, 0.2),
+            new PluginParameterEdit(device.Id, 999_999, 0.9),
+            new PluginParameterEdit(DeviceId.New(), GainParameter.Value, 0.9),
+            new PluginParameterEdit(device.Id, GainParameter.Value, 0.4),
+        ]);
+        await bridge.SyncAsync(session.Project, Ct);
+
+        Assert.Equal(1, changes);
+        Assert.Equal(undoBefore + 1, session.History.UndoCount);
+        Assert.Equal(ControlValue.FromFraction(0.4), session.Project.FindDevice(device.Id)!.Value.Device.ValueOf(GainParameter));
+        Assert.Null(session.Project.FindDevice(device.Id)!.Value.Device.ValueOf(new ParameterId(999_999)));
+        Assert.Equal(0.4, (await instance.GetParametersAsync(Ct)).Single(p => p.Id == GainParameter.Value).Value, 6);
+    }
 }
