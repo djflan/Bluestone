@@ -160,6 +160,30 @@ public sealed class ReplaceDeviceTests
     }
 
     [Fact]
+    public void DuplicatingATrack_CopiesAParkedRouteIntoItsDevicesInput_SoTheCopyIsKeyedToo()
+    {
+        var keyed = Track.Create("keyed", TrackRole.Hybrid);
+        var key = Track.Create("key", TrackRole.Hybrid);
+        var ducker = TestDevices.Instance(TestDevices.Ducker);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key) });
+        history.Execute(DeviceCommands.InsertDevice(key.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, ducker, TestDevices.Lookup));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), TestDevices.Lookup));
+        var group = Track.Create("group", TrackRole.Group);
+        history.Execute(new ProjectCommand("group", p => p with { Sequence = p.Sequence.WithTrack(group) }));
+        history.Execute(GroupCommands.SetGroup(key.Id, group.Id, TestDevices.Lookup));
+
+        history.Execute(ProjectCommands.DuplicateTracks([keyed.Id]));
+        history.Execute(GroupCommands.SetGroup(key.Id, null, TestDevices.Lookup));
+
+        var copy = history.Current.Sequence.Tracks.Single(t => t.Name == "keyed copy");
+        var copiedDucker = history.Current.ChainOf(copy.Id)!.Devices[1];
+        Assert.Contains(history.Current.Connections, c => c.Source == SignalNode.Track(key.Id) && c.Destination == SignalNode.DeviceInput(copiedDucker.Id, DeviceInputPort.Sidechain));
+        Assert.Contains(history.Current.Connections, c => c.Source == SignalNode.Track(key.Id) && c.Destination == SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
+    }
+
+    [Fact]
     public void Taps_MoveToTheReplacement_OnlyWhenItProducesTheirKindOfSignal()
     {
         var (history, track, fx, synth) = Chain();
