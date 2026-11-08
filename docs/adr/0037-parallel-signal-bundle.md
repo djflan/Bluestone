@@ -44,7 +44,9 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   Every junction is a routing source (ADR 0023), and a device can declare input ports that bring signal from elsewhere
   into the chain at that device (receivers, sidechains). Each junction's audio can be metered (ADR 0032): a chain's
   input by the chain's ID, the rest by the device before it, measured only while a view watches it
-  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. Each junction also has a
+  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. A meter point sums its
+  sources as they are, without delay compensation, so it never changes what is heard; sources with different latencies
+  at one junction can read lower there than where compensation aligns them. Each junction also has a
   **note lamp**, lit while notes are held there: during playback from the compiled signal graph
   (`SignalGraphResult.NoteActivity`, the held tick ranges at every junction, read at the playhead, so nothing is added
   to the real-time path), and for live input while keys are held on the chain's track (`LiveInput.HasHeldNotes`) at
