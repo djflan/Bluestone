@@ -311,6 +311,34 @@ public sealed class LiveInputTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task EditingOneLiveRoute_LeavesAnUnchangedRouteOfTheTrackHoldingItsNote()
+    {
+        // The chain's input goes straight to Bass; the track's output (after the transposer) to Synth.
+        var bass = _provider.CreatePort("Bass", "bass");
+        var transpose = BuiltInDevices.CreateTranspose(12);
+        var track = await TrackWith(transpose);
+        var instrument = ExternalInstrument.Create("Bass", new EndpointReference(LoopbackMidiProvider.ProviderId, bass.OutputId.Value, "Bass"));
+        _session.Execute(RoutingCommands.AddInstrument(instrument));
+        _session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.ChainInput(_session.Project.ChainOf(track)!.Id), SignalNode.ExternalPart(instrument.Id)), Definitions));
+        await _controller.RefreshAsync(Ct);
+        _controller.SetThruTrack(track);
+        Play(60);
+        Advance(1);
+        Assert.Single(bass.Sent, m => m.Bytes[0] == 0x90 && m.Bytes[1] == 60);
+
+        // Changing the transposer replaces the Synth route; the Bass route is the same, and its note keeps sounding.
+        _session.Execute(DeviceCommands.SetParameter(transpose.Id, BuiltInDevices.TransposeSemitones, BuiltInDevices.Transpose.Parameters[0].ToStored(7)));
+        await _controller.RefreshAsync(Ct);
+        Advance(1);
+
+        Assert.DoesNotContain(bass.Sent, m => m.Bytes[0] == 0x80 || (m.Bytes[0] == 0x90 && m.Bytes[2] == 0));
+        Assert.Equal(1, Count(0x80, 72));
+        Release(60);
+        Advance(1);
+        Assert.Single(bass.Sent, m => m.Bytes[0] == 0x80 && m.Bytes[1] == 60);
+    }
+
+    [Fact]
     public async Task LiveInput_ReachesEveryOutputTheTrackIsConnectedTo_AsPlaybackDoes()
     {
         // The track's own output (Synth) and a second connection, from after its transposer, to Bass.

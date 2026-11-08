@@ -488,33 +488,35 @@ public sealed class LiveInput : IDisposable
 
         _instances = instances;
 
+        // Deleted tracks go first, so a plugin effect one of them ran is free for the tracks that remain.
+        foreach (var track in _runners.Keys.Where(t => project.Sequence.FindTrack(t) is null).ToList())
+        {
+            foreach (var runner in _runners[track])
+            {
+                Retire(runner);
+            }
+
+            _runners.Remove(track);
+        }
+
         foreach (var track in _runners.Keys.ToList())
         {
             var current = _runners[track];
-            if (project.Sequence.FindTrack(track) is null)
-            {
-                foreach (var runner in current)
-                {
-                    Retire(runner);
-                }
+            LiveRunner[] fresh = [.. PlansFor(project, track).Select(Create)];
 
-                _runners.Remove(track);
-                continue;
-            }
-
-            LiveRunner[] next = [.. PlansFor(project, track).Select(Create)];
-            if (next.Length != current.Length || next.Zip(current).Any(p => !p.First.Plan.IsSameAs(p.Second.Plan) || !SameBinding(p.Second, p.First)))
+            // A route that is the same as before (same stages, same binding) keeps its runner, with the notes it holds: only
+            // what changed is replaced.
+            var next = fresh.Select(f => current.FirstOrDefault(c => c.Plan.IsSameAs(f.Plan) && SameBinding(c, f)) ?? f).ToArray();
+            if (next.Length != current.Length || next.Zip(current).Any(p => !ReferenceEquals(p.First, p.Second)))
             {
                 Replace(track, next);
             }
-            else
+
+            foreach (var kept in next.Where(current.Contains))
             {
-                foreach (var kept in current)
+                if (kept.Node is { } node)
                 {
-                    if (kept.Node is { } node)
-                    {
-                        kept.DelayToMasterFrames = _delayToMaster(node);
-                    }
+                    kept.DelayToMasterFrames = _delayToMaster(node);
                 }
             }
         }
@@ -533,21 +535,20 @@ public sealed class LiveInput : IDisposable
         && a.CanPlay == b.CanPlay
         && a.PluginStages.Select(s => s.Instance).SequenceEqual(b.PluginStages.Select(s => s.Instance));
 
-    // The new routes come before the old ones go, so a plugin effect both use stays loaded until the old route's releases
-    // have reached it. The engine plays thru only on the newest of two routes to the same target meanwhile (MidiEngine.Index).
+    // Old routes go before new ones come, so two generations of a route never play, pump, or drive a plugin effect at once.
+    // Runners in both are kept as they are. The engine keeps a retired route's plugin effects loaded a moment, so its last
+    // releases still reach them (MidiEngine.Retire).
     private void Replace(TrackId track, LiveRunner[] next)
     {
-        foreach (var runner in next)
+        var old = _runners.GetValueOrDefault(track) ?? [];
+        foreach (var runner in old.Where(r => !next.Contains(r)))
         {
-            Attach(runner);
+            Retire(runner);
         }
 
-        if (_runners.TryGetValue(track, out var old))
+        foreach (var runner in next.Where(r => !old.Contains(r)))
         {
-            foreach (var runner in old)
-            {
-                Retire(runner);
-            }
+            Attach(runner);
         }
 
         _runners[track] = next;
