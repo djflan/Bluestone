@@ -216,11 +216,8 @@ public sealed class WorkspaceShowcaseTests
 
         var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string? Note, bool Playing)[]
         {
-            ("segments", "Line-segment level, glowing MIDI icon under it (amber)", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, true),
+            ("segments", "Line-segment level, glowing MIDI icon under it (sky blue)", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, true),
             ("segments-idle", "Idle", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, false),
-            ("note-white", "MIDI icon: warm white", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#F3E6CF", true),
-            ("note-sky", "MIDI icon: sky blue", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#8FD0FF", true),
-            ("note-violet", "MIDI icon: violet", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#A08CFF", true),
             ("note-above", "MIDI icon over the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, null, true),
         };
 

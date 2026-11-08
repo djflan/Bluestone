@@ -17,11 +17,13 @@ public sealed class DisplaySettingsTests : IDisposable
         var store = new DisplaySettingsStore(File());
         Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
 
-        store.Save(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.BelowHeader });
-        Assert.Equal(JunctionIndicatorPosition.BelowHeader, store.Load().IndicatorPosition);
-        Assert.Contains("\"belowHeader\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
+        store.Save(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.UpperHalf });
+        Assert.Equal(JunctionIndicatorPosition.UpperHalf, store.Load().IndicatorPosition);
+        Assert.Contains("\"upperHalf\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
 
         System.IO.File.WriteAllText(File(), "{ not json");
+        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
+        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"belowHeader\" }");
         Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
         System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"sideways\" }");
         Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
@@ -42,6 +44,6 @@ public sealed class DisplaySettingsTests : IDisposable
 
         display.IndicatorPositionChoice = DisplayViewModel.Positions.Single(p => p.Position == JunctionIndicatorPosition.Bottom);
         Assert.Equal(JunctionIndicatorPosition.Bottom, new DisplaySettingsStore(File()).Load().IndicatorPosition);
-        Assert.Equal(5, DisplayViewModel.Positions.Count);
+        Assert.Equal(4, DisplayViewModel.Positions.Count);
     }
 }

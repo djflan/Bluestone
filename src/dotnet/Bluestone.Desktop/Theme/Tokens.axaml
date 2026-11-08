@@ -59,7 +59,8 @@
   <Color x:Key="Meter.ClipColor">#FF3036</Color>
   <Color x:Key="Meter.TrackColor">#222225</Color>
   <!-- A junction's note lamp: a warm pilot-lamp amber segment under its level, lit while notes are held there. -->
-  <Color x:Key="Junction.LampColor">#E39B3B</Color>
+  <!-- The MIDI icon: the level's first segment colour (Meter.Low), lightened 25%. -->
+  <Color x:Key="Junction.LampColor">#6DD6FF</Color>
 
   <!-- Brushes for the tokens above. -->
   <SolidColorBrush x:Key="Surface.Sunken" Color="{StaticResource Surface.SunkenColor}" />
@@ -256,7 +257,7 @@
   <x:Double x:Key="DevicePanel.SmallWidth">152</x:Double>
   <x:Double x:Key="DevicePanel.MediumWidth">216</x:Double>
   <x:Double x:Key="DevicePanel.LargeWidth">280</x:Double>
-  <x:Double x:Key="DevicePanel.Gap">14</x:Double>
+  <x:Double x:Key="DevicePanel.Gap">20</x:Double>
   <x:Double x:Key="DevicePanel.KnobCellWidth">64</x:Double>
   <x:Double x:Key="DevicePanel.KnobCellHeight">66</x:Double>
   <x:Double x:Key="DevicePanel.SwitchWidth">128</x:Double>
@@ -269,7 +270,6 @@
   <!-- A junction between devices (ADR 0037): a segmented level with a small glowing MIDI icon under it. -->
   <x:Double x:Key="Junction.LinkY">105</x:Double>
   <x:Double x:Key="Junction.LevelHeight">52</x:Double>
-  <x:Double x:Key="Junction.IndicatorInset">6</x:Double>
   <x:Double x:Key="Junction.LevelBarWidth">5</x:Double>
   <x:Double x:Key="Junction.LevelSegmentHeight">1</x:Double>
   <x:Double x:Key="Junction.LevelSegmentGap">1</x:Double>

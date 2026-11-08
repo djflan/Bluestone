@@ -57,8 +57,6 @@ internal sealed class JunctionSeam : Control
 
     public static readonly StyledProperty<double> FooterHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(FooterHeight), 22);
 
-    public static readonly StyledProperty<double> IndicatorInsetProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(IndicatorInset), 6);
-
     public static readonly StyledProperty<double> LevelBarWidthProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBarWidth), 5);
 
     public static readonly StyledProperty<double> LevelSegmentHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelSegmentHeight), 1);
@@ -72,6 +70,10 @@ internal sealed class JunctionSeam : Control
     private const double LowFraction = 0.4;
     private const double MidFraction = 0.62;
     private const double NoteWidth = 12;
+
+    // The device panels' border (Border.devicePanel): Top and Bottom line up with the panel just inside it, where its
+    // accent stripe and its last row are.
+    private const double PanelBorder = 1;
     private const double NoteHeight = 12;
     private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
     private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
@@ -107,7 +109,7 @@ internal sealed class JunctionSeam : Control
 
     static JunctionSeam()
     {
-        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, IndicatorInsetProperty, LevelBarWidthProperty,
+        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, LevelBarWidthProperty,
             LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelMidColorProperty, LevelHotColorProperty, LevelClipColorProperty,
             LevelSegmentHeightProperty, LevelSegmentGapProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
@@ -224,13 +226,6 @@ internal sealed class JunctionSeam : Control
     {
         get => GetValue(FooterHeightProperty);
         set => SetValue(FooterHeightProperty, value);
-    }
-
-    /// <summary>The space kept between the indicators and the top or bottom of the device, or its header.</summary>
-    public double IndicatorInset
-    {
-        get => GetValue(IndicatorInsetProperty);
-        set => SetValue(IndicatorInsetProperty, value);
     }
 
     public double LevelBarWidth
@@ -350,20 +345,27 @@ internal sealed class JunctionSeam : Control
     {
         var bar = LevelBarWidth;
         var lamp = LampPlacement == JunctionLampPlacement.Header ? 0 : LampHeight + LampGap;
-        var group = LevelHeight + lamp;
-        var inset = IndicatorInset;
+        var group = LevelSpan().Height + lamp;
         var bodyTop = HeaderHeight;
         var body = Math.Max(0, Bounds.Height - FooterHeight - bodyTop);
         var groupTop = IndicatorPosition switch
         {
-            JunctionIndicatorPosition.Top => inset,
-            JunctionIndicatorPosition.BelowHeader => bodyTop + inset,
+            JunctionIndicatorPosition.Top => PanelBorder,
             JunctionIndicatorPosition.UpperHalf => bodyTop + (body / 4) - (group / 2),
-            JunctionIndicatorPosition.Bottom => Bounds.Height - inset - group,
+            JunctionIndicatorPosition.Bottom => Bounds.Height - PanelBorder - group,
             _ => bodyTop + (body * 3 / 4) - (group / 2),
         };
         var top = Math.Round(LampPlacement == JunctionLampPlacement.AboveLevel ? groupTop + lamp : groupTop);
-        return (top, top + LevelHeight, center - bar - 0.5, (2 * bar) + 1);
+        return (top, top + LevelSpan().Height, center - bar - 0.5, (2 * bar) + 1);
+    }
+
+    // How many segments fit in LevelHeight, and the height they take: the top one is the level's top edge.
+    private (int Count, double Height) LevelSpan()
+    {
+        var segment = Math.Max(1, LevelSegmentHeight);
+        var gap = Math.Max(0, LevelSegmentGap);
+        var count = Math.Max(1, (int)Math.Floor((LevelHeight + gap) / (segment + gap)));
+        return (count, (count * segment) + ((count - 1) * gap));
     }
 
     private void DrawLamp(DrawingContext context, double center)
@@ -413,7 +415,7 @@ internal sealed class JunctionSeam : Control
         var (top, bottom, left, _) = LevelFrame(center);
         var segment = Math.Max(1, LevelSegmentHeight);
         var gap = Math.Max(0, LevelSegmentGap);
-        var count = Math.Max(1, (int)Math.Floor((LevelHeight + gap) / (segment + gap)));
+        var count = LevelSpan().Count;
         var segments = Segments(count);
         var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
 

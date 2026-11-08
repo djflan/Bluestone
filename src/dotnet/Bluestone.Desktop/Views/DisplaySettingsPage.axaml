@@ -14,7 +14,7 @@
                   HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
       </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Between devices, each point in a chain shows its audio level and, under it, a lamp that is lit while notes are held there. Choose where they sit along the devices' height, in every Device View." />
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, in every Device View." />
     </StackPanel>
   </StackPanel>
 </UserControl>

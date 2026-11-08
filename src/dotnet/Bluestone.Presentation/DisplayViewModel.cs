@@ -7,11 +7,8 @@ namespace Bluestone.Presentation;
 /// <summary>Where a Device View's signal indicators (a junction's level and note lamp) sit, top to bottom of the panels.</summary>
 public enum JunctionIndicatorPosition
 {
-    /// <summary>At the top of the device, beside its header.</summary>
+    /// <summary>Flush with the top of the device, beside its header.</summary>
     Top,
-
-    /// <summary>Just under the device's header.</summary>
-    BelowHeader,
 
     /// <summary>In the middle of the upper half of the device's body.</summary>
     UpperHalf,
@@ -80,7 +77,6 @@ public sealed partial class DisplayViewModel : ObservableObject
     public static IReadOnlyList<IndicatorPositionOption> Positions { get; } =
     [
         new(JunctionIndicatorPosition.Top, "Top of the device"),
-        new(JunctionIndicatorPosition.BelowHeader, "Below the device's header"),
         new(JunctionIndicatorPosition.UpperHalf, "Upper half"),
         new(JunctionIndicatorPosition.LowerHalf, "Lower half"),
         new(JunctionIndicatorPosition.Bottom, "Bottom of the device"),

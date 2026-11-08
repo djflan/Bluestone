@@ -1024,7 +1024,6 @@
     <Setter Property="LinkY" Value="{StaticResource Junction.LinkY}" />
     <Setter Property="LevelHeight" Value="{StaticResource Junction.LevelHeight}" />
     <Setter Property="FooterHeight" Value="{StaticResource DevicePanel.FooterHeight}" />
-    <Setter Property="IndicatorInset" Value="{StaticResource Junction.IndicatorInset}" />
     <Setter Property="LevelBarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
     <Setter Property="LevelSegmentHeight" Value="{StaticResource Junction.LevelSegmentHeight}" />
     <Setter Property="LevelSegmentGap" Value="{StaticResource Junction.LevelSegmentGap}" />
