@@ -22,11 +22,11 @@
       </Grid>
       <Grid Classes="settingRow" ColumnDefinitions="180,*">
         <TextBlock Classes="label" Text="Sample rate" />
-        <ComboBox Grid.Column="1" ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" HorizontalAlignment="Stretch" AutomationProperties.Name="Sample rate" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SelectedSampleRate}" HorizontalAlignment="Stretch" AutomationProperties.Name="Sample rate" />
       </Grid>
       <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding !IsAsioHost}">
         <TextBlock Classes="label" Text="Buffer (frames)" />
-        <ComboBox Grid.Column="1" ItemsSource="{Binding BufferSizes}" SelectedItem="{Binding BufferFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Buffer size" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding BufferSizes}" SelectedItem="{Binding SelectedBufferFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Buffer size" />
       </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap" IsVisible="{Binding IsAsioHost}"
                  Text="Buffer size is controlled by the ASIO driver. Adjust it in the driver's control utility before starting audio." />

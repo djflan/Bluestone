@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.VisualTree;
 using Bluestone.Application.Audio;
+using Bluestone.Audio.Devices;
 using Bluestone.Desktop.Views;
 using Bluestone.Presentation;
 
@@ -107,6 +108,58 @@ public sealed class SettingsTests : IDisposable
         app.Choose(AppUnderTest.ComboNamed(page, "Sample rate"), r => r is 44_100);
         Assert.Equal(44_100, audioSettings.SampleRate);
         Assert.False(AppUnderTest.Within<Button>(page, b => Equals(b.Content, "Stop audio")).IsEffectivelyEnabled);
+    });
+
+    [Fact]
+    public Task ChangingTheAudioDevice_KeepsTheRateAndBufferChoicesSelected_WithoutBindingErrors() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        AudioDeviceInfo[] devices =
+        [
+            new("wasapi:speakers", "Speakers", "WASAPI", true, 48_000, 2, [44_100, 48_000, 96_000], [2], 80, 3840),
+            new("wasapi:monitor", "Monitor", "WASAPI", false, 48_000, 2, [44_100, 48_000, 96_000], [2], 80, 3840),
+            new("wasapi:headset", "Headset", "WASAPI", false, 48_000, 2, [48_000], [2], 512, 1024),
+        ];
+        var audioSettings = new AudioViewModel(audio, new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json")), new ImmediateDispatcher(), () => devices, listHosts: () => ["WASAPI"]);
+        app.Window.AttachAudio(audioSettings);
+        app.Window.ShowSettings(SettingsPage.Audio);
+        await app.SettleTransitionsAsync();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var device = AppUnderTest.ComboNamed(page, "Audio device");
+        var rate = AppUnderTest.ComboNamed(page, "Sample rate");
+        var buffer = AppUnderTest.ComboNamed(page, "Buffer size");
+        app.Choose(rate, r => r is 44_100);
+        app.Choose(buffer, b => b is 128);
+
+        void AssertSelected(int expectedRate, int expectedBuffer)
+        {
+            Assert.Equal(expectedRate, rate.SelectedItem);
+            Assert.Equal(expectedBuffer, buffer.SelectedItem);
+            Assert.Equal((expectedRate, expectedBuffer), (audioSettings.SampleRate, audioSettings.BufferFrames));
+            Assert.False(DataValidationErrors.GetHasErrors(rate), $"Sample rate shows {string.Join(", ", DataValidationErrors.GetErrors(rate) ?? [])}");
+            Assert.False(DataValidationErrors.GetHasErrors(buffer), $"Buffer size shows {string.Join(", ", DataValidationErrors.GetErrors(buffer) ?? [])}");
+        }
+
+        // The same capabilities: the choices are kept.
+        app.Choose(device, d => d is AudioDeviceOption { Id: "wasapi:monitor" });
+        AssertSelected(44_100, 128);
+
+        // Narrower capabilities: the supported rate and the nearest buffer are chosen.
+        app.Choose(device, d => d is AudioDeviceOption { Id: "wasapi:headset" });
+        AssertSelected(48_000, 512);
+
+        app.Choose(device, d => d is AudioDeviceOption { Id: "wasapi:speakers" });
+        AssertSelected(48_000, 512);
+
+        app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Refresh audio devices"));
+        AssertSelected(48_000, 512);
+
+        audioSettings.SampleRate = 96_000;
+        audioSettings.BufferFrames = 256;
+        app.Settle();
+        AssertSelected(96_000, 256);
+        Assert.False(audioSettings.IsRunning);
     });
 
     [Fact]

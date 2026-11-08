@@ -122,6 +122,35 @@ public sealed partial class AudioViewModel : ObservableObject
 
     public ObservableCollection<int> BufferSizes { get; } = [];
 
+    /// <summary>
+    /// The sample rate as the dropdown sees it. The choices are rebuilt when the device changes, which briefly leaves the
+    /// dropdown with no selection; that empty selection is ignored rather than written to <see cref="SampleRate"/>.
+    /// </summary>
+    public int? SelectedSampleRate
+    {
+        get => SampleRates.Contains(SampleRate) ? SampleRate : null;
+        set
+        {
+            if (value is { } rate)
+            {
+                SampleRate = rate;
+            }
+        }
+    }
+
+    /// <summary>The buffer size as the dropdown sees it; an empty selection while the choices are rebuilt is ignored.</summary>
+    public int? SelectedBufferFrames
+    {
+        get => BufferSizes.Contains(BufferFrames) ? BufferFrames : null;
+        set
+        {
+            if (value is { } frames)
+            {
+                BufferFrames = frames;
+            }
+        }
+    }
+
     public IReadOnlyList<int> QueueSizes { get; } = AudioSettings.QueueSizes;
 
     public IReadOnlyList<int> LiveQueueSizes { get; } = AudioSettings.LiveQueueSizes;
@@ -296,8 +325,15 @@ public sealed partial class AudioViewModel : ObservableObject
             BufferFrames = BufferSizes.MinBy(size => Math.Abs((long)size - BufferFrames));
         }
 
+        // Rebuilding the choices cleared the dropdowns' selections even where the value itself did not change.
+        OnPropertyChanged(nameof(SelectedSampleRate));
+        OnPropertyChanged(nameof(SelectedBufferFrames));
         OnPropertyChanged(nameof(IsAsioHost));
     }
+
+    partial void OnSampleRateChanged(int value) => OnPropertyChanged(nameof(SelectedSampleRate));
+
+    partial void OnBufferFramesChanged(int value) => OnPropertyChanged(nameof(SelectedBufferFrames));
 
     private void LoadDevices(string? selectedHost, string? selectedDevice, IReadOnlyList<AudioDeviceInfo>? initialDevices = null)
     {

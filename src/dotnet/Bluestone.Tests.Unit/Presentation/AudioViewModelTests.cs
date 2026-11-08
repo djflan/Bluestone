@@ -204,6 +204,35 @@ public sealed class AudioViewModelTests : IDisposable
         Assert.Empty(activities.Running);
     }
 
+    [Fact]
+    public void RebuildingTheChoices_IgnoresTheDropdownsEmptySelection_AndAnnouncesTheSelectionAgain()
+    {
+        var devices = new[]
+        {
+            new AudioDeviceInfo("asio-device", "Interface", "ASIO", true, 48_000, 2, [44_100, 48_000], [2], 32, 1024),
+            new AudioDeviceInfo("wasapi-device", "Speakers", "WASAPI", true, 48_000, 2, [44_100, 48_000], [2], 64, 4096),
+        };
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["ASIO", "WASAPI"]);
+        vm.SelectedSampleRate = 44_100;
+        vm.SelectedBufferFrames = 128;
+        var announced = new List<string?>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName);
+
+        // A dropdown whose items are cleared writes back an empty selection.
+        vm.SelectedSampleRate = null;
+        vm.SelectedBufferFrames = null;
+        Assert.Equal((44_100, 128), (vm.SampleRate, vm.BufferFrames));
+
+        vm.Host = vm.Hosts.Single(host => host.Name == "WASAPI");
+        vm.Device = vm.Devices.Single(device => device.Id == "wasapi-device");
+
+        Assert.Equal((44_100, 128), (vm.SelectedSampleRate, vm.SelectedBufferFrames));
+        Assert.Contains(nameof(AudioViewModel.SelectedSampleRate), announced);
+        Assert.Contains(nameof(AudioViewModel.SelectedBufferFrames), announced);
+        vm.StopCommand.Execute(null);
+        Assert.Equal((44_100, 128), (Store.Load().SampleRate, Store.Load().BufferFrames));
+    }
+
     private static AudioDeviceInfo Device(string id, string name, params int[] rates) =>
         new(id, name, "CoreAudio", false, rates[0], 2, [.. rates], ImmutableArray.Create(2), 32, 4096);
 
