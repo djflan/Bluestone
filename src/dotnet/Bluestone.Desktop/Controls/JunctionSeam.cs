@@ -17,8 +17,26 @@ namespace Bluestone.Desktop.Controls;
 /// for its audio in the lower body. Only what can be there is drawn; an idle seam is nearly invisible. Hovering shows
 /// what is there in words. Drawing allocates nothing.
 /// </summary>
+/// <summary>Where a seam's note lamp sits: at header height, or coupled with the level, as a cap on it or a foot under it.</summary>
+internal enum JunctionLampPlacement
+{
+    Header,
+    AboveLevel,
+    BelowLevel,
+}
+
 internal sealed class JunctionSeam : Control
 {
+    public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.AboveLevel);
+
+    public static readonly StyledProperty<Color> LampColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LampColor), Palette.Focus);
+
+    public static readonly StyledProperty<Color> LevelLowColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelLowColor), Palette.MeterLow);
+
+    public static readonly StyledProperty<Color> LevelHotColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelHotColor), Palette.MeterHot);
+
+    public static readonly StyledProperty<Color> LevelClipColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelClipColor), Palette.MeterClip);
+
     public static readonly StyledProperty<JunctionSignal?> SignalProperty = AvaloniaProperty.Register<JunctionSeam, JunctionSignal?>(nameof(Signal));
 
     public static readonly StyledProperty<bool> IsQuietProperty = AvaloniaProperty.Register<JunctionSeam, bool>(nameof(IsQuiet));
@@ -42,8 +60,6 @@ internal sealed class JunctionSeam : Control
     private static readonly IBrush LampOff = new SolidColorBrush(Palette.Raised);
     private static readonly IPen LampRim = new Pen(new SolidColorBrush(Palette.Border), 1);
     private static readonly IBrush Track = new SolidColorBrush(Palette.MeterTrack);
-    private static readonly IBrush PeakTick = new SolidColorBrush(Palette.Lighten(Palette.MeterLow, 0.45));
-    private static readonly IBrush ClipLight = new SolidColorBrush(Palette.MeterClip);
     private static readonly double HotFraction = MeterLevels.Fraction(-6);
 
     private readonly EventHandler _updated;
@@ -56,10 +72,13 @@ internal sealed class JunctionSeam : Control
     private (double Top, double Bottom) _levelBrushSpan;
     private SolidColorBrush? _lampBrush;
     private RadialGradientBrush? _haloBrush;
+    private SolidColorBrush? _peakTick;
+    private SolidColorBrush? _clipLight;
 
     static JunctionSeam()
     {
-        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LampSizeProperty, LinkYProperty, LevelHeightProperty, LevelBottomProperty, LevelBarWidthProperty);
+        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LampSizeProperty, LinkYProperty, LevelHeightProperty, LevelBottomProperty, LevelBarWidthProperty,
+            LampPlacementProperty, LampColorProperty, LevelLowColorProperty, LevelHotColorProperty, LevelClipColorProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
     }
 
@@ -75,6 +94,39 @@ internal sealed class JunctionSeam : Control
             }
         };
         ClipToBounds = false;
+    }
+
+    public JunctionLampPlacement LampPlacement
+    {
+        get => GetValue(LampPlacementProperty);
+        set => SetValue(LampPlacementProperty, value);
+    }
+
+    public Color LampColor
+    {
+        get => GetValue(LampColorProperty);
+        set => SetValue(LampColorProperty, value);
+    }
+
+    /// <summary>The level's colour at ordinary levels.</summary>
+    public Color LevelLowColor
+    {
+        get => GetValue(LevelLowColorProperty);
+        set => SetValue(LevelLowColorProperty, value);
+    }
+
+    /// <summary>The level's colour approaching full scale (from about -6 dB).</summary>
+    public Color LevelHotColor
+    {
+        get => GetValue(LevelHotColorProperty);
+        set => SetValue(LevelHotColorProperty, value);
+    }
+
+    /// <summary>The level's colour at and past full scale, and the clip mark.</summary>
+    public Color LevelClipColor
+    {
+        get => GetValue(LevelClipColorProperty);
+        set => SetValue(LevelClipColorProperty, value);
     }
 
     public JunctionSignal? Signal
@@ -161,6 +213,15 @@ internal sealed class JunctionSeam : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == LampColorProperty || change.Property == LevelLowColorProperty || change.Property == LevelHotColorProperty || change.Property == LevelClipColorProperty)
+        {
+            _haloBrush = null;
+            _lampBrush = null;
+            _levelBrush = null;
+            _peakTick = null;
+            _clipLight = null;
+        }
+
         if (change.Property == SignalProperty)
         {
             Subscribe(VisualRoot is not null ? Signal : null);
@@ -211,41 +272,59 @@ internal sealed class JunctionSeam : Control
         _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.Clipped, _glow);
     }
 
+    // The level's frame: its bars' top and bottom, and the left edge of the left bar.
+    private (double Top, double Bottom, double Left, double Width) LevelFrame(double center)
+    {
+        var bar = LevelBarWidth;
+        var bottom = Bounds.Height - LevelBottom;
+        return (bottom - LevelHeight, bottom, center - bar - 0.5, (2 * bar) + 1);
+    }
+
     private void DrawLamp(DrawingContext context, double center)
     {
-        var size = LampSize;
-        var y = Math.Round((HeaderHeight - size) / 2);
-        var lamp = new Rect(center - (size / 2), y, size, size);
-        if (_glow > 0)
+        // At header height a small square; coupled with the level, a cap or foot as wide as both bars.
+        Rect lamp;
+        var radius = 1.5;
+        if (LampPlacement == JunctionLampPlacement.Header)
         {
-            // A soft halo, then the lamp: lit amber, fading back to the unlit lamp as the notes let go.
-            _haloBrush ??= new RadialGradientBrush
-            {
-                GradientStops = [new GradientStop(Color.FromArgb(150, Palette.SignalNote.R, Palette.SignalNote.G, Palette.SignalNote.B), 0), new GradientStop(Color.FromArgb(0, Palette.SignalNote.R, Palette.SignalNote.G, Palette.SignalNote.B), 1)],
-            };
-            using (context.PushOpacity(_glow))
-            {
-                var halo = size * 1.6;
-                context.DrawEllipse(_haloBrush, null, lamp.Center, halo, halo);
-            }
-
-            _lampBrush ??= new SolidColorBrush(Palette.SignalNote);
-            _lampBrush.Color = Palette.Mix(Palette.Raised, Palette.SignalNote, _glow);
-            context.DrawRectangle(_lampBrush, null, lamp, 1.5, 1.5);
+            var size = LampSize;
+            lamp = new Rect(center - (size / 2), Math.Round((HeaderHeight - size) / 2), size, size);
         }
         else
         {
-            context.DrawRectangle(LampOff, LampRim, lamp.Deflate(0.5), 1.5, 1.5);
+            var (top, bottom, left, width) = LevelFrame(center);
+            const double height = 3, gap = 4;
+            lamp = new Rect(left, LampPlacement == JunctionLampPlacement.AboveLevel ? top - gap - height : bottom + gap, width, height);
+        }
+
+        var color = LampColor;
+        if (_glow > 0)
+        {
+            // A soft halo, then the lamp: lit, fading back to the unlit lamp as the notes let go.
+            _haloBrush ??= new RadialGradientBrush
+            {
+                GradientStops = [new GradientStop(Color.FromArgb(170, color.R, color.G, color.B), 0), new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1)],
+            };
+            using (context.PushOpacity(_glow))
+            {
+                context.DrawEllipse(_haloBrush, null, lamp.Center, Math.Max(lamp.Width, 6) * 1.3, Math.Max(lamp.Height, 6) * 1.3);
+            }
+
+            _lampBrush ??= new SolidColorBrush(color);
+            _lampBrush.Color = Palette.Mix(Palette.Raised, Palette.Lighten(color, 0.15), _glow);
+            context.DrawRectangle(_lampBrush, null, lamp, radius, radius);
+        }
+        else
+        {
+            context.DrawRectangle(LampOff, LampRim, lamp.Deflate(0.5), radius, radius);
         }
     }
 
     private void DrawLevel(DrawingContext context, double center, MeterLevels levels)
     {
         var bar = LevelBarWidth;
-        var bottom = Bounds.Height - LevelBottom;
-        var top = bottom - LevelHeight;
+        var (top, bottom, left, _) = LevelFrame(center);
         var height = LevelHeight;
-        var left = center - bar - 0.5;
         var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
 
         // An idle level is only a faint track; a sounding one fills with its gradient.
@@ -260,6 +339,7 @@ internal sealed class JunctionSeam : Control
             return;
         }
 
+        var low = LevelLowColor;
         if (_levelBrush is null || _levelBrushSpan != (top, bottom))
         {
             _levelBrush = new LinearGradientBrush
@@ -268,20 +348,25 @@ internal sealed class JunctionSeam : Control
                 EndPoint = new RelativePoint(0, top, RelativeUnit.Absolute),
                 GradientStops =
                 [
-                    new GradientStop(Palette.MeterLow, 0),
-                    new GradientStop(Palette.MeterLow, HotFraction * 0.82),
-                    new GradientStop(Palette.MeterHot, HotFraction),
-                    new GradientStop(Palette.MeterClip, 1),
+                    new GradientStop(low, 0),
+                    new GradientStop(low, HotFraction * 0.82),
+                    new GradientStop(LevelHotColor, HotFraction),
+                    new GradientStop(LevelClipColor, 1),
                 ],
             };
             _levelBrushSpan = (top, bottom);
         }
 
+        _peakTick ??= new SolidColorBrush(Palette.Lighten(low, 0.45));
+        _clipLight ??= new SolidColorBrush(LevelClipColor);
         Side(levels.RmsLeft, levels.PeakLeft, left);
         Side(levels.RmsRight, levels.PeakRight, left + bar + 1);
+
+        // Clipping marks the top of the bars themselves, so nothing else needs room above them.
         if (levels.Clipped)
         {
-            context.DrawRectangle(ClipLight, null, new Rect(left, top - 3, (2 * bar) + 1, 2), 1, 1);
+            context.DrawRectangle(_clipLight, null, new Rect(left, top, bar, 2), 1, 1);
+            context.DrawRectangle(_clipLight, null, new Rect(left + bar + 1, top, bar, 2), 1, 1);
         }
 
         void Side(double rms, double peak, double x)
@@ -295,7 +380,7 @@ internal sealed class JunctionSeam : Control
             var tick = Math.Round(MeterLevels.Fraction(peak) * height);
             if (tick > body + 1)
             {
-                context.FillRectangle(PeakTick, new Rect(x, bottom - tick, bar, 1));
+                context.FillRectangle(_peakTick, new Rect(x, bottom - tick, bar, 1));
             }
         }
     }

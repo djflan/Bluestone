@@ -185,6 +185,87 @@ public sealed class WorkspaceShowcaseTests
         Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-playing-closeup")));
     });
 
+    /// <summary>
+    /// Design options for the seams, rendered side by side for choosing (frames/junction-gallery.html): where the note lamp
+    /// sits, and colour schemes for the level. Not a check of behaviour; it keeps the options reproducible.
+    /// </summary>
+    [Fact]
+    public Task TheJunctionDesignOptions_AreRenderedForComparison() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3 && view.Devices[1].Parameters.Count > 0, "the chain and the plugin's parameters");
+
+        // The synth at a healthy level; the effect after it pushed into clipping, so every colour of a scheme shows.
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[1].Output.Key] = new(0.5f, 0.45f, 0.25f, 0.22f),
+            [view.Devices[2].Output.Key] = new(1.05f, 0.97f, 0.62f, 0.58f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+
+        var blue = Avalonia.Media.Color.Parse("#5EA8F2");
+        var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string Low, string Hot, bool Playing)[]
+        {
+            ("lamp-header", "Lamp at header height (blue)", Desktop.Controls.JunctionLampPlacement.Header, "#4FB3B0", "#E0A43A", true),
+            ("lamp-above", "Lamp as a cap on the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", true),
+            ("lamp-below", "Lamp as a foot under the level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#4FB3B0", "#E0A43A", true),
+            ("lamp-above-idle", "Cap, idle", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", false),
+            ("bars-teal", "Bars: teal to amber (current)", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", true),
+            ("bars-ocean", "Bars: ocean blue to ice", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#3E7FD6", "#A9D6FF", true),
+            ("bars-cyan", "Bars: cyan to white-cyan", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#2FB8D8", "#C2F3FF", true),
+            ("bars-green", "Bars: studio green to yellow", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#3FB56E", "#E3C93A", true),
+            ("bars-silver", "Bars: silver to white", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#8E9099", "#F0F0F2", true),
+            ("bars-violet", "Bars: violet to pink", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#8C72D6", "#E58FD0", true),
+        };
+
+        var html = new System.Text.StringBuilder("<!doctype html><meta charset=utf-8><title>Junction design options</title><style>body{background:#111113;color:#D9D9DC;font:14px -apple-system,sans-serif;margin:24px}h2{font-weight:600;font-size:15px;margin:28px 0 8px}img{width:860px;border:1px solid #2E2E31;border-radius:6px}</style><h1>Junction design options</h1>");
+        foreach (var option in options)
+        {
+            foreach (var seam in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>())
+            {
+                seam.LampPlacement = option.Lamp;
+                seam.LampColor = blue;
+                seam.LevelLowColor = Avalonia.Media.Color.Parse(option.Low);
+                seam.LevelHotColor = Avalonia.Media.Color.Parse(option.Hot);
+            }
+
+            app.ViewModel.JunctionLevelSource = option.Playing ? key => levels.TryGetValue(key, out var reading) ? reading : null : _ => null;
+            if (option.Playing)
+            {
+                app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+            }
+            else
+            {
+                app.Playback.Live.ReleaseAll();
+            }
+
+            for (var frame = 0; frame < 20; frame++)
+            {
+                app.ViewModel.OnFrame();
+                await Task.Delay(20);
+                app.Settle();
+            }
+
+            var file = SaveDeviceView(app, $"junction-{option.Name}");
+            html.Append(System.Globalization.CultureInfo.InvariantCulture, $"<h2>{option.Caption}</h2><img src=\"{Path.GetFileName(file)}\">");
+        }
+
+        var gallery = Path.Combine(AppContext.BaseDirectory, "frames", "junction-gallery.html");
+        File.WriteAllText(gallery, html.ToString());
+        Assert.True(File.Exists(gallery));
+    });
+
     // The docked Device View alone, at twice the size, for looking at the seams closely.
     private static string SaveDeviceView(AppUnderTest app, string name)
     {
