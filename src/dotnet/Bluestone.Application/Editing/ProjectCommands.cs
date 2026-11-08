@@ -247,9 +247,16 @@ public static class ProjectCommands
                         Destination = c.Destination.Kind == SignalNodeKind.DeviceInput ? Copied(c.Destination) : c.Destination,
                     })
                     .ToList();
+                // Parked routes too: the copy's own (from the track) and, so they come back with the copy's when their
+                // grouped source leaves its group, those into its devices' inputs.
                 var parked = result.ParkedConnections
-                    .Where(c => c.Source == SignalNode.Track(id))
-                    .Select(c => c with { Id = ConnectionId.New(), Source = SignalNode.Track(copyId) })
+                    .Where(c => c.Source == SignalNode.Track(id) || (c.Destination.Kind == SignalNodeKind.DeviceInput && Copied(c.Destination) != c.Destination))
+                    .Select(c => c with
+                    {
+                        Id = ConnectionId.New(),
+                        Source = Copied(c.Source),
+                        Destination = c.Destination.Kind == SignalNodeKind.DeviceInput ? Copied(c.Destination) : c.Destination,
+                    })
                     .ToList();
                 result = result with { Connections = result.Connections.AddRange(outgoing), ParkedConnections = result.ParkedConnections.AddRange(parked) };
             }
