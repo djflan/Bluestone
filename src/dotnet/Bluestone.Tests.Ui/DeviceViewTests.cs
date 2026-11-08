@@ -399,6 +399,50 @@ public sealed class DeviceViewTests
     }
 
     [Fact]
+    public Task ASeamsPlus_AimsTheBrowserAtItsGap_AndItsRoutedMark_OpensTheConnections() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var seam = deviceView.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[1].Arriving);
+        Assert.False(seam.ShowsPlus);
+
+        // Hovering shows the +, clear of the indicators; clicking it aims the Browser here without selecting a device.
+        var (plus, _) = seam.Targets;
+        app.Window.MouseMove(app.InWindow(seam, plus.Center));
+        app.Settle();
+        Assert.True(seam.ShowsPlus);
+        var selected = view.SelectedDevice;
+        app.ClickAt(seam, plus.Center);
+        Assert.Equal(1, view.InsertionGap);
+        Assert.True(view.Devices[0].Output.IsInsertionPoint);
+        Assert.Same(selected, view.SelectedDevice);
+        Assert.True(app.Find<BrowserView>("DockedBrowser").IsEffectivelyVisible);
+        app.SaveFrame("device-view-seam-insert");
+        view.Insert(Definition("Transpose"));
+        app.Settle();
+        Assert.Equal(["Transpose", "Transpose", "Event Filter", "Arpeggiator"], view.Devices.Select(d => d.Definition!.Name));
+
+        // A junction a connection takes signal from shows the routed mark; it opens the connections from there.
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        view.RouteFromJunctionCommand.Execute(view.Devices[0].Output);
+        app.ViewModel.Connections.Destination = app.ViewModel.Connections.Destinations.Single(d => d.Name == "Track: Pad");
+        app.ViewModel.Connections.ConnectCommand.Execute(null);
+        app.Settle();
+        seam = deviceView.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[0].Output);
+        Assert.True(view.Devices[0].Output.IsRouted);
+        app.ViewModel.Connections.Source = app.ViewModel.Connections.Sources[^1];
+        var (_, routed) = seam.Targets;
+        Assert.False(routed.Intersects(seam.Targets.Plus));
+        app.Window.MouseMove(app.InWindow(seam, routed.Center));
+        app.ClickAt(seam, routed.Center);
+        Assert.Equal("After Transpose", app.ViewModel.Connections.Source!.Name);
+        Assert.Contains("also sent to", seam.Describe(), StringComparison.Ordinal);
+        app.SaveFrame("device-view-seam-routed");
+    });
+
+    [Fact]
     public Task TheCodePalette_MatchesTheDesignTokens() => HeadlessApp.RunAsync(() =>
     {
         var tokens = (ResourceDictionary)Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(new Uri("avares://Bluestone.Desktop/Theme/Tokens.axaml"));
@@ -407,6 +451,7 @@ public sealed class DeviceViewTests
         {
             (Palette.Base, "Surface.BaseColor"),
             (Palette.Panel, "Surface.PanelColor"),
+            (Palette.Sunken, "Surface.SunkenColor"),
             (Palette.Raised, "Surface.RaisedColor"),
             (Palette.Divider, "Line.DividerColor"),
             (Palette.Border, "Line.BorderColor"),

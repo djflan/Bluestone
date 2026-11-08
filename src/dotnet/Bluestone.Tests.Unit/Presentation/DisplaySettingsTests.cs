@@ -27,6 +27,13 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
         System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"sideways\" }");
         Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
+
+        // One unknown value does not reset the others.
+        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"top\", \"levelStyle\": \"loud\" }");
+        Assert.Equal(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Top }, store.Load());
+        store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak });
+        Assert.Equal(JunctionLevelStyle.Peak, store.Load().LevelStyle);
+        Assert.Contains("\"peak\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -45,5 +52,8 @@ public sealed class DisplaySettingsTests : IDisposable
         display.IndicatorPositionChoice = DisplayViewModel.Positions.Single(p => p.Position == JunctionIndicatorPosition.Bottom);
         Assert.Equal(JunctionIndicatorPosition.Bottom, new DisplaySettingsStore(File()).Load().IndicatorPosition);
         Assert.Equal(4, DisplayViewModel.Positions.Count);
+
+        display.LevelStyleChoice = DisplayViewModel.LevelStyles.Single(l => l.Style == JunctionLevelStyle.Peak);
+        Assert.Equal(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Bottom, LevelStyle = JunctionLevelStyle.Peak }, new DisplaySettingsStore(File()).Load());
     }
 }

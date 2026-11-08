@@ -608,7 +608,7 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ARoutingIndicator_OpensTheRoutingInspector_AndShowsWhereTheDeviceSends()
+    public async Task RouteOutput_OpensTheRoutingInspector_AndTheJunctionAfterTheDeviceShowsWhereItSends()
     {
         var (first, second) = await TwoTracksAsync();
         var strip = _vm.DeviceView!;
@@ -624,10 +624,67 @@ public sealed class MainViewModelTests : IAsyncLifetime
 
         Assert.True(shown);
         Assert.Equal("After Arpeggiator", _vm.Connections.Source!.Name);
-        Assert.Equal("→ track \"Strings\"", strip.Devices[0].RoutingIndicator);
+        Assert.Equal("track \"Strings\"", strip.Devices[0].Output.Routes);
+        Assert.True(strip.Devices[0].Output.IsRouted);
+        Assert.False(strip.Input.IsRouted);
         Assert.Contains("After Arpeggiator", Assert.Single(_vm.Connections.Outgoing).Text, StringComparison.Ordinal);
         Assert.Equal(first.Id, _session.Project.ChainOf(first.Id)!.Owner.Track);
         Assert.Equal(SignalNode.Track(second.Id), Assert.Single(_session.Project.Connections, c => c.Source.Kind == SignalNodeKind.Device).Destination);
+    }
+
+    [Fact]
+    public async Task AJunctionsInsert_AimsTheBrowserAtItsGap_UntilADeviceIsInsertedOrSelected()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        AddDevice("Transpose");
+        await Settle();
+        Assert.Equal(["Arpeggiator", "Transpose"], strip.Devices.Select(d => d.Name));
+
+        // The + before the first device: the Browser says so, the gap is marked, and the next insert lands there.
+        strip.InsertAtJunctionCommand.Execute(strip.Input);
+        Assert.Equal(0, strip.InsertionGap);
+        Assert.True(strip.Input.IsInsertionPoint);
+        Assert.Equal("Into Piano, before Arpeggiator", _vm.Browser.TargetText);
+        AddDevice("Event Filter");
+        await Settle();
+        Assert.Equal(["Event Filter", "Arpeggiator", "Transpose"], strip.Devices.Select(d => d.Name));
+        Assert.Null(strip.InsertionGap);
+        Assert.False(strip.Input.IsInsertionPoint);
+
+        // Between two devices; then selecting a device goes back to inserting after the selection.
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        Assert.Equal(2, strip.InsertionGap);
+        Assert.Equal("Into Piano, after Arpeggiator", _vm.Browser.TargetText);
+        Assert.True(strip.Devices[1].Output.IsInsertionPoint);
+        strip.Devices[0].SelectCommand.Execute(null);
+        Assert.Null(strip.InsertionGap);
+        Assert.False(strip.Devices[1].Output.IsInsertionPoint);
+        Assert.Equal("Into Piano, after Event Filter", _vm.Browser.TargetText);
+    }
+
+    [Fact]
+    public async Task RouteFromAJunction_OpensTheInspectorWithThatPointAsTheSource()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        var shown = 0;
+        _vm.Connections.ShowRequested += (_, _) => shown++;
+
+        strip.RouteFromJunctionCommand.Execute(strip.Input);
+        Assert.Equal("Piano input (before devices)", _vm.Connections.Source!.Name);
+        _vm.Connections.Destination = _vm.Connections.Destinations.Single(d => d.Name == "Track: Strings");
+        _vm.Connections.ConnectCommand.Execute(null);
+        await Settle();
+        Assert.True(strip.Input.IsRouted);
+        Assert.False(strip.Devices[0].Output.IsRouted);
+
+        strip.RouteFromJunctionCommand.Execute(strip.Devices[0].Output);
+        Assert.Equal("After Arpeggiator", _vm.Connections.Source!.Name);
+        Assert.Equal(2, shown);
     }
 
     [Fact]

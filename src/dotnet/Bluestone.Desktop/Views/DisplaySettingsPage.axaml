@@ -13,8 +13,13 @@
         <ComboBox x:Name="IndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Positions}" SelectedItem="{Binding IndicatorPositionChoice}"
                   HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
       </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Levels show" />
+        <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
+      </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, in every Device View." />
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, and whether a level follows the average loudness (with the peak held above it) or the peaks, in every Device View." />
     </StackPanel>
   </StackPanel>
 </UserControl>

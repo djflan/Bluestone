@@ -7,6 +7,7 @@ internal static class Palette
 {
     public static readonly Color Base = Color.Parse("#1C1C1E");
     public static readonly Color Panel = Color.Parse("#252527");
+    public static readonly Color Sunken = Color.Parse("#161618");
     public static readonly Color Raised = Color.Parse("#2E2E31");
     public static readonly Color Divider = Color.Parse("#111113");
 

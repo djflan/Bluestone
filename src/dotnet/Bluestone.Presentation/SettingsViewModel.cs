@@ -146,8 +146,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _all.Add(new SettingsCategory(
             SettingsPage.Display,
             "Display",
-            "How the Device View shows signal: where each junction's level and note lamp sit.",
-            "display appearance device view junction indicator level meter note lamp position top bottom header",
+            "How the Device View shows signal: where each junction's level and MIDI icon sit, and what the levels show.",
+            "display appearance device view junction indicator level meter note midi lamp position top bottom half rms peak average",
             _display));
         Filter();
     }

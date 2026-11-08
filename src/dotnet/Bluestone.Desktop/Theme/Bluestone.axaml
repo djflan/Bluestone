@@ -1036,7 +1036,7 @@
     <Setter Property="LevelMidColor" Value="{StaticResource Meter.MidColor}" />
     <Setter Property="LevelHotColor" Value="{StaticResource Meter.HotColor}" />
     <Setter Property="LevelClipColor" Value="{StaticResource Meter.ClipColor}" />
-    <Setter Property="Cursor" Value="Arrow" />
+    <Setter Property="AccentColor" Value="{StaticResource Accent.Color}" />
   </Style>
   <Style Selector="controls|JunctionSeam:focus-visible">
     <Setter Property="Effect">

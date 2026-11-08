@@ -92,11 +92,18 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(IndicatorPosition));
             }
+            else if (e.PropertyName == nameof(DisplayViewModel.LevelStyle))
+            {
+                OnPropertyChanged(nameof(LevelStyle));
+            }
         };
     }
 
     /// <summary>Where this view draws its junctions' levels and note lamps (Settings ▸ Display, for every view).</summary>
     public JunctionIndicatorPosition IndicatorPosition => _owner.Display.IndicatorPosition;
+
+    /// <summary>What this view's junction levels show (Settings ▸ Display, for every view).</summary>
+    public JunctionLevelStyle LevelStyle => _owner.Display.LevelStyle;
 
     /// <summary>The view instance's stable ID in the workspace.</summary>
     public string Id { get; }
@@ -237,6 +244,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         if (newValue is not null)
         {
             newValue.IsSelected = true;
+            InsertionGap = null;
         }
 
         // Where the Browser inserts follows this view's selection.
@@ -319,6 +327,11 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             chain = project.ChainOf(id);
         }
 
+        if (ChainId != chain?.Id)
+        {
+            InsertionGap = null;
+        }
+
         ChainId = chain?.Id;
         HasChain = Track is not null || Rack is not null;
         IsEditingRack = Rack is not null;
@@ -369,11 +382,102 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         }
 
         LastJunction = Devices.Count > 0 ? Devices[^1].Output : null;
+        if (InsertionGap > Devices.Count)
+        {
+            InsertionGap = null;
+        }
+
+        foreach (var junction in Junctions)
+        {
+            var from = junction == Input ? SignalNode.ChainInput(chain!.Id) : SignalNode.Device(new DeviceId(junction.Key));
+            junction.Routes = string.Join(", ", project.ConnectionsFrom(from).Select(c => SignalRoutingValidator.Describe(project, c.Destination)).Distinct());
+        }
+
+        MarkInsertionGap();
 
         SelectedDevice = Devices.FirstOrDefault(d => d.Id == selectedId);
         OnPropertyChanged(nameof(IsEmpty));
         SavePresetCommand.NotifyCanExecuteChanged();
         LoadPresetCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// The gap the next Browser insert goes into, chosen at a junction (its + or "Insert device here"): 0 before the first
+    /// device, the device count after the last. Null inserts after the selected device, as usual.
+    /// </summary>
+    [ObservableProperty]
+    public partial int? InsertionGap { get; private set; }
+
+    /// <summary>Where the Browser's next insert lands in this view, in words.</summary>
+    internal string InsertionText => InsertionGap is { } gap
+        ? gap == 0 ? Devices.Count == 0 ? $"Into {Heading}, as its first device" : $"Into {Heading}, before {Devices[0].Name}"
+        : $"Into {Heading}, after {Devices[gap - 1].Name}"
+        : SelectedDevice is { } after ? $"Into {Heading}, after {after.Name}"
+        : Devices.Count == 0 ? $"Into {Heading}, as its first device"
+        : $"Into {Heading}, at the end";
+
+    /// <summary>The gap a junction opens onto: 0 for the chain's input, one past the device it follows otherwise; null if it is not in this view.</summary>
+    internal int? GapOf(JunctionSignal? junction)
+    {
+        if (junction is null || ChainId is null)
+        {
+            return null;
+        }
+
+        if (junction == Input)
+        {
+            return 0;
+        }
+
+        var index = Devices.ToList().FindIndex(d => d.Output == junction);
+        return index < 0 ? null : index + 1;
+    }
+
+    /// <summary>Aims the Browser at the gap at <paramref name="junction"/>: its next insert goes there, and the gap is marked.</summary>
+    [RelayCommand]
+    private void InsertAtJunction(JunctionSignal? junction)
+    {
+        if (GapOf(junction) is not { } gap)
+        {
+            return;
+        }
+
+        InsertionGap = gap;
+        Activate();
+        _owner.Workspace.ShowBrowser(BrowserCategory.All);
+        _owner.Browser.UpdateTarget();
+    }
+
+    /// <summary>Opens the connections inspector with <paramref name="junction"/> as the source of the next connection.</summary>
+    [RelayCommand]
+    private void RouteFromJunction(JunctionSignal? junction)
+    {
+        if (GapOf(junction) is not { } gap || ChainId is not { } chain)
+        {
+            return;
+        }
+
+        Activate();
+        _owner.Connections.RouteFrom(gap == 0 ? SignalNode.ChainInput(chain) : SignalNode.Device(Devices[gap - 1].Id));
+    }
+
+    partial void OnInsertionGapChanged(int? value)
+    {
+        MarkInsertionGap();
+        if (_owner.Workspace?.InsertionTarget == this)
+        {
+            _owner.Browser.UpdateTarget();
+        }
+    }
+
+    private void MarkInsertionGap()
+    {
+        var gap = 0;
+        foreach (var junction in Junctions)
+        {
+            junction.IsInsertionPoint = gap == InsertionGap;
+            gap++;
+        }
     }
 
     private static void Junction(JunctionSignal junction, Guid key, SignalPresence presence, string label)
@@ -469,8 +573,12 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     }
 
     /// <summary>Inserts after the selected device, or at the end: where Enter or a double-click in the Browser puts a device.</summary>
-    public bool Insert(DeviceDefinition definition) =>
-        InsertAt(SelectedDevice is { } after ? after.Index + 1 : Devices.Count, definition);
+    public bool Insert(DeviceDefinition definition)
+    {
+        var gap = InsertionGap ?? (SelectedDevice is { } after ? after.Index + 1 : Devices.Count);
+        InsertionGap = null;
+        return InsertAt(gap, definition);
+    }
 
     /// <summary>
     /// Moves a device in this view's chain to the gap at <paramref name="gap"/> (0 before the first device, the count after the
@@ -598,6 +706,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
     internal void Select(DevicePanelViewModel device)
     {
+        InsertionGap = null;
         SelectedDevice = device;
         Activate();
     }
@@ -787,13 +896,6 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     [ObservableProperty]
     public partial bool MakesAudio { get; private set; }
 
-    /// <summary>Where this device's output is also sent ("→ Strings, MU2000 B"), or empty.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasRouting))]
-    public partial string RoutingIndicator { get; private set; } = string.Empty;
-
-    public bool HasRouting => RoutingIndicator.Length > 0;
-
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(MoveLeftCommand))]
     public partial bool CanMoveLeft { get; private set; }
@@ -854,8 +956,6 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             };
             UsesNotes = definition?.Consumes.HasFlag(SignalKinds.Events) == true;
             MakesAudio = definition?.Produces.HasFlag(SignalKinds.Audio) == true;
-            var destinations = project.ConnectionsFrom(SignalNode.Device(device.Id)).Select(c => SignalRoutingValidator.Describe(project, c.Destination)).ToList();
-            RoutingIndicator = destinations.Count == 0 ? string.Empty : "→ " + string.Join(", ", destinations);
 
             var descriptors = definition?.Parameters ?? [];
             // Panels are reused by position, so a replaced device can share parameter ids with the old one (Event Filter

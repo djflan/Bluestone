@@ -78,7 +78,10 @@
                   <!-- The seam arriving at the device (ADR 0037): the signal's hairline, its note lamp, and its level. -->
                   <Border Classes="chainLink" Classes.bypassed="{Binding IsBypassed}">
                     <controls:JunctionSeam Signal="{Binding Arriving}" IsQuiet="{Binding IsBypassed}"
-                                           IndicatorPosition="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).IndicatorPosition, FallbackValue=LowerHalf}" />
+                                           IndicatorPosition="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).IndicatorPosition, FallbackValue=LowerHalf}"
+                                           LevelStyle="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).LevelStyle, FallbackValue=RmsAndPeak}"
+                                           InsertCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).InsertAtJunctionCommand, FallbackValue={x:Null}}"
+                                           RouteCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).RouteFromJunctionCommand, FallbackValue={x:Null}}" />
                   </Border>
                   <Border Classes="devicePanel" Classes.selected="{Binding IsSelected}" Classes.bypassed="{Binding IsBypassed}"
                           Classes.unavailable="{Binding NeedsAttention}" Classes.collapsed="{Binding IsCollapsed}"
@@ -180,8 +183,6 @@
                               <TextBlock Text="{Binding Format}" />
                             </Border>
                             <TextBlock Classes="micro" Text="{Binding MoreParametersText}" IsVisible="{Binding HasMoreParameters}" />
-                            <Button Classes="link micro" Content="{Binding RoutingIndicator}" IsVisible="{Binding HasRouting}" Command="{Binding ShowRoutingCommand}"
-                                    ToolTip.Tip="This device's output is also sent here. Open the connections." />
                           </StackPanel>
                           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="1">
                             <!-- The open editor window: pinned (when editors follow the selection), and where its keys go. -->
@@ -229,7 +230,8 @@
           <!-- An empty chain: the place a first device goes, between the boundaries. -->
           <StackPanel Orientation="Horizontal" IsVisible="{Binding IsEmpty}">
             <Border Classes="chainLink">
-              <controls:JunctionSeam Signal="{Binding Input}" IndicatorPosition="{Binding IndicatorPosition}" />
+              <controls:JunctionSeam Signal="{Binding Input}" IndicatorPosition="{Binding IndicatorPosition}" LevelStyle="{Binding LevelStyle}"
+                                     InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
             </Border>
             <Panel x:Name="EmptySlot" Classes="emptySlot" AutomationProperties.Name="Empty chain">
               <Rectangle Classes="slotOutline" />
@@ -244,7 +246,8 @@
           </StackPanel>
 
           <Border x:Name="TrailLink" Classes="chainLink">
-            <controls:JunctionSeam Signal="{Binding LastJunction}" IndicatorPosition="{Binding IndicatorPosition}" />
+            <controls:JunctionSeam Signal="{Binding LastJunction}" IndicatorPosition="{Binding IndicatorPosition}" LevelStyle="{Binding LevelStyle}"
+                                 InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
           </Border>
           <!-- Output boundary: what leaves the chain for the track's destination. -->
           <Border Classes="chainNode" ToolTip.Tip="{Binding OutputDetail, StringFormat='Chain output: everything the chain passes on, to {0}'}" AutomationProperties.Name="Chain output">

@@ -30,6 +30,18 @@ public sealed partial class JunctionSignal : ObservableObject
     [ObservableProperty]
     public partial bool NotesHeld { get; private set; }
 
+    /// <summary>Where this point is also sent by connections ("Strings, MU2000 B"), or empty.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRouted))]
+    public partial string Routes { get; internal set; } = string.Empty;
+
+    /// <summary>A connection takes signal from this point.</summary>
+    public bool IsRouted => Routes.Length > 0;
+
+    /// <summary>The Browser's next insert goes into the gap here (chosen with the junction's +).</summary>
+    [ObservableProperty]
+    public partial bool IsInsertionPoint { get; internal set; }
+
     /// <summary>The audio level here, falling to the floor when audio is off or the junction is not in the engine's graph.</summary>
     public MeterLevels Levels { get; } = new();
 

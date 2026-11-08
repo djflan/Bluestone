@@ -1,11 +1,13 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Rendering;
 using Bluestone.Desktop.Theme;
 using Bluestone.Presentation;
 
@@ -25,8 +27,16 @@ internal enum JunctionLampPlacement
 /// sit is the musician's choice (Settings ▸ Display). Only what can be there is drawn; an idle seam is quiet. Hovering
 /// shows what is there in words. Drawing allocates nothing.
 /// </summary>
-internal sealed class JunctionSeam : Control
+internal sealed class JunctionSeam : Control, ICustomHitTest
 {
+    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLevelStyle>(nameof(LevelStyle));
+
+    public static readonly StyledProperty<ICommand?> InsertCommandProperty = AvaloniaProperty.Register<JunctionSeam, ICommand?>(nameof(InsertCommand));
+
+    public static readonly StyledProperty<ICommand?> RouteCommandProperty = AvaloniaProperty.Register<JunctionSeam, ICommand?>(nameof(RouteCommand));
+
+    public static readonly StyledProperty<Color> AccentColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(AccentColor), Palette.Accent);
+
     public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.BelowLevel);
 
     public static readonly StyledProperty<double> LampHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampHeight), 11);
@@ -67,6 +77,13 @@ internal sealed class JunctionSeam : Control
 
     private static readonly IBrush Link = new SolidColorBrush(Palette.Lighten(Palette.Border, 0.08));
     private static readonly IBrush QuietLink = new SolidColorBrush(Palette.Border);
+    private static readonly IBrush PlusFill = new SolidColorBrush(Palette.Raised);
+    private static readonly IPen PlusRim = new Pen(new SolidColorBrush(Palette.Lighten(Palette.Border, 0.12)), 1);
+    private static readonly IPen PlusMark = new Pen(new SolidColorBrush(Palette.TextMuted), 1.25, lineCap: PenLineCap.Round);
+    private static readonly IPen PlusMarkHot = new Pen(Brushes.White, 1.25, lineCap: PenLineCap.Round);
+    private static readonly IBrush RoutedHole = new SolidColorBrush(Palette.Sunken);
+    private const double PlusSize = 14;
+    private const double RoutedSize = 7;
     private const double LowFraction = 0.4;
     private const double MidFraction = 0.62;
     private const double NoteWidth = 12;
@@ -106,12 +123,17 @@ internal sealed class JunctionSeam : Control
     private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
     private SolidColorBrush? _lampBrush;
     private RadialGradientBrush? _haloBrush;
+    private SolidColorBrush? _accentBrush;
+    private IPen? _accentPen;
+    private SolidColorBrush? _markerBrush;
+    private bool _hovered;
+    private Part _over;
 
     static JunctionSeam()
     {
         AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, LevelBarWidthProperty,
             LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelMidColorProperty, LevelHotColorProperty, LevelClipColorProperty,
-            LevelSegmentHeightProperty, LevelSegmentGapProperty);
+            LevelSegmentHeightProperty, LevelSegmentGapProperty, LevelStyleProperty, InsertCommandProperty, AccentColorProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
     }
 
@@ -120,13 +142,59 @@ internal sealed class JunctionSeam : Control
         _updated = (_, _) => OnFrame();
         _changed = (_, e) =>
         {
-            if (e.PropertyName is nameof(JunctionSignal.Label) or nameof(JunctionSignal.CanCarryNotes) or nameof(JunctionSignal.CanCarryAudio))
+            if (e.PropertyName is nameof(JunctionSignal.Label) or nameof(JunctionSignal.CanCarryNotes) or nameof(JunctionSignal.CanCarryAudio)
+                or nameof(JunctionSignal.Routes) or nameof(JunctionSignal.IsInsertionPoint))
             {
                 UpdateName();
                 InvalidateVisual();
             }
         };
         ClipToBounds = false;
+        var insert = new MenuItem { Header = "Insert Device Here" };
+        insert.Click += (_, _) => Run(InsertCommand);
+        var route = new MenuItem { Header = "Route from Here…" };
+        route.Click += (_, _) => Run(RouteCommand);
+        ContextMenu = new ContextMenu { Items = { insert, route } };
+        ContextMenu.Opening += (_, _) =>
+        {
+            insert.IsEnabled = InsertCommand?.CanExecute(Signal) == true;
+            route.IsEnabled = RouteCommand?.CanExecute(Signal) == true;
+        };
+    }
+
+    private enum Part
+    {
+        None,
+        Plus,
+        Routed,
+    }
+
+    /// <summary>What the level shows: the average with the peak held above it, or the peak (Settings ▸ Display).</summary>
+    public JunctionLevelStyle LevelStyle
+    {
+        get => GetValue(LevelStyleProperty);
+        set => SetValue(LevelStyleProperty, value);
+    }
+
+    /// <summary>Run with <see cref="Signal"/> by the hover +, Enter, and "Insert Device Here": aims the Browser at this gap.</summary>
+    public ICommand? InsertCommand
+    {
+        get => GetValue(InsertCommandProperty);
+        set => SetValue(InsertCommandProperty, value);
+    }
+
+    /// <summary>Run with <see cref="Signal"/> by the routed mark and "Route from Here…": opens the connections from this point.</summary>
+    public ICommand? RouteCommand
+    {
+        get => GetValue(RouteCommandProperty);
+        set => SetValue(RouteCommandProperty, value);
+    }
+
+    /// <summary>The colour of the routed mark, the + under the pointer, and the insertion mark.</summary>
+    public Color AccentColor
+    {
+        get => GetValue(AccentColorProperty);
+        set => SetValue(AccentColorProperty, value);
     }
 
     public JunctionLampPlacement LampPlacement
@@ -276,12 +344,26 @@ internal sealed class JunctionSeam : Control
                 : string.Create(CultureInfo.InvariantCulture, $"peak {peak:0.0} dB{(levels.Clipped ? ", clipped" : string.Empty)}"));
         }
 
+        if (signal.IsRouted)
+        {
+            parts.Add($"also sent to {signal.Routes}");
+        }
+
         return string.Join(" · ", parts);
     }
+
+    public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == AccentColorProperty)
+        {
+            _accentBrush = null;
+            _accentPen = null;
+            _markerBrush = null;
+        }
+
         if (change.Property == LampColorProperty || change.Property == LevelLowColorProperty || change.Property == LevelMidColorProperty || change.Property == LevelHotColorProperty || change.Property == LevelClipColorProperty)
         {
             _haloBrush = null;
@@ -313,12 +395,173 @@ internal sealed class JunctionSeam : Control
     {
         base.OnPointerEntered(e);
         ToolTip.SetTip(this, Describe());
+        _hovered = true;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        var over = PartAt(e.GetPosition(this));
+        if (over != _over)
+        {
+            _over = over;
+            Cursor = over == Part.None ? Cursor.Default : new Cursor(StandardCursorType.Hand);
+            ToolTip.SetTip(this, over switch
+            {
+                Part.Plus => "Insert a device here: opens the Browser aimed at this gap",
+                Part.Routed => $"Also sent to {Signal?.Routes}. Click to open the connections from here.",
+                _ => Describe(),
+            });
+            InvalidateVisual();
+        }
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _hovered = false;
+        _over = Part.None;
+        Cursor = Cursor.Default;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        switch (PartAt(e.GetPosition(this)))
+        {
+            case Part.Plus:
+                Run(InsertCommand);
+                e.Handled = true;
+                break;
+            case Part.Routed:
+                Run(RouteCommand);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
+        {
+            Run(InsertCommand);
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        InvalidateVisual();
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        InvalidateVisual();
+    }
+
+    private void Run(ICommand? command)
+    {
+        if (command?.CanExecute(Signal) == true)
+        {
+            command.Execute(Signal);
+        }
+    }
+
+    // What is under the pointer: the + (only while it shows), the routed mark, or neither. Generous targets: a few pixels
+    // round each, within the seam.
+    private Part PartAt(Point point)
+    {
+        if (Signal is not { } signal)
+        {
+            return Part.None;
+        }
+
+        var center = Math.Round(Bounds.Width / 2);
+        if (signal.IsRouted && RoutedRect(center).Inflate(4).Contains(point))
+        {
+            return Part.Routed;
+        }
+
+        return ShowsPlus && PlusRect(center).Inflate(3).Contains(point) ? Part.Plus : Part.None;
+    }
+
+    /// <summary>Where the + is (drawn only while hovered or focused) and where the routed mark is, in the seam's coordinates.</summary>
+    internal (Rect Plus, Rect Routed) Targets => (PlusRect(Math.Round(Bounds.Width / 2)), RoutedRect(Math.Round(Bounds.Width / 2)));
+
+    internal bool ShowsPlus => InsertCommand is not null && (_hovered || IsKeyboardFocusWithin);
+
+    // The span the level and its note take, top to bottom; empty when the seam shows neither.
+    private (double Top, double Bottom) GroupSpan(double center)
+    {
+        if (Signal is not { } signal || (!signal.CanCarryAudio && !signal.CanCarryNotes))
+        {
+            return (0, 0);
+        }
+
+        var (top, bottom, _, _) = LevelFrame(center);
+        var lamp = LampHeight + LampGap;
+        return LampPlacement switch
+        {
+            JunctionLampPlacement.AboveLevel => (top - lamp, bottom),
+            JunctionLampPlacement.BelowLevel => (top, bottom + lamp),
+            _ => (top, bottom),
+        };
+    }
+
+    // The routed mark sits on the hairline, where the signal leaves; if the indicators are there, just under them.
+    private Rect RoutedRect(double center)
+    {
+        var y = Free(LinkY + 0.5, RoutedSize, GroupSpan(center), (0, 0));
+        return new Rect(center - (RoutedSize / 2), y - (RoutedSize / 2), RoutedSize, RoutedSize);
+    }
+
+    // The + sits just above the hairline, or below it, wherever the indicators and the routed mark leave room.
+    private Rect PlusRect(double center)
+    {
+        var routed = Signal is { IsRouted: true } ? RoutedRect(center) : default;
+        var y = Free(LinkY - 20, PlusSize, GroupSpan(center), (routed.Top, routed.Bottom));
+        return new Rect(center - (PlusSize / 2), Math.Round(y - (PlusSize / 2)), PlusSize, PlusSize);
+    }
+
+    // A centre near preferred for something size tall that keeps 3 px clear of two spans, inside the panel's body.
+    private double Free(double preferred, double size, (double Top, double Bottom) first, (double Top, double Bottom) second)
+    {
+        var half = size / 2;
+        var candidates = new[] { preferred, LinkY + 20, first.Top - 3 - half, first.Bottom + 3 + half, second.Bottom + 3 + half, second.Top - 3 - half };
+        foreach (var y in candidates)
+        {
+            if (y - half >= HeaderHeight && y + half <= Bounds.Height - PanelBorder && Clear(y, first) && Clear(y, second))
+            {
+                return y;
+            }
+        }
+
+        return preferred;
+
+        bool Clear(double y, (double Top, double Bottom) span) => span.Bottom <= span.Top || y + half + 3 <= span.Top || y - half - 3 >= span.Bottom;
     }
 
     public override void Render(DrawingContext context)
     {
         var width = Bounds.Width;
         var center = Math.Round(width / 2);
+        if (Signal is { IsInsertionPoint: true })
+        {
+            // The gap the Browser's next insert goes into, marked as a drop's insertion marker marks it.
+            _markerBrush ??= new SolidColorBrush(AccentColor, 0.85);
+            context.DrawRectangle(_markerBrush, null, new Rect(center - 1.5, 0, 3, Bounds.Height), 1.5, 1.5);
+        }
+
         context.FillRectangle(IsQuiet ? QuietLink : Link, new Rect(0, LinkY, width, 1));
         if (Signal is not { } signal)
         {
@@ -333,6 +576,31 @@ internal sealed class JunctionSeam : Control
         if (signal.CanCarryAudio)
         {
             DrawLevel(context, center, signal.Levels);
+        }
+
+        _accentBrush ??= new SolidColorBrush(AccentColor);
+        if (signal.IsRouted)
+        {
+            // A tap on the wire: signal is also taken from here.
+            var mark = RoutedRect(center);
+            context.DrawEllipse(RoutedHole, null, mark.Center, (mark.Width / 2) + 1.5, (mark.Height / 2) + 1.5);
+            context.DrawEllipse(_accentBrush, null, mark.Center, mark.Width / 2, mark.Height / 2);
+            if (_over == Part.Routed)
+            {
+                _accentPen ??= new Pen(_accentBrush, 1);
+                context.DrawEllipse(null, _accentPen, mark.Center, (mark.Width / 2) + 2.5, (mark.Height / 2) + 2.5);
+            }
+        }
+
+        if (ShowsPlus)
+        {
+            var plus = PlusRect(center);
+            var hot = _over == Part.Plus;
+            context.DrawEllipse(hot ? _accentBrush : PlusFill, hot ? null : PlusRim, plus.Center, plus.Width / 2, plus.Height / 2);
+            var arm = 3.5;
+            var pen = hot ? PlusMarkHot : PlusMark;
+            context.DrawLine(pen, new Point(plus.Center.X - arm, plus.Center.Y), new Point(plus.Center.X + arm, plus.Center.Y));
+            context.DrawLine(pen, new Point(plus.Center.X, plus.Center.Y - arm), new Point(plus.Center.X, plus.Center.Y + arm));
         }
 
         var levels = signal.Levels;
@@ -443,9 +711,10 @@ internal sealed class JunctionSeam : Control
 
         void Side(double rms, double peak, double x)
         {
-            // Lit up to the RMS, the peak as one held segment above it, and the top segment while clipping.
-            var lit = (int)Math.Round(MeterLevels.Fraction(rms) * count);
-            var held = Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(peak) * count)) - 1;
+            // Lit up to the RMS with the peak as one held segment above it (or lit to the peak), and the top segment while clipping.
+            var peakOnly = LevelStyle == JunctionLevelStyle.Peak;
+            var lit = (int)Math.Round(MeterLevels.Fraction(peakOnly ? peak : rms) * count);
+            var held = peakOnly ? -1 : Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(peak) * count)) - 1;
             for (var i = 0; i < count; i++)
             {
                 if (i < lit || i == held || (clipped && i == count - 1))
