@@ -451,10 +451,10 @@ public sealed class LiveInput : IDisposable
 
     // A track's live routes, leaving out any that would drive a plugin note effect another track's live route already runs
     // (two tracks into one rack): one instance, one route. The track whose routes were made first keeps it. Under _gate.
-    private ImmutableArray<LiveRoutePlan> PlansFor(Project project, TrackId track)
+    private ImmutableArray<LiveRoutePlan> PlansFor(Project project, TrackId track, HashSet<DeviceId>? claimed = null)
     {
         var plans = LiveRoutePlan.FindAll(project, track, _devices, _endpoints);
-        var elsewhere = _runners.Where(r => r.Key != track).SelectMany(r => r.Value).SelectMany(r => r.Plan.PluginStages).ToHashSet();
+        var elsewhere = claimed ?? _runners.Where(r => r.Key != track).SelectMany(r => r.Value).SelectMany(r => r.Plan.PluginStages).ToHashSet();
         if (elsewhere.Count == 0)
         {
             return plans;
@@ -501,10 +501,15 @@ public sealed class LiveInput : IDisposable
             _runners.Remove(track);
         }
 
+        // Plugin effects are claimed afresh in this pass, in the order the tracks' routes were first made, so an effect a
+        // track no longer reaches is free for the next one at once.
+        var claimed = new HashSet<DeviceId>();
         foreach (var track in _runners.Keys.ToList())
         {
             var current = _runners[track];
-            LiveRunner[] fresh = [.. PlansFor(project, track).Select(Create)];
+            var plans = PlansFor(project, track, claimed);
+            claimed.UnionWith(plans.SelectMany(p => p.PluginStages));
+            LiveRunner[] fresh = [.. plans.Select(Create)];
 
             // A route that is the same as before (same stages, same binding) keeps its runner, with the notes it holds: only
             // what changed is replaced.
