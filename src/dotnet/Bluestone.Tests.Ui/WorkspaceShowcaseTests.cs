@@ -262,6 +262,32 @@ public sealed class WorkspaceShowcaseTests
             html.Append(System.Globalization.CultureInfo.InvariantCulture, $"<h2>{option.Caption}</h2><img src=\"{Path.GetFileName(file)}\">");
         }
 
+        // The chosen design at each indicator position, set the way Settings ▸ Display sets it.
+        foreach (var seam in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>())
+        {
+            seam.ClearValue(Desktop.Controls.JunctionSeam.LampPlacementProperty);
+            seam.ClearValue(Desktop.Controls.JunctionSeam.LampColorProperty);
+            seam.ClearValue(Desktop.Controls.JunctionSeam.LevelLowColorProperty);
+            seam.ClearValue(Desktop.Controls.JunctionSeam.LevelHotColorProperty);
+        }
+
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        foreach (var position in Presentation.DisplayViewModel.Positions)
+        {
+            app.ViewModel.Display.IndicatorPosition = position.Position;
+            for (var frame = 0; frame < 20; frame++)
+            {
+                app.ViewModel.OnFrame();
+                await Task.Delay(20);
+                app.Settle();
+            }
+
+            Assert.All(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>(), s => Assert.Equal(position.Position, s.IndicatorPosition));
+            var file = SaveDeviceView(app, $"junction-position-{position.Position}");
+            html.Append(System.Globalization.CultureInfo.InvariantCulture, $"<h2>Position: {position.Name}</h2><img src=\"{Path.GetFileName(file)}\">");
+        }
+
         var gallery = Path.Combine(AppContext.BaseDirectory, "frames", "junction-gallery.html");
         File.WriteAllText(gallery, html.ToString());
         Assert.True(File.Exists(gallery));

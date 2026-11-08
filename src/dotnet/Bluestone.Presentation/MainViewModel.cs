@@ -1675,6 +1675,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public Func<Guid, Bluestone.Audio.MeterReading?>? JunctionLevelSource { get; set; }
 
+    /// <summary>Application-wide display preferences (Settings ▸ Display), such as where junction indicators sit.</summary>
+    public DisplayViewModel Display { get; } = new();
+
     /// <summary>
     /// Tells the audio engine which junctions to measure: those the open Device Views show. Set by the app; called on
     /// the UI thread whenever that set changes, and once when set.

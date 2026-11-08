@@ -1024,7 +1024,8 @@
     <Setter Property="LampSize" Value="{StaticResource DevicePanel.LampSize}" />
     <Setter Property="LinkY" Value="{StaticResource Junction.LinkY}" />
     <Setter Property="LevelHeight" Value="{StaticResource Junction.LevelHeight}" />
-    <Setter Property="LevelBottom" Value="{StaticResource Junction.LevelBottom}" />
+    <Setter Property="FooterHeight" Value="{StaticResource DevicePanel.FooterHeight}" />
+    <Setter Property="IndicatorInset" Value="{StaticResource Junction.IndicatorInset}" />
     <Setter Property="LevelBarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
     <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
     <Setter Property="LampPlacement" Value="BelowLevel" />

@@ -40,7 +40,7 @@ public sealed class SettingsViewModelTests
 
         settings.Open(SettingsPage.Audio);
         Assert.Equal(string.Empty, settings.SearchText);
-        Assert.Equal(2, settings.Categories.Count);
+        Assert.Equal(3, settings.Categories.Count);
         Assert.Equal(SettingsPage.Audio, settings.SelectedCategory?.Page);
     }
 

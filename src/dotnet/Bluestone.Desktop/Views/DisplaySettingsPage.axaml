@@ -1,0 +1,20 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             x:Class="Bluestone.Desktop.Views.DisplaySettingsPage"
+             x:DataType="vm:DisplayViewModel"
+             AutomationProperties.Name="Display settings">
+  <!-- Display preferences for the whole application, saved as soon as they change. -->
+  <StackPanel Classes="settingsGroups">
+    <StackPanel Classes="settingsGroup">
+      <TextBlock Classes="overline" Text="DEVICE VIEW" />
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Signal indicators" />
+        <ComboBox x:Name="IndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Positions}" SelectedItem="{Binding IndicatorPositionChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
+      </Grid>
+      <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a lamp that is lit while notes are held there. Choose where they sit along the devices' height, in every Device View." />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

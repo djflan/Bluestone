@@ -1,0 +1,47 @@
+using Bluestone.Presentation;
+
+namespace Bluestone.Tests.Unit.Presentation;
+
+/// <summary>Settings ▸ Display: one application-wide choice of where junction indicators sit, saved as soon as it changes.</summary>
+public sealed class DisplaySettingsTests : IDisposable
+{
+    private readonly string _directory = Directory.CreateTempSubdirectory("bluestone-display-").FullName;
+
+    public void Dispose() => Directory.Delete(_directory, recursive: true);
+
+    private string File(string name = "display-settings.json") => Path.Combine(_directory, name);
+
+    [Fact]
+    public void TheStore_RoundTrips_AndAMissingDamagedOrUnknownFileGivesTheDefault()
+    {
+        var store = new DisplaySettingsStore(File());
+        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
+
+        store.Save(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.BelowHeader });
+        Assert.Equal(JunctionIndicatorPosition.BelowHeader, store.Load().IndicatorPosition);
+        Assert.Contains("\"belowHeader\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
+
+        System.IO.File.WriteAllText(File(), "{ not json");
+        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
+        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"sideways\" }");
+        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
+    }
+
+    [Fact]
+    public void TheViewModel_LoadsWithoutSaving_AndSavesEveryChange()
+    {
+        var store = new DisplaySettingsStore(File());
+        store.Save(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Top });
+        var written = System.IO.File.GetLastWriteTimeUtc(File());
+        var display = new DisplayViewModel();
+
+        display.Use(store);
+        Assert.Equal(JunctionIndicatorPosition.Top, display.IndicatorPosition);
+        Assert.Equal("Top of the device", display.IndicatorPositionChoice.Name);
+        Assert.Equal(written, System.IO.File.GetLastWriteTimeUtc(File()));
+
+        display.IndicatorPositionChoice = DisplayViewModel.Positions.Single(p => p.Position == JunctionIndicatorPosition.Bottom);
+        Assert.Equal(JunctionIndicatorPosition.Bottom, new DisplaySettingsStore(File()).Load().IndicatorPosition);
+        Assert.Equal(5, DisplayViewModel.Positions.Count);
+    }
+}

@@ -17,6 +17,9 @@
     <DataTemplate DataType="vm:PluginsViewModel">
       <views:PluginSettingsPage />
     </DataTemplate>
+    <DataTemplate DataType="vm:DisplayViewModel">
+      <views:DisplaySettingsPage />
+    </DataTemplate>
   </UserControl.DataTemplates>
 
   <Grid ColumnDefinitions="Auto,*">

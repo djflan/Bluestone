@@ -86,7 +86,17 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     {
         _owner = owner;
         Id = id;
+        owner.Display.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DisplayViewModel.IndicatorPosition))
+            {
+                OnPropertyChanged(nameof(IndicatorPosition));
+            }
+        };
     }
+
+    /// <summary>Where this view draws its junctions' levels and note lamps (Settings ▸ Display, for every view).</summary>
+    public JunctionIndicatorPosition IndicatorPosition => _owner.Display.IndicatorPosition;
 
     /// <summary>The view instance's stable ID in the workspace.</summary>
     public string Id { get; }

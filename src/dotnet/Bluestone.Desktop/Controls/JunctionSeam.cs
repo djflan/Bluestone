@@ -53,7 +53,11 @@ internal sealed class JunctionSeam : Control
 
     public static readonly StyledProperty<double> LevelHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelHeight), 44);
 
-    public static readonly StyledProperty<double> LevelBottomProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBottom), 34);
+    public static readonly StyledProperty<JunctionIndicatorPosition> IndicatorPositionProperty = AvaloniaProperty.Register<JunctionSeam, JunctionIndicatorPosition>(nameof(IndicatorPosition), JunctionIndicatorPosition.LowerHalf);
+
+    public static readonly StyledProperty<double> FooterHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(FooterHeight), 22);
+
+    public static readonly StyledProperty<double> IndicatorInsetProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(IndicatorInset), 6);
 
     public static readonly StyledProperty<double> LevelBarWidthProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBarWidth), 3);
 
@@ -75,13 +79,14 @@ internal sealed class JunctionSeam : Control
     private LinearGradientBrush? _levelBrush;
     private (double Top, double Bottom) _levelBrushSpan;
     private SolidColorBrush? _lampBrush;
+    private SolidColorBrush? _filamentBrush;
     private RadialGradientBrush? _haloBrush;
     private SolidColorBrush? _peakTick;
     private SolidColorBrush? _clipLight;
 
     static JunctionSeam()
     {
-        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LampSizeProperty, LinkYProperty, LevelHeightProperty, LevelBottomProperty, LevelBarWidthProperty,
+        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LampSizeProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, IndicatorInsetProperty, LevelBarWidthProperty,
             LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelHotColorProperty, LevelClipColorProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
     }
@@ -184,11 +189,25 @@ internal sealed class JunctionSeam : Control
         set => SetValue(LevelHeightProperty, value);
     }
 
-    /// <summary>The level's bottom edge, measured up from the seam's bottom.</summary>
-    public double LevelBottom
+    /// <summary>Where the level and its lamp sit, top to bottom (Settings ▸ Display).</summary>
+    public JunctionIndicatorPosition IndicatorPosition
     {
-        get => GetValue(LevelBottomProperty);
-        set => SetValue(LevelBottomProperty, value);
+        get => GetValue(IndicatorPositionProperty);
+        set => SetValue(IndicatorPositionProperty, value);
+    }
+
+    /// <summary>The device panels' footer height: the body the halves are measured in ends above it.</summary>
+    public double FooterHeight
+    {
+        get => GetValue(FooterHeightProperty);
+        set => SetValue(FooterHeightProperty, value);
+    }
+
+    /// <summary>The space kept between the indicators and the top or bottom of the device, or its header.</summary>
+    public double IndicatorInset
+    {
+        get => GetValue(IndicatorInsetProperty);
+        set => SetValue(IndicatorInsetProperty, value);
     }
 
     public double LevelBarWidth
@@ -235,6 +254,7 @@ internal sealed class JunctionSeam : Control
         {
             _haloBrush = null;
             _lampBrush = null;
+            _filamentBrush = null;
             _levelBrush = null;
             _peakTick = null;
             _clipLight = null;
@@ -290,12 +310,26 @@ internal sealed class JunctionSeam : Control
         _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.Clipped, _glow);
     }
 
-    // The level's frame: its bars' top and bottom, and the left edge of the left bar.
+    // The level's frame: its bars' top and bottom, and the left edge of the left bar. The level and a lamp coupled with it
+    // are placed together, as one group, where IndicatorPosition says.
     private (double Top, double Bottom, double Left, double Width) LevelFrame(double center)
     {
         var bar = LevelBarWidth;
-        var bottom = Bounds.Height - LevelBottom;
-        return (bottom - LevelHeight, bottom, center - bar - 0.5, (2 * bar) + 1);
+        var lamp = LampPlacement == JunctionLampPlacement.Header ? 0 : LampHeight + LampGap;
+        var group = LevelHeight + lamp;
+        var inset = IndicatorInset;
+        var bodyTop = HeaderHeight;
+        var body = Math.Max(0, Bounds.Height - FooterHeight - bodyTop);
+        var groupTop = IndicatorPosition switch
+        {
+            JunctionIndicatorPosition.Top => inset,
+            JunctionIndicatorPosition.BelowHeader => bodyTop + inset,
+            JunctionIndicatorPosition.UpperHalf => bodyTop + (body / 4) - (group / 2),
+            JunctionIndicatorPosition.Bottom => Bounds.Height - inset - group,
+            _ => bodyTop + (body * 3 / 4) - (group / 2),
+        };
+        var top = Math.Round(LampPlacement == JunctionLampPlacement.AboveLevel ? groupTop + lamp : groupTop);
+        return (top, top + LevelHeight, center - bar - 0.5, (2 * bar) + 1);
     }
 
     private void DrawLamp(DrawingContext context, double center)
@@ -329,9 +363,15 @@ internal sealed class JunctionSeam : Control
                 context.DrawEllipse(_haloBrush, null, lamp.Center, Math.Max(lamp.Width, 6) * 1.3, Math.Max(lamp.Height, 6) * 1.3);
             }
 
+            // Lit like a pilot lamp: the colour, with a brighter filament line along its top.
             _lampBrush ??= new SolidColorBrush(color);
-            _lampBrush.Color = Palette.Mix(Palette.Raised, Palette.Lighten(color, 0.15), _glow);
+            _lampBrush.Color = Palette.Mix(Palette.Raised, color, _glow);
             context.DrawRectangle(_lampBrush, null, lamp, radius, radius);
+            _filamentBrush ??= new SolidColorBrush(Palette.Lighten(color, 0.55));
+            using (context.PushOpacity(_glow))
+            {
+                context.FillRectangle(_filamentBrush, new Rect(lamp.X + 1, lamp.Y, Math.Max(0, lamp.Width - 2), 1));
+            }
         }
         else
         {

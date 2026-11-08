@@ -82,7 +82,7 @@ public sealed class SettingsTests : IDisposable
         app.Settle();
         var settings = app.Window.Settings;
         var host = app.Find<SettingsView>("SettingsHost");
-        Assert.Equal(["Audio", "Plugins"], settings.Categories.Select(c => c.Name));
+        Assert.Equal(["Audio", "Plugins", "Display"], settings.Categories.Select(c => c.Name));
 
         settings.SearchText = "quarantine";
         app.Settle();
@@ -97,7 +97,7 @@ public sealed class SettingsTests : IDisposable
         app.Settle();
         Assert.True(settings.IsEmpty);
         app.Click(AppUnderTest.Within<Button>(host, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Clear search"));
-        Assert.Equal(2, settings.Categories.Count);
+        Assert.Equal(3, settings.Categories.Count);
 
         settings.Open(SettingsPage.Audio);
         app.Settle();
