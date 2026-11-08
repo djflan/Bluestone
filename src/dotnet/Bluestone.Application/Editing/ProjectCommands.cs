@@ -184,7 +184,7 @@ public static class ProjectCommands
     /// is copied with fresh device IDs, its automation of its own devices follows the copies, and its outgoing
     /// and parked connections are copied. Connections into it are not: the copy is a new destination nobody chose.
     /// </summary>
-    public static IProjectCommand DuplicateTracks(IReadOnlyCollection<TrackId> tracks) =>
+    public static IProjectCommand DuplicateTracks(IReadOnlyCollection<TrackId> tracks, DeviceDefinitionLookup? definitions = null) =>
         new ProjectCommand(tracks.Count == 1 ? "Duplicate Track" : "Duplicate Tracks", p =>
         {
             var result = p;
@@ -259,6 +259,15 @@ public static class ProjectCommands
                     })
                     .ToList();
                 result = result with { Connections = result.Connections.AddRange(outgoing), ParkedConnections = result.ParkedConnections.AddRange(parked) };
+
+                // A copied route that cannot work (it depends on a connection into the original that is not copied, such as
+                // audio routed into its input) is left out, rather than giving the copy a connection that is never played.
+                var broken = definitions is null ? [] : SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(result, definitions))
+                    .SelectMany(i => i.Connections).Intersect(outgoing.Select(c => c.Id)).ToHashSet();
+                if (broken.Count > 0)
+                {
+                    result = result with { Connections = result.Connections.RemoveAll(c => broken.Contains(c.Id)) };
+                }
             }
 
             return result;
