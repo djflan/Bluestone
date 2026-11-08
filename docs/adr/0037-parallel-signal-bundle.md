@@ -51,13 +51,17 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   A plugin audio effect's `sidechain` input feeds its first auxiliary input bus (ADR 0033): connected audio is summed
   apart from the chain's, aligned by delay compensation, and ignored by a plugin that has no such bus. Each junction's audio can be metered (ADR 0032): a chain's
   input by the chain's ID, the rest by the device before it, measured only while a view watches it
-  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. Each junction also has a
+  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. A meter point sums its
+  sources as they are, without delay compensation, so it never changes what is heard; sources with different latencies
+  at one junction can read lower there than where compensation aligns them. Each junction also has a
   **note lamp**, lit while notes are held there: during playback from the compiled signal graph
   (`SignalGraphResult.NoteActivity`, the held tick ranges at every junction, read at the playhead, so nothing is added
   to the real-time path), and for live input while keys are held on the chain's track (`LiveInput.HasHeldNotes`) at
   every junction notes can reach. The live lamp is therefore approximate: it does not follow what a device does to live
   notes (an arpeggiator's steps, a filter that blocks them), is not shown for racks, and counts a key by channel and
-  pitch, so two inputs holding the same note on one track share it. The Device View keeps the
+  pitch, so two inputs holding the same note on one track share it. The playback lamp reads each note's held range, so
+  after starting or seeking into the middle of a note (which playback does not restart) its lamp is lit until that note
+  ends. The Device View keeps the
   indicators in `JunctionSignal`s, which the UI draws as Bitwig-style indicators between devices, not as meters.
 
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,

@@ -2,6 +2,7 @@ using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
+using Bluestone.Domain.Time;
 using Bluestone.Signal;
 using Bluestone.Signal.Live;
 using static Bluestone.Tests.Unit.Signal.SignalFixture;
@@ -117,6 +118,32 @@ public sealed class ReceiverTests
         output.Clear();
         processor.Release(block, output);
         Assert.Equal([(3, 66, 0)], output.Events.ToArray().Select(e => ((int)e.Channel, (int)e.Data1, (int)e.Data2)));
+    }
+
+    [Fact]
+    public void ThePlaybackReceiver_LetsThePedalUpThrough_ForAPedalDownItPassed_WhenAutomationTurnsReplaceOn()
+    {
+        static SignalEvent Pedal(int tick, int value) => new(new ControllerEvent(new Tick(tick), MidiChannel.FromIndex(0), new ControllerNumber(64), ControlValue.FromSevenBit(value)), 0, tick);
+        var processor = new Bluestone.Signal.BuiltIn.NoteReceiverProcessor();
+        var output = new SignalBuffer();
+        processor.Process(new SignalBlock(Tick.Zero, new Tick(10)), [Pedal(0, 127)], output);
+        processor.SetParameter(BuiltInDevices.ReceiverReplace, ControlValue.Max);
+        processor.Process(new SignalBlock(new Tick(10), new Tick(40)), [Pedal(10, 0), Pedal(20, 127), Pedal(30, 0)], output);
+
+        Assert.Equal([127, 0], output.Events.ToArray().Select(e => ((ControllerEvent)e.Event).Value.ToSevenBit()));
+    }
+
+    [Fact]
+    public void TheLiveReceiver_KeepsANotesRelease_WhenARepeatOfItIsBlocked()
+    {
+        var processor = new LiveNoteReceiverProcessor();
+        var output = new LiveEventBuffer(16);
+        var block = new LiveBlock(0, 0);
+        processor.Process(block, [LiveEvent.NoteOn(0, 0, 60, 100)], output);
+        processor.SetParameter(BuiltInDevices.ReceiverReplace, ControlValue.Max);
+        processor.Process(block, [LiveEvent.NoteOn(0, 0, 60, 90), LiveEvent.NoteOff(0, 0, 60)], output);
+
+        Assert.Equal([(true, 60), (false, 60)], output.Events.ToArray().Select(e => (e.IsNoteOn, e.NoteSlot & 127)));
     }
 
     [Fact]

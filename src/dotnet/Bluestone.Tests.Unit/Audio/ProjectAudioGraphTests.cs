@@ -367,6 +367,54 @@ public sealed class ProjectAudioGraphTests : IDisposable
         Assert.Equal(_tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
     }
 
+    [Fact]
+    public void AnAudioReceiver_MixingItsOwnChainsInput_AtUnityGain_HearsItTwice_AsAtAnyOtherGain()
+    {
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference());
+        var chain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [receiver] };
+        project = project.WithChain(chain) with
+        {
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.ChainInput(chain.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master),
+            ],
+        };
+
+        Assert.Equal(2 * _tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
+    }
+
+    [Fact]
+    public void RemovingOneOfAReceiversSources_LeavesTheOtherSourcesGainNode_AsItWas()
+    {
+        var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference())
+            .WithParameter(BuiltInDevices.ReceiverGain, BuiltInDevices.AudioReceiver.Parameters[1].ToStored(-6.0206));
+        var other = Track.Create("Other", TrackRole.Audio).WithClip(project.Sequence.FindTrack(vocal.Id)!.Clips[0].CopyTo(Tick.Zero));
+        var bus = Track.Create("Bus", TrackRole.Audio);
+        var fromVocal = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive));
+        var fromOther = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(other.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive));
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(bus.Id)) with { Devices = [receiver] }) with
+        {
+            Sequence = project.Sequence.WithTrack(other).WithTrack(bus),
+            Connections = [fromVocal, fromOther, SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master)],
+        };
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        Guid GainOnOther(Project p)
+        {
+            var description = graphs.Describe(p, SignalGraph.Evaluate(p, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory).Description;
+            var source = description.Nodes.ToList().FindIndex(n => n.Key == other.Id.Value);
+            var gain = description.Steps.Single(s => s.Kind == DescribedStepKind.Connect && s.A == source && description.Nodes[s.B].Kind == DescribedNodeKind.Gain).B;
+            return description.Nodes[gain].Key;
+        }
+
+        var before = GainOnOther(project);
+        var after = GainOnOther(project with { Connections = project.Connections.Remove(fromVocal) });
+
+        Assert.Equal(before, after);
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)

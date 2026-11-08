@@ -501,19 +501,22 @@ public sealed class LiveInput : IDisposable
         && a.CanPlay == b.CanPlay
         && a.PluginStages.Select(s => s.Instance).SequenceEqual(b.PluginStages.Select(s => s.Instance));
 
+    // The old routes go before the new ones come, never both at once: the engine plays thru on every route it has for a
+    // track, so for a moment two generations of a route would play each note twice, retiring the old one could cut off
+    // the new one's note, and a plugin note effect on both would be driven twice.
     private void Replace(TrackId track, LiveRunner[] next)
     {
-        foreach (var runner in next)
-        {
-            Attach(runner);
-        }
-
         if (_runners.TryGetValue(track, out var old))
         {
             foreach (var runner in old)
             {
                 Retire(runner);
             }
+        }
+
+        foreach (var runner in next)
+        {
+            Attach(runner);
         }
 
         _runners[track] = next;
