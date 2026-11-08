@@ -504,6 +504,7 @@ public sealed class LiveInput : IDisposable
         // Plugin effects are claimed afresh in this pass, in the order the tracks' routes were first made, so an effect a
         // track no longer reaches is free for the next one at once.
         var claimed = new HashSet<DeviceId>();
+        var replacements = new List<(TrackId Track, LiveRunner[] Next)>();
         foreach (var track in _runners.Keys.ToList())
         {
             var current = _runners[track];
@@ -516,7 +517,7 @@ public sealed class LiveInput : IDisposable
             var next = fresh.Select(f => current.FirstOrDefault(c => c.Plan.IsSameAs(f.Plan) && SameBinding(c, f)) ?? f).ToArray();
             if (next.Length != current.Length || next.Zip(current).Any(p => !ReferenceEquals(p.First, p.Second)))
             {
-                Replace(track, next);
+                replacements.Add((track, next));
             }
 
             foreach (var kept in next.Where(current.Contains))
@@ -526,6 +527,26 @@ public sealed class LiveInput : IDisposable
                     kept.DelayToMasterFrames = _delayToMaster(node);
                 }
             }
+        }
+
+        // Every route that goes is retired before any new one starts, across all tracks: a plugin effect passing from one
+        // track's route to another's is never driven by both.
+        foreach (var (track, next) in replacements)
+        {
+            foreach (var runner in _runners[track].Where(r => !next.Contains(r)))
+            {
+                Retire(runner);
+            }
+        }
+
+        foreach (var (track, next) in replacements)
+        {
+            foreach (var runner in next.Where(r => !_runners[track].Contains(r)))
+            {
+                Attach(runner);
+            }
+
+            _runners[track] = next;
         }
 
         if (_monitored is { } monitored)
