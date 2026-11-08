@@ -57,6 +57,22 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   notes (an arpeggiator's steps, a filter that blocks them) and is not shown for racks. The Device View keeps the
   indicators in `JunctionSignal`s, which the UI draws as Bitwig-style indicators between devices, not as meters.
 
+The Device View draws each junction as a **seam** in the gap between panels (`JunctionSeam`): the hairline the chain
+reads along; a slim stereo level of thin LED segments (sky blue through indigo and magenta to red at full scale,
+`Meter.*` tokens) that by default follows the average level with the peak held as one segment, or the peak alone; and
+under it a small MIDI connector icon that glows (`Junction.LampColor`, derived from `Meter.Low`) while notes are held,
+fading over `Motion.LampRelease`. Only what can be at a junction is drawn, and an idle seam is quiet. Settings ▸ Display
+chooses, for every view, where the indicators sit (top, upper half, lower half, bottom) and what the levels show; the
+choice is an application preference (`display-settings.json`), not part of the project. A seam is also where a
+junction is used: hovering shows a **+** that aims the Browser's next insert at that gap (marked like a drop's
+insertion marker, and named in the Browser's target line); its context menu offers *Insert Device Here* and *Route from
+Here…*; and a junction a connection takes signal from shows a small tap on the wire that opens the connections from
+there. A receiver's panel shows its source as a pill (the source track's colour and point, "Pad · Output") and a
+*Mix | Replace* switch; an effect plugin whose worker reports a sidechain bus, or whose sidechain is connected, shows
+an **SC** chip in its header, outlined until something keys it. Both open one `SourcePickerViewModel`: every track and
+rack with its input, each device's output, and its output, filtered by typing, offering only points the routing
+validator accepts for that input. Choosing replaces the input's source as one undo step.
+
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
 other), the chain runs between fixed input and output nodes, and nothing in the chain suggests a MIDI-to-audio
 conversion point.

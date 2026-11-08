@@ -398,7 +398,7 @@ connection's `ChannelMapping` filters, forces, or remaps channels; clips are nev
 different part. Validation rejects connections that cannot work and every feedback loop. The track
 inspector's External MIDI fields (Output, Profile, Channel, Transpose, Voice) are a view of this model
 (`TrackOutputs`), and so is its **Audio to** (a track's primary audio output, ADR 0038), so the inspector,
-the Device View's routing indicators, and the routing inspector always agree. A new track, and a track that
+the Device View's routed junctions and device inputs, and the routing inspector always agree. A new track, and a track that
 gets an instrument while its sound goes nowhere, is given an explicit audio connection to the master
 (`TrackSetup`, ADR 0038).
 
@@ -528,6 +528,14 @@ one chain share devices but not presentation. The Browser (`BrowserViewModel`) i
 Device View picks the chain and gap, or, over the middle of a device's panel, the device to replace
 (`DeviceCommands.ReplaceDevice`: one undo step, a new device identity, a plugin started in its worker before the
 project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
+
+Between panels, each junction is a `JunctionSeam` drawn from a `JunctionSignal` (ADR 0037): a segmented level and a
+MIDI icon for notes, updated each frame without allocating and redrawn only when they change. Only junctions a
+visible Device View shows are metered (`IAudioPlayback.WatchJunctions`). A seam also aims the Browser at its gap
+(`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
+on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers
+only points the routing validator accepts. Where indicators sit and what levels show are application preferences
+(`DisplayViewModel`, Settings ▸ Display), not project data.
 
 Time navigation is one pure model, `TimelineViewport` (zoom in pixels per quarter and scroll, anchored zoom, fit),
 with one ruler gesture, `RulerNavigationGesture`, in the arrangement and the piano roll, each keeping its own state:
