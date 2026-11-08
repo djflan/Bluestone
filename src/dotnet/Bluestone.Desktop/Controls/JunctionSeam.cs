@@ -119,13 +119,14 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private JunctionSignal? _subscribed;
     private double _glow;
     private long _lastFrame;
-    private (double PeakL, double PeakR, double RmsL, double RmsR, bool Clipped, double Glow) _drawn = (-1, -1, -1, -1, false, -1);
+    private (double PeakL, double PeakR, double RmsL, double RmsR, double Glow) _drawn = (-1, -1, -1, -1, -1);
     private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
     private SolidColorBrush? _lampBrush;
     private RadialGradientBrush? _haloBrush;
     private SolidColorBrush? _accentBrush;
     private IPen? _accentPen;
     private SolidColorBrush? _markerBrush;
+    private Cursor? _hand;
     private bool _hovered;
     private Part _over;
 
@@ -341,7 +342,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             var levels = signal.Levels;
             var peak = Math.Max(levels.PeakLeft, levels.PeakRight);
             parts.Add(!levels.IsActive || peak <= MeterLevels.FloorDecibels ? "silent"
-                : string.Create(CultureInfo.InvariantCulture, $"peak {peak:0.0} dB{(levels.Clipped ? ", clipped" : string.Empty)}"));
+                : string.Create(CultureInfo.InvariantCulture, $"peak {peak:0.0} dB{(peak > 0 ? ", clipping" : string.Empty)}"));
         }
 
         if (signal.IsRouted)
@@ -406,7 +407,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         if (over != _over)
         {
             _over = over;
-            Cursor = over == Part.None ? Cursor.Default : new Cursor(StandardCursorType.Hand);
+            Cursor = over == Part.None ? Cursor.Default : _hand ??= new Cursor(StandardCursorType.Hand);
             ToolTip.SetTip(this, over switch
             {
                 Part.Plus => "Insert a device here: opens the Browser aimed at this gap",
@@ -537,7 +538,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private double Free(double preferred, double size, (double Top, double Bottom) first, (double Top, double Bottom) second)
     {
         var half = size / 2;
-        var candidates = new[] { preferred, LinkY + 20, first.Top - 3 - half, first.Bottom + 3 + half, second.Bottom + 3 + half, second.Top - 3 - half };
+        ReadOnlySpan<double> candidates = [preferred, LinkY + 20, first.Top - 3 - half, first.Bottom + 3 + half, second.Bottom + 3 + half, second.Top - 3 - half];
         foreach (var y in candidates)
         {
             if (y - half >= HeaderHeight && y + half <= Bounds.Height - PanelBorder && Clear(y, first) && Clear(y, second))
@@ -604,7 +605,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         }
 
         var levels = signal.Levels;
-        _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.Clipped, _glow);
+        _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, _glow);
     }
 
     // The level's frame: its bars' top and bottom, and the left edge of the left bar. The level and a lamp coupled with it
@@ -703,7 +704,6 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             return;
         }
 
-        var clipped = levels.Clipped;
         Side(levels.RmsLeft, levels.PeakLeft, left);
         Side(levels.RmsRight, levels.PeakRight, left + bar + 1);
 
@@ -711,7 +711,10 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
 
         void Side(double rms, double peak, double x)
         {
-            // Lit up to the RMS with the peak as one held segment above it (or lit to the peak), and the top segment while clipping.
+            // Lit up to the RMS with the peak as one held segment above it (or lit to the peak), and the top segment while the
+            // peak is over full scale. An indicator shows what is happening now: unlike the mixer's clip light, it
+            // does not latch.
+            var clipped = peak > 0;
             var peakOnly = LevelStyle == JunctionLevelStyle.Peak;
             var lit = (int)Math.Round(MeterLevels.Fraction(peakOnly ? peak : rms) * count);
             var held = peakOnly ? -1 : Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(peak) * count)) - 1;
@@ -789,7 +792,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         var release = Math.Max(LampRelease.TotalSeconds, 0.001);
         _glow = signal.NotesHeld ? 1 : Math.Max(0, _glow - (elapsed / release));
         var levels = signal.Levels;
-        if (_drawn != (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.Clipped, _glow))
+        if (_drawn != (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, _glow))
         {
             InvalidateVisual();
         }

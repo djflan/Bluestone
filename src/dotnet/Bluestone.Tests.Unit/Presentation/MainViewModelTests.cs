@@ -657,11 +657,28 @@ public sealed class MainViewModelTests : IAsyncLifetime
         strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
         Assert.Equal(2, strip.InsertionGap);
         Assert.Equal("Into Piano, after Arpeggiator", _vm.Browser.TargetText);
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        Assert.Null(strip.InsertionGap);
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
         Assert.True(strip.Devices[1].Output.IsInsertionPoint);
         strip.Devices[0].SelectCommand.Execute(null);
         Assert.Null(strip.InsertionGap);
         Assert.False(strip.Devices[1].Output.IsInsertionPoint);
         Assert.Equal("Into Piano, after Event Filter", _vm.Browser.TargetText);
+
+        // The chosen gap follows its junction through edits made elsewhere, and is let go when its junction goes.
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        var piano = _vm.Tracks[0].Id;
+        var lookup = Bluestone.Signal.DeviceCatalog.BuiltIn.Lookup;
+        _session.Execute(Bluestone.Application.Editing.DeviceCommands.InsertDevice(piano, Bluestone.Domain.Devices.DeviceInstance.Create(Bluestone.Domain.Devices.BuiltInDevices.Transpose.ToReference()), lookup, 0));
+        await Settle();
+        Assert.Equal(3, strip.InsertionGap);
+        Assert.True(strip.Devices[2].Output.IsInsertionPoint);
+        Assert.Equal("Into Piano, after Arpeggiator", _vm.Browser.TargetText);
+        _session.Execute(Bluestone.Application.Editing.DeviceCommands.RemoveDevice(strip.Devices[2].Id, lookup));
+        await Settle();
+        Assert.Null(strip.InsertionGap);
+        Assert.DoesNotContain(strip.Junctions, j => j.IsInsertionPoint);
     }
 
     [Fact]

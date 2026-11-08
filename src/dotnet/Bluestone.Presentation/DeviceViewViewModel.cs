@@ -86,24 +86,13 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     {
         _owner = owner;
         Id = id;
-        owner.Display.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(DisplayViewModel.IndicatorPosition))
-            {
-                OnPropertyChanged(nameof(IndicatorPosition));
-            }
-            else if (e.PropertyName == nameof(DisplayViewModel.LevelStyle))
-            {
-                OnPropertyChanged(nameof(LevelStyle));
-            }
-        };
     }
 
-    /// <summary>Where this view draws its junctions' levels and note lamps (Settings ▸ Display, for every view).</summary>
-    public JunctionIndicatorPosition IndicatorPosition => _owner.Display.IndicatorPosition;
-
-    /// <summary>What this view's junction levels show (Settings ▸ Display, for every view).</summary>
-    public JunctionLevelStyle LevelStyle => _owner.Display.LevelStyle;
+    /// <summary>
+    /// The application's display preferences (Settings ▸ Display): where every view draws its junctions' indicators and
+    /// what their levels show. Bound to directly, so a closed view holds no subscription to it.
+    /// </summary>
+    public DisplayViewModel Display => _owner.Display;
 
     /// <summary>The view instance's stable ID in the workspace.</summary>
     public string Id { get; }
@@ -251,7 +240,6 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         if (newValue is not null)
         {
             newValue.IsSelected = true;
-            InsertionGap = null;
         }
 
         // Where the Browser inserts follows this view's selection.
@@ -334,11 +322,6 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             chain = project.ChainOf(id);
         }
 
-        if (ChainId != chain?.Id)
-        {
-            InsertionGap = null;
-        }
-
         ChainId = chain?.Id;
         HasChain = Track is not null || Rack is not null;
         IsEditingRack = Rack is not null;
@@ -389,10 +372,9 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         }
 
         LastJunction = Devices.Count > 0 ? Devices[^1].Output : null;
-        if (InsertionGap > Devices.Count)
-        {
-            InsertionGap = null;
-        }
+
+        // The chosen gap follows its junction through edits here or in another view, and is let go if the junction goes.
+        InsertionGap = _insertionAfter is { } after ? GapOf(Junctions.FirstOrDefault(j => j.Key == after)) : null;
 
         foreach (var junction in Junctions)
         {
@@ -414,6 +396,9 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     public partial int? InsertionGap { get; private set; }
+
+    // The key of the junction InsertionGap opens onto (the chain's ID for its input, a device's ID after it).
+    private Guid? _insertionAfter;
 
     /// <summary>Where the Browser's next insert lands in this view, in words.</summary>
     internal string InsertionText => InsertionGap is { } gap
@@ -440,7 +425,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         return index < 0 ? null : index + 1;
     }
 
-    /// <summary>Aims the Browser at the gap at <paramref name="junction"/>: its next insert goes there, and the gap is marked.</summary>
+    /// <summary>
+    /// Aims the Browser at the gap at <paramref name="junction"/>: its next insert goes there, and the gap is marked. On the
+    /// gap already chosen, lets it go again.
+    /// </summary>
     [RelayCommand]
     private void InsertAtJunction(JunctionSignal? junction)
     {
@@ -449,6 +437,13 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             return;
         }
 
+        if (gap == InsertionGap)
+        {
+            InsertionGap = null;
+            return;
+        }
+
+        _insertionAfter = junction!.Key;
         InsertionGap = gap;
         Activate();
         _owner.Workspace.ShowBrowser(BrowserCategory.All);
@@ -470,6 +465,11 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
     partial void OnInsertionGapChanged(int? value)
     {
+        if (value is null)
+        {
+            _insertionAfter = null;
+        }
+
         MarkInsertionGap();
         if (_owner.Workspace?.InsertionTarget == this)
         {
@@ -538,6 +538,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             return false;
         }
 
+        InsertionGap = null;
         Activate();
         SelectedDevice = Devices.FirstOrDefault(d => d.Id == device.Id);
         return true;

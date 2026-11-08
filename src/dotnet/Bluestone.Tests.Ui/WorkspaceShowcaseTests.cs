@@ -184,6 +184,16 @@ public sealed class WorkspaceShowcaseTests
         Assert.True(view.Devices[2].Output.Levels.IsActive);
         Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-junctions-playing")));
         Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-playing-closeup")));
+
+        // An over lights the top of the level while it lasts; it does not stay lit as the mixer's clip light does.
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Desktop.Controls.JunctionSeam>().Single(s => s.Signal == view.Devices[2].Output);
+        levels[view.Devices[2].Output.Key] = new(1.1f, 0.9f, 0.6f, 0.5f);
+        app.ViewModel.OnFrame();
+        Assert.Contains("clipping", seam.Describe(), StringComparison.Ordinal);
+        levels[view.Devices[2].Output.Key] = new(0.5f, 0.5f, 0.3f, 0.3f);
+        app.ViewModel.OnFrame();
+        Assert.True(view.Devices[2].Output.Levels.Clipped);
+        Assert.DoesNotContain("clip", seam.Describe(), StringComparison.Ordinal);
     });
 
     /// <summary>
