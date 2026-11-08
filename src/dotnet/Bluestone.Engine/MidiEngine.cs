@@ -640,9 +640,13 @@ internal sealed class MidiEngine : IDisposable
     }
 
     // Under _routes, on the control thread: the track's routes, in the order Bluestone added them (nearest first).
+    // A track's routes, oldest first, that thru plays. While Bluestone replaces a route (it adds the new one before it
+    // removes the old one, so a plugin effect on both stays loaded), the older of two routes to the same target through the
+    // same stages is left out: a note is never played twice, and retiring the old one cannot cut off the new one's note.
     private void Index(Guid track)
     {
-        EngineRoute[] routes = [.. _routeById.OrderBy(r => r.Key).Select(r => r.Value).Where(r => r.Track == track)];
+        var all = _routeById.OrderBy(r => r.Key).Select(r => r.Value).Where(r => r.Track == track).ToList();
+        EngineRoute[] routes = [.. all.Where((r, i) => !all.Skip(i + 1).Any(newer => newer.SameTargetAs(r)))];
         if (routes.Length == 0)
         {
             _routeByTrack.Remove(track);

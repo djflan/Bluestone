@@ -420,7 +420,7 @@ public sealed class LiveInput : IDisposable
             return null;
         }
 
-        runners = [.. LiveRoutePlan.FindAll(_project, track, _devices, _endpoints).Select(Create)];
+        runners = [.. PlansFor(_project, track).Select(Create)];
         foreach (var runner in runners)
         {
             Attach(runner);
@@ -428,6 +428,21 @@ public sealed class LiveInput : IDisposable
 
         _runners[track] = runners;
         return runners;
+    }
+
+    // A track's live routes, leaving out any that would drive a plugin note effect another track's live route already runs
+    // (two tracks into one rack): one instance, one route. The track whose routes were made first keeps it. Under _gate.
+    private ImmutableArray<LiveRoutePlan> PlansFor(Project project, TrackId track)
+    {
+        var plans = LiveRoutePlan.FindAll(project, track, _devices, _endpoints);
+        var elsewhere = _runners.Where(r => r.Key != track).SelectMany(r => r.Value).SelectMany(r => r.Plan.PluginStages).ToHashSet();
+        if (elsewhere.Count == 0)
+        {
+            return plans;
+        }
+
+        ImmutableArray<LiveRoutePlan> kept = [.. plans.Where(p => !p.PluginStages.Any(elsewhere.Contains))];
+        return kept.IsEmpty ? [new LiveRoutePlan(track, [], LiveTargetKind.None, null, null)] : kept;
     }
 
     private LiveRunner Create(LiveRoutePlan plan)
@@ -470,7 +485,7 @@ public sealed class LiveInput : IDisposable
                 continue;
             }
 
-            LiveRunner[] next = [.. LiveRoutePlan.FindAll(project, track, _devices, _endpoints).Select(Create)];
+            LiveRunner[] next = [.. PlansFor(project, track).Select(Create)];
             if (next.Length != current.Length || next.Zip(current).Any(p => !p.First.Plan.IsSameAs(p.Second.Plan) || !SameBinding(p.Second, p.First)))
             {
                 Replace(track, next);
@@ -501,22 +516,21 @@ public sealed class LiveInput : IDisposable
         && a.CanPlay == b.CanPlay
         && a.PluginStages.Select(s => s.Instance).SequenceEqual(b.PluginStages.Select(s => s.Instance));
 
-    // The old routes go before the new ones come, never both at once: the engine plays thru on every route it has for a
-    // track, so for a moment two generations of a route would play each note twice, retiring the old one could cut off
-    // the new one's note, and a plugin note effect on both would be driven twice.
+    // The new routes come before the old ones go, so a plugin effect both use stays loaded until the old route's releases
+    // have reached it. The engine plays thru only on the newest of two routes to the same target meanwhile (MidiEngine.Index).
     private void Replace(TrackId track, LiveRunner[] next)
     {
+        foreach (var runner in next)
+        {
+            Attach(runner);
+        }
+
         if (_runners.TryGetValue(track, out var old))
         {
             foreach (var runner in old)
             {
                 Retire(runner);
             }
-        }
-
-        foreach (var runner in next)
-        {
-            Attach(runner);
         }
 
         _runners[track] = next;
