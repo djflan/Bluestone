@@ -69,6 +69,22 @@ Every commit that lands on `main` is tagged with the next version (`vX.Y.Z`) by 
 
 A release builds a self-contained, unsigned archive for macOS (Apple silicon and Intel), Windows (x64 and ARM64), and Linux (x64 and ARM64). It does not run the tests again: the pull request checks already did. Builds made without tags (CI, or a clone without tags) show `v0.0.0`. To try the rules, run `.github/scripts/next-version.test.sh` and `.github/scripts/tag-commits.test.sh`.
 
+#### Release notes
+
+The version workflow generates notes from the most recently published release in the target tag's history, including prereleases but excluding drafts and releases on unrelated branches. Unpublished intermediate tags do not shorten the changelog. A first release includes the full history. The PR/version table, every non-merge commit, counts, and comparison link come directly from Git and the GitHub API.
+
+Copilot CLI writes the narrative from PR **Release notes** sections (or **Summary** when empty), commit subjects, and the released version's current compatibility/limitation documentation. Prefer concise user-facing changes, upgrade caveats, and remaining limitations in the PR template's optional Release notes section; do not present planned work as implemented. The narrative must include an overview and highlights, use a checked JSON shape, and cite only supplied evidence. Commit citations are grouped under their owning PR to keep the prose readable. No source-code diffs are sent, and Copilot cannot execute commands, write files, or browse URLs.
+
+Generation runs in a separate read-only job with `copilot-requests: write`, using the short-lived `GITHUB_TOKEN`; no personal-token secret is required. In a personal repository, requests use the owner's Copilot entitlement. Organization repositories must enable the Copilot CLI organization-billing policy. Set the repository Actions variable `RELEASE_NOTES_AI` to `false` to disable the narrative. Inference/installation failures, oversized input, or invalid narrative produce explicit workflow warnings and complete deterministic notes rather than blocking the release. Git/GitHub history failures still fail the job instead of publishing incomplete notes.
+
+Re-releasing an existing tag replaces the archives and release kind but preserves its notes, including manual edits. Run the focused helper tests with:
+
+```sh
+python3 .github/scripts/release-notes.test.py
+```
+
+To inspect a new tag's notes without publishing, run `python3 .github/scripts/release-notes.py prepare vX.Y.Z --directory /tmp/bluestone-notes`, then `python3 .github/scripts/release-notes.py compose --directory /tmp/bluestone-notes`. This uses the complete deterministic fallback unless a Copilot response is supplied as `/tmp/bluestone-notes/summary.json`. Preparation of an already released tag deliberately leaves its notes unchanged.
+
 ## Device profiles
 
 Profiles are data, not code. Follow the format and contribution rules in [docs/profiles.md](docs/profiles.md). In short: include provenance, state verification honestly, and only submit material you have the right to redistribute.
