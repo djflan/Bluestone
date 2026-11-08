@@ -144,6 +144,13 @@ class ReleaseNotesTests(unittest.TestCase):
         output.assert_called_once_with("existing", "true")
         self.assertEqual("Hand-edited notes", original.read_text())
 
+    def test_existing_notes_are_regenerated_only_when_explicitly_requested(self):
+        self.releases.append(self.release("v0.2.2", "2026-11-08T00:00:00Z"))
+        notes.prepare("test/repo", "v0.2.2", self.directory, regenerate=True)
+        data = json.loads((self.directory / "data.json").read_text())
+        self.assertEqual("v0.2.0", data["base"])
+        self.assertEqual(2, data["total"])
+
     def test_pulls_are_deduplicated_and_future_merges_are_excluded(self):
         extra = self.pull(3, "a" * 40, "Future change", "feature/future")
         with patch.object(notes, "api_pages", return_value=self.pulls + [extra]):
@@ -236,6 +243,58 @@ class ReleaseNotesTests(unittest.TestCase):
         rendered = notes.render(data, notes.narrative(response, data["sources"]), True)
         self.assertIn("Fixed releases. ([#2](https://github.com/test/repo/pull/2))", rendered)
         self.assertNotIn(f"[commit:{self.head[:7]}]", rendered)
+
+    def test_verified_citation_labels_urls_and_full_hashes_are_canonicalized(self):
+        data = self.data()
+        for reference in ("#2", "PR 2", "PR #2", self.pulls[1]["html_url"], self.head[:7], f"commit:{self.head}"):
+            with self.subTest(reference=reference):
+                prose = notes.narrative(
+                    self.response(fixes=[{"text": "Fixed releases.", "sources": [reference]}]),
+                    data["sources"],
+                )
+                key = prose["fixes"][0].sources[0]
+                self.assertIn(key, ("PR#2", f"commit:{self.head[:7]}"))
+
+    def test_ambiguous_citation_labels_are_rejected(self):
+        data = self.data()
+        data["sources"]["PR#1"]["label"] = "shared"
+        data["sources"]["PR#2"]["label"] = "shared"
+        with self.assertRaisesRegex(notes.NotesError, "unknown or ambiguous"):
+            notes.narrative(self.response(fixes=[{"text": "Fixed notes.", "sources": ["shared"]}]), data["sources"])
+
+    def test_one_correction_can_recover_invalid_ai_without_losing_history(self):
+        notes.prepare("test/repo", "v0.2.2", self.directory)
+        (self.directory / "summary.json").write_text(self.response(fixes=[{"text": "Bad citation.", "sources": ["PR#999"]}]))
+        corrected = self.response(fixes=[{"text": "Fixed notes.", "sources": ["PR#2"]}])
+        with patch.object(notes.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, corrected, "")) as run, patch("sys.stderr", new_callable=io.StringIO):
+            notes.compose(self.directory, repair=True)
+        run.assert_called_once()
+        self.assertEqual(90, run.call_args.kwargs["timeout"])
+        self.assertIn("PR#999", run.call_args.kwargs["input"])
+        self.assertIn("--deny-tool", run.call_args.args[0])
+        rendered = (self.directory / "release-notes.md").read_text()
+        self.assertIn("Fixed notes.", rendered)
+        self.assertNotIn("Narrative summary unavailable", rendered)
+        self.assertEqual(2, rendered.count("/commit/"))
+
+    def test_failed_or_invalid_correction_is_bounded_and_falls_back(self):
+        notes.prepare("test/repo", "v0.2.2", self.directory)
+        (self.directory / "summary.json").write_text("{}")
+        for result in (subprocess.CompletedProcess([], 0, "{}", ""), subprocess.CompletedProcess([], 1, "", "unavailable")):
+            with self.subTest(result=result), patch.object(notes.subprocess, "run", return_value=result) as run, patch("sys.stderr", new_callable=io.StringIO):
+                notes.compose(self.directory, repair=True)
+                run.assert_called_once()
+                self.assertIn("Narrative summary unavailable", (self.directory / "release-notes.md").read_text())
+        with patch.object(notes.subprocess, "run", side_effect=subprocess.TimeoutExpired("copilot", 90)) as run, patch("sys.stderr", new_callable=io.StringIO):
+            notes.compose(self.directory, repair=True)
+            run.assert_called_once()
+            self.assertIn("Narrative summary unavailable", (self.directory / "release-notes.md").read_text())
+
+    def test_missing_ai_does_not_trigger_a_correction(self):
+        notes.prepare("test/repo", "v0.2.2", self.directory)
+        with patch.object(notes.subprocess, "run") as run, patch("sys.stderr", new_callable=io.StringIO):
+            notes.compose(self.directory, repair=True)
+        run.assert_not_called()
 
     def test_invalid_narratives_are_rejected(self):
         cases = [

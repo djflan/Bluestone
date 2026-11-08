@@ -227,7 +227,13 @@ jobs:
 
       - name: Assemble and validate the notes
         if: steps.prepare.outputs.existing == 'false'
-        run: python3 .github/scripts/release-notes.py compose --directory "$NOTES_DIR"
+        timeout-minutes: 3
+        env:
+          REPAIR_NARRATIVE: ${{ steps.copilot.outcome == 'success' }}
+        run: |
+          flags=()
+          if [[ "$REPAIR_NARRATIVE" == "true" ]]; then flags+=(--repair); fi
+          python3 .github/scripts/release-notes.py compose --directory "$NOTES_DIR" "${flags[@]}"
 
       - uses: actions/upload-artifact@v7
         if: steps.prepare.outputs.existing == 'false'
