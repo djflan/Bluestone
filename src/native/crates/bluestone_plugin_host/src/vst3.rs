@@ -394,6 +394,24 @@ impl Vst3Instance {
         }
     }
 
+    /// The first audio input bus the plugin declares auxiliary (its sidechain). A second main bus is not one.
+    fn first_aux_input(&self, count: i32) -> Option<usize> {
+        (0..count).find_map(|index| {
+            // SAFETY: plain query.
+            unsafe {
+                let mut info: BusInfo = std::mem::zeroed();
+                (self.component.getBusInfo(
+                    MediaTypes_::kAudio as MediaType,
+                    BusDirections_::kInput as BusDirection,
+                    index,
+                    &mut info,
+                ) == kResultOk
+                    && info.busType == BusTypes_::kAux as BusType)
+                    .then_some(index as usize)
+            }
+        })
+    }
+
     fn arrangement(&self, direction: BusDirections, index: i32) -> SpeakerArrangement {
         let mut arrangement: SpeakerArrangement = 0;
         // SAFETY: plain query.
@@ -956,7 +974,8 @@ impl Instance for Vst3Instance {
             }
             self.processor.setProcessing(1);
             let mut adapter =
-                ChannelAdapter::new(max_frames as usize, inputs.clone(), outputs.clone());
+                ChannelAdapter::new(max_frames as usize, inputs.clone(), outputs.clone())
+                    .with_sidechain_bus(self.first_aux_input(audio_in));
             let mut input_buses = Vec::with_capacity(inputs.len());
             let mut offset = 0;
             for &count in &inputs {
