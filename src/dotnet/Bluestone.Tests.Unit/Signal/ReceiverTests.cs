@@ -95,4 +95,47 @@ public sealed class ReceiverTests
 
         Assert.Equal([(true, 60), (false, 60)], output.Events.ToArray().Select(e => (e.IsNoteOn, e.NoteSlot & 127)));
     }
+
+    [Fact]
+    public void TheLiveReceiver_LetsThePedalUpThrough_ForAPedalDownItPassed_EvenInReplace()
+    {
+        static LiveEvent Pedal(int controller, int value, int channel = 0) => new(0, LiveEventKind.ControlChange, (byte)channel, (byte)controller, (byte)value);
+        var processor = new LiveNoteReceiverProcessor();
+        var output = new LiveEventBuffer(16);
+        var block = new LiveBlock(0, 0);
+
+        // Sustain down passes; with Replace on, a new pedal-down stops but the release of the first gets through.
+        processor.Process(block, [Pedal(64, 127)], output);
+        processor.SetParameter(BuiltInDevices.ReceiverReplace, ControlValue.Max);
+        processor.Process(block, [Pedal(64, 0), Pedal(64, 127), Pedal(64, 0)], output);
+        Assert.Equal([(64, 127), (64, 0)], output.Events.ToArray().Select(e => ((int)e.Data1, (int)e.Data2)));
+
+        // A pedal still down when the route goes away is released with the notes.
+        output.Clear();
+        processor.SetParameter(BuiltInDevices.ReceiverReplace, ControlValue.Min);
+        processor.Process(block, [Pedal(66, 127, channel: 3)], output);
+        output.Clear();
+        processor.Release(block, output);
+        Assert.Equal([(3, 66, 0)], output.Events.ToArray().Select(e => ((int)e.Channel, (int)e.Data1, (int)e.Data2)));
+    }
+
+    [Fact]
+    public void AConnectionsMapping_IsAppliedOnce_ToWhatAReceiverTakesFromAnotherTrack()
+    {
+        // 1 → 2 and 2 → 3: a channel-1 note arrives on channel 2, not remapped again to 3.
+        var lead = TrackOf("Lead", Note(0, 60));
+        var bass = TrackOf("Bass", Note(0, 48));
+        var receiver = NoteReceiver(replace: true);
+        var mapping = new ChannelMapping { Remap = [new ChannelRemap(MidiChannel.FromNumber(1), MidiChannel.FromNumber(2)), new ChannelRemap(MidiChannel.FromNumber(2), MidiChannel.FromNumber(3))] };
+        var project = NewProject()
+            .With(bass)
+            .With(lead, receiver)
+            .WithInstrument(out var mu2000)
+            .Connect(SignalNode.Track(bass.Id), Inlet(receiver), mapping)
+            .Connect(out var output, SignalNode.Track(lead.Id), SignalNode.ExternalPart(mu2000.Id));
+
+        var note = Assert.Single(project.Evaluate().PartFor(output).Events.Notes());
+
+        Assert.Equal((48, 2), ((int)note.Note.Value, note.Channel.Number));
+    }
 }

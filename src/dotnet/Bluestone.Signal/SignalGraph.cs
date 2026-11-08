@@ -175,7 +175,8 @@ public static class SignalGraph
         }
 
         // A device's event input: what connections deliver into it. One from an earlier point of the same chain is read from
-        // what this run has seen; one from elsewhere was delivered when its owner was evaluated, which Order put first.
+        // what this run has seen, and mapped here; one from elsewhere was delivered, already mapped, when its owner was
+        // evaluated, which Order put first.
         public void Receive(DeviceId device, SignalBuffer output)
         {
             foreach (var connection in _connections)
@@ -186,10 +187,18 @@ public static class SignalGraph
                 }
 
                 var source = connection.Source;
-                ReadOnlySpan<SignalEvent> events = source.Kind == SignalNodeKind.ChainInput && source.AsChain() == _currentChain ? _currentInput
-                    : source.Kind == SignalNodeKind.Device && project.FindChain(_currentChain)?.Find(source.AsDevice()) is not null ? _taps.GetValueOrDefault(source.AsDevice(), []).AsSpan()
-                    : _delivered.GetValueOrDefault(connection.Id, []).AsSpan();
-                output.AddRange(Map(events, connection.Mapping).AsSpan());
+                if (source.Kind == SignalNodeKind.ChainInput && source.AsChain() == _currentChain)
+                {
+                    output.AddRange(Map(_currentInput, connection.Mapping).AsSpan());
+                }
+                else if (source.Kind == SignalNodeKind.Device && project.FindChain(_currentChain)?.Find(source.AsDevice()) is not null)
+                {
+                    output.AddRange(Map(_taps.GetValueOrDefault(source.AsDevice(), []).AsSpan(), connection.Mapping).AsSpan());
+                }
+                else
+                {
+                    output.AddRange(_delivered.GetValueOrDefault(connection.Id, []).AsSpan());
+                }
             }
         }
 

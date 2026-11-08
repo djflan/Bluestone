@@ -392,6 +392,26 @@ public sealed class SignalRoutingValidatorTests
     }
 
     [Fact]
+    public void AnInstrumentTracksInput_CarriesTheAudioRoutedIntoIt()
+    {
+        var drums = NoteTrack("Drums", TrackRole.Hybrid);
+        var keys = NoteTrack("Keys", TrackRole.Instrument);
+        var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(keys, TestDevices.MidiFx);
+        var input = SignalNode.ChainInput(project.ChainOf(keys.Id)!.Id);
+        Assert.Equal(RoutingIssueCode.NothingToCarry, Assert.Single(project.Connect(SignalKind.Audio, input, SignalNode.Master).Errors()).Code);
+
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id));
+        Assert.Empty(project.Connect(SignalKind.Audio, input, SignalNode.Master).Errors());
+    }
+
+    [Fact]
+    public void DeviceInput_RefusesAPortIdLongerThanAProjectFileKeeps()
+    {
+        Assert.Equal(DeviceInputPort.MaxIdLength, SignalNode.DeviceInput(DeviceId.New(), new string('p', DeviceInputPort.MaxIdLength)).Port!.Length);
+        Assert.Throws<ArgumentOutOfRangeException>(() => SignalNode.DeviceInput(DeviceId.New(), new string('p', DeviceInputPort.MaxIdLength + 1)));
+    }
+
+    [Fact]
     public void DeviceInput_InTheSameChain_TakesOnlyFromEarlierPoints()
     {
         var piano = NoteTrack("Piano");

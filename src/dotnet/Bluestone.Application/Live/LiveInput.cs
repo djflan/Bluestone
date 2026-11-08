@@ -211,7 +211,9 @@ public sealed class LiveInput : IDisposable
         var played = false;
         lock (_gate)
         {
-            Hold(track, message);
+            // Held keys count what arrives, whether or not the route can play it (callers always send the release).
+            Release(track, message);
+            Press(track, message);
             foreach (var runner in RunnersFor(track) ?? [])
             {
                 if (!runner.CanPlay || (source is not null && runner.ExternalEndpoint is { } endpoint && IsFeedback(source, endpoint)))
@@ -282,7 +284,8 @@ public sealed class LiveInput : IDisposable
 
     /// <summary>
     /// Whether live notes are held on <paramref name="track"/> now (keys pressed and not released), for the note lamps of
-    /// its chain (ADR 0037). Counts what arrives, whether or not the route could play it. Any thread.
+    /// its chain (ADR 0037). Counts what arrives, whether or not the route could play it; All Notes Off and All Sound Off
+    /// release a channel's keys. Any thread.
     /// </summary>
     public bool HasHeldNotes(TrackId track)
     {
@@ -305,28 +308,39 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    // Under _gate. A key is channel × 128 + note; note-on with velocity 0 is a release.
-    private void Hold(TrackId track, ChannelMessage message)
+    // Under _gate. A key is channel × 128 + note.
+    private void Press(TrackId track, ChannelMessage message)
     {
-        var kind = message.Status & 0xF0;
-        if (kind is not (0x80 or 0x90))
+        if ((message.Status & 0xF0) != 0x90 || message.Data2 == 0)
         {
             return;
         }
 
-        var key = ((message.Status & 0x0F) * 128) + message.Data1;
-        if (kind == 0x90 && message.Data2 > 0)
+        if (!_held.TryGetValue(track, out var keys))
         {
-            if (!_held.TryGetValue(track, out var keys))
-            {
-                _held[track] = keys = [];
-            }
-
-            keys.Add(key);
+            _held[track] = keys = [];
         }
-        else if (_held.TryGetValue(track, out var keys))
+
+        keys.Add(((message.Status & 0x0F) * 128) + message.Data1);
+    }
+
+    // Under _gate. A note-off, a note-on with velocity 0, or All Sound Off / All Notes Off (CC 120 / 123) for its channel.
+    private void Release(TrackId track, ChannelMessage message)
+    {
+        if (!_held.TryGetValue(track, out var keys))
         {
-            keys.Remove(key);
+            return;
+        }
+
+        var kind = message.Status & 0xF0;
+        var channel = message.Status & 0x0F;
+        if (kind == 0x80 || (kind == 0x90 && message.Data2 == 0))
+        {
+            keys.Remove((channel * 128) + message.Data1);
+        }
+        else if (kind == 0xB0 && message.Data1 is 120 or 123)
+        {
+            keys.RemoveWhere(key => key / 128 == channel);
         }
     }
 

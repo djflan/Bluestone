@@ -518,13 +518,15 @@ public sealed class PlaybackController : IAsyncDisposable
         }
     }
 
-    /// <summary>Plays a note-on on <paramref name="track"/>'s live route, through its devices; returns the matching note-off.</summary>
+    /// <summary>
+    /// Plays a note-on on <paramref name="track"/>'s live route, through its devices; returns the matching note-off, which
+    /// is sent even when the route could not play the note, so live input does not keep it held.
+    /// </summary>
     private (TrackId Track, ChannelMessage Off)? SoundOn(TrackId track, NoteNumber note, Velocity velocity)
     {
         var channel = ChannelFor(track);
-        return Live.Post(track, ChannelMessage.NoteOn(channel, note, velocity), _clock.Now)
-            ? (track, ChannelMessage.NoteOff(channel, note, Velocity.DefaultRelease))
-            : null;
+        Live.Post(track, ChannelMessage.NoteOn(channel, note, velocity), _clock.Now);
+        return (track, ChannelMessage.NoteOff(channel, note, Velocity.DefaultRelease));
     }
 
     public void Seek(Tick position) => Transport.Seek(position);
