@@ -160,6 +160,13 @@ public static class SignalRoutingValidator
                     return false;
                 }
 
+                // A device in a chain whose track is gone is never played, so nothing would ever reach its input.
+                if (target.Chain.Owner.Kind == ChainOwnerKind.Track && project.Sequence.FindTrack(target.Chain.Owner.Track) is null)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.UnknownDestination, $"{target.Device.DisplayName} is in a chain whose track is not in the project.", connection));
+                    return false;
+                }
+
                 // A device that is not installed keeps its connections: the project must keep what was built.
                 if (definitions(target.Device.Definition.Id) is { } definition)
                 {

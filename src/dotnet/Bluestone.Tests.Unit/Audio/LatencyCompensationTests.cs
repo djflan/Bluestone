@@ -142,6 +142,29 @@ public sealed class LatencyCompensationTests
     }
 
     [Fact]
+    public void AMonitoredInstrumentHeardDirectly_IsNotDelayedByTheEffectItKeys()
+    {
+        // A live-played instrument goes straight to the master and also keys an effect on a 100-frame path; another takes 150.
+        var builder = new AudioGraphBuilder();
+        var instrument = new LatentNode(70);
+        var source = builder.AddNode(new ImpulseNode());
+        var played = builder.AddNode(instrument);
+        builder.Connect(source, played);
+        builder.Monitor(played);
+        builder.ConnectToMaster(played);
+        var effect = builder.AddNode(new KeyNode());
+        builder.Connect(Path(builder, latency: 100), effect);
+        builder.ConnectSidechain(played, effect);
+        builder.ConnectToMaster(effect);
+        builder.ConnectToMaster(Path(builder, latency: 150));
+        var graph = builder.Build(Block, new MixerStripState());
+
+        // The effect waits 50 frames for the 150-frame path; the instrument, heard directly, does not.
+        Assert.Equal(150, graph.LatencyFrames);
+        Assert.Equal(0, graph.DelayToMasterOf(instrument));
+    }
+
+    [Fact]
     public void ALatencyChange_MakesTheGraphStale_AndARebuildAlignsAtTheNewLatency()
     {
         var compensation = new LatencyCompensation();
