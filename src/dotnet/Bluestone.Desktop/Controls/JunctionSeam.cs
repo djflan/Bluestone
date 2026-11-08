@@ -119,7 +119,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private JunctionSignal? _subscribed;
     private double _glow;
     private long _lastFrame;
-    private (double PeakL, double PeakR, double RmsL, double RmsR, double Glow) _drawn = (-1, -1, -1, -1, -1);
+    private (double PeakL, double PeakR, double RmsL, double RmsR, double HoldL, double HoldR, double Glow) _drawn = (-1, -1, -1, -1, -1, -1, -1);
     private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
     private SolidColorBrush? _lampBrush;
     private RadialGradientBrush? _haloBrush;
@@ -605,7 +605,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         }
 
         var levels = signal.Levels;
-        _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, _glow);
+        _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow);
     }
 
     // The level's frame: its bars' top and bottom, and the left edge of the left bar. The level and a lamp coupled with it
@@ -688,6 +688,9 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         var segments = Segments(count);
         var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
 
+        // The average mode holds the peak for a moment (MeterLevels' hold), so it stays up through a quiet reading.
+        var holds = levels.IsActive && LevelStyle == JunctionLevelStyle.RmsAndPeak && Math.Max(levels.HoldLeft, levels.HoldRight) > MeterLevels.FloorDecibels;
+
         // Like a hardware LED meter: every segment is there, unlit ones only a dim tint of their colour; idle, dimmer still.
         using (context.PushOpacity(silent ? 0.55 : 1))
         {
@@ -699,25 +702,25 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             }
         }
 
-        if (silent)
+        if (silent && !holds)
         {
             return;
         }
 
-        Side(levels.RmsLeft, levels.PeakLeft, left);
-        Side(levels.RmsRight, levels.PeakRight, left + bar + 1);
+        Side(levels.RmsLeft, levels.PeakLeft, levels.HoldLeft, left);
+        Side(levels.RmsRight, levels.PeakRight, levels.HoldRight, left + bar + 1);
 
         double SegmentTop(int index) => bottom - ((index + 1) * segment) - (index * gap);
 
-        void Side(double rms, double peak, double x)
+        void Side(double rms, double peak, double hold, double x)
         {
-            // Lit up to the RMS with the peak as one held segment above it (or lit to the peak), and the top segment while the
-            // peak is over full scale. An indicator shows what is happening now: unlike the mixer's clip light, it
-            // does not latch.
+            // Lit up to the RMS with the held peak as one segment above it (or lit to the peak), and the top segment while
+            // the peak is over full scale. An indicator shows what is happening now: unlike the mixer's clip light, the
+            // over does not latch.
             var clipped = peak > 0;
             var peakOnly = LevelStyle == JunctionLevelStyle.Peak;
-            var lit = (int)Math.Round(MeterLevels.Fraction(peakOnly ? peak : rms) * count);
-            var held = peakOnly ? -1 : Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(peak) * count)) - 1;
+            var lit = silent ? 0 : (int)Math.Round(MeterLevels.Fraction(peakOnly ? peak : rms) * count);
+            var held = peakOnly || hold <= MeterLevels.FloorDecibels ? -1 : Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(hold) * count)) - 1;
             for (var i = 0; i < count; i++)
             {
                 if (i < lit || i == held || (clipped && i == count - 1))
@@ -792,7 +795,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         var release = Math.Max(LampRelease.TotalSeconds, 0.001);
         _glow = signal.NotesHeld ? 1 : Math.Max(0, _glow - (elapsed / release));
         var levels = signal.Levels;
-        if (_drawn != (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, _glow))
+        if (_drawn != (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow))
         {
             InvalidateVisual();
         }

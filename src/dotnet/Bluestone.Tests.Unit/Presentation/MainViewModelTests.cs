@@ -741,6 +741,98 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RouteFromAJunction_InAViewLockedToAnotherTrack_StartsTheConnectionThere()
+    {
+        var (first, second) = await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        strip.LockToTrack(first.Id);
+        _vm.Select(second);
+        await Settle();
+        Assert.Equal("Piano", strip.Heading);
+
+        strip.RouteFromJunctionCommand.Execute(strip.Input);
+        await Settle();
+
+        Assert.Equal("Piano input (before devices)", _vm.Connections.Source!.Name);
+        Assert.Equal(first.Id, Assert.Single(_vm.SelectedTracks).Id);
+    }
+
+    [Fact]
+    public async Task ATrackWithNoDevicesYet_HasOneWorkingJunction_AndShowsNothingLeftFromTheTrackBefore()
+    {
+        var (first, second) = await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        _playback.Live.Post(first.Id, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max), _clock.Now);
+        _vm.OnFrame();
+        Assert.True(strip.Input.NotesHeld);
+
+        _vm.Select(second);
+        await Settle();
+        Assert.Null(_session.Project.ChainOf(second.Id));
+        Assert.False(strip.Input.NotesHeld);
+        Assert.Same(strip.Input, Assert.Single(strip.Junctions));
+
+        // Its + aims the Browser at the start; its route starts at the track's output (the input, with no devices).
+        strip.InsertAtJunctionCommand.Execute(strip.Input);
+        Assert.Equal(0, strip.InsertionGap);
+        Assert.Equal("Into Strings, as its first device", _vm.Browser.TargetText);
+        AddDevice("Transpose");
+        await Settle();
+        Assert.Equal("Transpose", Assert.Single(strip.Devices).Name);
+        _playback.Live.Post(first.Id, ChannelMessage.NoteOff(MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.DefaultRelease), _clock.Now);
+    }
+
+    [Fact]
+    public async Task TheLastJunction_IsRoutedWhenADeviceInputTakesTheChainsOutput_ButNotForAnOrdinaryOutput()
+    {
+        var (first, second) = await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        Assert.False(strip.LastJunction!.IsRouted);
+
+        // Strings gets a Note Receiver fed from Piano's output.
+        _vm.Select(second);
+        await Settle();
+        AddDevice("Note Receiver");
+        await Settle();
+        var receiver = _vm.DeviceView!.Devices[0].Receiver!;
+        receiver.Picker.Open();
+        receiver.Picker.ChooseCommand.Execute(receiver.Picker.Rows.Single(r => r.Owner == "Piano" && r.Name == "Output"));
+        await Settle();
+
+        _vm.Select(first);
+        await Settle();
+        Assert.True(strip.LastJunction!.IsRouted);
+        Assert.Contains("Note Receiver", strip.LastJunction.Routes, StringComparison.Ordinal);
+        Assert.False(strip.Input.IsRouted);
+    }
+
+    [Fact]
+    public async Task ReorderingTwoReceivers_GivesEachPanelAPickerForItsOwnDevice()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Note Receiver");
+        AddDevice("Note Receiver");
+        await Settle();
+        var firstId = strip.Devices[0].Id;
+        var firstInput = strip.Devices[0].Receiver!;
+
+        strip.Devices[0].MoveRightCommand.Execute(null);
+        await Settle();
+
+        Assert.Equal(firstId, strip.Devices[1].Id);
+        Assert.NotSame(firstInput, strip.Devices[0].Receiver);
+        Assert.Equal(strip.Devices[0].Id, strip.Devices[0].Receiver!.Device);
+        Assert.Equal(strip.Devices[1].Id, strip.Devices[1].Receiver!.Device);
+    }
+
+    [Fact]
     public async Task RouteFromAJunction_OpensTheInspectorWithThatPointAsTheSource()
     {
         await TwoTracksAsync();

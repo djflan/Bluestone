@@ -110,7 +110,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     public partial JunctionSignal? LastJunction { get; private set; }
 
     /// <summary>Every junction this view shows, in signal order: the input, then the point after each device. Empty without a chain.</summary>
-    internal IEnumerable<JunctionSignal> Junctions => ChainId is null ? [] : Devices.Select(d => d.Output).Prepend(Input);
+    internal IEnumerable<JunctionSignal> Junctions => HasChain ? Devices.Select(d => d.Output).Prepend(Input) : [];
 
     /// <summary>The device selected in this view. Other views keep their own selection.</summary>
     [ObservableProperty]
@@ -347,9 +347,17 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         OutputDetail = destinations.Count == 0 ? "Nothing leaves this chain yet: give it an audio output in the inspector, or a connection." : string.Join(", ", destinations);
 
         var devices = chain?.Devices ?? [];
+        var owner = Rack is { } ownerRack ? SignalNode.Rack(ownerRack) : Track is { } ownerTrack ? SignalNode.Track(ownerTrack) : (SignalNode?)null;
         if (chain is not null)
         {
             Junction(Input, chain.Id.Value, SignalFlow.PresenceOf(project, SignalNode.ChainInput(chain.Id), catalog.Lookup), "Into the chain");
+        }
+        else if (Track is { } bare)
+        {
+            // A track with no devices yet has no stored chain: its one junction is what the track starts with. It has no
+            // meter key, so it shows no level, and nothing from the track shown before is left on it.
+            Junction(Input, Guid.Empty, SignalFlow.StartOf(project, ChainOwner.ForTrack(bare)), "Into the chain");
+            Input.Update(false, null, 0);
         }
 
         var selectedId = SelectedDevice?.Id ?? _restoredSelection;
@@ -373,13 +381,26 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
         LastJunction = Devices.Count > 0 ? Devices[^1].Output : null;
 
-        // The chosen gap follows its junction through edits here or in another view, and is let go if the junction goes.
-        InsertionGap = _insertionAfter is { } after ? GapOf(Junctions.FirstOrDefault(j => j.Key == after)) : null;
+        // The chosen gap follows its junction through edits here or in another view, and is let go if the junction goes or
+        // the view shows another chain.
+        InsertionGap = _insertion is { } insertion && insertion.Owner == OwnerKey
+            ? insertion.After is { } after ? GapOf(Junctions.FirstOrDefault(j => j.Key == after && j != Input)) : 0
+            : null;
 
+        // A junction is routed when a connection takes signal from it. At the last junction that includes a device input
+        // (a receiver, a sidechain) fed from the chain's output; ordinary outputs are what the OUT node shows.
+        var terminal = LastJunction ?? Input;
         foreach (var junction in Junctions)
         {
-            var from = junction == Input ? SignalNode.ChainInput(chain!.Id) : SignalNode.Device(new DeviceId(junction.Key));
-            junction.Routes = string.Join(", ", project.ConnectionsFrom(from).Select(c => SignalRoutingValidator.Describe(project, c.Destination)).Distinct());
+            IEnumerable<SignalConnection> taps = junction != Input ? project.ConnectionsFrom(SignalNode.Device(new DeviceId(junction.Key)))
+                : chain is not null ? project.ConnectionsFrom(SignalNode.ChainInput(chain.Id))
+                : [];
+            if (junction == terminal && owner is { } chainOutput)
+            {
+                taps = taps.Concat(project.ConnectionsFrom(chainOutput).Where(c => c.Destination.Kind == SignalNodeKind.DeviceInput));
+            }
+
+            junction.Routes = string.Join(", ", taps.Select(c => SignalRoutingValidator.Describe(project, c.Destination)).Distinct());
         }
 
         MarkInsertionGap();
@@ -397,8 +418,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     [ObservableProperty]
     public partial int? InsertionGap { get; private set; }
 
-    // The key of the junction InsertionGap opens onto (the chain's ID for its input, a device's ID after it).
-    private Guid? _insertionAfter;
+    // The chain InsertionGap is in (its track's or rack's ID), and the device it follows (null: before the first device).
+    private (Guid Owner, Guid? After)? _insertion;
+
+    private Guid OwnerKey => Rack?.Value ?? Track?.Value ?? Guid.Empty;
 
     /// <summary>Where the Browser's next insert lands in this view, in words.</summary>
     internal string InsertionText => InsertionGap is { } gap
@@ -411,7 +434,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     /// <summary>The gap a junction opens onto: 0 for the chain's input, one past the device it follows otherwise; null if it is not in this view.</summary>
     internal int? GapOf(JunctionSignal? junction)
     {
-        if (junction is null || ChainId is null)
+        if (junction is null || !HasChain)
         {
             return null;
         }
@@ -443,7 +466,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
             return;
         }
 
-        _insertionAfter = junction!.Key;
+        _insertion = (OwnerKey, junction == Input ? null : junction!.Key);
         InsertionGap = gap;
         Activate();
         _owner.Workspace.ShowBrowser(BrowserCategory.All);
@@ -454,20 +477,34 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     [RelayCommand]
     private void RouteFromJunction(JunctionSignal? junction)
     {
-        if (GapOf(junction) is not { } gap || ChainId is not { } chain)
+        if (GapOf(junction) is not { } gap)
         {
             return;
         }
 
+        var source = gap > 0 ? SignalNode.Device(Devices[gap - 1].Id)
+            : ChainId is { } chain ? SignalNode.ChainInput(chain)
+            : Rack is { } rack ? SignalNode.Rack(rack)
+            : SignalNode.Track(Track!.Value);
+
+        // The inspector shows the selected track's connections: a view locked to another track selects it first, so the
+        // connection starts where it was asked for.
+        if (Track is { } track && !(_owner.SelectedTracks.Count == 1 && _owner.SelectedTracks[0].Id == track)
+            && _owner.Tracks.FirstOrDefault(t => t.Id == track) is { } shown)
+        {
+            _owner.Select(shown);
+        }
+
         Activate();
-        _owner.Connections.RouteFrom(gap == 0 ? SignalNode.ChainInput(chain) : SignalNode.Device(Devices[gap - 1].Id));
+        _owner.Connections.Sync(_owner.Project, Track, Rack);
+        _owner.Connections.RouteFrom(source);
     }
 
     partial void OnInsertionGapChanged(int? value)
     {
         if (value is null)
         {
-            _insertionAfter = null;
+            _insertion = null;
         }
 
         MarkInsertionGap();
@@ -502,7 +539,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     /// </summary>
     internal void RefreshSignals(SignalGraphResult? playing, long tick, Func<TrackId, bool> liveHeld, Func<Guid, MeterReading?> levels, long timestamp)
     {
-        if (ChainId is null)
+        if (!HasChain)
         {
             return;
         }
@@ -1056,7 +1093,8 @@ public sealed partial class DevicePanelViewModel : ObservableObject
         }
     }
 
-    // The input view for port, reusing the current one when it is the same port, so an open picker survives a sync.
+    // The input view for port, reusing the current one for the same port of the same device, so an open picker survives a
+    // sync; panels are reused by position, so another device here gets a new one.
     private DeviceInputViewModel? Input(Project project, DeviceInputPort? port, DeviceInputViewModel? current)
     {
         if (port is null)
@@ -1064,7 +1102,7 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             return null;
         }
 
-        var input = current is not null && current.Port == port ? current : new DeviceInputViewModel(_view, port);
+        var input = current is not null && current.Port == port && current.Device == Id ? current : new DeviceInputViewModel(_view, port);
         input.Sync(project, Id);
         return input;
     }

@@ -174,9 +174,13 @@ public sealed partial class DeviceInputViewModel : ObservableObject
 
     internal SignalNode Destination => SignalNode.DeviceInput(_device, Port.Id);
 
+    /// <summary>The device this input belongs to (set at the first sync).</summary>
+    internal DeviceId? Device { get; private set; }
+
     internal void Sync(Project project, DeviceId device)
     {
         _device = device;
+        Device = device;
         var source = project.ConnectionsTo(Destination).Select(c => c.Source).FirstOrDefault();
         HasSource = source != default;
         Picker.CanClear = HasSource;

@@ -1717,7 +1717,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Select(j => j.Key).ToHashSet();
+        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Select(j => j.Key).Where(k => k != Guid.Empty).ToHashSet();
         if (!keys.SetEquals(_watchedJunctions))
         {
             _watchedJunctions = keys;
