@@ -738,7 +738,11 @@ internal sealed class MidiEngine : IDisposable
                     input.Held[slot] = null;
                     foreach (var route in routes)
                     {
-                        Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
+                        // As for an ordinary release: a route the note was not played on (feedback) gets no note-off.
+                        if (!IsFeedback(input, route))
+                        {
+                            Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
+                        }
                     }
                 }
             }

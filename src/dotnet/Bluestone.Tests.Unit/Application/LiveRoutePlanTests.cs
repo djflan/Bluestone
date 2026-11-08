@@ -53,6 +53,30 @@ public sealed class LiveRoutePlanTests
     }
 
     [Fact]
+    public void APluginNoteEffect_InFrontOfTwoInstruments_IsPlayedLiveOnTheFirstRouteOnly()
+    {
+        var arp = new DeviceDefinition
+        {
+            Id = new DeviceDefinitionId("plugin:test.arp"),
+            Name = "Plugin Arp",
+            Origin = DeviceOrigin.Plugin,
+            Consumes = SignalKinds.Events,
+            Produces = SignalKinds.Events,
+            Handles = EventClass.Notes,
+        };
+        var effect = Of(arp);
+        var a = Of(SynthA);
+        var b = Of(SynthB);
+        var (project, track) = TrackWith(effect, a, b);
+
+        var plans = LiveRoutePlan.FindAll(project, track.Id, Catalog.With(arp), (_, _) => null);
+
+        var only = Assert.Single(plans);
+        Assert.Equal(a.Id, only.Instrument);
+        Assert.Equal(effect.Id, Assert.Single(only.Stages).Device!.Id);
+    }
+
+    [Fact]
     public void AnInstrumentThatEndsTheNotePath_StopsTheRouteThere()
     {
         var (project, track) = TrackWith(Of(Sink), Of(SynthB));
