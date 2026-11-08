@@ -337,6 +337,36 @@ public sealed class ProjectAudioGraphTests : IDisposable
         }
     }
 
+    [Fact]
+    public void AnAudioReceiversGain_IsOneNodePerSource_SoAMonitoredSourceNeverSharesOneWithACompensatedSource()
+    {
+        var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference())
+            .WithParameter(BuiltInDevices.ReceiverGain, BuiltInDevices.AudioReceiver.Parameters[1].ToStored(-6.0206));
+        var other = Track.Create("Other", TrackRole.Audio).WithClip(project.Sequence.FindTrack(vocal.Id)!.Clips[0].CopyTo(Tick.Zero));
+        var bus = Track.Create("Bus", TrackRole.Audio);
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(bus.Id)) with { Devices = [receiver] }) with
+        {
+            Sequence = project.Sequence.WithTrack(other).WithTrack(bus),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(other.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master),
+            ],
+        };
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+
+        var (description, problems) = graphs.Describe(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+
+        Assert.Empty(problems);
+        var gains = description.Nodes.Select((n, i) => (Node: n, Index: i)).Where(n => n.Node.Kind == DescribedNodeKind.Gain).ToList();
+        Assert.Equal(2, gains.Count);
+        Assert.Equal(2, gains.Select(g => g.Node.Key).Distinct().Count());
+        Assert.All(gains, g => Assert.Single(description.Steps, s => s.Kind == DescribedStepKind.Connect && s.B == g.Index));
+        Assert.Equal(_tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)

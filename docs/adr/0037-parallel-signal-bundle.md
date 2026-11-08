@@ -45,14 +45,17 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   into the chain at that device (receivers, sidechains). The **Note Receiver** and **Audio Receiver** are such
   devices: they take a source from anywhere (another track or rack, its input, or the point after any device, including
   an earlier point of their own chain) and mix it with the chain's signal or replace it; the Audio Receiver has a gain.
-  Live input from a receiver's source is not brought in (only the track's own live notes pass or stop). Each junction's audio can be metered (ADR 0032): a chain's
+  Live input from a receiver's source is not brought in (only the track's own live notes pass or stop). Automation of
+  an Audio Receiver's Gain or Replace is not yet applied to its audio during playback: the stored values are (the Note
+  Receiver's Replace follows automation, as any built-in note effect's parameters do). Each junction's audio can be metered (ADR 0032): a chain's
   input by the chain's ID, the rest by the device before it, measured only while a view watches it
   (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. Each junction also has a
   **note lamp**, lit while notes are held there: during playback from the compiled signal graph
   (`SignalGraphResult.NoteActivity`, the held tick ranges at every junction, read at the playhead, so nothing is added
   to the real-time path), and for live input while keys are held on the chain's track (`LiveInput.HasHeldNotes`) at
   every junction notes can reach. The live lamp is therefore approximate: it does not follow what a device does to live
-  notes (an arpeggiator's steps, a filter that blocks them) and is not shown for racks. The Device View keeps the
+  notes (an arpeggiator's steps, a filter that blocks them), is not shown for racks, and counts a key by channel and
+  pitch, so two inputs holding the same note on one track share it. The Device View keeps the
   indicators in `JunctionSignal`s, which the UI draws as Bitwig-style indicators between devices, not as meters.
 
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
