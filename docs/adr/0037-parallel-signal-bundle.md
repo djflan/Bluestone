@@ -46,7 +46,15 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   input by the chain's ID, the rest by the device before it, measured only while a view watches it
   (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. A meter point sums its
   sources as they are, without delay compensation, so it never changes what is heard; sources with different latencies
-  at one junction can read lower there than where compensation aligns them.
+  at one junction can read lower there than where compensation aligns them. Each junction also has a
+  **note lamp**, lit while notes are held there: during playback from the compiled signal graph
+  (`SignalGraphResult.NoteActivity`, the held tick ranges at every junction, read at the playhead, so nothing is added
+  to the real-time path), and for live input while keys are held on the chain's track (`LiveInput.HasHeldNotes`) at
+  every junction notes can reach. The live lamp is therefore approximate: it does not follow what a device does to live
+  notes (an arpeggiator's steps, a filter that blocks them) and is not shown for racks. The playback lamp reads
+  each note's held range, so after starting or seeking into the middle of a note (which playback does not restart) its
+  lamp is lit until that note ends. The Device View keeps the
+  indicators in `JunctionSignal`s, which the UI draws as Bitwig-style indicators between devices, not as meters.
 
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
 other), the chain runs between fixed input and output nodes, and nothing in the chain suggests a MIDI-to-audio

@@ -859,9 +859,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var sequence = Project.Sequence;
         var tick = engine.Position;
         IsPlaying = engine.State == TransportState.Playing;
+        IsCountingIn = engine.IsCountingIn;
+        RefreshSignals(tick.Value, System.Diagnostics.Stopwatch.GetTimestamp());
         OnPropertyChanged(nameof(PlayButtonText));
         IsRecording = _playback.Recorder.IsRecording;
-        IsCountingIn = engine.IsCountingIn;
         if (IsRecording && _playback.Recorder.RecordingTrack is { } recording)
         {
             RecordingLane = Tracks.IndexOf(Tracks.FirstOrDefault(t => t.Id == recording)!);
@@ -1668,6 +1669,58 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         OutputsText = string.Create(CultureInfo.InvariantCulture, $"{Outputs.Count} output{(Outputs.Count == 1 ? string.Empty : "s")} available");
     }
 
+    /// <summary>
+    /// Reads a chain junction's audio level from the running engine (ADR 0037); null when audio is off or the junction is
+    /// not watched. Set by the app; called on the UI thread.
+    /// </summary>
+    public Func<Guid, Bluestone.Audio.MeterReading?>? JunctionLevelSource { get; set; }
+
+    /// <summary>
+    /// Tells the audio engine which junctions to measure: those the open Device Views show. Set by the app; called on
+    /// the UI thread whenever that set changes, and once when set.
+    /// </summary>
+    public Action<IReadOnlyCollection<Guid>>? WatchJunctions
+    {
+        get;
+        set
+        {
+            field = value;
+            _watchedJunctions = [];
+            UpdateWatchedJunctions();
+        }
+    }
+
+    private HashSet<Guid> _watchedJunctions = [];
+    private Func<Guid, Bluestone.Audio.MeterReading?>? _noLevels;
+    private Func<TrackId, bool>? _liveHeld;
+
+    // Every Device View's signal indicators, from the playing song, live input, and the engine's junction levels.
+    private void RefreshSignals(long tick, long timestamp)
+    {
+        // During a count-in the transport plays but the song has not started: only live notes light the lamps.
+        var playing = IsPlaying && !IsCountingIn ? _playback.Routing?.Graph : null;
+        var levels = JunctionLevelSource ?? (_noLevels ??= _ => null);
+        foreach (var view in Workspace.DeviceViews)
+        {
+            view.RefreshSignals(playing, tick, _liveHeld ??= _playback.Live.HasHeldNotes, levels, timestamp);
+        }
+    }
+
+    private void UpdateWatchedJunctions()
+    {
+        if (WatchJunctions is not { } watch)
+        {
+            return;
+        }
+
+        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Select(j => j.Key).ToHashSet();
+        if (!keys.SetEquals(_watchedJunctions))
+        {
+            _watchedJunctions = keys;
+            watch(keys);
+        }
+    }
+
     private void SyncSelection()
     {
         Selection.Sync([.. SelectedTracks], [.. Outputs], _playback.Profiles);
@@ -1678,6 +1731,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Racks.Sync(Project, rack);
         Browser.Sync(Devices, Project, _playback.Profiles);
         Mixer.Sync(Project);
+        UpdateWatchedJunctions();
         OnPropertyChanged(nameof(DeviceView));
     }
 

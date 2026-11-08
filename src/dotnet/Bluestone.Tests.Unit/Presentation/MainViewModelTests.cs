@@ -7,6 +7,7 @@ using Bluestone.Domain.Time;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Files;
 using Bluestone.Midi.Timing;
+using Bluestone.Midi.Wire;
 using Bluestone.Presentation;
 using Bluestone.Profiles;
 
@@ -22,6 +23,7 @@ public sealed class MainViewModelTests : IAsyncLifetime
     private readonly ProjectSession _session = new();
     private readonly MainViewModel _vm;
     private readonly LoopbackPort _synth;
+    private readonly PlaybackController _playback;
 
     public MainViewModelTests()
     {
@@ -42,6 +44,7 @@ public sealed class MainViewModelTests : IAsyncLifetime
               "banks": [] }
             """u8));
         var playback = new PlaybackController(_session, _directoryOfEndpoints, catalog, _clock, startThread: false);
+        _playback = playback;
         _vm = new MainViewModel(_session, playback, _directoryOfEndpoints, _ui, new ImmediateDispatcher());
     }
 
@@ -645,6 +648,40 @@ public sealed class MainViewModelTests : IAsyncLifetime
         var chain = _session.Project.ChainOf(first.Id)!;
         Assert.Equal(SignalNode.ChainInput(chain.Id), Assert.Single(_session.Project.Connections, c => c.Destination.Kind == SignalNodeKind.Track).Source);
         Assert.StartsWith("Input: ", Assert.Single(_vm.Connections.Outgoing).Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheDeviceViewsJunctions_AreWatched_AndLightWhileLiveNotesAreHeldOnTheTrack()
+    {
+        var watched = new List<IReadOnlyCollection<Guid>>();
+        _vm.WatchJunctions = keys => watched.Add([.. keys]);
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>();
+        _vm.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        var (first, _) = await TwoTracksAsync();
+        AddDevice("Transpose");
+        await Settle();
+        var view = _vm.DeviceView!;
+        var chain = _session.Project.ChainOf(first.Id)!;
+        var output = view.Devices[0].Output;
+
+        // The view's chain input and the point after its one device are watched, and nothing else.
+        Assert.Equal(new HashSet<Guid> { chain.Id.Value, chain.Devices[0].Id.Value }, watched[^1].ToHashSet());
+        Assert.Equal(chain.Id.Value, view.Input.Key);
+        Assert.True(view.Input.CanCarryNotes);
+        Assert.False(output.CanCarryAudio);
+
+        // An instrument track carries no audio here: its level stays at the floor even if the engine had one.
+        levels[output.Key] = new Bluestone.Audio.MeterReading(0.5f, 0.5f, 0.25f, 0.25f);
+        _playback.Live.Post(first.Id, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max), _clock.Now);
+        _vm.OnFrame();
+        Assert.True(view.Input.NotesHeld);
+        Assert.True(output.NotesHeld);
+        Assert.False(output.Levels.IsActive);
+
+        _playback.Live.Post(first.Id, ChannelMessage.NoteOff(MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.DefaultRelease), _clock.Now);
+        _vm.OnFrame();
+        Assert.False(view.Input.NotesHeld);
+        Assert.False(output.NotesHeld);
     }
 
     [Fact]

@@ -228,6 +228,88 @@ public sealed class LiveInputTests : IAsyncDisposable
         Assert.Equal(BuiltInDevices.Arpeggiator.Id, Assert.Single(plan.Stages).Device!.Definition.Id);
     }
 
+    [Fact]
+    public async Task HeldNotes_AreCountedPerTrack_UntilReleasedOrPanic()
+    {
+        var track = await TrackWith(BuiltInDevices.CreateTranspose(12));
+        _controller.SetThruTrack(track);
+        Assert.False(_controller.Live.HasHeldNotes(track));
+
+        Play(60);
+        Play(64);
+        Assert.True(_controller.Live.HasHeldNotes(track));
+        Release(60);
+        Assert.True(_controller.Live.HasHeldNotes(track));
+        Play(64, velocity: 0);
+        Assert.False(_controller.Live.HasHeldNotes(track));
+
+        Play(67);
+        _controller.Live.ReleaseAll();
+        Assert.False(_controller.Live.HasHeldNotes(track));
+        Assert.False(_controller.Live.HasHeldNotes(TrackId.New()));
+
+        // All Notes Off and All Sound Off release the channel's keys, not another channel's.
+        _keys.Inject([0x90, 60, 100]);
+        _keys.Inject([0x91, 62, 100]);
+        _keys.Inject([0xB0, 123, 0]);
+        Assert.True(_controller.Live.HasHeldNotes(track));
+        _keys.Inject([0xB1, 120, 0]);
+        Assert.False(_controller.Live.HasHeldNotes(track));
+    }
+
+    [Fact]
+    public async Task AllNotesOff_AfterTheThruTrackChanged_ReleasesTheKeysOnTheTrackTheyWentTo()
+    {
+        var first = await TrackWith(BuiltInDevices.CreateTranspose(12));
+        var second = await TrackWith(BuiltInDevices.CreateTranspose(7));
+        _controller.SetThruTrack(first);
+        Play(60);
+        Assert.True(_controller.Live.HasHeldNotes(first));
+
+        _controller.SetThruTrack(second);
+        _keys.Inject([0xB0, 123, 0]);
+
+        Assert.False(_controller.Live.HasHeldNotes(first));
+        Assert.False(_controller.Live.HasHeldNotes(second));
+    }
+
+    [Fact]
+    public async Task AKeysNoteOff_StillReachesItsTrack_AfterAnAllNotesOffThatADeviceFilteredOut()
+    {
+        var filter = BuiltInDevices.CreateEventFilter(EventClass.Controllers);
+        var track = await TrackWith(filter);
+        _controller.SetThruTrack(track);
+        Play(60);
+        _controller.Engine.Pump();
+        Assert.Equal(1, Count(0x90, 60));
+
+        _keys.Inject([0xB0, 123, 0]);
+        Release(60);
+        _controller.Engine.Pump();
+
+        Assert.Equal(1, Count(0x80, 60));
+    }
+
+    [Fact]
+    public async Task AKeyOnATrackThatCannotPlay_IsHeldUntilItsRelease_FromAKeyboardOrTheScreen()
+    {
+        // A track with no output: nothing can play its notes.
+        var track = Track.Create("Unrouted", TrackRole.Instrument);
+        _session.Execute(ProjectCommands.AddTrack(track));
+        await _controller.RefreshAsync(Ct);
+        _controller.SetThruTrack(track.Id);
+
+        Play(60);
+        Assert.True(_controller.Live.HasHeldNotes(track.Id));
+        Release(60);
+        Assert.False(_controller.Live.HasHeldNotes(track.Id));
+
+        _controller.Audition(track.Id, new NoteNumber(62), new Velocity(100));
+        Assert.True(_controller.Live.HasHeldNotes(track.Id));
+        _controller.EndAudition();
+        Assert.False(_controller.Live.HasHeldNotes(track.Id));
+    }
+
     private async Task<TrackId> TrackWith(params DeviceInstance[] devices)
     {
         var track = AddTrack(_synth);

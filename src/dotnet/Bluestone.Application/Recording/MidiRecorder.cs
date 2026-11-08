@@ -306,16 +306,42 @@ public sealed class MidiRecorder : IDisposable
             return track is { } releasing && _live.Post(releasing, message, timestamp, source);
         }
 
+        if (message.Kind == ChannelMessageKind.ControlChange && message.Data1 is 120 or 123)
+        {
+            // All Sound Off and All Notes Off go wherever the channel's notes went, as each note-off would. The notes' own
+            // release targets are kept: a device that filters controllers drops this message, and the keys' later
+            // note-offs must still reach the tracks that are sounding them.
+            List<TrackId> releasing;
+            lock (_gate)
+            {
+                releasing = [.. _thruHeld.Where(h => h.Key.Input == inputKey && h.Key.Channel == message.Channel.Index).Select(h => h.Value).Distinct()];
+                if (_thru is { } current && !releasing.Contains(current))
+                {
+                    releasing.Add(current);
+                }
+            }
+
+            var any = false;
+            foreach (var target in releasing)
+            {
+                any |= _live.Post(target, message, timestamp, source);
+            }
+
+            return any;
+        }
+
         lock (_gate)
         {
             track = _thru;
         }
 
-        if (track is not { } thru || !_live.Post(thru, message, timestamp, source))
+        if (track is not { } thru)
         {
             return false;
         }
 
+        // The release follows its note even when the route could not play it: live input still counts the key as held.
+        var played = _live.Post(thru, message, timestamp, source);
         if (message.IsNoteOn)
         {
             lock (_gate)
@@ -324,7 +350,7 @@ public sealed class MidiRecorder : IDisposable
             }
         }
 
-        return true;
+        return played;
     }
 
     /// <summary>Forgets what a closed input was holding, releasing its notes where they were echoed.</summary>

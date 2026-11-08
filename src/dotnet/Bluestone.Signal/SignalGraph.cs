@@ -38,6 +38,15 @@ public sealed record SignalGraphResult
 
     public ImmutableArray<ParameterFeed> Parameters { get; init; } = [];
 
+    /// <summary>
+    /// When notes are held at each junction of every evaluated chain (ADR 0037), by junction key: a chain's ID for its
+    /// input, a device's for the point after it. A junction with no notes is absent.
+    /// </summary>
+    public ImmutableDictionary<Guid, NoteActivity> NoteActivity { get; init; } = ImmutableDictionary<Guid, NoteActivity>.Empty;
+
+    /// <summary>Whether notes are held at <paramref name="junction"/> at <paramref name="tick"/>. Allocates nothing.</summary>
+    public bool NotesAt(Guid junction, long tick) => NoteActivity.TryGetValue(junction, out var activity) && activity.IsActiveAt(tick);
+
     public ImmutableArray<SignalDiagnostic> Diagnostics { get; init; } = [];
 }
 
@@ -131,6 +140,7 @@ public static class SignalGraph
         private readonly List<ExternalPartFeed> _parts = [];
         private readonly List<SignalConnection> _connections = [];
         private readonly HashSet<TrackId> _playing = [];
+        private readonly ImmutableDictionary<Guid, NoteActivity>.Builder _activity = ImmutableDictionary.CreateBuilder<Guid, NoteActivity>();
         private DeviceChainId _currentChain;
 
         public SignalGraphResult Run()
@@ -150,11 +160,13 @@ public static class SignalGraph
                 SoftwareInstruments = [.. _instruments],
                 Parameters = ParameterFeeds(changes, runners),
                 Diagnostics = [.. _diagnostics],
+                NoteActivity = _activity.ToImmutable(),
             };
         }
 
         public void AfterDevice(DeviceId device, ReadOnlySpan<SignalEvent> events)
         {
+            Record(device.Value, events);
             if (_tapped.Contains(device))
             {
                 _taps[device] = [.. events];
@@ -340,6 +352,7 @@ public static class SignalGraph
                 var chainChanges = changes.Where(c => chain.Find(c.Device) is not null).ToArray();
                 var result = new SignalBuffer(ordered.Length);
                 _currentChain = chain.Id;
+                Record(chain.Id.Value, ordered);
                 runner.Run(SignalBlock.Everything, ordered, result, chainChanges, this);
                 _diagnostics.AddRange(runner.TakeReports().Select(r => r with { Track = track?.Id }));
                 output = result.Events;
@@ -422,6 +435,14 @@ public static class SignalGraph
 
         private static SignalNode OwnerOf(DeviceChain chain) =>
             chain.Owner.Kind == ChainOwnerKind.Track ? SignalNode.Track(chain.Owner.Track) : SignalNode.Rack(chain.Id);
+
+        private void Record(Guid junction, ReadOnlySpan<SignalEvent> events)
+        {
+            if (Bluestone.Signal.NoteActivity.Of(events) is { Count: > 0 } activity)
+            {
+                _activity[junction] = activity;
+            }
+        }
 
         private void Report(SignalDiagnosticCode code, Track track, string message) =>
             _diagnostics.Add(new SignalDiagnostic(code, message) { Track = track.Id });

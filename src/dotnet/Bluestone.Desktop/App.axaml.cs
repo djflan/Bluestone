@@ -258,6 +258,10 @@ public partial class App : Avalonia.Application
 
         _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher(), activities: viewModel.Activities);
         viewModel.Mixer.MeterSource = audio.MeterOf;
+        viewModel.JunctionLevelSource = audio.JunctionMeterOf;
+        // In-process audio takes its graph lock to watch junctions, which a rebuild can hold: never wait for it on the UI thread.
+        var watch = new LatestOnBackground<IReadOnlyCollection<Guid>>(audio.WatchJunctions);
+        viewModel.WatchJunctions = watch.Post;
         window.AttachAudio(_audio);
         window.Closed += (_, _) => audio.Dispose();
     }
