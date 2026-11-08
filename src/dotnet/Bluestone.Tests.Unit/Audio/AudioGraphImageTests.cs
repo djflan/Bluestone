@@ -214,7 +214,7 @@ public sealed class AudioGraphImageTests : IDisposable
         });
         var effect = builder.AddNode(new DescribedNode(DescribedNodeKind.Plugin, Key(), "Verb")
         {
-            Link = new DescribedPluginLink(new ExchangeOptions(128, 2, 2, 3, 64, 32), 3, TimeSpan.FromMilliseconds(1.5), true, 1024, null),
+            Link = new DescribedPluginLink(new ExchangeOptions(128, 2, 2, 3, 64, 32, sidechainChannels: 2), 3, TimeSpan.FromMilliseconds(1.5), true, 1024, null),
         });
         builder.Monitor(synth);
         builder.Connect(synth, effect);
@@ -223,6 +223,7 @@ public sealed class AudioGraphImageTests : IDisposable
         builder.ConnectToMaster(clips);
         var gain = builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, Key(), "Receiver") { Gain = 0.5f });
         builder.Connect(clips, gain);
+        builder.ConnectSidechain(synth, effect);
         builder.ConnectToMaster(gain);
         builder.AddMeterPoint(Key(), []);
         builder.AddMeterPoint(Key(), [synth, clips]);

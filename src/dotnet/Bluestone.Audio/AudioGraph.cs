@@ -115,9 +115,20 @@ public sealed class AudioGraph
                 }
             }
 
+            var sidechain = default(StereoBuffer);
+            if (entry.SidechainInputs.Length > 0)
+            {
+                sidechain = StereoBuffer.Of(entry.SidechainStorage!, stride, frames);
+                sidechain.Clear();
+                for (var i = 0; i < entry.SidechainInputs.Length; i++)
+                {
+                    sidechain.Add(Delayed(StereoBuffer.Of(_nodes[entry.SidechainInputs[i]].OutputStorage, stride, frames), entry.SidechainDelays[i], frames));
+                }
+            }
+
             var rendered = StereoBuffer.Of(entry.OutputStorage, stride, frames);
             rendered.Clear();
-            entry.Node.Render(context, input, rendered);
+            entry.Node.Render(context, input, sidechain, rendered);
             for (var i = 0; i < entry.Strips.Length; i++)
             {
                 StereoBuffer.Of(_strips[entry.Strips[i]].Storage, stride, frames).Add(Delayed(rendered, entry.StripDelays[i], frames));
@@ -190,7 +201,14 @@ public sealed class AudioGraph
 
     internal sealed record MeterEntry(AudioMeter Meter, int[] Nodes);
 
-    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int DelayToMaster);
+    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int DelayToMaster)
+    {
+        public int[] SidechainInputs { get; init; } = [];
+
+        public EdgeDelay[] SidechainDelays { get; init; } = [];
+
+        public float[]? SidechainStorage { get; init; }
+    }
 
     internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends, EdgeDelay OutputDelay);
 
@@ -205,7 +223,7 @@ public sealed class AudioGraph
 public sealed class AudioGraphBuilder
 {
     private readonly List<AudioNode> _nodes = [];
-    private readonly List<(int From, int To)> _nodeEdges = [];
+    private readonly List<(int From, int To, bool Sidechain)> _nodeEdges = [];
     private readonly List<(int Node, int Strip)> _toStrips = [];
     private readonly HashSet<int> _toMaster = [];
     private readonly List<(MixerStripState State, MixerStripSettings Settings)> _strips = [];
@@ -233,7 +251,18 @@ public sealed class AudioGraphBuilder
     {
         CheckNode(from);
         CheckNode(to);
-        _nodeEdges.Add((from, to));
+        _nodeEdges.Add((from, to, false));
+    }
+
+    /// <summary>
+    /// Feeds node <paramref name="from"/>'s output into node <paramref name="to"/>'s sidechain (ADR 0037). Ordered and
+    /// delay-compensated like an input, so the sidechain arrives aligned with the audio it acts on.
+    /// </summary>
+    public void ConnectSidechain(int from, int to)
+    {
+        CheckNode(from);
+        CheckNode(to);
+        _nodeEdges.Add((from, to, true));
     }
 
     /// <summary>
@@ -353,7 +382,9 @@ public sealed class AudioGraphBuilder
         var monitored = new bool[_nodes.Count];
         foreach (var index in nodeOrder)
         {
-            monitored[index] = _monitored.Contains(index) || _nodeEdges.Any(e => e.To == index && monitored[e.From]);
+            // Monitoring follows the audio path, not a sidechain: a live-played key does not take the effect it keys (and
+            // that effect's main signal) out of delay compensation.
+            monitored[index] = _monitored.Contains(index) || _nodeEdges.Any(e => e.To == index && !e.Sidechain && monitored[e.From]);
             nodeInput[index] = _nodeEdges.Where(e => e.To == index && !monitored[e.From]).Select(e => nodeOutput[e.From]).DefaultIfEmpty(0).Max();
             nodeOutput[index] = nodeInput[index] + built[index];
         }
@@ -379,13 +410,14 @@ public sealed class AudioGraphBuilder
         int Due(int s) => monitoredStrip[s] ? latency : strip[s];
 
         // From a node's output to the master: an unmonitored node is aligned with everything at the graph's latency; a
-        // monitored one goes through the nodes it feeds undelayed, and then on undelayed.
+        // monitored one goes through the nodes it feeds undelayed, and then on undelayed. A sidechain it keys is not on its
+        // way to the master.
         var delayToMaster = new int[_nodes.Count];
         for (var i = nodeOrder.Count - 1; i >= 0; i--)
         {
             var index = nodeOrder[i];
             delayToMaster[index] = monitored[index]
-                ? _nodeEdges.Where(e => e.From == index).Select(e => built[e.To] + delayToMaster[e.To]).DefaultIfEmpty(0).Max()
+                ? _nodeEdges.Where(e => e.From == index && !e.Sidechain).Select(e => built[e.To] + delayToMaster[e.To]).DefaultIfEmpty(0).Max()
                 : latency - nodeOutput[index];
         }
 
@@ -398,9 +430,12 @@ public sealed class AudioGraphBuilder
         var nodes = nodeOrder.Select(index =>
         {
             var node = _nodes[index];
-            var inputEdges = _nodeEdges.Where(e => e.To == index).ToList();
+            var inputEdges = _nodeEdges.Where(e => e.To == index && !e.Sidechain).ToList();
             int[] inputs = [.. inputEdges.Select(e => nodePosition[e.From])];
             AudioGraph.EdgeDelay[] inputDelays = [.. inputEdges.Select(e => Edge(_nodes[e.From], node, 0, monitored[index] ? 0 : nodeInput[index] - nodeOutput[e.From]))];
+            var sidechainEdges = _nodeEdges.Where(e => e.To == index && e.Sidechain).ToList();
+            int[] sidechain = [.. sidechainEdges.Select(e => nodePosition[e.From])];
+            AudioGraph.EdgeDelay[] sidechainDelays = [.. sidechainEdges.Select(e => Edge(_nodes[e.From], node, 2, monitored[index] ? 0 : Math.Max(0, nodeInput[index] - nodeOutput[e.From])))];
             var strips = _toStrips.Where(e => e.Node == index).Select(e => e.Strip).Distinct().ToList();
             AudioGraph.EdgeDelay[] stripDelays = [.. strips.Select(s => Edge(node, _strips[s].State, 0, monitored[index] ? 0 : Due(s) - nodeOutput[index]))];
             var toMaster = _toMaster.Contains(index);
@@ -416,7 +451,12 @@ public sealed class AudioGraphBuilder
                 toMaster,
                 masterDelay,
                 built[index],
-                delayToMaster[index]);
+                delayToMaster[index])
+            {
+                SidechainInputs = sidechain,
+                SidechainDelays = sidechainDelays,
+                SidechainStorage = sidechain.Length > 0 ? new float[2 * blockFrames] : null,
+            };
         }).ToArray();
 
         var audible = Audible();
@@ -527,7 +567,7 @@ public sealed class AudioGraphBuilder
     private List<int> OrderNodes()
     {
         var pending = new int[_nodes.Count];
-        foreach (var (_, to) in _nodeEdges)
+        foreach (var (_, to, _) in _nodeEdges)
         {
             pending[to]++;
         }
@@ -537,7 +577,7 @@ public sealed class AudioGraphBuilder
         while (ready.TryDequeue(out var node))
         {
             order.Add(node);
-            foreach (var (from, to) in _nodeEdges)
+            foreach (var (from, to, _) in _nodeEdges)
             {
                 if (from == node && --pending[to] == 0)
                 {

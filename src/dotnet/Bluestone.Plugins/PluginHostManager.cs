@@ -442,7 +442,7 @@ public sealed class PluginHostManager : IAsyncDisposable
                 table.SetAll(values.Values);
             }
 
-            if (!instance.Attach(new ActiveLink(worker, exchange), created.LatencyFrames, created.StateRestoreError))
+            if (!instance.Attach(new ActiveLink(worker, exchange), created.LatencyFrames, created.StateRestoreError, created.SidechainChannels))
             {
                 throw new OperationCanceledException("The instance was unloaded while starting.");
             }

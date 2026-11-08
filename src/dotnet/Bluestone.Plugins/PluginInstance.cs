@@ -57,7 +57,7 @@ public sealed class PluginInstance : IPluginProcessor
         Id = PluginInstanceId.New();
         PipelineDepth = pipelineDepth;
         CollectWait = collectWait;
-        ExchangeShape = new ExchangeOptions(request.MaxBlockFrames, request.InputChannels, request.OutputChannels, slotCount, request.EventCapacity, request.ParameterChangeCapacity);
+        ExchangeShape = new ExchangeOptions(request.MaxBlockFrames, request.InputChannels, request.OutputChannels, slotCount, request.EventCapacity, request.ParameterChangeCapacity, request.SidechainChannels);
         _lastSnapshot = request.RestoreFrom;
         _pipeline = new PluginBlockPipeline(request.MaxBlockFrames, request.InputChannels, request.ParameterChangeCapacity, pipelineDepth, collectWait, request.FailurePolicy == FailurePolicy.BypassInput);
         _restartPolicy = request.RestartPolicy;
@@ -107,6 +107,8 @@ public sealed class PluginInstance : IPluginProcessor
 
     int IPluginProcessor.InputChannels => Request.InputChannels;
 
+    int IPluginProcessor.SidechainChannels => Request.SidechainChannels;
+
     int IPluginProcessor.OutputChannels => Request.OutputChannels;
 
     int IPluginProcessor.EventCapacity => Request.EventCapacity;
@@ -127,6 +129,9 @@ public sealed class PluginInstance : IPluginProcessor
 
     /// <summary>Latency the plugin itself reports, in frames.</summary>
     public int PluginLatencyFrames { get; private set; }
+
+    /// <summary>The channels of the plugin's sidechain (its first auxiliary input bus) while running; 0 when it has none.</summary>
+    public int PluginSidechainChannels { get; private set; }
 
     public int PipelineDepth { get; }
 
@@ -228,7 +233,8 @@ public sealed class PluginInstance : IPluginProcessor
         Span<float> output,
         ReadOnlySpan<PluginEvent> inputEvents,
         Span<PluginEvent> outputEvents,
-        in TransportState transport)
+        in TransportState transport,
+        ReadOnlySpan<float> sidechain = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(frames, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(frames, Request.MaxBlockFrames);
@@ -242,7 +248,12 @@ public sealed class PluginInstance : IPluginProcessor
             throw new ArgumentException("The output must hold OutputChannels * frames samples.", nameof(output));
         }
 
-        return _pipeline.Process(_link?.Exchange, frames, input, output[..(Request.OutputChannels * frames)], inputEvents, outputEvents, transport);
+        if (!sidechain.IsEmpty && sidechain.Length != Request.SidechainChannels * frames)
+        {
+            throw new ArgumentException("The sidechain must be empty or hold SidechainChannels * frames samples.", nameof(sidechain));
+        }
+
+        return _pipeline.Process(_link?.Exchange, frames, input, output[..(Request.OutputChannels * frames)], inputEvents, outputEvents, transport, sidechain);
     }
 
     /// <summary>
@@ -471,7 +482,7 @@ public sealed class PluginInstance : IPluginProcessor
     }
 
     /// <summary>Connects the running worker; Starting or Restarting to Running.</summary>
-    internal bool Attach(ActiveLink link, int pluginLatency, string? stateRestoreError)
+    internal bool Attach(ActiveLink link, int pluginLatency, string? stateRestoreError, int sidechainChannels = 0)
     {
         lock (_statusGate)
         {
@@ -481,6 +492,7 @@ public sealed class PluginInstance : IPluginProcessor
             }
 
             PluginLatencyFrames = pluginLatency;
+            PluginSidechainChannels = sidechainChannels;
             LastStateRestoreError = stateRestoreError;
             _editorOpen = false;
             _lastWorkerLoss = null;

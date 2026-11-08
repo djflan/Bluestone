@@ -110,7 +110,8 @@ fn main() {
                     position: 0,
                     tempo: 120.0,
                     playing: 1,
-                    reserved: 0,
+                    sidechain_channels: 0,
+                    sidechain: std::ptr::null(),
                 };
                 bph_plugin_process(plugin, &mut process);
                 bph_plugin_get_parameter(plugin, id, &mut value);
@@ -149,7 +150,8 @@ fn main() {
                     position: block * 256,
                     tempo: 120.0,
                     playing: 1,
-                    reserved: 0,
+                    sidechain_channels: 0,
+                    sidechain: std::ptr::null(),
                 };
                 bph_plugin_process(plugin, &mut process);
                 out_count += process.out_event_count;

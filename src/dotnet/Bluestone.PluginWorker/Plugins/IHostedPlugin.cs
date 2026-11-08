@@ -17,6 +17,9 @@ internal interface IHostedPlugin
     /// <summary>Latency the plugin itself adds, in sample frames.</summary>
     int LatencyFrames { get; }
 
+    /// <summary>The channels of the plugin's sidechain (its first auxiliary input bus) once prepared; 0 when it has none.</summary>
+    int SidechainChannels => 0;
+
     /// <summary>Configures processing. Throws <see cref="NotSupportedException"/> for a channel layout the plugin cannot run.</summary>
     void Prepare(double sampleRate, int maxFrames, int inputChannels, int outputChannels);
 
@@ -42,10 +45,11 @@ internal interface IHostedPlugin
 /// </summary>
 internal readonly ref struct ProcessArgs
 {
-    public ProcessArgs(int frames, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<PluginEvent> events, ReadOnlySpan<ParameterChange> parameterChanges, TransportState transport)
+    public ProcessArgs(int frames, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<PluginEvent> events, ReadOnlySpan<ParameterChange> parameterChanges, TransportState transport, ReadOnlySpan<float> sidechain = default)
     {
         Frames = frames;
         Input = input;
+        Sidechain = sidechain;
         Output = output;
         Events = events;
         ParameterChanges = parameterChanges;
@@ -55,6 +59,9 @@ internal readonly ref struct ProcessArgs
     public int Frames { get; }
 
     public ReadOnlySpan<float> Input { get; }
+
+    /// <summary>The sidechain's audio, planar like <see cref="Input"/>; empty when the host sends none.</summary>
+    public ReadOnlySpan<float> Sidechain { get; }
 
     public Span<float> Output { get; }
 

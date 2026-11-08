@@ -38,6 +38,8 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
 
     public int LatencyFrames => (int)Math.Min(NativeMethods.PluginLatency(_handle), 1 << 24);
 
+    public int SidechainChannels => (int)Math.Min(NativeMethods.PluginSidechainChannels(_handle), ProtocolLimits.MaxChannels);
+
     public string StateFormat { get; }
 
     /// <summary>Loads <paramref name="modulePath"/> and creates an instance of <paramref name="identity"/>. Main thread.</summary>
@@ -112,8 +114,9 @@ internal sealed class NativePlugin : IHostedPlugin, IDisposable
             Position = args.Transport.SamplePosition,
             Tempo = args.Transport.Tempo,
             Playing = args.Transport.IsPlaying ? 1u : 0u,
+            SidechainChannels = args.Frames > 0 ? (uint)(args.Sidechain.Length / args.Frames) : 0,
         };
-        var ok = NativeMethods.Process(_handle, ref block, args.Input, args.Output, _events.AsSpan(0, eventCount), _changes.AsSpan(0, changeCount), _outputEvents.AsSpan(0, capacity));
+        var ok = NativeMethods.Process(_handle, ref block, args.Input, args.Output, _events.AsSpan(0, eventCount), _changes.AsSpan(0, changeCount), _outputEvents.AsSpan(0, capacity), args.Sidechain);
         if (ok != 1)
         {
             throw new InvalidOperationException("The plugin did not process the block.");

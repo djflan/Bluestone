@@ -96,6 +96,21 @@ public sealed record PluginInstanceRequest
     public int EventCapacity { get; init; } = ExchangeOptions.DefaultEventCapacity;
 
     public int ParameterChangeCapacity { get; init; } = ExchangeOptions.DefaultParameterChangeCapacity;
+
+    /// <summary>
+    /// Channels the host sends for the plugin's sidechain (ADR 0037), 0 for none. Sent whether or not the plugin turns
+    /// out to have a sidechain (<see cref="PluginInstance.PluginSidechainChannels"/>); one that has none ignores them.
+    /// </summary>
+    public int SidechainChannels
+    {
+        get;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, ProtocolLimits.MaxChannels);
+            field = value;
+        }
+    }
 }
 
 /// <summary>

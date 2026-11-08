@@ -36,7 +36,7 @@ public sealed class NativePluginTests
 
     [Theory]
     [MemberData(nameof(Formats))]
-    public async Task Scanning_TheTestModule_FindsItsThreePlugins_WithTheirKinds(string format)
+    public async Task Scanning_TheTestModule_FindsItsPlugins_WithTheirKinds(string format)
     {
         await using var host = new PluginTestHost();
 
@@ -45,9 +45,48 @@ public sealed class NativePluginTests
         Assert.Equal(PluginKind.AudioEffect, plugins["Test Gain"].Kind);
         Assert.Equal(PluginKind.Instrument, plugins["Test Sine"].Kind);
         Assert.Equal(PluginKind.MidiEffect, plugins["Test Transpose"].Kind);
+        Assert.Equal(PluginKind.AudioEffect, plugins["Test Key"].Kind);
         Assert.All(plugins.Values, p => Assert.Equal(format, p.Format));
         Assert.All(plugins.Values, p => Assert.Equal("BluestoneTestPlugins", p.ModuleId));
         Assert.All(plugins.Values, p => Assert.Equal("Bluestone", p.Vendor));
+    }
+
+    [Theory]
+    [MemberData(nameof(Formats))]
+    public async Task ASidechain_ReachesThePluginsAuxiliaryBus_AndAPluginWithoutOneReportsNone(string format)
+    {
+        await using var host = new PluginTestHost();
+        var plugins = await ScanAsync(host, format);
+        var key = await host.CreateRunningAsync(Request(plugins["Test Key"], format, 2, 2) with { SidechainChannels = 2 });
+        var gain = await host.CreateRunningAsync(Request(plugins["Test Gain"], format, 2, 2) with { SidechainChannels = 2 });
+
+        Assert.Equal(2, key.PluginSidechainChannels);
+        Assert.Equal(0, gain.PluginSidechainChannels);
+
+        // Test Key at its default mix puts out exactly its sidechain, and not its main input.
+        var input = new float[2 * Frames];
+        var sidechain = new float[2 * Frames];
+        var output = new float[2 * Frames];
+        var events = new PluginEvent[16];
+        Array.Fill(input, 0.25f);
+        Array.Fill(sidechain, 0.75f);
+        var position = 0L;
+        BlockOutcome Process()
+        {
+            var outcome = key.ProcessBlock(Frames, input, output, default, events, new TransportState(position, 120, true), sidechain);
+            position += Frames;
+            return outcome;
+        }
+
+        Assert.Equal(ProcessOutcome.Priming, Process().Outcome);
+        Assert.Equal(ProcessOutcome.Processed, Process().Outcome);
+        Assert.All(output, s => Assert.Equal(0.75f, s));
+
+        // Without a sidechain this block, the plugin's aux bus hears silence.
+        var silent = key.ProcessBlock(Frames, input, output, default, events, new TransportState(position, 120, true));
+        Assert.Equal(ProcessOutcome.Processed, silent.Outcome);
+        Assert.Equal(ProcessOutcome.Processed, key.ProcessBlock(Frames, input, output, default, events, new TransportState(position + Frames, 120, true)).Outcome);
+        Assert.All(output, s => Assert.Equal(0f, s));
     }
 
     [Theory]

@@ -84,6 +84,9 @@ public enum DescribedStepKind : byte
 
     /// <summary>Strip <c>A</c> sends to strip <c>B</c> at <c>Level</c> dB, before or after its fader.</summary>
     SendStrip = 7,
+
+    /// <summary>Node <c>A</c> feeds node <c>B</c>'s sidechain (<see cref="AudioGraphBuilder.ConnectSidechain"/>).</summary>
+    ConnectSidechain = 8,
 }
 
 /// <summary>
@@ -145,6 +148,13 @@ public sealed class AudioGraphDescriptionBuilder
         CheckNode(from);
         CheckNode(to);
         _steps.Add(new(DescribedStepKind.Connect, from, to));
+    }
+
+    public void ConnectSidechain(int from, int to)
+    {
+        CheckNode(from);
+        CheckNode(to);
+        _steps.Add(new(DescribedStepKind.ConnectSidechain, from, to));
     }
 
     public void Monitor(int node)

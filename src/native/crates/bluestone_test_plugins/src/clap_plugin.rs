@@ -37,6 +37,11 @@ static SINE_FEATURES: Pointers<3> = Pointers([
     std::ptr::null(),
 ]);
 static TRANSPOSE_FEATURES: Pointers<2> = Pointers([c"note-effect".as_ptr(), std::ptr::null()]);
+static KEY_FEATURES: Pointers<3> = Pointers([
+    c"audio-effect".as_ptr(),
+    c"stereo".as_ptr(),
+    std::ptr::null(),
+]);
 
 const fn descriptor(
     id: &'static CStr,
@@ -57,7 +62,7 @@ const fn descriptor(
     }
 }
 
-static DESCRIPTORS: [clap_plugin_descriptor; 3] = [
+static DESCRIPTORS: [clap_plugin_descriptor; 4] = [
     descriptor(
         c"com.bluestone.test.gain",
         c"Test Gain",
@@ -72,6 +77,11 @@ static DESCRIPTORS: [clap_plugin_descriptor; 3] = [
         c"com.bluestone.test.transpose",
         c"Test Transpose",
         TRANSPOSE_FEATURES.0.as_ptr(),
+    ),
+    descriptor(
+        c"com.bluestone.test.key",
+        c"Test Key",
+        KEY_FEATURES.0.as_ptr(),
     ),
 ];
 
@@ -190,12 +200,12 @@ unsafe extern "C" fn process(
     unsafe { read_events(plugin, process.in_events, &mut events) };
     events.sort_by_key(|e| e.0);
     let frames = process.frames_count as usize;
-    let channels = |buffers: *const clap_audio_buffer, count: u32| -> Vec<*mut f32> {
-        if buffers.is_null() || count == 0 {
+    let channels = |buffers: *const clap_audio_buffer, count: u32, index: u32| -> Vec<*mut f32> {
+        if buffers.is_null() || count <= index {
             return Vec::new();
         }
         // SAFETY: the host's buffers.
-        let buffer = unsafe { &*buffers };
+        let buffer = unsafe { &*buffers.add(index as usize) };
         if buffer.data32.is_null() {
             return Vec::new();
         }
@@ -203,10 +213,16 @@ unsafe extern "C" fn process(
             .map(|c| unsafe { *buffer.data32.add(c) })
             .collect()
     };
-    let input_pointers = channels(process.audio_inputs, process.audio_inputs_count);
-    let output_pointers = channels(process.audio_outputs, process.audio_outputs_count);
+    let input_pointers = channels(process.audio_inputs, process.audio_inputs_count, 0);
+    let sidechain_pointers = channels(process.audio_inputs, process.audio_inputs_count, 1);
+    let output_pointers = channels(process.audio_outputs, process.audio_outputs_count, 0);
     // SAFETY: each channel holds `frames` samples for the call.
     let inputs: Vec<&[f32]> = input_pointers
+        .iter()
+        .map(|&p| unsafe { std::slice::from_raw_parts(p as *const f32, frames) })
+        .collect();
+    // SAFETY: as above.
+    let sidechain: Vec<&[f32]> = sidechain_pointers
         .iter()
         .map(|&p| unsafe { std::slice::from_raw_parts(p as *const f32, frames) })
         .collect();
@@ -218,6 +234,7 @@ unsafe extern "C" fn process(
     core.process(
         frames,
         &inputs,
+        &sidechain,
         &mut outputs,
         &events,
         &mut |offset, output| unsafe { push(out, offset, output) },
@@ -456,9 +473,23 @@ unsafe extern "C" fn audio_ports_get(
     }
     // SAFETY: checked non-null.
     let info = unsafe { &mut *info };
-    info.id = 0;
-    copy(if is_input { "Input" } else { "Output" }, &mut info.name);
-    info.flags = CLAP_AUDIO_PORT_IS_MAIN;
+    let sidechain = is_input && index == 1;
+    info.id = index;
+    copy(
+        if sidechain {
+            "Sidechain"
+        } else if is_input {
+            "Input"
+        } else {
+            "Output"
+        },
+        &mut info.name,
+    );
+    info.flags = if sidechain {
+        0
+    } else {
+        CLAP_AUDIO_PORT_IS_MAIN
+    };
     info.channel_count = 2;
     info.port_type = CLAP_PORT_STEREO.as_ptr();
     info.in_place_pair = CLAP_INVALID_ID;

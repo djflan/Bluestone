@@ -17,6 +17,9 @@ public interface IPluginProcessor
 
     int OutputChannels { get; }
 
+    /// <summary>Channels of sidechain audio <see cref="ProcessBlock"/> takes (0 for none).</summary>
+    int SidechainChannels { get; }
+
     /// <summary>Events per block in each direction.</summary>
     int EventCapacity { get; }
 
@@ -27,7 +30,7 @@ public interface IPluginProcessor
     event EventHandler<NotificationKind>? Changed;
 
     /// <summary>See <see cref="PluginInstance.ProcessBlock"/>.</summary>
-    BlockOutcome ProcessBlock(int frames, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<PluginEvent> inputEvents, Span<PluginEvent> outputEvents, in TransportState transport);
+    BlockOutcome ProcessBlock(int frames, ReadOnlySpan<float> input, Span<float> output, ReadOnlySpan<PluginEvent> inputEvents, Span<PluginEvent> outputEvents, in TransportState transport, ReadOnlySpan<float> sidechain = default);
 
     /// <summary>See <see cref="PluginInstance.QueueParameterChange"/>.</summary>
     bool QueueParameterChange(uint parameterId, double normalizedValue, int sampleOffset);

@@ -170,6 +170,32 @@ public sealed class BlockExchangeTests : IDisposable
     }
 
     [Fact]
+    public void ASidechain_TravelsAfterTheMainInput_AndIsSilentWhenNotGiven()
+    {
+        var options = new ExchangeOptions(16, 2, 2, 2, 4, 2, sidechainChannels: 2);
+        using var worker = WorkerBlockExchange.Create(_directory.File("x"), options, 1);
+        using var host = HostBlockExchange.Open(worker.Path, 1, options);
+        var input = Enumerable.Range(0, 32).Select(i => (float)i).ToArray();
+        var sidechain = Enumerable.Range(100, 32).Select(i => (float)i).ToArray();
+
+        Assert.Equal(ExchangeStatus.Rejected, host.TrySubmit(0, 16, Transport, input, [], [], sidechain.AsSpan(0, 16)));
+        Assert.Equal(ExchangeStatus.Ok, host.TrySubmit(0, 16, Transport, input, [], [], sidechain));
+        Assert.True(worker.TryBeginBlock(out var block));
+        Assert.Equal(input[16..], block.Input(1).ToArray());
+        Assert.Equal(sidechain[..16], block.Sidechain(0).ToArray());
+        Assert.Equal(sidechain[16..], block.Sidechain(1).ToArray());
+        worker.CompleteBlock(ref block, BlockStatus.Ok);
+        Assert.Equal(ExchangeStatus.Ok, host.TryCollect(0, TimeSpan.Zero, new float[32], new PluginEvent[4], out _));
+
+        Assert.Equal(ExchangeStatus.Ok, host.TrySubmit(1, 16, Transport, input, [], []));
+        Assert.True(worker.TryBeginBlock(out var next));
+        Assert.All(next.Sidechain(1).ToArray(), s => Assert.Equal(0f, s));
+
+        // The host must expect the sidechain the worker made room for.
+        Assert.Throws<ProtocolException>(() => HostBlockExchange.Open(worker.Path, 1, new ExchangeOptions(16, 2, 2, 2, 4, 2)));
+    }
+
+    [Fact]
     public void Open_WithTheWrongGenerationOrLayout_Throws()
     {
         using var worker = WorkerBlockExchange.Create(_directory.File("x"), Options, 3);

@@ -871,6 +871,14 @@ impl Instance for ClapInstance {
         status != CLAP_PROCESS_ERROR
     }
 
+    fn sidechain_channels(&self) -> u32 {
+        self.audio
+            .lock()
+            .ok()
+            .and_then(|a| a.as_ref().map(|a| a.adapter.sidechain_channels()))
+            .unwrap_or(0)
+    }
+
     fn latency(&self) -> u32 {
         // SAFETY: the plugin's latency extension, on the main thread.
         unsafe {

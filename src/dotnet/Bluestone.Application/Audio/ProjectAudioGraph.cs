@@ -396,6 +396,11 @@ public sealed class ProjectAudioGraph : IDisposable
                             _builder.Monitor(node);
                         }
 
+                        foreach (var source in Sources(chain, points, i, SignalNode.DeviceInput(device.Id, DeviceInputPort.Sidechain)))
+                        {
+                            _builder.ConnectSidechain(source, node);
+                        }
+
                         if (definition.Consumes.HasFlag(SignalKinds.Audio))
                         {
                             foreach (var source in audio)
@@ -454,6 +459,10 @@ public sealed class ProjectAudioGraph : IDisposable
 
             return BuiltInDevices.ReplacesOf(device) ? received : [.. audio, .. received];
         }
+
+        // The audio nodes connected into a device input at chain index `at`, each once (a sidechain sums them).
+        private List<int> Sources(DeviceChain chain, List<int>[] points, int at, SignalNode input) =>
+            [.. _audio.Where(c => c.Destination == input).SelectMany(c => SourcesOf(chain, points, at, c)).Distinct()];
 
         // The audio nodes one connection into a device input at chain index `at` brings: a source earlier in the same chain
         // is that junction's audio (validation keeps it earlier); any other is its owner's output, or the point after its device.

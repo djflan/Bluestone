@@ -60,7 +60,10 @@ Licences checked on 2026-10-11:
   messages. The application stores edited values in the project, which stays the authority.
 - **Channel layouts.** The host side always sees the channels it asked for (stereo, or none for an instrument's
   input). VST 3 is offered the host's layout on its main buses (stereo, or mono for one channel) and keeps its own if it refuses; CLAP keeps its ports.
-  A mono plugin output feeds every host channel; extra plugin channels and side buses get silence.
+  A mono plugin output feeds every host channel; extra plugin channels and side buses get silence. *Amended by ADR
+  0037:* an audio effect's first auxiliary input bus (VST 3 bus 1 of type `kAux`; CLAP's first non-main input port) is
+  its **sidechain**, fed from the host's sidechain channels (`BphProcess.sidechain`, C ABI version 3); the instance
+  reports its channels (`bph_plugin_sidechain_channels`, 0 when it has none). Instruments get no sidechain yet.
 - **Threads.** The worker's process main thread runs the operating system's event loop (on macOS an accessory
   NSApplication). The control plane runs on the thread pool and hands each request to the main thread; plugins are
   created, configured, saved, and shown there, as both formats require. Each instance's processing thread calls
@@ -77,8 +80,8 @@ Licences checked on 2026-10-11:
   timeout, quarantine, and cache (a bundle's fingerprint covers its binaries and Info.plist). Before loading anything
   the scanner reads the binary's headers (Mach-O, PE, ELF); a module without code for the worker's architecture is
   `Unsupported`, cached, and not quarantined. No second-architecture (Rosetta) worker is built.
-- **Test plugins.** `native/crates/bluestone_test_plugins` builds a gain effect, a sine instrument, and a transpose
-  MIDI effect as one library exporting both formats; the integration test build packages it as a `.vst3` bundle and
+- **Test plugins.** `native/crates/bluestone_test_plugins` builds a gain effect, a sine instrument, a transpose
+  MIDI effect, and a sidechain effect (Test Key, which puts out its sidechain) as one library exporting both formats; the integration test build packages it as a `.vst3` bundle and
   a `.clap` module in each platform's layout, so CI runs the full path on Linux, macOS, and Windows.
 
 ## Consequences

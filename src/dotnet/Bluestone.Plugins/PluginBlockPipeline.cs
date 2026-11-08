@@ -87,7 +87,8 @@ public sealed class PluginBlockPipeline
         Span<float> audio,
         ReadOnlySpan<PluginEvent> inputEvents,
         Span<PluginEvent> outputEvents,
-        in TransportState transport)
+        in TransportState transport,
+        ReadOnlySpan<float> sidechain = default)
     {
         var block = _nextBlock++;
         _depth = Volatile.Read(ref _requestedDepth);
@@ -103,7 +104,7 @@ public sealed class PluginBlockPipeline
             return Fail(ProcessOutcome.Unavailable, audio, collectIndex, frames);
         }
 
-        var submitted = exchange.TrySubmit(block, frames, transport, input, inputEvents, _pendingChanges.AsSpan(0, _pendingCount));
+        var submitted = exchange.TrySubmit(block, frames, transport, input, inputEvents, _pendingChanges.AsSpan(0, _pendingCount), sidechain);
         if (submitted != ExchangeStatus.Busy)
         {
             // Busy keeps the changes for the next block; anything else consumed or invalidated them.

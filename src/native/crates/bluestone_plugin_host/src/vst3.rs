@@ -394,6 +394,24 @@ impl Vst3Instance {
         }
     }
 
+    /// The first audio input bus the plugin declares auxiliary (its sidechain). A second main bus is not one.
+    fn first_aux_input(&self, count: i32) -> Option<usize> {
+        (0..count).find_map(|index| {
+            // SAFETY: plain query.
+            unsafe {
+                let mut info: BusInfo = std::mem::zeroed();
+                (self.component.getBusInfo(
+                    MediaTypes_::kAudio as MediaType,
+                    BusDirections_::kInput as BusDirection,
+                    index,
+                    &mut info,
+                ) == kResultOk
+                    && info.busType == BusTypes_::kAux as BusType)
+                    .then_some(index as usize)
+            }
+        })
+    }
+
     fn arrangement(&self, direction: BusDirections, index: i32) -> SpeakerArrangement {
         let mut arrangement: SpeakerArrangement = 0;
         // SAFETY: plain query.
@@ -507,7 +525,8 @@ impl Vst3Instance {
             position,
             tempo,
             playing,
-            reserved: 0,
+            sidechain_channels: 0,
+            sidechain: std::ptr::null(),
         };
         self.process_locked(audio, &mut block);
         let produced = block.out_event_count as usize;
@@ -955,7 +974,8 @@ impl Instance for Vst3Instance {
             }
             self.processor.setProcessing(1);
             let mut adapter =
-                ChannelAdapter::new(max_frames as usize, inputs.clone(), outputs.clone());
+                ChannelAdapter::new(max_frames as usize, inputs.clone(), outputs.clone())
+                    .with_sidechain_bus(self.first_aux_input(audio_in));
             let mut input_buses = Vec::with_capacity(inputs.len());
             let mut offset = 0;
             for &count in &inputs {
@@ -1029,6 +1049,14 @@ impl Instance for Vst3Instance {
     fn latency(&self) -> u32 {
         // SAFETY: plain query.
         unsafe { self.processor.getLatencySamples() }
+    }
+
+    fn sidechain_channels(&self) -> u32 {
+        self.audio
+            .lock()
+            .ok()
+            .and_then(|a| a.as_ref().map(|a| a.adapter.sidechain_channels()))
+            .unwrap_or(0)
     }
 
     fn save_state(&self) -> Result<Vec<u8>, String> {

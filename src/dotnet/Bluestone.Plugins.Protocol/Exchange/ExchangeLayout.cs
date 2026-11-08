@@ -7,12 +7,13 @@ namespace Bluestone.Plugins.Protocol.Exchange;
 /// Header (128 bytes)
 ///   0 magic u64 | 8 layout version | 12 generation | 16 slot count | 20 max frames | 24 input channels
 ///  28 output channels | 32 event capacity | 36 parameter-change capacity | 40 event record bytes | 44 slot stride
-///  48 worker heartbeat i64 | 56 state flags (ExchangeState)
+///  48 worker heartbeat i64 | 56 state flags (ExchangeState) | 64 sidechain channels (0 in files without a sidechain)
 /// Slot (stride bytes, 64-aligned), repeated slot-count times from offset 128
 ///   0 state (SlotState) | 4 status (BlockStatus) | 8 block index i64 | 16 frames | 20 input events
 ///  24 parameter changes | 28 output events | 32 transport sample position i64 | 40 tempo f64 | 48 transport flags
 ///  52 input events dropped | 56 output events dropped
-///  64 input audio (planar float32, channel c at c * max frames) | input events | parameter changes (16 bytes each)
+///  64 input audio (planar float32, channel c at c * max frames; the sidechain's channels follow the input's) | input
+///     events | parameter changes (16 bytes each)
 ///     | output audio | output events
 /// </code>
 /// </summary>
@@ -36,6 +37,7 @@ public sealed class ExchangeLayout
     internal const int SlotStrideOffset = 44;
     internal const int HeartbeatOffset = 48;
     internal const int FlagsOffset = 56;
+    internal const int SidechainChannelsOffset = 64;
 
     internal const int SlotStateOffset = 0;
     internal const int SlotStatusOffset = 4;
@@ -61,7 +63,7 @@ public sealed class ExchangeLayout
 
         Options = options;
         InputAudioOffset = SlotHeaderBytes;
-        var inputAudioBytes = Align((long)options.InputChannels * options.MaxFrames * sizeof(float), 8);
+        var inputAudioBytes = Align((long)(options.InputChannels + options.SidechainChannels) * options.MaxFrames * sizeof(float), 8);
         InputEventsOffset = InputAudioOffset + inputAudioBytes;
         ParameterChangesOffset = InputEventsOffset + ((long)options.EventCapacity * PluginEvent.RecordBytes);
         OutputAudioOffset = ParameterChangesOffset + ((long)options.ParameterChangeCapacity * ParameterChangeBytes);

@@ -13,7 +13,8 @@ public sealed record ExchangeOptions
         int outputChannels,
         int slotCount = DefaultSlotCount,
         int eventCapacity = DefaultEventCapacity,
-        int parameterChangeCapacity = DefaultParameterChangeCapacity)
+        int parameterChangeCapacity = DefaultParameterChangeCapacity,
+        int sidechainChannels = 0)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxFrames, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(maxFrames, ProtocolLimits.MaxBlockFrames);
@@ -27,7 +28,10 @@ public sealed record ExchangeOptions
         ArgumentOutOfRangeException.ThrowIfGreaterThan(eventCapacity, ProtocolLimits.MaxEventCapacity);
         ArgumentOutOfRangeException.ThrowIfNegative(parameterChangeCapacity);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(parameterChangeCapacity, ProtocolLimits.MaxParameterChangeCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegative(sidechainChannels);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(sidechainChannels, ProtocolLimits.MaxChannels);
         MaxFrames = maxFrames;
+        SidechainChannels = sidechainChannels;
         InputChannels = inputChannels;
         OutputChannels = outputChannels;
         SlotCount = slotCount;
@@ -41,6 +45,12 @@ public sealed record ExchangeOptions
     public int InputChannels { get; }
 
     public int OutputChannels { get; }
+
+    /// <summary>
+    /// Channels of audio the host sends beside the main input for the plugin's sidechain (its first auxiliary input bus,
+    /// ADR 0037); 0 for none. In the slot they follow the main input's channels.
+    /// </summary>
+    public int SidechainChannels { get; }
 
     /// <summary>Blocks that can be in flight at once; at least 2, so the host can submit one while the worker processes another.</summary>
     public int SlotCount { get; }

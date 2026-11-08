@@ -351,7 +351,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// <summary>
     /// A device definition for a plugin: data only, never runnable in Bluestone's process. What it handles follows
     /// its kind: an instrument takes notes, controllers, and programs and makes audio; a MIDI effect takes notes
-    /// (everything else passes around it, as the host promises); an audio effect takes and makes audio.
+    /// (everything else passes around it, as the host promises); an audio effect takes and makes audio, and has a
+    /// sidechain input (ADR 0037), used when the plugin has an auxiliary input bus and ignored otherwise.
     /// </summary>
     public static DeviceDefinition DefinitionOf(PluginIdentity plugin, IEnumerable<WorkerParameter>? parameters = null)
     {
@@ -372,6 +373,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
             Consumes = consumes,
             Produces = produces,
             Handles = handles,
+            Inputs = plugin.Kind == PluginKind.AudioEffect ? [new DeviceInputPort(DeviceInputPort.Sidechain, "Sidechain", SignalKind.Audio)] : [],
             Parameters = [.. (parameters ?? []).Where(p => p.IsUserFacing).Select(p => new DeviceParameter(new ParameterId(p.Id), p.Name, 0, 1, p.DefaultValue, p.StepCount, p.Units))],
         };
     }
@@ -665,6 +667,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
             Hosting = hosting.ModeFor(plugin),
             RestartPolicy = hosting.RestartPolicy,
             ModulePath = _modulePaths.GetValueOrDefault(plugin),
+            SidechainChannels = plugin.Kind == PluginKind.AudioEffect ? 2 : 0,
             RestoreFrom = captured ?? (device.State is { } saved
                 ? new PluginStateSnapshot(plugin, new PluginStateData(saved.Format, [.. saved.Data.Span]), parameters, DateTimeOffset.UnixEpoch)
                 : null),

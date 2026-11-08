@@ -93,6 +93,78 @@ public sealed class LatencyCompensationTests
     }
 
     [Fact]
+    public void ASidechain_IsSummedApartFromTheInput_AndAlignedWithIt()
+    {
+        // Main input: an impulse straight in. Sidechain: an impulse through 40 frames and one straight in, summed.
+        var builder = new AudioGraphBuilder();
+        var dry = builder.AddNode(new ImpulseNode());
+        var keyed = Path(builder, latency: 40);
+        var direct = builder.AddNode(new ImpulseNode());
+        var key = new KeyNode();
+        var node = builder.AddNode(key);
+        builder.Connect(dry, node);
+        builder.ConnectSidechain(keyed, node);
+        builder.ConnectSidechain(direct, node);
+        builder.ConnectToMaster(node);
+        var graph = builder.Build(Block, new MixerStripState());
+
+        var left = Left(Render(graph, 256));
+
+        // The node puts out its sidechain: both impulses at the graph's latency, and its input arrived there too.
+        Assert.Equal(40, graph.LatencyFrames);
+        Assert.Equal([40], Impulses(left));
+        Assert.Equal(2f, left[40]);
+        Assert.Equal(40, key.InputImpulse);
+    }
+
+    [Fact]
+    public void AMonitoredKey_DoesNotTakeTheEffectItKeys_OutOfCompensation()
+    {
+        // The effect's main input comes through 40 frames, its key from a monitored (live-played) path; another path takes 100.
+        var builder = new AudioGraphBuilder();
+        var main = Path(builder, latency: 40);
+        var keySource = Path(builder, latency: 70);
+        builder.Monitor(keySource);
+        var key = new KeyNode();
+        var effect = builder.AddNode(key);
+        builder.Connect(main, effect);
+        builder.ConnectSidechain(keySource, effect);
+        builder.ConnectToMaster(effect);
+        builder.ConnectToMaster(Path(builder, latency: 100));
+        var graph = builder.Build(Block, new MixerStripState());
+
+        Render(graph, 512);
+
+        // The effect stays compensated: its output is delayed to meet the 100-frame path at the master.
+        Assert.Equal(100, graph.LatencyFrames);
+        Assert.Equal(60, graph.DelayToMasterOf(key));
+        Assert.Equal(40, key.InputImpulse);
+    }
+
+    [Fact]
+    public void AMonitoredInstrumentHeardDirectly_IsNotDelayedByTheEffectItKeys()
+    {
+        // A live-played instrument goes straight to the master and also keys an effect on a 100-frame path; another takes 150.
+        var builder = new AudioGraphBuilder();
+        var instrument = new LatentNode(70);
+        var source = builder.AddNode(new ImpulseNode());
+        var played = builder.AddNode(instrument);
+        builder.Connect(source, played);
+        builder.Monitor(played);
+        builder.ConnectToMaster(played);
+        var effect = builder.AddNode(new KeyNode());
+        builder.Connect(Path(builder, latency: 100), effect);
+        builder.ConnectSidechain(played, effect);
+        builder.ConnectToMaster(effect);
+        builder.ConnectToMaster(Path(builder, latency: 150));
+        var graph = builder.Build(Block, new MixerStripState());
+
+        // The effect waits 50 frames for the 150-frame path; the instrument, heard directly, does not.
+        Assert.Equal(150, graph.LatencyFrames);
+        Assert.Equal(0, graph.DelayToMasterOf(instrument));
+    }
+
+    [Fact]
     public void ALatencyChange_MakesTheGraphStale_AndARebuildAlignsAtTheNewLatency()
     {
         var compensation = new LatencyCompensation();
@@ -362,6 +434,32 @@ public sealed class LatencyCompensationTests
                 output.Right[i] = value;
                 _written++;
             }
+        }
+    }
+
+    /// <summary>Puts out its sidechain, and remembers where its first input impulse came.</summary>
+    private sealed class KeyNode : AudioNode
+    {
+        private long _position;
+
+        public long InputImpulse { get; private set; } = -1;
+
+        public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer output) => throw new InvalidOperationException("A sidechain was expected.");
+
+        public override void Render(in AudioRenderContext context, StereoBuffer input, StereoBuffer sidechain, StereoBuffer output)
+        {
+            for (var i = 0; i < context.Frames; i++)
+            {
+                if (InputImpulse < 0 && input.Left[i] != 0)
+                {
+                    InputImpulse = _position + i;
+                }
+
+                output.Left[i] = sidechain.Left[i];
+                output.Right[i] = sidechain.Right[i];
+            }
+
+            _position += context.Frames;
         }
     }
 
