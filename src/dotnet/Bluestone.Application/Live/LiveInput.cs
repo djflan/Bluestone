@@ -65,7 +65,8 @@ public sealed class LiveInput : IDisposable
     // Every way each track's live input is heard (LiveRoutePlan.FindAll), nearest first; never empty.
     private readonly Dictionary<TrackId, LiveRunner[]> _runners = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
-    // Held keys have their own lock: the UI reads them every frame, and must never wait behind route processing (_gate).
+    // Held keys change under _gate (then _heldGate, always in that order) and are read under _heldGate alone: the UI reads
+    // them every frame and must never wait behind route processing.
     private readonly Dictionary<TrackId, HashSet<int>> _held = [];
     private readonly Lock _heldGate = new();
     private readonly AutoResetEvent _wake = new(false);
@@ -211,11 +212,12 @@ public sealed class LiveInput : IDisposable
 
         var software = false;
         var played = false;
-        // Held keys count what arrives, whether or not the route can play it (callers always send the release).
-        Release(track, message);
-        Press(track, message);
         lock (_gate)
         {
+            // Held keys count what arrives, whether or not the route can play it (callers always send the release). They
+            // change under _gate, in order with panic and the routes; the UI reads them under _heldGate alone.
+            Release(track, message);
+            Press(track, message);
             foreach (var runner in RunnersFor(track) ?? [])
             {
                 if (!runner.CanPlay || (source is not null && runner.ExternalEndpoint is { } endpoint && IsFeedback(source, endpoint)))
@@ -300,13 +302,13 @@ public sealed class LiveInput : IDisposable
     /// <summary>Ends every live note now (panic): routes start again from nothing.</summary>
     public void ReleaseAll()
     {
-        lock (_heldGate)
-        {
-            _held.Clear();
-        }
-
         lock (_gate)
         {
+            lock (_heldGate)
+            {
+                _held.Clear();
+            }
+
             foreach (var track in _runners.Keys.ToList())
             {
                 Replace(track, [.. _runners[track].Select(r => Create(r.Plan))]);
@@ -314,7 +316,7 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    // A key is channel × 128 + note. Takes _heldGate only.
+    // A key is channel × 128 + note. Under _gate; takes _heldGate.
     private void Press(TrackId track, ChannelMessage message)
     {
         if ((message.Status & 0xF0) != 0x90 || message.Data2 == 0)
@@ -333,7 +335,7 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    // A note-off, a note-on with velocity 0, or All Sound Off / All Notes Off (CC 120 / 123) for its channel. Takes _heldGate only.
+    // A note-off, a note-on with velocity 0, or All Sound Off / All Notes Off (CC 120 / 123) for its channel. Under _gate; takes _heldGate.
     private void Release(TrackId track, ChannelMessage message)
     {
         lock (_heldGate)
@@ -449,10 +451,10 @@ public sealed class LiveInput : IDisposable
 
     // A track's live routes, leaving out any that would drive a plugin note effect another track's live route already runs
     // (two tracks into one rack): one instance, one route. The track whose routes were made first keeps it. Under _gate.
-    private ImmutableArray<LiveRoutePlan> PlansFor(Project project, TrackId track)
+    private ImmutableArray<LiveRoutePlan> PlansFor(Project project, TrackId track, HashSet<DeviceId>? claimed = null)
     {
         var plans = LiveRoutePlan.FindAll(project, track, _devices, _endpoints);
-        var elsewhere = _runners.Where(r => r.Key != track).SelectMany(r => r.Value).SelectMany(r => r.Plan.PluginStages).ToHashSet();
+        var elsewhere = claimed ?? _runners.Where(r => r.Key != track).SelectMany(r => r.Value).SelectMany(r => r.Plan.PluginStages).ToHashSet();
         if (elsewhere.Count == 0)
         {
             return plans;
@@ -499,10 +501,15 @@ public sealed class LiveInput : IDisposable
             _runners.Remove(track);
         }
 
+        // Plugin effects are claimed afresh in this pass, in the order the tracks' routes were first made, so an effect a
+        // track no longer reaches is free for the next one at once.
+        var claimed = new HashSet<DeviceId>();
         foreach (var track in _runners.Keys.ToList())
         {
             var current = _runners[track];
-            LiveRunner[] fresh = [.. PlansFor(project, track).Select(Create)];
+            var plans = PlansFor(project, track, claimed);
+            claimed.UnionWith(plans.SelectMany(p => p.PluginStages));
+            LiveRunner[] fresh = [.. plans.Select(Create)];
 
             // A route that is the same as before (same stages, same binding) keeps its runner, with the notes it holds: only
             // what changed is replaced.

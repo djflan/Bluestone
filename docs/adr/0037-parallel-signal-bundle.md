@@ -84,7 +84,10 @@ conversion point.
   arpeggiator in front of two instruments runs twice, in step. A plugin MIDI effect is one running instance, so only
   the first route through it is played live; later routes that would share it are left out of live input (playback
   still plays them). A track or rack reached along two routes is followed along the first only, so a second route with
-  different stages in front of it (a dry and a transposed path into one rack) is not played live.
+  different stages in front of it (a dry and a transposed path into one rack) is not played live. When a track's live routes
+  change while notes are held, the old route is released before the new one starts, and its plugin note effects stay
+  loaded for 250 ms so the releases reach them; a stateful effect shared by both generations can, rarely, see the new
+  route's first block before the old route's last release.
 - Plugins that put out MIDI are still not routed on (ADR 0033); a future note-producing instrument would add its
   output to the bundle as a note effect does.
 - Per-note expression, audio-rate modulation, and multichannel (beyond mono and stereo) buses are not implemented,

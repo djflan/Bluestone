@@ -315,6 +315,16 @@ internal sealed class MidiEngine : IDisposable
         lock (_routes)
         {
             var now = _clock.Now;
+            // A retired route's grace is over: its plugin effects are let go now, not at the next routing edit.
+            for (var i = 0; i < _retiredRoutes.Count; i++)
+            {
+                if (_retiredRoutes[i].Until <= now)
+                {
+                    UseRoutePlugins();
+                    break;
+                }
+            }
+
             var tempo = Tempo();
             var stopped = StoppedTempo();
             foreach (var route in _routeById.Values)

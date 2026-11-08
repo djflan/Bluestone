@@ -405,6 +405,19 @@ public sealed class SignalRoutingValidatorTests
     }
 
     [Fact]
+    public void DeviceInput_OfADeviceWhoseTrackIsGone_IsRefused()
+    {
+        var drums = NoteTrack("Drums", TrackRole.Hybrid);
+        var bass = NoteTrack("Bass");
+        var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(bass, TestDevices.Synth, TestDevices.Ducker);
+        var ducker = project.ChainOf(bass.Id)!.Devices[1];
+        project = project with { Sequence = project.Sequence.WithoutTrack(bass.Id) };
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
+
+        Assert.Equal(RoutingIssueCode.UnknownDestination, Assert.Single(project.Errors()).Code);
+    }
+
+    [Fact]
     public void DeviceInput_RefusesAPortIdLongerThanAProjectFileKeeps()
     {
         Assert.Equal(DeviceInputPort.MaxIdLength, SignalNode.DeviceInput(DeviceId.New(), new string('p', DeviceInputPort.MaxIdLength)).Port!.Length);
