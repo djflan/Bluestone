@@ -63,7 +63,8 @@ public sealed class LiveInput : IDisposable
     private readonly Lock _gate = new();
     private readonly Dictionary<TrackId, LiveRunner> _runners = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
-    // Held keys have their own lock: the UI reads them every frame, and must never wait behind route processing (_gate).
+    // Held keys change under _gate (then _heldGate, always in that order) and are read under _heldGate alone: the UI reads
+    // them every frame and must never wait behind route processing.
     private readonly Dictionary<TrackId, HashSet<int>> _held = [];
     private readonly Lock _heldGate = new();
     private readonly AutoResetEvent _wake = new(false);
@@ -195,11 +196,12 @@ public sealed class LiveInput : IDisposable
         }
 
         bool software;
-        // Held keys count what arrives, whether or not the route can play it (callers always send the release).
-        Release(track, message);
-        Press(track, message);
         lock (_gate)
         {
+            // Held keys count what arrives, whether or not the route can play it (callers always send the release). They
+            // change under _gate, in order with panic and the routes; the UI reads them under _heldGate alone.
+            Release(track, message);
+            Press(track, message);
             if (RunnerFor(track) is not { CanPlay: true } runner
                 || (source is not null && runner.ExternalEndpoint is { } endpoint && IsFeedback(source, endpoint)))
             {
@@ -270,13 +272,13 @@ public sealed class LiveInput : IDisposable
     /// <summary>Ends every live note now (panic): routes start again from nothing.</summary>
     public void ReleaseAll()
     {
-        lock (_heldGate)
-        {
-            _held.Clear();
-        }
-
         lock (_gate)
         {
+            lock (_heldGate)
+            {
+                _held.Clear();
+            }
+
             foreach (var track in _runners.Keys.ToList())
             {
                 Replace(track, Create(_runners[track].Plan));
@@ -284,7 +286,7 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    // A key is channel × 128 + note. Takes _heldGate only.
+    // A key is channel × 128 + note. Under _gate; takes _heldGate.
     private void Press(TrackId track, ChannelMessage message)
     {
         if ((message.Status & 0xF0) != 0x90 || message.Data2 == 0)
@@ -303,7 +305,7 @@ public sealed class LiveInput : IDisposable
         }
     }
 
-    // A note-off, a note-on with velocity 0, or All Sound Off / All Notes Off (CC 120 / 123) for its channel. Takes _heldGate only.
+    // A note-off, a note-on with velocity 0, or All Sound Off / All Notes Off (CC 120 / 123) for its channel. Under _gate; takes _heldGate.
     private void Release(TrackId track, ChannelMessage message)
     {
         lock (_heldGate)
