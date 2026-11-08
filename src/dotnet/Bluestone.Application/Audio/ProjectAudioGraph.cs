@@ -444,31 +444,35 @@ public sealed class ProjectAudioGraph : IDisposable
             }
 
             received = [.. received.Distinct()];
-            var gain = BuiltInDevices.ReceiverGainOf(device);
-            if (received.Count > 0 && Math.Abs(gain) > 1e-9)
+            // One gain node per source, never one summing them, at every gain (0 dB too, so taking a node the chain already
+            // has is still a second path): a monitored source (a live-played instrument) passes undelayed through its own
+            // node, and every other source keeps its delay compensation through its own. A node's key follows its source,
+            // so removing one source leaves the others' nodes and delay lines as they were.
+            var level = (float)Math.Pow(10, BuiltInDevices.ReceiverGainOf(device) / 20);
+            for (var i = 0; i < received.Count; i++)
             {
-                // One gain node per source, never one summing them: a monitored source (a live-played instrument) passes
-                // undelayed through its own node, and every other source keeps its delay compensation through its own.
-                var level = (float)Math.Pow(10, gain / 20);
-                for (var i = 0; i < received.Count; i++)
-                {
-                    var node = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, GainKey(device.Id.Value, i), device.DisplayName) { Gain = level });
-                    _builder.Connect(received[i], node);
-                    received[i] = node;
-                }
+                var node = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, GainKey(device.Id.Value, _builder.KeyOf(received[i])), device.DisplayName) { Gain = level });
+                _builder.Connect(received[i], node);
+                received[i] = node;
             }
 
             return BuiltInDevices.ReplacesOf(device) ? received : [.. audio, .. received];
         }
 
-        // A stable key for a receiver's gain node on its i-th source, so the node keeps its state between builds.
-        private static Guid GainKey(Guid device, int index)
+        // A stable key for a receiver's gain node on one source: the receiver's and the source node's keys combined, so the
+        // node keeps its state between builds whatever other sources come and go.
+        private static Guid GainKey(Guid device, Guid source)
         {
-            Span<byte> bytes = stackalloc byte[16];
-            device.TryWriteBytes(bytes);
-            bytes[15] ^= (byte)(index + 1);
-            bytes[14] ^= (byte)((index + 1) >> 8);
-            return new Guid(bytes);
+            Span<byte> a = stackalloc byte[16];
+            Span<byte> b = stackalloc byte[16];
+            device.TryWriteBytes(a);
+            source.TryWriteBytes(b);
+            for (var i = 0; i < 16; i++)
+            {
+                a[i] ^= b[(i + 7) % 16];
+            }
+
+            return new Guid(a);
         }
 
         // A track's own audio: its clips, when it plays, and audio connected into it.

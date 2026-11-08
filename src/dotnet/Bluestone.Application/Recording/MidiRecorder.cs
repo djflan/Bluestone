@@ -306,6 +306,34 @@ public sealed class MidiRecorder : IDisposable
             return track is { } releasing && _live.Post(releasing, message, timestamp, source);
         }
 
+        if (message.Kind == ChannelMessageKind.ControlChange && message.Data1 is 120 or 123)
+        {
+            // All Sound Off and All Notes Off release the channel's notes wherever they went, as each note-off would.
+            List<TrackId> releasing;
+            lock (_gate)
+            {
+                var held = _thruHeld.Keys.Where(k => k.Item1 == inputKey && k.Item2 == message.Channel.Index).ToList();
+                releasing = [.. held.Select(k => _thruHeld[k]).Distinct()];
+                foreach (var k in held)
+                {
+                    _thruHeld.Remove(k);
+                }
+
+                if (_thru is { } current && !releasing.Contains(current))
+                {
+                    releasing.Add(current);
+                }
+            }
+
+            var any = false;
+            foreach (var target in releasing)
+            {
+                any |= _live.Post(target, message, timestamp, source);
+            }
+
+            return any;
+        }
+
         lock (_gate)
         {
             track = _thru;
