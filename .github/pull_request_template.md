@@ -5,6 +5,11 @@
 
 <!-- What does this change and why? Link related issues, e.g. "Fixes #123". -->
 
+## Release notes
+
+<!-- Optional: describe user-facing changes, upgrade/breaking changes, and remaining limitations.
+     The release workflow prefers this section over Summary. Leave it empty for internal-only changes. -->
+
 ## Verification
 
 <!-- How was this tested? State which hardware behavior was physically verified and which was simulated. -->

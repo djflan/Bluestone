@@ -170,9 +170,76 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  notes:
+    name: Generate release notes
+    needs: tag
+    if: needs.tag.outputs.release == 'release' || needs.tag.outputs.release == 'prerelease'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      copilot-requests: write
+    outputs:
+      existing: ${{ steps.prepare.outputs.existing }}
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # Helpers belong to the workflow revision, even when rebuilding an older release tag.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Test release notes helpers
+        run: python3 .github/scripts/release-notes.test.py
+
+      - name: Collect the complete release history
+        id: prepare
+        run: |
+          echo "NOTES_DIR=$RUNNER_TEMP/release-notes" >> "$GITHUB_ENV"
+          python3 .github/scripts/release-notes.py prepare "$TAG" --directory "$RUNNER_TEMP/release-notes"
+
+      - name: Set up Node for Copilot
+        id: node
+        if: steps.prepare.outputs.summarize == 'true' && vars.RELEASE_NOTES_AI != 'false'
+        continue-on-error: true
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Write the release narrative with Copilot
+        id: copilot
+        if: steps.node.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          npm install --global @github/copilot
+          copilot -s --no-ask-user --model auto --disable-builtin-mcps \
+            --deny-tool shell --deny-tool write --deny-tool url \
+            < "$NOTES_DIR/prompt.txt" > "$NOTES_DIR/summary.json"
+
+      - name: Assemble and validate the notes
+        if: steps.prepare.outputs.existing == 'false'
+        run: python3 .github/scripts/release-notes.py compose --directory "$NOTES_DIR"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.prepare.outputs.existing == 'false'
+        with:
+          name: release-notes-${{ needs.tag.outputs.tag }}
+          path: ${{ runner.temp }}/release-notes/release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Publish the release
-    needs: [tag, build]
+    needs: [tag, build, notes]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -181,6 +248,7 @@ jobs:
       KIND: ${{ needs.tag.outputs.release }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      EXISTING: ${{ needs.notes.outputs.existing }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -188,11 +256,17 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - uses: actions/download-artifact@v8
+        if: needs.notes.outputs.existing == 'false'
+        with:
+          name: release-notes-${{ needs.tag.outputs.tag }}
+          path: notes
+
       - name: Create or update the release
         run: |
           set -euo pipefail
           ls -l dist
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if [[ "$EXISTING" == "true" ]]; then
             gh release upload "$TAG" dist/* --clobber
             if [[ "$KIND" == "prerelease" ]]; then
               gh release edit "$TAG" --prerelease=true
@@ -200,11 +274,14 @@ jobs:
               gh release edit "$TAG" --prerelease=false
             fi
             echo "Updated release **$TAG** ($KIND) with new files." >> "$GITHUB_STEP_SUMMARY"
-          else
-            flags=(--title "Bluestone $TAG" --generate-notes --verify-tag)
+          elif [[ "$EXISTING" == "false" ]]; then
+            flags=(--title "Bluestone $TAG" --notes-file notes/release-notes.md --verify-tag)
             if [[ "$KIND" == "prerelease" ]]; then
               flags+=(--prerelease)
             fi
             gh release create "$TAG" "${flags[@]}" dist/*
             echo "Published **$TAG** ($KIND)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Release notes did not establish whether $TAG already exists."
+            exit 1
           fi
