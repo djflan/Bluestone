@@ -75,7 +75,10 @@ conversion point.
   each target with the stages in front of it; a plugin instrument is played once. `LiveInput` keeps one runner per
   target, and the engine plays thru on every route of the track. Every plugin instrument the monitored track plays is
   monitored and live-played (ADR 0043 decision 6). Each target runs its own copy of the stages before it, so an
-  arpeggiator in front of two instruments runs twice, in step.
+  arpeggiator in front of two instruments runs twice, in step. A plugin MIDI effect is one running instance, so only
+  the first route through it is played live; later routes that would share it are left out of live input (playback
+  still plays them). A track or rack reached along two routes is followed along the first only, so a second route with
+  different stages in front of it (a dry and a transposed path into one rack) is not played live.
 - Plugins that put out MIDI are still not routed on (ADR 0033); a future note-producing instrument would add its
   output to the bundle as a note effect does.
 - Per-note expression, audio-rate modulation, and multichannel (beyond mono and stereo) buses are not implemented,
