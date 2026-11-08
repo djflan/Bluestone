@@ -116,11 +116,12 @@ public static class DeviceCommands
             bool Keeps(SignalConnection c) =>
                 (c.Source != tap || produces.Includes(c.Kind))
                 && (!IsAt(c.Destination, device) || definition?.FindInput(c.Destination.Port) is { } port && port.Kind == c.Kind);
-            var connections = p.Connections
+            // Parked routes (a grouped track's own outputs) follow too, so leaving the group puts them back on the replacement.
+            IEnumerable<SignalConnection> Retarget(IEnumerable<SignalConnection> connections) => connections
                 .Where(Keeps)
                 .Select(c => c.Source == tap ? c with { Source = SignalNode.Device(replacement.Id) } : c)
                 .Select(c => IsAt(c.Destination, device) ? c with { Destination = SignalNode.DeviceInput(replacement.Id, c.Destination.Port!) } : c);
-            var project = p.WithChain(chain) with { Connections = [.. connections] };
+            var project = p.WithChain(chain) with { Connections = [.. Retarget(p.Connections)], ParkedConnections = [.. Retarget(p.ParkedConnections)] };
             if (replacement.Definition.Id == found.Device.Definition.Id)
             {
                 project = project with { Sequence = RetargetLanes(project.Sequence, device, replacement.Id) };
