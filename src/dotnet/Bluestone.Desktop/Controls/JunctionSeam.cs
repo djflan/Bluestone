@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
+using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -119,7 +121,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private JunctionSignal? _subscribed;
     private double _glow;
     private long _lastFrame;
-    private (double PeakL, double PeakR, double RmsL, double RmsR, double HoldL, double HoldR, double Glow) _drawn = (-1, -1, -1, -1, -1, -1, -1);
+    private (bool Active, double PeakL, double PeakR, double RmsL, double RmsR, double HoldL, double HoldR, double Glow) _drawn = (false, -1, -1, -1, -1, -1, -1, -1);
     private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
     private SolidColorBrush? _lampBrush;
     private RadialGradientBrush? _haloBrush;
@@ -354,6 +356,8 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     }
 
     public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new SeamPeer(this);
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -605,7 +609,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         }
 
         var levels = signal.Levels;
-        _drawn = (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow);
+        _drawn = (levels.IsActive, levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow);
     }
 
     // The level's frame: its bars' top and bottom, and the left edge of the left bar. The level and a lamp coupled with it
@@ -795,7 +799,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         var release = Math.Max(LampRelease.TotalSeconds, 0.001);
         _glow = signal.NotesHeld ? 1 : Math.Max(0, _glow - (elapsed / release));
         var levels = signal.Levels;
-        if (_drawn != (levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow))
+        if (_drawn != (levels.IsActive, levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow))
         {
             InvalidateVisual();
         }
@@ -825,4 +829,21 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     }
 
     private void UpdateName() => AutomationProperties.SetName(this, Signal?.Label ?? "Signal");
+
+    // For screen readers: a button named after the junction ("After Arpeggiator"), whose help text says what is there now,
+    // and whose invoke aims the Browser at its gap, as Enter and the + do.
+    private sealed class SeamPeer(JunctionSeam owner) : ControlAutomationPeer(owner), IInvokeProvider
+    {
+        public void Invoke() => owner.Run(owner.InsertCommand);
+
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Button;
+
+        protected override string? GetNameCore() => owner.Signal?.Label ?? base.GetNameCore();
+
+        protected override string? GetHelpTextCore() => owner.Describe();
+
+        protected override bool IsContentElementCore() => true;
+
+        protected override bool IsControlElementCore() => true;
+    }
 }

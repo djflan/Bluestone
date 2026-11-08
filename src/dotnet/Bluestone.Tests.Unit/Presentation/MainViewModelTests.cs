@@ -813,6 +813,44 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AReceiverFedBySeveralConnections_SaysSo_AndNamesThemAll()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        AddDevice("Note Receiver");
+        await Settle();
+        var receiver = strip.Devices[1].Receiver!;
+        receiver.Picker.Open();
+        receiver.Picker.ChooseCommand.Execute(receiver.Picker.Rows.Single(r => r.Owner == "Strings" && r.Name == "Output"));
+        await Settle();
+
+        // A second connection into it, as the Connections inspector can make.
+        var inlet = SignalNode.DeviceInput(strip.Devices[1].Id, Bluestone.Domain.Devices.DeviceInputPort.Receive);
+        _session.Execute(Bluestone.Application.Editing.RoutingCommands.Connect(SignalConnection.Create(Bluestone.Domain.Devices.SignalKind.Events, SignalNode.ChainInput(_session.Project.ChainOf(_vm.Tracks[0].Id)!.Id), inlet), Bluestone.Signal.DeviceCatalog.BuiltIn.Lookup));
+        await Settle();
+
+        receiver = strip.Devices[1].Receiver!;
+        Assert.Equal("2 sources", receiver.SourceText);
+        Assert.Contains("Strings, output", receiver.SourceDetail, StringComparison.Ordinal);
+        Assert.Contains("Piano, input", receiver.SourceDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AJunctionShownForAnotherPoint_StartsItsLevelFromNothing()
+    {
+        var junction = new JunctionSignal { Key = Guid.NewGuid(), CanCarryAudio = true };
+        junction.Update(false, new Bluestone.Audio.MeterReading(0.9f, 0.9f, 0.5f, 0.5f), System.Diagnostics.Stopwatch.GetTimestamp());
+        Assert.True(junction.Levels.HoldLeft > MeterLevels.FloorDecibels);
+
+        junction.Key = Guid.NewGuid();
+
+        Assert.Equal(MeterLevels.FloorDecibels, junction.Levels.HoldLeft);
+        Assert.Equal(MeterLevels.FloorDecibels, junction.Levels.PeakLeft);
+        Assert.False(junction.Levels.IsActive);
+    }
+
+    [Fact]
     public async Task ReorderingTwoReceivers_GivesEachPanelAPickerForItsOwnDevice()
     {
         await TwoTracksAsync();

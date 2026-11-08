@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using Bluestone.Application.Editing;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Projects;
@@ -181,13 +182,24 @@ public sealed partial class DeviceInputViewModel : ObservableObject
     {
         _device = device;
         Device = device;
-        var source = project.ConnectionsTo(Destination).Select(c => c.Source).FirstOrDefault();
-        HasSource = source != default;
+        var sources = project.ConnectionsTo(Destination).Select(c => c.Source).Distinct().ToList();
+        var source = sources.FirstOrDefault();
+        HasSource = sources.Count > 0;
         Picker.CanClear = HasSource;
         if (!HasSource)
         {
             SourceText = IsSidechain ? "No key" : "Choose a source";
             SourceDetail = IsSidechain ? "Nothing feeds this plugin's sidechain. Choose where its key signal comes from." : "Nothing feeds this receiver yet. Choose where its signal comes from.";
+            SourceAccent = -1;
+            return;
+        }
+
+        if (sources.Count > 1)
+        {
+            // Several connections feed it (made in the Connections inspector); all of them are heard.
+            var all = sources.Select(s => Describe(project, s)).Select(d => $"{d.Owner}, {d.Point.ToLowerInvariant()}");
+            SourceText = string.Create(CultureInfo.InvariantCulture, $"{sources.Count} sources");
+            SourceDetail = (IsSidechain ? "Keyed by " : "Receives from ") + string.Join("; ", all);
             SourceAccent = -1;
             return;
         }

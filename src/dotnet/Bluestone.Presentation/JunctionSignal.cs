@@ -11,8 +11,22 @@ namespace Bluestone.Presentation;
 /// </summary>
 public sealed partial class JunctionSignal : ObservableObject
 {
-    /// <summary>The junction's key: the chain's ID for its input, the device's ID for the point after it.</summary>
-    public Guid Key { get; internal set; }
+    /// <summary>
+    /// The junction's key: the chain's ID for its input (the track's, for a track with no devices yet), the device's ID for
+    /// the point after it. A junction shown for another point starts its level from nothing, not from the old one's hold.
+    /// </summary>
+    public Guid Key
+    {
+        get;
+        internal set
+        {
+            if (field != value)
+            {
+                field = value;
+                Levels.Reset();
+            }
+        }
+    }
 
     /// <summary>Where it is, in words: "Into the chain", or "After Polysynth".</summary>
     [ObservableProperty]

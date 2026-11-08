@@ -354,9 +354,10 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         }
         else if (Track is { } bare)
         {
-            // A track with no devices yet has no stored chain: its one junction is what the track starts with. It has no
-            // meter key, so it shows no level, and nothing from the track shown before is left on it.
-            Junction(Input, Guid.Empty, SignalFlow.StartOf(project, ChainOwner.ForTrack(bare)), "Into the chain");
+            // A track with no devices yet has no stored chain: its one junction is what the track starts with, keyed by the
+            // track (the signal graph records its notes there). Nothing meters it, so it shows no level, and nothing from
+            // the track shown before is left on it.
+            Junction(Input, bare.Value, SignalFlow.StartOf(project, ChainOwner.ForTrack(bare)), "Into the chain");
             Input.Update(false, null, 0);
         }
 

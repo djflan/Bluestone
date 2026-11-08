@@ -443,6 +443,23 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task ASeam_IsAButtonToScreenReaders_NamedForItsPlace_AndInvokingItAimsTheBrowserThere() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[0].Output);
+
+        var peer = Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(seam);
+
+        Assert.Equal(Avalonia.Automation.Peers.AutomationControlType.Button, peer.GetAutomationControlType());
+        Assert.Equal("After Transpose", peer.GetName());
+        Assert.Contains("After Transpose", peer.GetHelpText(), StringComparison.Ordinal);
+        Assert.IsAssignableFrom<Avalonia.Automation.Provider.IInvokeProvider>(peer).Invoke();
+        app.Settle();
+        Assert.Equal(1, view.InsertionGap);
+    });
+
+    [Fact]
     public Task TheCodePalette_MatchesTheDesignTokens() => HeadlessApp.RunAsync(() =>
     {
         var tokens = (ResourceDictionary)Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(new Uri("avares://Bluestone.Desktop/Theme/Tokens.axaml"));

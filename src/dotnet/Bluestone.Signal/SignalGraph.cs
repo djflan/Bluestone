@@ -387,6 +387,11 @@ public static class SignalGraph
                 _diagnostics.AddRange(runner.TakeReports().Select(r => r with { Track = track?.Id }));
                 output = result.Events;
             }
+            else if (track is not null)
+            {
+                // A track with no devices has no stored chain; its one junction is keyed by the track.
+                Record(track.Id.Value, ordered);
+            }
 
             var sent = false;
             // A connection into a device of this same chain was taken in while it ran.
