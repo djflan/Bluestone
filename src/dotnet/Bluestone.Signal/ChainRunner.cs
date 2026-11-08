@@ -72,6 +72,7 @@ public sealed class ChainRunner
     private readonly SignalBuffer _produced = new();
     private readonly SignalBuffer _around = new();
     private readonly SignalBuffer _received = new();
+    private readonly SignalBuffer _inBlock = new();
     private readonly List<SignalDiagnostic> _outOfProcessReports = [];
     private readonly TempoMap _tempo;
     private readonly Ppqn _ppqn;
@@ -192,16 +193,32 @@ public sealed class ChainRunner
                 else
                 {
                     RunProcessor(stage, block, changes);
+                    if (!SignalOrder.IsOrdered(_produced.Events))
+                    {
+                        SignalOrder.StableSort(_produced.Writable);
+                    }
+
                     if (stage.Receives && observer is IChainReceiver receiver)
                     {
+                        // What the connections deliver, one ordered run each, merged with the device's own output (which
+                        // goes first on equal keys) rather than appended and sorted, which would be quadratic.
                         _received.Clear();
                         receiver.Receive(stage.Device.Id, _received);
+                        _inBlock.Clear();
                         foreach (var e in _received.Events)
                         {
                             if (block.Contains(e.Event.Position))
                             {
-                                _produced.Add(e);
+                                _inBlock.Add(e);
                             }
+                        }
+
+                        if (_inBlock.Count > 0)
+                        {
+                            SignalOrder.MergeRuns(_inBlock.Events, _received, _next);
+                            _next.Clear();
+                            SignalOrder.Merge(_produced.Events, _received.Events, _next);
+                            SignalBuffer.Swap(_produced, _next);
                         }
                     }
                 }

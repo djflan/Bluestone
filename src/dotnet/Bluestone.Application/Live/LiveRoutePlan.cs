@@ -148,6 +148,11 @@ public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage>
         return plans.Count > 0 ? [.. OnePerPluginStage(plans)] : [new LiveRoutePlan(track, [], LiveTargetKind.None, null, null)];
     }
 
+    /// <summary>The plugin MIDI effects the route runs: each is one running instance, which only one route may drive.</summary>
+    internal IEnumerable<DeviceId> PluginStages => Stages
+        .Where(s => s.Device is { } d && d.Definition.Id.Value.StartsWith(PluginDeviceHost.DefinitionPrefix, StringComparison.Ordinal))
+        .Select(s => s.Device!.Id);
+
     // A plugin MIDI effect is one running instance: only the first route through it runs it live. Later routes that would
     // share it are left out (a built-in effect is copied per route instead, so it never limits fan-out).
     private static IEnumerable<LiveRoutePlan> OnePerPluginStage(IEnumerable<LiveRoutePlan> plans)
@@ -155,10 +160,7 @@ public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage>
         var claimed = new HashSet<DeviceId>();
         foreach (var plan in plans)
         {
-            var plugins = plan.Stages
-                .Where(s => s.Device is { } d && d.Definition.Id.Value.StartsWith(PluginDeviceHost.DefinitionPrefix, StringComparison.Ordinal))
-                .Select(s => s.Device!.Id)
-                .ToList();
+            var plugins = plan.PluginStages.ToList();
             if (plugins.Any(claimed.Contains))
             {
                 continue;

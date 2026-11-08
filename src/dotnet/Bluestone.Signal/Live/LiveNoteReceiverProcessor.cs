@@ -13,6 +13,7 @@ public sealed class LiveNoteReceiverProcessor : ILiveProcessor
 {
     private const int Sustain = 64;
     private const int Sostenuto = 66;
+    private const int ResetAllControllers = 121;
     private readonly bool[] _passed = new bool[LiveEvent.NoteSlots];
     private readonly bool[] _sustainDown = new bool[16];
     private readonly bool[] _sostenutoDown = new bool[16];
@@ -41,6 +42,12 @@ public sealed class LiveNoteReceiverProcessor : ILiveProcessor
             {
                 _passed[e.NoteSlot] = false;
                 passes = true;
+            }
+            else if (e.Kind == LiveEventKind.ControlChange && e.Data1 == ResetAllControllers)
+            {
+                // Reset All Controllers lifts the pedals too: it gets through for a channel with a pedal it let down.
+                passes |= _sustainDown[e.Channel] || _sostenutoDown[e.Channel];
+                _sustainDown[e.Channel] = _sostenutoDown[e.Channel] = false;
             }
             else if (e.Kind == LiveEventKind.ControlChange && e.Data1 is Sustain or Sostenuto)
             {
