@@ -44,7 +44,9 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   Every junction is a routing source (ADR 0023), and a device can declare input ports that bring signal from elsewhere
   into the chain at that device (receivers, sidechains). Each junction's audio can be metered (ADR 0032): a chain's
   input by the chain's ID, the rest by the device before it, measured only while a view watches it
-  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown.
+  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. A meter point sums its
+  sources as they are, without delay compensation, so it never changes what is heard; sources with different latencies
+  at one junction can read lower there than where compensation aligns them.
 
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
 other), the chain runs between fixed input and output nodes, and nothing in the chain suggests a MIDI-to-audio
