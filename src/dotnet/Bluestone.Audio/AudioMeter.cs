@@ -25,15 +25,25 @@ public sealed class AudioMeter
     private double _meanSquareLeft;
     private double _meanSquareRight;
     private volatile bool _watched = true;
+    private volatile bool _restart;
 
     /// <summary>
     /// Whether the graph measures this meter. A strip's meter always is; a chain junction's only while a Device View shows
-    /// it, so unwatched junctions cost nothing. Set from any thread; read on the audio thread.
+    /// it, so unwatched junctions cost nothing. Set from any thread; read on the audio thread. Watched again, the meter
+    /// starts from silence: its held peak and average from before are not shown as if they were current.
     /// </summary>
     public bool IsWatched
     {
         get => _watched;
-        set => _watched = value;
+        set
+        {
+            if (value && !_watched)
+            {
+                _restart = true;
+            }
+
+            _watched = value;
+        }
     }
 
     public MeterReading Read() => new(
@@ -49,6 +59,13 @@ public sealed class AudioMeter
         if (frames == 0)
         {
             return;
+        }
+
+        if (_restart)
+        {
+            _restart = false;
+            _heldLeft = _heldRight = 0;
+            _meanSquareLeft = _meanSquareRight = 0;
         }
 
         var fall = (float)Math.Pow(10, -PeakFallDecibelsPerSecond * frames / sampleRate / 20);
