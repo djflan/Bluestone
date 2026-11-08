@@ -305,7 +305,11 @@ public sealed class SignalGraphTests
         var lead = TrackOf("Lead", Note(0, 60));
         var pad = TrackOf("Pad", Note(0, 48));
         var inlet = Instance(TestDevices.EventInlet);
-        var project = NewProject().With(pad, inlet).With(lead);
+        var padSynth = Instance(TestDevices.Synth);
+        var leadSynth = Instance(TestDevices.Synth);
+
+        // Pad comes first in the project, so only the connection's edge makes Lead evaluate before it.
+        var project = NewProject().With(pad, inlet, padSynth).With(lead, leadSynth);
         var padChain = project.ChainOf(pad.Id)!;
         project = project
             .Connect(SignalNode.Track(lead.Id), SignalNode.DeviceInput(inlet.Id, DeviceInputPort.Receive))
@@ -314,6 +318,8 @@ public sealed class SignalGraphTests
         var result = SignalGraph.Evaluate(project, Catalog.With(TestDevices.EventInlet));
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Code is SignalDiagnosticCode.InvalidConnection or SignalDiagnosticCode.Feedback);
+        var order = result.SoftwareInstruments.Select(f => f.Device).ToList();
+        Assert.True(order.IndexOf(leadSynth.Id) is >= 0 and var first && first < order.IndexOf(padSynth.Id), "Lead is evaluated before Pad, which receives from it");
     }
 
     [Fact]

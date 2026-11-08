@@ -134,6 +134,32 @@ public sealed class ReplaceDeviceTests
     }
 
     [Fact]
+    public void AParkedRouteIntoADevicesInput_FollowsItsReplacement_AndComesBackWhenTheTrackLeavesItsGroup()
+    {
+        var keyed = Track.Create("keyed", TrackRole.Hybrid);
+        var key = Track.Create("key", TrackRole.Hybrid);
+        var ducker = TestDevices.Instance(TestDevices.Ducker);
+        var synth = TestDevices.Instance(TestDevices.Synth);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key) });
+        history.Execute(DeviceCommands.InsertDevice(key.Id, synth, TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, ducker, TestDevices.Lookup));
+        var sidechain = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
+        history.Execute(RoutingCommands.Connect(sidechain, TestDevices.Lookup));
+        var group = Track.Create("group", TrackRole.Group);
+        history.Execute(new ProjectCommand("group", p => p with { Sequence = p.Sequence.WithTrack(group) }));
+        history.Execute(GroupCommands.SetGroup(key.Id, group.Id, TestDevices.Lookup));
+        Assert.Contains(history.Current.ParkedConnections, c => c.Id == sidechain.Id);
+
+        var replacement = TestDevices.Instance(TestDevices.Ducker);
+        history.Execute(DeviceCommands.ReplaceDevice(ducker.Id, replacement, TestDevices.Lookup));
+        Assert.Equal(SignalNode.DeviceInput(replacement.Id, DeviceInputPort.Sidechain), history.Current.ParkedConnections.Single(c => c.Id == sidechain.Id).Destination);
+
+        history.Execute(GroupCommands.SetGroup(key.Id, null, TestDevices.Lookup));
+        Assert.Equal(SignalNode.DeviceInput(replacement.Id, DeviceInputPort.Sidechain), history.Current.Connections.Single(c => c.Id == sidechain.Id).Destination);
+    }
+
+    [Fact]
     public void Taps_MoveToTheReplacement_OnlyWhenItProducesTheirKindOfSignal()
     {
         var (history, track, fx, synth) = Chain();

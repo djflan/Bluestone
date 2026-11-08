@@ -443,13 +443,15 @@ public sealed class ProjectAudioGraph : IDisposable
             var gain = BuiltInDevices.ReceiverGainOf(device);
             if (received.Count > 0 && Math.Abs(gain) > 1e-9)
             {
-                var node = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, device.Id.Value, device.DisplayName) { Gain = (float)Math.Pow(10, gain / 20) });
-                foreach (var source in received)
+                // One gain node per source, never one summing them: a monitored source (a live-played instrument) passes
+                // undelayed through its own node, and every other source keeps its delay compensation through its own.
+                var level = (float)Math.Pow(10, gain / 20);
+                for (var i = 0; i < received.Count; i++)
                 {
-                    _builder.Connect(source, node);
+                    var node = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, GainKey(device.Id.Value, i), device.DisplayName) { Gain = level });
+                    _builder.Connect(received[i], node);
+                    received[i] = node;
                 }
-
-                received = [node];
             }
 
             return BuiltInDevices.ReplacesOf(device) ? received : [.. audio, .. received];
@@ -468,6 +470,16 @@ public sealed class ProjectAudioGraph : IDisposable
             }
 
             return [.. sources.Distinct()];
+        }
+
+        // A stable key for a receiver's gain node on its i-th source, so the node keeps its state between builds.
+        private static Guid GainKey(Guid device, int index)
+        {
+            Span<byte> bytes = stackalloc byte[16];
+            device.TryWriteBytes(bytes);
+            bytes[15] ^= (byte)(index + 1);
+            bytes[14] ^= (byte)((index + 1) >> 8);
+            return new Guid(bytes);
         }
 
         // A track's own audio: its clips, when it plays, and audio connected into it.

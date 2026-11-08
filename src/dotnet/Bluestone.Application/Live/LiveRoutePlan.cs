@@ -37,7 +37,8 @@ public sealed record LiveRouteStage(DeviceInstance? Device, MidiChannel? Channel
 /// note effects after an instrument work on the notes it passes on, and along every event connection, from the chain's
 /// output or from any point inside it, to other tracks and racks and to every usable external instrument port. On the
 /// way, every device that is not bypassed and consumes events is a stage, in chain order (built-in devices and plugin MIDI
-/// effects alike), and every connection's forced channel is a stage where the connection is.
+/// effects alike), and every connection's forced channel is a stage where the connection is. A built-in stage runs as a
+/// copy per route; a plugin MIDI effect is one instance, so only the first route through it is played live.
 /// </summary>
 public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage> Stages, LiveTargetKind Target, EndpointDescriptor? Endpoint, DeviceId? Instrument)
 {
@@ -144,6 +145,27 @@ public sealed record LiveRoutePlan(TrackId Track, ImmutableArray<LiveRouteStage>
             }
         }
 
-        return plans.Count > 0 ? plans.ToImmutable() : [new LiveRoutePlan(track, [], LiveTargetKind.None, null, null)];
+        return plans.Count > 0 ? [.. OnePerPluginStage(plans)] : [new LiveRoutePlan(track, [], LiveTargetKind.None, null, null)];
+    }
+
+    // A plugin MIDI effect is one running instance: only the first route through it runs it live. Later routes that would
+    // share it are left out (a built-in effect is copied per route instead, so it never limits fan-out).
+    private static IEnumerable<LiveRoutePlan> OnePerPluginStage(IEnumerable<LiveRoutePlan> plans)
+    {
+        var claimed = new HashSet<DeviceId>();
+        foreach (var plan in plans)
+        {
+            var plugins = plan.Stages
+                .Where(s => s.Device is { } d && d.Definition.Id.Value.StartsWith(PluginDeviceHost.DefinitionPrefix, StringComparison.Ordinal))
+                .Select(s => s.Device!.Id)
+                .ToList();
+            if (plugins.Any(claimed.Contains))
+            {
+                continue;
+            }
+
+            claimed.UnionWith(plugins);
+            yield return plan;
+        }
     }
 }

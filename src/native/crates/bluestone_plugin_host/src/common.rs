@@ -236,6 +236,8 @@ pub struct ChannelAdapter {
     output_scratch: Vec<f32>,
     pub input_pointers: Vec<*mut f32>,
     pub output_pointers: Vec<*mut f32>,
+    /// The input bus that takes the host's sidechain: by default the second bus, if there is one.
+    sidechain_bus: Option<usize>,
 }
 
 impl ChannelAdapter {
@@ -250,14 +252,23 @@ impl ChannelAdapter {
             output_scratch: vec![0.0; (outputs.max(1)) * max_frames],
             input_pointers: vec![std::ptr::null_mut(); inputs],
             output_pointers: vec![std::ptr::null_mut(); outputs],
+            sidechain_bus: None,
         };
+        adapter.sidechain_bus = (adapter.input_buses.len() > 1).then_some(1);
         for c in 0..outputs {
             adapter.output_pointers[c] = adapter.output_scratch[c * max_frames..].as_mut_ptr();
         }
         adapter
     }
 
-    /// Points the plugin's inputs at the host's input (main bus), the host's sidechain (the first auxiliary bus), or
+    /// The input bus that takes the host's sidechain, when the format says which bus is auxiliary (a VST 3 plugin may
+    /// have more than one main input bus); `None` for none.
+    pub fn with_sidechain_bus(mut self, bus: Option<usize>) -> Self {
+        self.sidechain_bus = bus.filter(|&b| b > 0 && b < self.input_buses.len());
+        self
+    }
+
+    /// Points the plugin's inputs at the host's input (main bus), the host's sidechain (the sidechain bus), or
     /// at silence (other buses). A bus with more channels than the host sends repeats the host's last channel.
     pub fn prepare_inputs(&mut self, block: &BphProcess) {
         self.input_scratch.iter_mut().for_each(|s| *s = 0.0);
@@ -269,7 +280,9 @@ impl ChannelAdapter {
                     if bus == 0 && block.input_channels > 0 && !block.input.is_null() {
                         let host = (c as u32).min(block.input_channels - 1);
                         block.input_channel(host) as *mut f32
-                    } else if bus == 1 && block.sidechain_channels > 0 && !block.sidechain.is_null()
+                    } else if Some(bus) == self.sidechain_bus
+                        && block.sidechain_channels > 0
+                        && !block.sidechain.is_null()
                     {
                         let host = (c as u32).min(block.sidechain_channels - 1);
                         block.sidechain_channel(host) as *mut f32
@@ -281,9 +294,12 @@ impl ChannelAdapter {
         }
     }
 
-    /// The channels of the plugin's first auxiliary input bus (its sidechain), or 0 when it has none.
+    /// The channels of the plugin's sidechain bus, or 0 when it has none.
     pub fn sidechain_channels(&self) -> u32 {
-        self.input_buses.get(1).copied().unwrap_or(0) as u32
+        self.sidechain_bus
+            .and_then(|bus| self.input_buses.get(bus))
+            .copied()
+            .unwrap_or(0) as u32
     }
 
     /// Copies the plugin's main output bus into the host's output.
@@ -450,5 +466,26 @@ mod sidechain_tests {
             ChannelAdapter::new(2, vec![2], vec![2]).sidechain_channels(),
             0
         );
+    }
+
+    #[test]
+    fn a_second_main_bus_stays_silent_and_the_auxiliary_bus_named_by_the_format_gets_the_sidechain()
+    {
+        let input = [1.0f32, 1.0, 2.0, 2.0];
+        let sidechain = [3.0f32, 3.0, 4.0, 4.0];
+        let mut adapter =
+            ChannelAdapter::new(2, vec![2, 2, 2], vec![2]).with_sidechain_bus(Some(2));
+        assert_eq!(adapter.sidechain_channels(), 2);
+
+        adapter.prepare_inputs(&block(&input, &sidechain, 2, 2));
+        let read = |pointer: *mut f32| unsafe { *pointer };
+        assert_eq!(read(adapter.input_pointers[2]), 0.0);
+        assert_eq!(read(adapter.input_pointers[3]), 0.0);
+        assert_eq!(read(adapter.input_pointers[4]), 3.0);
+        assert_eq!(read(adapter.input_pointers[5]), 4.0);
+
+        // No auxiliary bus at all: nothing is a sidechain.
+        let none = ChannelAdapter::new(2, vec![2, 2], vec![2]).with_sidechain_bus(None);
+        assert_eq!(none.sidechain_channels(), 0);
     }
 }

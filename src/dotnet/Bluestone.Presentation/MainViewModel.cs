@@ -860,10 +860,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var sequence = Project.Sequence;
         var tick = engine.Position;
         IsPlaying = engine.State == TransportState.Playing;
+        IsCountingIn = engine.IsCountingIn;
         RefreshSignals(tick.Value, System.Diagnostics.Stopwatch.GetTimestamp());
         OnPropertyChanged(nameof(PlayButtonText));
         IsRecording = _playback.Recorder.IsRecording;
-        IsCountingIn = engine.IsCountingIn;
         if (IsRecording && _playback.Recorder.RecordingTrack is { } recording)
         {
             RecordingLane = Tracks.IndexOf(Tracks.FirstOrDefault(t => t.Id == recording)!);
@@ -1701,7 +1701,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     // Every Device View's signal indicators, from the playing song, live input, and the engine's junction levels.
     private void RefreshSignals(long tick, long timestamp)
     {
-        var playing = IsPlaying ? _playback.Routing?.Graph : null;
+        // During a count-in the transport plays but the song has not started: only live notes light the lamps.
+        var playing = IsPlaying && !IsCountingIn ? _playback.Routing?.Graph : null;
         var levels = JunctionLevelSource ?? (_noLevels ??= _ => null);
         foreach (var view in Workspace.DeviceViews)
         {
