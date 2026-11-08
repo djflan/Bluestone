@@ -35,6 +35,10 @@ internal sealed class MidiEngine : IDisposable
     private static readonly TimeSpan IdleStatusInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan TimingInterval = TimeSpan.FromMilliseconds(250);
 
+    // How long a retired route's plugin note effects stay loaded, so its last releases (an instrument route's are sent at
+    // the next audio block) still reach them. Under _routes.
+    private static readonly TimeSpan RetireGrace = TimeSpan.FromMilliseconds(250);
+    private readonly List<(IReadOnlyList<Guid> Plugins, TimeSpan Until)> _retiredRoutes = [];
     private readonly bool _restarted;
     private readonly SystemMonotonicClock _clock = SystemMonotonicClock.Instance;
     private readonly PlaybackThread? _thread;
@@ -504,15 +508,25 @@ internal sealed class MidiEngine : IDisposable
         }
     }
 
-    // Ends a route: an output's notes now, an instrument's at its next audio block. Under _routes.
+    // Ends a route: an output's notes now, an instrument's at its next audio block. Its plugin note effects stay loaded a
+    // moment longer, so those releases still pass through them. Under _routes.
     private void Retire(EngineRoute route)
     {
         route.ReleaseNow();
         route.Unbind(_players);
+        if (route.PluginDevices.Count > 0)
+        {
+            _retiredRoutes.Add((route.PluginDevices, _clock.Now + RetireGrace));
+        }
     }
 
-    // The registry keeps the plugin effects that routes use. Under _routes.
-    private void UseRoutePlugins() => _plugins.Use(graph: false, _routeById.Values.SelectMany(r => r.PluginDevices));
+    // The registry keeps the plugin effects that routes use, and those of routes retired within RetireGrace. Under _routes.
+    private void UseRoutePlugins()
+    {
+        var now = _clock.Now;
+        _retiredRoutes.RemoveAll(r => r.Until <= now);
+        _plugins.Use(graph: false, _routeById.Values.SelectMany(r => r.PluginDevices).Concat(_retiredRoutes.SelectMany(r => r.Plugins)));
+    }
 
     private void Open(OpenOutput open, List<EngineProblem> problems)
     {
@@ -640,13 +654,9 @@ internal sealed class MidiEngine : IDisposable
     }
 
     // Under _routes, on the control thread: the track's routes, in the order Bluestone added them (nearest first).
-    // A track's routes, oldest first, that thru plays. While Bluestone replaces a route (it adds the new one before it
-    // removes the old one, so a plugin effect on both stays loaded), the older of two routes to the same target through the
-    // same stages is left out: a note is never played twice, and retiring the old one cannot cut off the new one's note.
     private void Index(Guid track)
     {
-        var all = _routeById.OrderBy(r => r.Key).Select(r => r.Value).Where(r => r.Track == track).ToList();
-        EngineRoute[] routes = [.. all.Where((r, i) => !all.Skip(i + 1).Any(newer => newer.SameTargetAs(r)))];
+        EngineRoute[] routes = [.. _routeById.OrderBy(r => r.Key).Select(r => r.Value).Where(r => r.Track == track)];
         if (routes.Length == 0)
         {
             _routeByTrack.Remove(track);
