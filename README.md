@@ -50,7 +50,7 @@ Read the full [product vision](docs/product-vision.md), the public [roadmap](doc
 ### Devices and routing
 
 - Hybrid, instrument, audio, effect, and group tracks with nondestructive role conversion.
-- Track and rack device chains with built-in Transpose, Event Filter, and Arpeggiator devices.
+- Track and rack device chains with built-in Transpose, Event Filter, Arpeggiator, and Note and Audio Receiver devices; any point in a chain can be routed from.
 - A Browser and Device View for inserting, replacing, reordering, bypassing, and editing devices.
 - Parallel note, control, protocol, and audio signals through a chain, allowing layered instruments and effects in either domain.
 - Shared racks, group routing, mixer channels, sends, buses, master routing, and validation that refuses feedback loops.

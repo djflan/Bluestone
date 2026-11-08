@@ -307,6 +307,136 @@ public sealed class ProjectAudioGraphTests : IDisposable
         Assert.Equal(_tone[100], Left(Render(dry, Rate / 4, out _))[100], 4);
     }
 
+    [Theory]
+    [InlineData(true, 0.5)]
+    [InlineData(false, 1.5)]
+    public void AnAudioReceiver_BringsAnotherTracksAudioIn_AtItsGain_MixedOrReplacing(bool replace, double expected)
+    {
+        // Vocal's clip plays only through Bus's receiver at -6 dB; Bus also plays the same clip itself.
+        var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference())
+            .WithParameter(BuiltInDevices.ReceiverReplace, replace ? ControlValue.Max : ControlValue.Min)
+            .WithParameter(BuiltInDevices.ReceiverGain, BuiltInDevices.AudioReceiver.Parameters[1].ToStored(-6.0206));
+        var bus = Track.Create("Bus", TrackRole.Audio).WithClip(project.Sequence.FindTrack(vocal.Id)!.Clips[0].CopyTo(Tick.Zero));
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(bus.Id)) with { Devices = [receiver] }) with
+        {
+            Sequence = project.Sequence.WithTrack(bus),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master),
+            ],
+        };
+
+        var output = Left(Render(project, Rate / 4, out var result));
+
+        Assert.Empty(result.Problems);
+        for (var n = 0; n < Rate / 4; n += 101)
+        {
+            Assert.Equal(expected * _tone[n], output[n], 3);
+        }
+    }
+
+    [Fact]
+    public void AnAudioReceiversGain_IsOneNodePerSource_SoAMonitoredSourceNeverSharesOneWithACompensatedSource()
+    {
+        var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference())
+            .WithParameter(BuiltInDevices.ReceiverGain, BuiltInDevices.AudioReceiver.Parameters[1].ToStored(-6.0206));
+        var other = Track.Create("Other", TrackRole.Audio).WithClip(project.Sequence.FindTrack(vocal.Id)!.Clips[0].CopyTo(Tick.Zero));
+        var bus = Track.Create("Bus", TrackRole.Audio);
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(bus.Id)) with { Devices = [receiver] }) with
+        {
+            Sequence = project.Sequence.WithTrack(other).WithTrack(bus),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(other.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master),
+            ],
+        };
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+
+        var (description, problems) = graphs.Describe(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+
+        Assert.Empty(problems);
+        var gains = description.Nodes.Select((n, i) => (Node: n, Index: i)).Where(n => n.Node.Kind == DescribedNodeKind.Gain).ToList();
+        Assert.Equal(2, gains.Count);
+        Assert.Equal(2, gains.Select(g => g.Node.Key).Distinct().Count());
+        Assert.All(gains, g => Assert.Single(description.Steps, s => s.Kind == DescribedStepKind.Connect && s.B == g.Index));
+        Assert.Equal(_tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
+    }
+
+    [Fact]
+    public void AnAudioReceiver_MixingItsOwnChainsInput_AtUnityGain_HearsItTwice_AsAtAnyOtherGain()
+    {
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference());
+        var chain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [receiver] };
+        project = project.WithChain(chain) with
+        {
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.ChainInput(chain.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master),
+            ],
+        };
+
+        Assert.Equal(2 * _tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
+    }
+
+    [Fact]
+    public void TwoConnectionsIntoAReceiver_ThatReachTheSameAudio_AreEachHeard()
+    {
+        // The chain's input and the point after a Transpose carry the same clip; the receiver takes both and mixes them in.
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var transpose = BuiltInDevices.CreateTranspose(12);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference());
+        var chain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [transpose, receiver] };
+        var inlet = SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive);
+        project = project.WithChain(chain) with
+        {
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.ChainInput(chain.Id), inlet),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Device(transpose.Id), inlet),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master),
+            ],
+        };
+
+        Assert.Equal(3 * _tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
+    }
+
+    [Fact]
+    public void RemovingOneOfAReceiversSources_LeavesTheOtherSourcesGainNode_AsItWas()
+    {
+        var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference())
+            .WithParameter(BuiltInDevices.ReceiverGain, BuiltInDevices.AudioReceiver.Parameters[1].ToStored(-6.0206));
+        var other = Track.Create("Other", TrackRole.Audio).WithClip(project.Sequence.FindTrack(vocal.Id)!.Clips[0].CopyTo(Tick.Zero));
+        var bus = Track.Create("Bus", TrackRole.Audio);
+        var fromVocal = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive));
+        var fromOther = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(other.Id), SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive));
+        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(bus.Id)) with { Devices = [receiver] }) with
+        {
+            Sequence = project.Sequence.WithTrack(other).WithTrack(bus),
+            Connections = [fromVocal, fromOther, SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master)],
+        };
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        Guid GainOnOther(Project p)
+        {
+            var description = graphs.Describe(p, SignalGraph.Evaluate(p, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory).Description;
+            var source = description.Nodes.ToList().FindIndex(n => n.Key == other.Id.Value);
+            var gain = description.Steps.Single(s => s.Kind == DescribedStepKind.Connect && s.A == source && description.Nodes[s.B].Kind == DescribedNodeKind.Gain).B;
+            return description.Nodes[gain].Key;
+        }
+
+        var before = GainOnOther(project);
+        var after = GainOnOther(project with { Connections = project.Connections.Remove(fromVocal) });
+
+        Assert.Equal(before, after);
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)

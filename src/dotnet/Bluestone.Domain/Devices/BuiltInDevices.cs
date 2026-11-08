@@ -34,6 +34,12 @@ public static class BuiltInDevices
     public static readonly ParameterId ArpeggiatorOctaves = new(3);
     public static readonly ParameterId ArpeggiatorGate = new(4);
 
+    public static readonly ParameterId ReceiverReplace = new(1);
+    public static readonly ParameterId ReceiverGain = new(2);
+
+    public const double MinReceiverGain = -60;
+    public const double MaxReceiverGain = 12;
+
     /// <summary>Moves notes by -48 to 48 semitones; notes leaving 0-127 are dropped and reported.</summary>
     public static DeviceDefinition Transpose { get; } = new()
     {
@@ -88,6 +94,61 @@ public static class BuiltInDevices
         ],
     };
 
+    /// <summary>
+    /// Brings events from anywhere in the project into the chain at its place (ADR 0037): a track's or rack's output, its
+    /// input, or the point after any device, connected to its <see cref="DeviceInputPort.Receive"/> input. With Replace
+    /// off it mixes them with the chain's own events; with Replace on only the received events continue. Audio passes.
+    /// </summary>
+    public static DeviceDefinition NoteReceiver { get; } = new()
+    {
+        Id = new DeviceDefinitionId("bluestone.routing.note-receiver"),
+        Name = "Note Receiver",
+        Origin = DeviceOrigin.BuiltIn,
+        Vendor = "Bluestone",
+        Version = "1",
+        Consumes = SignalKinds.Events,
+        Produces = SignalKinds.Events,
+        Handles = EventClass.Transmitted,
+        Inputs = [new DeviceInputPort(DeviceInputPort.Receive, "Source", SignalKind.Events)],
+        Parameters = [new ParameterDescriptor(ReceiverReplace, "Replace", 0, 1, 0, steps: 1)],
+    };
+
+    /// <summary>
+    /// Brings audio from anywhere in the project into the chain at its place (ADR 0037), at <see cref="ReceiverGain"/>:
+    /// mixed with the chain's audio, or replacing it. Events pass.
+    /// </summary>
+    public static DeviceDefinition AudioReceiver { get; } = new()
+    {
+        Id = new DeviceDefinitionId("bluestone.routing.audio-receiver"),
+        Name = "Audio Receiver",
+        Origin = DeviceOrigin.BuiltIn,
+        Vendor = "Bluestone",
+        Version = "1",
+        Consumes = SignalKinds.Audio,
+        Produces = SignalKinds.Audio,
+        Inputs = [new DeviceInputPort(DeviceInputPort.Receive, "Source", SignalKind.Audio)],
+        Parameters =
+        [
+            new ParameterDescriptor(ReceiverReplace, "Replace", 0, 1, 0, steps: 1),
+            new ParameterDescriptor(ReceiverGain, "Gain", MinReceiverGain, MaxReceiverGain, 0, unit: "dB"),
+        ],
+    };
+
+    /// <summary>Whether a receiver (Note or Audio Receiver) replaces the chain's signal rather than mixing with it.</summary>
+    public static bool ReplacesOf(DeviceInstance device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        return (device.ValueOf(ReceiverReplace) ?? ControlValue.Min).ToFraction() >= 0.5;
+    }
+
+    /// <summary>An Audio Receiver's gain in dB.</summary>
+    public static double ReceiverGainOf(DeviceInstance device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        var descriptor = AudioReceiver.Parameters[1];
+        return descriptor.ToPlain(device.ValueOf(ReceiverGain) ?? descriptor.DefaultValue);
+    }
+
     /// <summary>The event classes each Event Filter switch passes, in parameter order.</summary>
     public static IReadOnlyList<(ParameterId Parameter, EventClass Class)> FilterSwitches { get; } =
     [
@@ -97,7 +158,7 @@ public static class BuiltInDevices
         (FilterSystemExclusive, EventClass.SystemExclusive),
     ];
 
-    public static IReadOnlyList<DeviceDefinition> All { get; } = [Transpose, EventFilter, Arpeggiator];
+    public static IReadOnlyList<DeviceDefinition> All { get; } = [Transpose, EventFilter, Arpeggiator, NoteReceiver, AudioReceiver];
 
     public static DeviceDefinition? Find(DeviceDefinitionId id)
     {

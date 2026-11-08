@@ -382,7 +382,11 @@ public sealed class ProjectAudioGraph : IDisposable
             {
                 var device = chain.Devices[i];
                 var definition = device.IsBypassed ? null : devices.Find(device.Definition.Id);
-                if (definition is not null && definition.Produces.HasFlag(SignalKinds.Audio))
+                if (definition?.Id == BuiltInDevices.AudioReceiver.Id)
+                {
+                    audio = Receive(chain, points, i, device, audio);
+                }
+                else if (definition is not null && definition.Produces.HasFlag(SignalKinds.Audio))
                 {
                     if (NodeOf(device) is { } plugin)
                     {
@@ -424,6 +428,54 @@ public sealed class ProjectAudioGraph : IDisposable
 
             _chains[chain.Id] = points;
             return points;
+        }
+
+        // An Audio Receiver at chain index `at` (ADR 0037): what its input receives, at its gain, mixed with the chain's audio
+        // or replacing it. A source earlier in the same chain is that junction's audio; validation keeps it earlier.
+        private List<int> Receive(DeviceChain chain, List<int>[] points, int at, DeviceInstance device, List<int> audio)
+        {
+            // One gain node per connection and source node, never one summing them, at every gain (0 dB too, so taking a
+            // node the chain already has, or one two connections both reach, is still a path of its own): a monitored
+            // source (a live-played instrument) passes undelayed through its own node, and every other source keeps its
+            // delay compensation through its own. A node's key follows its connection and source, so removing one source
+            // leaves the others' nodes and delay lines as they were.
+            var input = SignalNode.DeviceInput(device.Id, DeviceInputPort.Receive);
+            var level = (float)Math.Pow(10, BuiltInDevices.ReceiverGainOf(device) / 20);
+            var received = new List<int>();
+            foreach (var connection in _audio.Where(c => c.Destination == input))
+            {
+                foreach (var source in SourcesOf(chain, points, at, connection).Distinct())
+                {
+                    var node = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, GainKey(GainKey(device.Id.Value, connection.Id.Value), _builder.KeyOf(source)), device.DisplayName) { Gain = level });
+                    _builder.Connect(source, node);
+                    received.Add(node);
+                }
+            }
+
+            return BuiltInDevices.ReplacesOf(device) ? received : [.. audio, .. received];
+        }
+
+        // The audio nodes one connection into a device input at chain index `at` brings: a source earlier in the same chain
+        // is that junction's audio (validation keeps it earlier); any other is its owner's output, or the point after its device.
+        private List<int> SourcesOf(DeviceChain chain, List<int>[] points, int at, SignalConnection connection) =>
+            SignalFlow.JunctionOf(project, connection.Source) is var (source, junction) && source.Id == chain.Id
+                ? junction <= at ? points[junction] : []
+                : Output(connection.Source);
+
+        // A stable key for a receiver's gain node on one source: the receiver's and the source node's keys combined, so the
+        // node keeps its state between builds whatever other sources come and go.
+        private static Guid GainKey(Guid device, Guid source)
+        {
+            Span<byte> a = stackalloc byte[16];
+            Span<byte> b = stackalloc byte[16];
+            device.TryWriteBytes(a);
+            source.TryWriteBytes(b);
+            for (var i = 0; i < 16; i++)
+            {
+                a[i] ^= b[(i + 7) % 16];
+            }
+
+            return new Guid(a);
         }
 
         // A track's own audio: its clips, when it plays, and audio connected into it.

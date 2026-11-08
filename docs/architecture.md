@@ -381,8 +381,10 @@ A chain carries a parallel bundle of notes, other events, and audio (ADR 0037): 
 notes it handles and passes them on, so instruments in a row layer and a note effect after an instrument
 still has notes to work on; an audio effect replaces the audio and passes events on; a note effect leaves
 audio alone. `DeviceDefinition.EventThru` lets a definition end the note path or mix its input with its output.
-The built-in devices (Transpose, Event Filter, Arpeggiator) are MIDI effects; they run in
-`Bluestone.Signal` when the plan is compiled, and in a real-time form on live input. Instruments and
+The built-in note devices (Transpose, Event Filter, Arpeggiator, Note Receiver) run in
+`Bluestone.Signal` when the plan is compiled, and in a real-time form on live input. The receivers bring signal
+from anywhere in the project into a chain at their place, mixed with the chain's or replacing it: the Note
+Receiver events, the Audio Receiver audio (built by the audio graph, at its gain). Instruments and
 audio effects are plugins, which run in worker processes, never in Bluestone's process. Presets are
 templates without identities: loading one creates new devices.
 

@@ -26,7 +26,13 @@ destroy unrelated data such as XG SysEx or controllers.
   any number of tracks can route into a rack, and the rack keeps one owner and one instrument instance.
 - Presets (`DeviceChainPreset`, file format `bluestone-chain-preset` v1) are templates **without IDs or
   connections**. Loading one always creates new instances; moving a chain keeps its identity.
-- The built-in definitions (`BuiltInDevices`: Transpose, Event Filter, Arpeggiator) are domain data.
+- The built-in definitions (`BuiltInDevices`: Transpose, Event Filter, Arpeggiator, and the Note and Audio Receivers
+  of ADR 0037) are domain data.
+- A definition may declare **input ports** (`Inputs`) that connections end at (ADR 0023): a receiver's `receive`, a
+  plugin's `sidechain`. A device with an event input gets what it receives added to what it puts out by the
+  `ChainRunner`, which asks the evaluation (`IChainReceiver`) at that device, so a source earlier in the same chain is
+  the events seen there in the same run. The Note Receiver's own processor passes the chain's events (mix) or drops
+  them (replace); bypassed, it brings nothing in.
 
 **Processing (`Bluestone.Signal`).**
 

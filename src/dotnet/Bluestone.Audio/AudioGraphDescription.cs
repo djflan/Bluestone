@@ -14,6 +14,9 @@ public enum DescribedNodeKind : byte
 
     /// <summary>A running plugin instrument or effect (<see cref="PluginNode"/>).</summary>
     Plugin = 2,
+
+    /// <summary>Its input at <see cref="DescribedNode.Gain"/> (<see cref="GainNode"/>): what an Audio Receiver brings in.</summary>
+    Gain = 3,
 }
 
 /// <summary>
@@ -33,6 +36,9 @@ public sealed record DescribedNode(DescribedNodeKind Kind, Guid Key, string Name
 
     /// <summary>How another process reaches the plugin's instance (<see cref="DescribedNodeKind.Plugin"/>); null when not described.</summary>
     public DescribedPluginLink? Link { get; init; }
+
+    /// <summary>The linear gain (<see cref="DescribedNodeKind.Gain"/>).</summary>
+    public float Gain { get; init; } = 1;
 }
 
 /// <summary>
@@ -130,6 +136,9 @@ public sealed class AudioGraphDescriptionBuilder
         _steps.Add(new(DescribedStepKind.AddNode, _nodes.Count - 1));
         return _nodes.Count - 1;
     }
+
+    /// <summary>The key of the node at <paramref name="index"/>, which stays the same between descriptions of the same thing.</summary>
+    public Guid KeyOf(int index) => _nodes[index].Key;
 
     public void Connect(int from, int to)
     {

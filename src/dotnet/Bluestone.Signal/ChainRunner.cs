@@ -18,6 +18,17 @@ public interface IChainObserver
     void InstrumentInput(DeviceId device, ReadOnlySpan<SignalEvent> events);
 }
 
+/// <summary>
+/// Supplies what a device's event input receives (a Note Receiver's source, ADR 0037). An <see cref="IChainObserver"/> that
+/// also implements this is asked once per run for each device with an event input, at that device, so it can hand over
+/// points of the same chain it has just seen.
+/// </summary>
+public interface IChainReceiver
+{
+    /// <summary>Appends to <paramref name="output"/> the events <paramref name="device"/> receives, in any order.</summary>
+    void Receive(DeviceId device, SignalBuffer output);
+}
+
 /// <summary>How the runner treats one device of a chain.</summary>
 public enum StageKind
 {
@@ -60,6 +71,8 @@ public sealed class ChainRunner
     private readonly SignalBuffer _handled = new();
     private readonly SignalBuffer _produced = new();
     private readonly SignalBuffer _around = new();
+    private readonly SignalBuffer _received = new();
+    private readonly SignalBuffer _inBlock = new();
     private readonly List<SignalDiagnostic> _outOfProcessReports = [];
     private readonly TempoMap _tempo;
     private readonly Ppqn _ppqn;
@@ -180,6 +193,34 @@ public sealed class ChainRunner
                 else
                 {
                     RunProcessor(stage, block, changes);
+                    if (!SignalOrder.IsOrdered(_produced.Events))
+                    {
+                        SignalOrder.StableSort(_produced.Writable);
+                    }
+
+                    if (stage.Receives && observer is IChainReceiver receiver)
+                    {
+                        // What the connections deliver, one ordered run each, merged with the device's own output (which
+                        // goes first on equal keys) rather than appended and sorted, which would be quadratic.
+                        _received.Clear();
+                        receiver.Receive(stage.Device.Id, _received);
+                        _inBlock.Clear();
+                        foreach (var e in _received.Events)
+                        {
+                            if (block.Contains(e.Event.Position))
+                            {
+                                _inBlock.Add(e);
+                            }
+                        }
+
+                        if (_inBlock.Count > 0)
+                        {
+                            SignalOrder.MergeRuns(_inBlock.Events, _received, _next);
+                            _next.Clear();
+                            SignalOrder.Merge(_produced.Events, _received.Events, _next);
+                            SignalBuffer.Swap(_produced, _next);
+                        }
+                    }
                 }
 
                 if (!SignalOrder.IsOrdered(_produced.Events))
@@ -327,7 +368,10 @@ public sealed class ChainRunner
                 processor.SetParameter(parameter.Id, device.ValueOf(parameter.Id) ?? parameter.DefaultValue);
             }
 
-            return new Stage(device, consumesEvents ? StageKind.Processor : StageKind.Transparent, definition.Handles, definition.PassesThrough, processor, null, null);
+            return new Stage(device, consumesEvents ? StageKind.Processor : StageKind.Transparent, definition.Handles, definition.PassesThrough, processor, null, null)
+            {
+                Receives = definition.Inputs.Any(p => p.Kind == SignalKind.Events),
+            };
         }
 
         if (consumesEvents && !definition.Produces.HasFlag(SignalKinds.Events))
@@ -351,5 +395,9 @@ public sealed class ChainRunner
         return new Stage(device, StageKind.Transparent, EventClass.None, EventClass.None, null, null, null);
     }
 
-    private sealed record Stage(DeviceInstance Device, StageKind Kind, EventClass Handles, EventClass Thru, ISignalProcessor? Processor, IOutOfProcessRenderer? Renderer, DeviceDefinition? Definition);
+    private sealed record Stage(DeviceInstance Device, StageKind Kind, EventClass Handles, EventClass Thru, ISignalProcessor? Processor, IOutOfProcessRenderer? Renderer, DeviceDefinition? Definition)
+    {
+        /// <summary>The device has an event input: the runner adds what it receives to what it puts out.</summary>
+        public bool Receives { get; init; }
+    }
 }
