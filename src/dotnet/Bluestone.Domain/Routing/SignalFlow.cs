@@ -140,12 +140,25 @@ public static class SignalFlow
         return presence;
     }
 
-    /// <summary>What a track's output carries when it has no devices: the content its role holds.</summary>
+    /// <summary>
+    /// What arrives at a chain's input (and a track's output carries when it has no devices): the content the track's role
+    /// holds, plus each kind of signal a connection brings into the track. A connection counts by its kind alone, not by
+    /// what its source carries, so this never follows connections and cannot loop.
+    /// </summary>
     public static SignalPresence StartOf(Project project, ChainOwner owner)
     {
         ArgumentNullException.ThrowIfNull(project);
-        return owner.Kind == ChainOwnerKind.Track && project.Sequence.FindTrack(owner.Track) is { } track
-            ? SignalPresence.ForRole(track.Role)
-            : SignalPresence.Anything;
+        if (owner.Kind != ChainOwnerKind.Track || project.Sequence.FindTrack(owner.Track) is not { } track)
+        {
+            return SignalPresence.Anything;
+        }
+
+        var presence = SignalPresence.ForRole(track.Role);
+        foreach (var connection in project.ConnectionsTo(SignalNode.Track(track.Id)))
+        {
+            presence = connection.Kind == SignalKind.Audio ? presence with { Audio = true } : presence with { Events = presence.Events | EventClass.Transmitted };
+        }
+
+        return presence;
     }
 }

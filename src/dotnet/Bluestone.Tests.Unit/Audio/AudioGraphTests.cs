@@ -265,6 +265,31 @@ public sealed class AudioGraphTests
     }
 
     [Fact]
+    public void AMeterPointWatchedAgain_StartsFromSilence_NotFromWhatItHeldBefore()
+    {
+        var junction = new AudioMeter();
+        var loud = new AudioGraphBuilder();
+        loud.AddMeterPoint(junction, [loud.AddNode(new ToneNode(1000, 0.5))]);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(loud.Build(Block, new MixerStripState()));
+        new OfflineAudioDriver(engine).Render(Rate / 100, Block);
+        Assert.Equal(0.5f, junction.Read().PeakLeft, 2);
+
+        // Unwatched while the junction falls silent, then watched again: the old peak and average are gone.
+        junction.IsWatched = false;
+        var silent = new AudioGraphBuilder();
+        silent.AddNode(new ToneNode(1000, 0.5));
+        silent.AddMeterPoint(junction, []);
+        engine.Publish(silent.Build(Block, new MixerStripState()));
+        new OfflineAudioDriver(engine).Render(Rate, Block);
+        junction.IsWatched = true;
+        new OfflineAudioDriver(engine).Render(Block, Block);
+
+        Assert.Equal(0f, junction.Read().PeakLeft);
+        Assert.Equal(0f, junction.Read().RmsLeft);
+    }
+
+    [Fact]
     public void Builder_RefusesAMeterPointOnAMissingNode()
     {
         var builder = new AudioGraphBuilder();

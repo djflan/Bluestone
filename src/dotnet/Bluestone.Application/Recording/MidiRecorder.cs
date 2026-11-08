@@ -311,11 +311,13 @@ public sealed class MidiRecorder : IDisposable
             track = _thru;
         }
 
-        if (track is not { } thru || !_live.Post(thru, message, timestamp, source))
+        if (track is not { } thru)
         {
             return false;
         }
 
+        // The release follows its note even when the route could not play it: live input still counts the key as held.
+        var played = _live.Post(thru, message, timestamp, source);
         if (message.IsNoteOn)
         {
             lock (_gate)
@@ -324,7 +326,7 @@ public sealed class MidiRecorder : IDisposable
             }
         }
 
-        return true;
+        return played;
     }
 
     /// <summary>Forgets what a closed input was holding, releasing its notes where they were echoed.</summary>

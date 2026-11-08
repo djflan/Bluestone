@@ -193,6 +193,14 @@ public sealed class EngineAudioTests : IAsyncDisposable
         Assert.Equal(0.5f, _audio.JunctionMeterOf(junction)!.Value.PeakLeft);
         Assert.Null(_audio.JunctionMeterOf(Guid.NewGuid()));
 
+        // Unwatched, its last reading is not shown, even before (or if) a newer status arrives; watched again, it is.
+        _audio.WatchJunctions([]);
+        Assert.Null(_audio.JunctionMeterOf(junction));
+        Client.Received(first, new AudioStatus(default, [], default) { Junctions = [new StripMeter(junction, new MeterSpec(0.5f, 0.25f, 0, 0))] });
+        Assert.Null(_audio.JunctionMeterOf(junction));
+        _audio.WatchJunctions([junction]);
+        Assert.Equal(0.5f, _audio.JunctionMeterOf(junction)!.Value.PeakLeft);
+
         Client.Disconnected(first);
         Assert.Null(_audio.JunctionMeterOf(junction));
         var second = new RecordingLink();

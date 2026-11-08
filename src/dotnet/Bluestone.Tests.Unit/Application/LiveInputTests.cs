@@ -247,6 +247,34 @@ public sealed class LiveInputTests : IAsyncDisposable
         _controller.Live.ReleaseAll();
         Assert.False(_controller.Live.HasHeldNotes(track));
         Assert.False(_controller.Live.HasHeldNotes(TrackId.New()));
+
+        // All Notes Off and All Sound Off release the channel's keys, not another channel's.
+        _keys.Inject([0x90, 60, 100]);
+        _keys.Inject([0x91, 62, 100]);
+        _keys.Inject([0xB0, 123, 0]);
+        Assert.True(_controller.Live.HasHeldNotes(track));
+        _keys.Inject([0xB1, 120, 0]);
+        Assert.False(_controller.Live.HasHeldNotes(track));
+    }
+
+    [Fact]
+    public async Task AKeyOnATrackThatCannotPlay_IsHeldUntilItsRelease_FromAKeyboardOrTheScreen()
+    {
+        // A track with no output: nothing can play its notes.
+        var track = Track.Create("Unrouted", TrackRole.Instrument);
+        _session.Execute(ProjectCommands.AddTrack(track));
+        await _controller.RefreshAsync(Ct);
+        _controller.SetThruTrack(track.Id);
+
+        Play(60);
+        Assert.True(_controller.Live.HasHeldNotes(track.Id));
+        Release(60);
+        Assert.False(_controller.Live.HasHeldNotes(track.Id));
+
+        _controller.Audition(track.Id, new NoteNumber(62), new Velocity(100));
+        Assert.True(_controller.Live.HasHeldNotes(track.Id));
+        _controller.EndAudition();
+        Assert.False(_controller.Live.HasHeldNotes(track.Id));
     }
 
     private async Task<TrackId> TrackWith(params DeviceInstance[] devices)
