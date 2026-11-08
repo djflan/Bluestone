@@ -184,7 +184,7 @@ public static class ProjectCommands
     /// is copied with fresh device IDs, its automation of its own devices follows the copies, and its outgoing
     /// and parked connections are copied. Connections into it are not: the copy is a new destination nobody chose.
     /// </summary>
-    public static IProjectCommand DuplicateTracks(IReadOnlyCollection<TrackId> tracks) =>
+    public static IProjectCommand DuplicateTracks(IReadOnlyCollection<TrackId> tracks, DeviceDefinitionLookup? definitions = null) =>
         new ProjectCommand(tracks.Count == 1 ? "Duplicate Track" : "Duplicate Tracks", p =>
         {
             var result = p;
@@ -198,6 +198,7 @@ public static class ProjectCommands
                 var name = track.Name.Length + 5 <= Track.MaxNameLength ? track.Name + " copy" : track.Name;
                 var copyId = TrackId.New();
                 var devices = new Dictionary<DeviceId, DeviceId>();
+                var chains = new Dictionary<DeviceChainId, DeviceChainId>();
                 if (result.ChainOf(id) is { } chain)
                 {
                     var copies = chain.Devices.Select(d => d.Duplicate()).ToList();
@@ -206,7 +207,9 @@ public static class ProjectCommands
                         devices[chain.Devices[i].Id] = copies[i].Id;
                     }
 
-                    result = result.WithChain(DeviceChain.Create(ChainOwner.ForTrack(copyId), chain.Name) with { Devices = [.. copies] });
+                    var copiedChain = DeviceChain.Create(ChainOwner.ForTrack(copyId), chain.Name) with { Devices = [.. copies] };
+                    chains[chain.Id] = copiedChain.Id;
+                    result = result.WithChain(copiedChain);
                 }
 
                 var copy = new Track(
@@ -224,19 +227,47 @@ public static class ProjectCommands
                     track.IsFolded);
                 var index = result.Sequence.Tracks.IndexOf(track) + 1;
                 result = result with { Sequence = result.Sequence.InsertTrack(index, copy) };
+                // The copy sends where the original sends, from the same points of its chain, and its devices' inputs
+                // (a receiver's source) are connected as the original's are.
+                SignalNode Copied(SignalNode node) => node.Kind switch
+                {
+                    SignalNodeKind.Track when node.AsTrack() == id => SignalNode.Track(copyId),
+                    SignalNodeKind.Device when devices.TryGetValue(node.AsDevice(), out var to) => SignalNode.Device(to),
+                    SignalNodeKind.DeviceInput when devices.TryGetValue(node.AsDevice(), out var to) => SignalNode.DeviceInput(to, node.Port!),
+                    SignalNodeKind.ChainInput when chains.TryGetValue(node.AsChain(), out var to) => SignalNode.ChainInput(to),
+                    _ => node,
+                };
+
                 var outgoing = result.Connections
-                    .Where(c => c.Source == SignalNode.Track(id) || (c.Source.Kind == SignalNodeKind.Device && devices.ContainsKey(c.Source.AsDevice())))
+                    .Where(c => Copied(c.Source) != c.Source || (c.Destination.Kind == SignalNodeKind.DeviceInput && Copied(c.Destination) != c.Destination))
                     .Select(c => c with
                     {
                         Id = ConnectionId.New(),
-                        Source = c.Source.Kind == SignalNodeKind.Device ? SignalNode.Device(devices[c.Source.AsDevice()]) : SignalNode.Track(copyId),
+                        Source = Copied(c.Source),
+                        Destination = c.Destination.Kind == SignalNodeKind.DeviceInput ? Copied(c.Destination) : c.Destination,
                     })
                     .ToList();
+                // Parked routes too: the copy's own (from the track) and, so they come back with the copy's when their
+                // grouped source leaves its group, those into its devices' inputs.
                 var parked = result.ParkedConnections
-                    .Where(c => c.Source == SignalNode.Track(id))
-                    .Select(c => c with { Id = ConnectionId.New(), Source = SignalNode.Track(copyId) })
+                    .Where(c => c.Source == SignalNode.Track(id) || (c.Destination.Kind == SignalNodeKind.DeviceInput && Copied(c.Destination) != c.Destination))
+                    .Select(c => c with
+                    {
+                        Id = ConnectionId.New(),
+                        Source = Copied(c.Source),
+                        Destination = c.Destination.Kind == SignalNodeKind.DeviceInput ? Copied(c.Destination) : c.Destination,
+                    })
                     .ToList();
                 result = result with { Connections = result.Connections.AddRange(outgoing), ParkedConnections = result.ParkedConnections.AddRange(parked) };
+
+                // A copied route that cannot work (it depends on a connection into the original that is not copied, such as
+                // audio routed into its input) is left out, rather than giving the copy a connection that is never played.
+                var broken = definitions is null ? [] : SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(result, definitions))
+                    .SelectMany(i => i.Connections).Intersect(outgoing.Select(c => c.Id)).ToHashSet();
+                if (broken.Count > 0)
+                {
+                    result = result with { Connections = result.Connections.RemoveAll(c => broken.Contains(c.Id)) };
+                }
             }
 
             return result;

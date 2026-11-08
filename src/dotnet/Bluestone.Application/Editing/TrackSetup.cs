@@ -23,14 +23,14 @@ public static class TrackSetup
         return RoutingGuard.Command("New Track", definitions, p => WithAudioPath(p with { Sequence = p.Sequence.WithTrack(track) }, track.Id));
     }
 
-    /// <summary>Whether any of the track's audio is sent anywhere: from its output, or from a device in its chain.</summary>
+    /// <summary>Whether any of the track's audio is sent anywhere: from its output, or from a point inside its chain.</summary>
     public static bool HasAudioPath(Project project, TrackId track)
     {
         ArgumentNullException.ThrowIfNull(project);
         var output = SignalNode.Track(track);
         var chain = project.ChainOf(track);
         return project.Connections.Any(c => c.Kind == SignalKind.Audio
-            && (c.Source == output || (c.Source.Kind == SignalNodeKind.Device && chain?.Find(c.Source.AsDevice()) is not null)));
+            && (c.Source == output || (chain is not null && c.Source.IsInside(chain))));
     }
 
     /// <summary>Where a track's audio goes by default: its group track when it is in one, otherwise the master.</summary>

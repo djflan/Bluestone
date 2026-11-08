@@ -347,6 +347,8 @@ public sealed class ProjectAudioGraph : IDisposable
                         return project.FindChain(source.AsRack()) is { } rack ? Fold(rack)[^1] : [];
                     case SignalNodeKind.Device when project.FindDevice(source.AsDevice()) is var (owningChain, device):
                         return Fold(owningChain)[owningChain.Devices.IndexOf(device) + 1];
+                    case SignalNodeKind.ChainInput when project.FindChain(source.AsChain()) is { } inputOf:
+                        return Fold(inputOf)[0];
                     default:
                         return [];
                 }

@@ -104,28 +104,38 @@ public sealed partial class ConnectionsViewModel : ObservableObject
         HasTrack = true;
         foreach (var connection in project.Connections)
         {
-            var fromHere = connection.Source == node || (connection.Source.Kind == SignalNodeKind.Device && chain?.Find(connection.Source.AsDevice()) is not null);
+            var fromHere = connection.Source == node || (chain is not null && connection.Source.IsInside(chain));
             if (fromHere)
             {
-                var from = connection.Source == node ? string.Empty : $"After {SignalRoutingValidator.Describe(project, connection.Source)}: ";
+                var from = connection.Source == node ? string.Empty
+                    : connection.Source.Kind == SignalNodeKind.ChainInput ? "Input: "
+                    : $"After {SignalRoutingValidator.Describe(project, connection.Source)}: ";
                 Outgoing.Add(new ConnectionRow(connection.Id, $"{from}{Kind(connection.Kind)} → {SignalRoutingValidator.Describe(project, connection.Destination)}", Mapping(connection), false));
             }
-            else if (connection.Destination == node)
+            else if (connection.Destination == node || (chain is not null && connection.Destination.IsInside(chain)))
             {
-                Incoming.Add(new ConnectionRow(connection.Id, $"{Kind(connection.Kind)} ← {SignalRoutingValidator.Describe(project, connection.Source)}", Mapping(connection), true));
+                var into = connection.Destination == node ? string.Empty : $" (into {SignalRoutingValidator.Describe(project, connection.Destination)})";
+                Incoming.Add(new ConnectionRow(connection.Id, $"{Kind(connection.Kind)} ← {SignalRoutingValidator.Describe(project, connection.Source)}{into}", Mapping(connection), true));
             }
         }
 
         OnPropertyChanged(nameof(Summary));
         var source = Source?.Node;
         Sources.Clear();
-        Sources.Add(new SourceOption(node, $"{name} output"));
+        // In signal order: the chain's input, the point after each device, and the output (the usual choice).
+        if (chain is { Devices.Length: > 0 })
+        {
+            Sources.Add(new SourceOption(SignalNode.ChainInput(chain.Id), $"{name} input (before devices)"));
+        }
+
         foreach (var device in chain?.Devices ?? [])
         {
             Sources.Add(new SourceOption(SignalNode.Device(device.Id), $"After {device.DisplayName}"));
         }
 
-        Source = Sources.FirstOrDefault(s => s.Node == source) ?? Sources[0];
+        var output = new SourceOption(node, $"{name} output");
+        Sources.Add(output);
+        Source = Sources.FirstOrDefault(s => s.Node == source) ?? output;
 
         var destination = Destination;
         Destinations.Clear();

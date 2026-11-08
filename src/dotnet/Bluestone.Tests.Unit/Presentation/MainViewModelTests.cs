@@ -628,6 +628,26 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheRoutingInspector_OffersEveryJunction_InSignalOrder_WithTheOutputByDefault()
+    {
+        var (first, _) = await TwoTracksAsync();
+        AddDevice("Arpeggiator");
+        await Settle();
+
+        Assert.Equal(["Piano input (before devices)", "After Arpeggiator", "Piano output"], _vm.Connections.Sources.Select(s => s.Name));
+        Assert.Equal("Piano output", _vm.Connections.Source!.Name);
+
+        _vm.Connections.Source = _vm.Connections.Sources[0];
+        _vm.Connections.Destination = _vm.Connections.Destinations.Single(d => d.Name == "Track: Strings");
+        _vm.Connections.ConnectCommand.Execute(null);
+        await Settle();
+
+        var chain = _session.Project.ChainOf(first.Id)!;
+        Assert.Equal(SignalNode.ChainInput(chain.Id), Assert.Single(_session.Project.Connections, c => c.Destination.Kind == SignalNodeKind.Track).Source);
+        Assert.StartsWith("Input: ", Assert.Single(_vm.Connections.Outgoing).Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheRoutingInspector_RefusesFeedback_WithAMessage()
     {
         var (first, second) = await TwoTracksAsync();

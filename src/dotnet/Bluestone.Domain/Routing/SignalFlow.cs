@@ -59,9 +59,51 @@ public readonly record struct SignalPresence(EventClass Events, bool Audio, bool
     }
 }
 
-/// <summary>Finds what signal a connection's source carries.</summary>
+/// <summary>Finds what signal a connection's source carries, and where in a chain a point is.</summary>
 public static class SignalFlow
 {
+    /// <summary>
+    /// The chain <paramref name="node"/> belongs to and its junction there (ADR 0037): 0 is the chain's input, i + 1
+    /// the output of device i, and the device count its output. For a device input port, the junction is the one
+    /// arriving at the device (its index). Null for a track without a chain, and for nodes not in a chain.
+    /// </summary>
+    public static (DeviceChain Chain, int Junction)? JunctionOf(Project project, SignalNode node)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        switch (node.Kind)
+        {
+            case SignalNodeKind.Track when project.ChainOf(node.AsTrack()) is { } chain:
+                return (chain, chain.Devices.Length);
+            case SignalNodeKind.Rack when project.FindChain(node.AsRack()) is { } rack:
+                return (rack, rack.Devices.Length);
+            case SignalNodeKind.ChainInput when project.FindChain(node.AsChain()) is { } chain:
+                return (chain, 0);
+            case SignalNodeKind.Device when project.FindDevice(node.AsDevice()) is var (chain, _):
+                return (chain, chain.IndexOf(node.AsDevice()) + 1);
+            case SignalNodeKind.DeviceInput when project.FindDevice(node.AsDevice()) is var (chain, _):
+                return (chain, chain.IndexOf(node.AsDevice()));
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>The presence at a source: a chain's input or output, or the point after one of its devices.</summary>
+    public static SignalPresence PresenceOf(Project project, SignalNode source, DeviceDefinitionLookup definitions)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (JunctionOf(project, source) is not var (chain, junction))
+        {
+            return source.Kind == SignalNodeKind.Track ? StartOf(project, ChainOwner.ForTrack(source.AsTrack())) : SignalPresence.Anything;
+        }
+
+        var presence = StartOf(project, chain.Owner);
+        for (var i = 0; i < junction; i++)
+        {
+            presence = presence.Through(chain.Devices[i], definitions);
+        }
+
+        return presence;
+    }
     /// <summary>
     /// The presence at the end of <paramref name="chain"/>, or after the device <paramref name="tap"/> when
     /// given (the output a tap connection reads).
@@ -83,12 +125,25 @@ public static class SignalFlow
         return presence;
     }
 
-    /// <summary>What a track's output carries when it has no devices: the content its role holds.</summary>
+    /// <summary>
+    /// What arrives at a chain's input (and a track's output carries when it has no devices): the content the track's role
+    /// holds, plus each kind of signal a connection brings into the track. A connection counts by its kind alone, not by
+    /// what its source carries, so this never follows connections and cannot loop.
+    /// </summary>
     public static SignalPresence StartOf(Project project, ChainOwner owner)
     {
         ArgumentNullException.ThrowIfNull(project);
-        return owner.Kind == ChainOwnerKind.Track && project.Sequence.FindTrack(owner.Track) is { } track
-            ? SignalPresence.ForRole(track.Role)
-            : SignalPresence.Anything;
+        if (owner.Kind != ChainOwnerKind.Track || project.Sequence.FindTrack(owner.Track) is not { } track)
+        {
+            return SignalPresence.Anything;
+        }
+
+        var presence = SignalPresence.ForRole(track.Role);
+        foreach (var connection in project.ConnectionsTo(SignalNode.Track(track.Id)))
+        {
+            presence = connection.Kind == SignalKind.Audio ? presence with { Audio = true } : presence with { Events = presence.Events | EventClass.Transmitted };
+        }
+
+        return presence;
     }
 }

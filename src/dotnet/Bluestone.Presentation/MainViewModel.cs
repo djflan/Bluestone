@@ -1437,7 +1437,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (SelectedTracks.Count > 0)
         {
-            Execute(ProjectCommands.DuplicateTracks([.. SelectedTracks.Select(t => t.Id)]));
+            Execute(ProjectCommands.DuplicateTracks([.. SelectedTracks.Select(t => t.Id)], Devices.Lookup));
         }
     }
 

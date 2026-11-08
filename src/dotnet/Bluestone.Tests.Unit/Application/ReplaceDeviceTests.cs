@@ -134,6 +134,76 @@ public sealed class ReplaceDeviceTests
     }
 
     [Fact]
+    public void AParkedRouteIntoADevicesInput_FollowsItsReplacement_AndComesBackWhenTheTrackLeavesItsGroup()
+    {
+        var keyed = Track.Create("keyed", TrackRole.Hybrid);
+        var key = Track.Create("key", TrackRole.Hybrid);
+        var ducker = TestDevices.Instance(TestDevices.Ducker);
+        var synth = TestDevices.Instance(TestDevices.Synth);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key) });
+        history.Execute(DeviceCommands.InsertDevice(key.Id, synth, TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, ducker, TestDevices.Lookup));
+        var sidechain = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
+        history.Execute(RoutingCommands.Connect(sidechain, TestDevices.Lookup));
+        var group = Track.Create("group", TrackRole.Group);
+        history.Execute(new ProjectCommand("group", p => p with { Sequence = p.Sequence.WithTrack(group) }));
+        history.Execute(GroupCommands.SetGroup(key.Id, group.Id, TestDevices.Lookup));
+        Assert.Contains(history.Current.ParkedConnections, c => c.Id == sidechain.Id);
+
+        var replacement = TestDevices.Instance(TestDevices.Ducker);
+        history.Execute(DeviceCommands.ReplaceDevice(ducker.Id, replacement, TestDevices.Lookup));
+        Assert.Equal(SignalNode.DeviceInput(replacement.Id, DeviceInputPort.Sidechain), history.Current.ParkedConnections.Single(c => c.Id == sidechain.Id).Destination);
+
+        history.Execute(GroupCommands.SetGroup(key.Id, null, TestDevices.Lookup));
+        Assert.Equal(SignalNode.DeviceInput(replacement.Id, DeviceInputPort.Sidechain), history.Current.Connections.Single(c => c.Id == sidechain.Id).Destination);
+    }
+
+    [Fact]
+    public void DuplicatingATrack_CopiesAParkedRouteIntoItsDevicesInput_SoTheCopyIsKeyedToo()
+    {
+        var keyed = Track.Create("keyed", TrackRole.Hybrid);
+        var key = Track.Create("key", TrackRole.Hybrid);
+        var ducker = TestDevices.Instance(TestDevices.Ducker);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key) });
+        history.Execute(DeviceCommands.InsertDevice(key.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keyed.Id, ducker, TestDevices.Lookup));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), TestDevices.Lookup));
+        var group = Track.Create("group", TrackRole.Group);
+        history.Execute(new ProjectCommand("group", p => p with { Sequence = p.Sequence.WithTrack(group) }));
+        history.Execute(GroupCommands.SetGroup(key.Id, group.Id, TestDevices.Lookup));
+
+        history.Execute(ProjectCommands.DuplicateTracks([keyed.Id]));
+        history.Execute(GroupCommands.SetGroup(key.Id, null, TestDevices.Lookup));
+
+        var copy = history.Current.Sequence.Tracks.Single(t => t.Name == "keyed copy");
+        var copiedDucker = history.Current.ChainOf(copy.Id)!.Devices[1];
+        Assert.Contains(history.Current.Connections, c => c.Source == SignalNode.Track(key.Id) && c.Destination == SignalNode.DeviceInput(copiedDucker.Id, DeviceInputPort.Sidechain));
+        Assert.Contains(history.Current.Connections, c => c.Source == SignalNode.Track(key.Id) && c.Destination == SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
+    }
+
+    [Fact]
+    public void DuplicatingATrack_LeavesOutACopiedRoute_ThatWouldDependOnAConnectionNotCopied()
+    {
+        // Keys (an instrument track) carries audio at its input only because Drums is routed into it.
+        var keys = Track.Create("keys", TrackRole.Instrument);
+        var drums = Track.Create("drums", TrackRole.Hybrid);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keys).WithTrack(drums) });
+        history.Execute(DeviceCommands.InsertDevice(drums.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keys.Id, TestDevices.Instance(TestDevices.MidiFx), TestDevices.Lookup));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id)), TestDevices.Lookup));
+        var input = SignalNode.ChainInput(history.Current.ChainOf(keys.Id)!.Id);
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, input, SignalNode.Master), TestDevices.Lookup));
+
+        history.Execute(ProjectCommands.DuplicateTracks([keys.Id], TestDevices.Lookup));
+
+        var copy = history.Current.Sequence.Tracks.Single(t => t.Name == "keys copy");
+        Assert.DoesNotContain(history.Current.Connections, c => c.Source == SignalNode.ChainInput(history.Current.ChainOf(copy.Id)!.Id));
+        Assert.Empty(SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(history.Current, TestDevices.Lookup)));
+    }
+
+    [Fact]
     public void Taps_MoveToTheReplacement_OnlyWhenItProducesTheirKindOfSignal()
     {
         var (history, track, fx, synth) = Chain();

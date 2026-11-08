@@ -280,6 +280,49 @@ public sealed class SignalGraphTests
     }
 
     [Fact]
+    public void TheChainsInput_SendsWhatArrivesBeforeTheFirstDevice()
+    {
+        // Bitwig-style junctions: the same track feeds hardware from before its transposer (dry) and after it (wet).
+        var keys = TrackOf("Keys", Note(0, 60));
+        var transpose = BuiltInDevices.CreateTranspose(12);
+        var project = NewProject().With(keys, transpose).WithInstrument(out var mu2000);
+        var chain = project.ChainOf(keys.Id)!;
+        project = project
+            .Connect(out var dry, SignalNode.ChainInput(chain.Id), SignalNode.ExternalPart(mu2000.Id))
+            .Connect(out var wet, SignalNode.Track(keys.Id), SignalNode.ExternalPart(mu2000.Id, "B"));
+
+        var result = project.Evaluate();
+
+        Assert.Equal(60, Assert.Single(result.PartFor(dry).Events.Notes()).Note.Value);
+        Assert.Equal(72, Assert.Single(result.PartFor(wet).Events.Notes()).Note.Value);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code is SignalDiagnosticCode.InvalidConnection or SignalDiagnosticCode.Feedback or SignalDiagnosticCode.Unrouted);
+    }
+
+    [Fact]
+    public void AConnectionIntoADeviceInput_OrdersItsOwner_WithinTheSameChainToo()
+    {
+        // Into another track's device: that track is evaluated after the source. From the same chain's input: no loop.
+        var lead = TrackOf("Lead", Note(0, 60));
+        var pad = TrackOf("Pad", Note(0, 48));
+        var inlet = Instance(TestDevices.EventInlet);
+        var padSynth = Instance(TestDevices.Synth);
+        var leadSynth = Instance(TestDevices.Synth);
+
+        // Pad comes first in the project, so only the connection's edge makes Lead evaluate before it.
+        var project = NewProject().With(pad, inlet, padSynth).With(lead, leadSynth);
+        var padChain = project.ChainOf(pad.Id)!;
+        project = project
+            .Connect(SignalNode.Track(lead.Id), SignalNode.DeviceInput(inlet.Id, DeviceInputPort.Receive))
+            .Connect(SignalNode.ChainInput(padChain.Id), SignalNode.DeviceInput(inlet.Id, DeviceInputPort.Receive));
+
+        var result = SignalGraph.Evaluate(project, Catalog.With(TestDevices.EventInlet));
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code is SignalDiagnosticCode.InvalidConnection or SignalDiagnosticCode.Feedback);
+        var order = result.SoftwareInstruments.Select(f => f.Device).ToList();
+        Assert.True(order.IndexOf(leadSynth.Id) is >= 0 and var first && first < order.IndexOf(padSynth.Id), "Lead is evaluated before Pad, which receives from it");
+    }
+
+    [Fact]
     public void AConnectionsMapping_FiltersAndRemapsChannels_WithoutTouchingTheClips()
     {
         var multi = TrackOf("Imported", Note(0, 60, channel: 1), Note(0, 62, channel: 2), Note(0, 64, channel: 10), XgOn(0));

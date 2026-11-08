@@ -112,7 +112,7 @@ public sealed record TrackSound
             SignalNodeKind.MixerChannel => project.Mixer.Find(node.AsMixerChannel())?.Name ?? "Missing channel",
             SignalNodeKind.Track => project.Sequence.FindTrack(node.AsTrack())?.Name ?? "Missing track",
             SignalNodeKind.Rack => project.FindChain(node.AsRack()) is { } rack ? DeviceViewViewModel.RackName(rack) : "Missing rack",
-            SignalNodeKind.Device => project.FindDevice(node.AsDevice())?.Device.DisplayName ?? "Missing device",
+            SignalNodeKind.Device or SignalNodeKind.DeviceInput => project.FindDevice(node.AsDevice())?.Device.DisplayName ?? "Missing device",
             SignalNodeKind.ExternalInstrument => project.FindInstrument(node.AsInstrument())?.Name ?? "Missing instrument",
             _ => SignalRoutingValidator.Describe(project, node),
         };

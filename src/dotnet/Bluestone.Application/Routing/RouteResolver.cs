@@ -260,8 +260,9 @@ public static class RouteResolver
         return null;
     }
 
-    // An events connection to anything but hardware, any audio connection from the track's output (its chain is heard), or a tap.
+    // An events connection to anything but hardware, any audio connection from the track's output (its chain is heard), or a
+    // connection from a point inside its chain.
     private static bool HasOtherDestination(Project project, TrackId track) =>
         project.ConnectionsFrom(SignalNode.Track(track)).Any(c => c.Kind == SignalKind.Audio || c.Destination.Kind != SignalNodeKind.ExternalInstrument)
-        || (project.ChainOf(track) is { } chain && project.Connections.Any(c => c.Source.Kind == SignalNodeKind.Device && chain.Find(c.Source.AsDevice()) is not null));
+        || (project.ChainOf(track) is { } chain && project.Connections.Any(c => c.Source.IsInside(chain)));
 }

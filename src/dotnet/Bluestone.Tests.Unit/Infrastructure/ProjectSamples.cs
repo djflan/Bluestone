@@ -97,7 +97,8 @@ internal static class ProjectSamples
             Voice = new VoiceAssignment("normal", ProgramNumber.FromNumber(34)),
         });
         var qy = project.Instruments[0].WithPort(new ExternalPort("B", "Port B")) with { OperatingMode = "XG" };
-        project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(lead.Id)) with { Devices = [arp] }).WithChain(rack) with
+        var leadChain = DeviceChain.Create(ChainOwner.ForTrack(lead.Id)) with { Devices = [arp] };
+        project = project.WithChain(leadChain).WithChain(rack) with
         {
             Instruments = [qy],
         };
@@ -113,6 +114,8 @@ internal static class ProjectSamples
                 SignalConnection.Create(SignalKind.Audio, SignalNode.Rack(rack.Id), SignalNode.Mixer(bus.Id)),
                 SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Master),
                 SignalConnection.Create(SignalKind.Events, SignalNode.Track(TrackId.New()), SignalNode.ExternalPart(qy.Id)),
+                SignalConnection.Create(SignalKind.Events, SignalNode.ChainInput(leadChain.Id), SignalNode.Rack(rack.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(arp.Id, DeviceInputPort.Sidechain)),
             }),
             ParkedConnections = [SignalConnection.Create(SignalKind.Events, SignalNode.Track(lead.Id), SignalNode.ExternalPart(qy.Id, "B")) with { Mapping = ChannelMapping.ForceTo(MidiChannel.FromNumber(5)) }],
         };

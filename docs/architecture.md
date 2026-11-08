@@ -389,8 +389,9 @@ templates without identities: loading one creates new devices.
 ### Routing
 
 Every route is a `SignalConnection` in the project's one list (ADR 0023). A connection starts at a
-track's output (the end of its chain), a rack's output, or a tap after one device, and ends at a track
-or rack, a part of an external instrument (port plus channel), a mixer channel, or the master. A
+junction of a chain (ADR 0037): its input before the first device, the point after one device (a tap), or its
+output (the track's or rack's). It ends at a track or rack, an input port of a device inside a chain (a receiver or a
+sidechain), a part of an external instrument (port plus channel), a mixer channel, or the master. A
 connection's `ChannelMapping` filters, forces, or remaps channels; clips are never changed to reach a
 different part. Validation rejects connections that cannot work and every feedback loop. The track
 inspector's External MIDI fields (Output, Profile, Channel, Transpose, Voice) are a view of this model

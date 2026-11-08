@@ -93,6 +93,24 @@ public sealed record ParameterDescriptor
 }
 
 /// <summary>
+/// An input of a device that a connection can end at, beside the chain's own signal: a receiver's source or a
+/// plugin's sidechain. The device decides what it does with what arrives (mix, replace, or analyse).
+/// </summary>
+/// <param name="Id">Stable within the definition; stored in connections. At most <see cref="MaxIdLength"/> characters.</param>
+/// <param name="Name">What the musician sees.</param>
+/// <param name="Kind">The one kind of signal the port takes.</param>
+public sealed record DeviceInputPort(string Id, string Name, SignalKind Kind)
+{
+    public const int MaxIdLength = 64;
+
+    /// <summary>A receiver device's input: events or audio brought into the chain from elsewhere in the project.</summary>
+    public const string Receive = "receive";
+
+    /// <summary>A plugin's sidechain (auxiliary audio input bus).</summary>
+    public const string Sidechain = "sidechain";
+}
+
+/// <summary>
 /// What a device is: its identity, what signals it takes in and puts out, which events it handles, and
 /// its parameters. A definition is declarative data. The code that runs it belongs to the signal layer
 /// (built-in processors) or to a plugin worker, so a project can describe a device whose implementation
@@ -109,6 +127,7 @@ public sealed record ParameterDescriptor
 public sealed record DeviceDefinition
 {
     private readonly ImmutableArray<ParameterDescriptor> _parameters = [];
+    private readonly ImmutableArray<DeviceInputPort> _inputs = [];
 
     public required DeviceDefinitionId Id { get; init; }
 
@@ -160,6 +179,40 @@ public sealed record DeviceDefinition
 
             _parameters = value.IsDefault ? [] : value;
         }
+    }
+
+    /// <summary>The device's extra inputs that connections can end at (ADR 0023), beside the chain's own signal.</summary>
+    public ImmutableArray<DeviceInputPort> Inputs
+    {
+        get => _inputs;
+        init
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var port in value)
+            {
+                ArgumentNullException.ThrowIfNull(port, nameof(Inputs));
+                ArgumentException.ThrowIfNullOrWhiteSpace(port.Id, nameof(Inputs));
+                if (port.Id.Length > DeviceInputPort.MaxIdLength || !seen.Add(port.Id))
+                {
+                    throw new ArgumentException($"Input port \"{port.Id}\" is too long or appears more than once.", nameof(Inputs));
+                }
+            }
+
+            _inputs = value.IsDefault ? [] : value;
+        }
+    }
+
+    public DeviceInputPort? FindInput(string? id)
+    {
+        foreach (var port in _inputs)
+        {
+            if (string.Equals(port.Id, id, StringComparison.Ordinal))
+            {
+                return port;
+            }
+        }
+
+        return null;
     }
 
     public DeviceCategory Category =>

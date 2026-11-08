@@ -99,7 +99,7 @@ The inspector (I) edits the selection. With several tracks selected, compatible 
 
 - **Track** shows the instrument, device count, audio destination, and a type only where it matters.
 - **External MIDI** holds the current alpha's hardware output, profile, channel, transpose, program, and initialization workflow.
-- **Connections** exposes the underlying event and audio routes for advanced work.
+- **Connections** exposes the underlying event and audio routes for advanced work. A route can start at the track's chain input (before its devices), after any device, or at its output.
 - **Racks** manages device chains that several tracks can share.
 - **Mixer** manages mixer channels and master gain.
 - **Recording** selects MIDI input, take mode, count-in, metronome output, and MIDI thru.

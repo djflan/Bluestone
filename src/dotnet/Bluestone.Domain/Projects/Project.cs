@@ -197,8 +197,8 @@ public sealed record Project
     public Project WithoutChain(DeviceChainId id) => this with { Chains = _chains.RemoveAll(c => c.Id == id) };
 
     /// <summary>
-    /// Removes a track with everything it owns: its chain, every connection from or to it or from one of its
-    /// devices, and parked connections from or to it. Instruments, racks, mixer channels, and other tracks'
+    /// Removes a track with everything it owns: its chain, every connection from or to it or from or to a point
+    /// inside its chain, and parked connections from or to it. Instruments, racks, mixer channels, and other tracks'
     /// automation stay.
     /// </summary>
     public Project WithoutTrack(TrackId track)
@@ -212,7 +212,7 @@ public sealed record Project
             Connections = _connections.RemoveAll(c =>
                 c.Source == node
                 || c.Destination == node
-                || (c.Source.Kind == SignalNodeKind.Device && chain?.Find(c.Source.AsDevice()) is not null)),
+                || (chain is not null && (c.Source.IsInside(chain) || c.Destination.IsInside(chain)))),
             ParkedConnections = _parked.IsEmpty ? _parked : _parked.RemoveAll(c => c.Source == node || c.Destination == node),
         };
     }

@@ -177,6 +177,34 @@ public sealed class ProjectSerializerTests
     }
 
     [Fact]
+    public void ChainInputsAndDeviceInputs_AreWrittenByTypeAndPort()
+    {
+        var connections = ToJson(ProjectSamples.Full())["project"]!["connections"]!.AsArray();
+
+        Assert.Equal("chainInput", (string)connections[^2]!["source"]!["type"]!);
+        Assert.Null(connections[^2]!["source"]!["port"]);
+        Assert.Equal("deviceInput", (string)connections[^1]!["destination"]!["type"]!);
+        Assert.Equal("sidechain", (string)connections[^1]!["destination"]!["port"]!);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void ADeviceInputWithoutAPort_IsAFormatError(string? port)
+    {
+        var json = ToJson(ProjectSamples.Full());
+        var connections = json["project"]!["connections"]!.AsArray();
+        var destination = connections[^1]!["destination"]!.AsObject();
+        destination.Remove("port");
+        if (port is not null)
+        {
+            destination["port"] = port;
+        }
+
+        Assert.Equal($"$.project.connections[{connections.Count - 1}].destination.port", Assert.Throws<ProjectFormatException>(() => FromJson(json)).JsonPath);
+    }
+
+    [Fact]
     public void DuplicateConnectionIds_AreFormatErrors()
     {
         var json = ToJson(ProjectSamples.Full());

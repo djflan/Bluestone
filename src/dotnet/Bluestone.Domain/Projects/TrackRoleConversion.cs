@@ -240,6 +240,7 @@ public static class TrackRoleConversion
     {
         SignalNodeKind.Track => source.AsTrack() == track.Id,
         SignalNodeKind.Device => project.FindDevice(source.AsDevice()) is { Chain.Owner: { Kind: ChainOwnerKind.Track } owner } && owner.Track == track.Id,
+        SignalNodeKind.ChainInput => project.FindChain(source.AsChain()) is { Owner: { Kind: ChainOwnerKind.Track } owner } && owner.Track == track.Id,
         _ => false,
     };
 }

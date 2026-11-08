@@ -87,7 +87,7 @@ public static class SignalRoutingValidator
             }
 
             sound &= CheckSource(project, connection, issues);
-            sound &= CheckDestination(project, connection, issues);
+            sound &= CheckDestination(project, connection, definitions, issues);
             if (sound)
             {
                 CheckSignal(project, connection, definitions, issues);
@@ -111,8 +111,9 @@ public static class SignalRoutingValidator
             case SignalNodeKind.Track when project.Sequence.FindTrack(source.AsTrack()) is not null:
             case SignalNodeKind.Rack when project.FindChain(source.AsRack()) is { Owner.Kind: ChainOwnerKind.Rack }:
             case SignalNodeKind.Device when project.FindDevice(source.AsDevice()) is not null:
+            case SignalNodeKind.ChainInput when project.FindChain(source.AsChain()) is not null:
                 return true;
-            case SignalNodeKind.Track or SignalNodeKind.Rack or SignalNodeKind.Device:
+            case SignalNodeKind.Track or SignalNodeKind.Rack or SignalNodeKind.Device or SignalNodeKind.ChainInput:
                 issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.UnknownSource, $"The source {Describe(project, source)} is not in the project.", connection));
                 return false;
             default:
@@ -121,7 +122,7 @@ public static class SignalRoutingValidator
         }
     }
 
-    private static bool CheckDestination(Project project, SignalConnection connection, ImmutableArray<RoutingIssue>.Builder issues)
+    private static bool CheckDestination(Project project, SignalConnection connection, DeviceDefinitionLookup definitions, ImmutableArray<RoutingIssue>.Builder issues)
     {
         var destination = connection.Destination;
         var ok = true;
@@ -147,13 +148,47 @@ public static class SignalRoutingValidator
 
                 break;
             case SignalNodeKind.Device:
-                issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidDestination, "A device output cannot be the destination of a connection; connect to a track or rack.", connection));
+                issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidDestination, "A device output cannot be the destination of a connection; connect to a track or rack, or to a device's input.", connection));
                 return false;
+            case SignalNodeKind.ChainInput:
+                issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidDestination, "A chain's input point cannot be the destination of a connection; connect to its track or rack.", connection));
+                return false;
+            case SignalNodeKind.DeviceInput:
+                if (project.FindDevice(destination.AsDevice()) is not { } target)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.UnknownDestination, "The destination device is not in the project.", connection));
+                    return false;
+                }
+
+                // A device in a chain whose track is gone is never played, so nothing would ever reach its input.
+                if (target.Chain.Owner.Kind == ChainOwnerKind.Track && project.Sequence.FindTrack(target.Chain.Owner.Track) is null)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.UnknownDestination, $"{target.Device.DisplayName} is in a chain whose track is not in the project.", connection));
+                    return false;
+                }
+
+                // A device that is not installed keeps its connections: the project must keep what was built.
+                if (definitions(target.Device.Definition.Id) is { } definition)
+                {
+                    if (definition.FindInput(destination.Port) is not { } input)
+                    {
+                        issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.UnknownPort, $"{target.Device.DisplayName} has no input \"{destination.Port}\".", connection));
+                        return false;
+                    }
+
+                    if (input.Kind != connection.Kind)
+                    {
+                        issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.KindMismatch, $"{target.Device.DisplayName}'s {input.Name} input takes {input.Kind.ToString().ToLowerInvariant()}, not {connection.Kind.ToString().ToLowerInvariant()}.", connection));
+                        return false;
+                    }
+                }
+
+                break;
         }
 
         var accepts = connection.Kind == SignalKind.Events
-            ? destination.Kind is SignalNodeKind.Track or SignalNodeKind.Rack or SignalNodeKind.ExternalInstrument
-            : destination.Kind is SignalNodeKind.Track or SignalNodeKind.Rack or SignalNodeKind.MixerChannel or SignalNodeKind.Master;
+            ? destination.Kind is SignalNodeKind.Track or SignalNodeKind.Rack or SignalNodeKind.ExternalInstrument or SignalNodeKind.DeviceInput
+            : destination.Kind is SignalNodeKind.Track or SignalNodeKind.Rack or SignalNodeKind.MixerChannel or SignalNodeKind.Master or SignalNodeKind.DeviceInput;
         if (!accepts)
         {
             issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.KindMismatch, $"{Describe(project, destination)} does not take {connection.Kind.ToString().ToLowerInvariant()}.", connection));
@@ -181,27 +216,28 @@ public static class SignalRoutingValidator
     private static void CheckSignal(Project project, SignalConnection connection, DeviceDefinitionLookup definitions, ImmutableArray<RoutingIssue>.Builder issues)
     {
         var source = connection.Source;
-        SignalPresence presence;
-        switch (source.Kind)
-        {
-            case SignalNodeKind.Track:
-                presence = project.ChainOf(source.AsTrack()) is { } chain
-                    ? SignalFlow.PresenceAt(project, chain, null, definitions)
-                    : SignalFlow.StartOf(project, ChainOwner.ForTrack(source.AsTrack()));
-                break;
-            case SignalNodeKind.Rack:
-                presence = SignalFlow.PresenceAt(project, project.FindChain(source.AsRack())!, null, definitions);
-                break;
-            default:
-                var (owner, device) = project.FindDevice(source.AsDevice())!.Value;
-                presence = SignalFlow.PresenceAt(project, owner, device.Id, definitions);
-                break;
-        }
-
+        var presence = SignalFlow.PresenceOf(project, source, definitions);
         if (!presence.Carries(connection.Kind))
         {
             issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.NothingToCarry, $"{Describe(project, source)} has no {connection.Kind.ToString().ToLowerInvariant()} to send at that point.", connection));
         }
+
+        CheckJunctionOrder(project, connection, issues);
+    }
+
+    // Within one chain, a device's input may take only what arrives at that device or earlier: from the device's own
+    // output or anything after it, the device would feed itself.
+    private static void CheckJunctionOrder(Project project, SignalConnection connection, ImmutableArray<RoutingIssue>.Builder issues)
+    {
+        if (!IsWithinChain(project, connection)
+            || SignalFlow.JunctionOf(project, connection.Source) is not var (_, from)
+            || SignalFlow.JunctionOf(project, connection.Destination) is not var (_, to)
+            || from <= to)
+        {
+            return;
+        }
+
+        issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.Cycle, $"{Describe(project, connection.Source)} comes after {Describe(project, connection.Destination)} in the same chain, so it would feed back on itself. Feedback is not allowed.", connection));
     }
 
     private static void CheckSends(Project project, ImmutableArray<RoutingIssue>.Builder issues)
@@ -216,14 +252,16 @@ public static class SignalRoutingValidator
     }
 
     // A cycle is a path of connections (and mixer outputs and sends) that returns to a node. Nodes are the things
-    // that own a chain (tracks and racks) and mixer channels; a tap belongs to its chain's owner, because
-    // everything before the tap has already run when it fires.
+    // that own a chain (tracks and racks) and mixer channels; a tap, a chain's input, and a device's input port belong
+    // to their chain's owner. This is conservative: a path that leaves a chain after one device and comes back into a
+    // later device of the same chain through another owner is reported, because owners are evaluated whole.
+    // Connections within one chain are ordered by the chain and checked by CheckJunctionOrder instead.
     private static void FindCycles(Project project, ImmutableArray<RoutingIssue>.Builder issues)
     {
         var edges = new Dictionary<(char, Guid), List<((char, Guid) To, ConnectionId? Via)>>();
         foreach (var connection in project.Connections)
         {
-            if (Owner(project, connection.Source) is not { } from || Owner(project, connection.Destination) is not { } to)
+            if (IsWithinChain(project, connection) || Owner(project, connection.Source) is not { } from || Owner(project, connection.Destination) is not { } to)
             {
                 continue;
             }
@@ -309,10 +347,23 @@ public static class SignalRoutingValidator
         SignalNodeKind.Track => ('T', node.Id),
         SignalNodeKind.Rack => ('R', node.Id),
         SignalNodeKind.MixerChannel => ('M', node.Id),
-        SignalNodeKind.Device when project.FindDevice(node.AsDevice()) is { } found =>
-            found.Chain.Owner.Kind == ChainOwnerKind.Track ? ('T', found.Chain.Owner.Track.Value) : ('R', found.Chain.Id.Value),
+        SignalNodeKind.Device or SignalNodeKind.DeviceInput when project.FindDevice(node.AsDevice()) is { } found => OwnerOf(found.Chain),
+        SignalNodeKind.ChainInput when project.FindChain(node.AsChain()) is { } chain => OwnerOf(chain),
         _ => null,
     };
+
+    private static (char, Guid) OwnerOf(DeviceChain chain) =>
+        chain.Owner.Kind == ChainOwnerKind.Track ? ('T', chain.Owner.Track.Value) : ('R', chain.Id.Value);
+
+    // A connection from a point of a chain into a device input of the same chain: the chain itself orders it, so it is
+    // not an edge between owners. Whether it runs forwards is checked by CheckJunctionOrder.
+    private static bool IsWithinChain(Project project, SignalConnection connection) =>
+        connection.Destination.Kind == SignalNodeKind.DeviceInput
+        && project.FindDevice(connection.Destination.AsDevice()) is { } target
+        && (connection.Source.IsInside(target.Chain) || connection.Source == OwnerNode(target.Chain));
+
+    private static SignalNode OwnerNode(DeviceChain chain) =>
+        chain.Owner.Kind == ChainOwnerKind.Track ? SignalNode.Track(chain.Owner.Track) : SignalNode.Rack(chain.Id);
 
     private static string NameOf(Project project, (char Kind, Guid Id) node) => node.Kind switch
     {
@@ -360,6 +411,8 @@ public static class SignalRoutingValidator
             SignalNodeKind.Track => project.Sequence.FindTrack(node.AsTrack()) is { } track ? $"track \"{track.Name}\"" : "a missing track",
             SignalNodeKind.Rack => project.FindChain(node.AsRack()) is { } rack ? (rack.Name.Length > 0 ? $"rack \"{rack.Name}\"" : "a rack") : "a missing rack",
             SignalNodeKind.Device => project.FindDevice(node.AsDevice()) is { } found ? $"{found.Device.DisplayName} in {OwnerName(project, found.Chain)}" : "a missing device",
+            SignalNodeKind.ChainInput => project.FindChain(node.AsChain()) is { } chain ? $"the input of {OwnerName(project, chain)}" : "a missing chain",
+            SignalNodeKind.DeviceInput => project.FindDevice(node.AsDevice()) is { } target ? $"{target.Device.DisplayName} in {OwnerName(project, target.Chain)} ({node.Port})" : "a missing device",
             SignalNodeKind.ExternalInstrument => project.FindInstrument(node.AsInstrument()) is { } instrument ? $"{instrument.Name}{(node.Port is null ? string.Empty : " port " + node.Port)}" : "a missing instrument",
             SignalNodeKind.MixerChannel => project.Mixer.Find(node.AsMixerChannel()) is { } channel ? $"mixer channel \"{channel.Name}\"" : "a missing mixer channel",
             _ => "the master",
