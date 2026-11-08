@@ -34,6 +34,7 @@ public partial class MainWindow
     private void AttachSettings(MainViewModel vm)
     {
         Settings.Plugins = vm.Plugins;
+        Settings.Display = vm.Display;
         vm.Browser.PluginSettingsRequested += (_, _) => ShowPlugins();
         Settings.PropertyChanged += (_, e) =>
         {

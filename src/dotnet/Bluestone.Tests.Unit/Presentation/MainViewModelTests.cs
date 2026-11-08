@@ -608,7 +608,7 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ARoutingIndicator_OpensTheRoutingInspector_AndShowsWhereTheDeviceSends()
+    public async Task RouteOutput_OpensTheRoutingInspector_AndTheJunctionAfterTheDeviceShowsWhereItSends()
     {
         var (first, second) = await TwoTracksAsync();
         var strip = _vm.DeviceView!;
@@ -624,10 +624,279 @@ public sealed class MainViewModelTests : IAsyncLifetime
 
         Assert.True(shown);
         Assert.Equal("After Arpeggiator", _vm.Connections.Source!.Name);
-        Assert.Equal("→ track \"Strings\"", strip.Devices[0].RoutingIndicator);
+        Assert.Equal("track \"Strings\"", strip.Devices[0].Output.Routes);
+        Assert.True(strip.Devices[0].Output.IsRouted);
+        Assert.False(strip.Input.IsRouted);
         Assert.Contains("After Arpeggiator", Assert.Single(_vm.Connections.Outgoing).Text, StringComparison.Ordinal);
         Assert.Equal(first.Id, _session.Project.ChainOf(first.Id)!.Owner.Track);
         Assert.Equal(SignalNode.Track(second.Id), Assert.Single(_session.Project.Connections, c => c.Source.Kind == SignalNodeKind.Device).Destination);
+    }
+
+    [Fact]
+    public async Task AJunctionsInsert_AimsTheBrowserAtItsGap_UntilADeviceIsInsertedOrSelected()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        AddDevice("Transpose");
+        await Settle();
+        Assert.Equal(["Arpeggiator", "Transpose"], strip.Devices.Select(d => d.Name));
+
+        // The + before the first device: the Browser says so, the gap is marked, and the next insert lands there.
+        strip.InsertAtJunctionCommand.Execute(strip.Input);
+        Assert.Equal(0, strip.InsertionGap);
+        Assert.True(strip.Input.IsInsertionPoint);
+        Assert.Equal("Into Piano, before Arpeggiator", _vm.Browser.TargetText);
+        AddDevice("Event Filter");
+        await Settle();
+        Assert.Equal(["Event Filter", "Arpeggiator", "Transpose"], strip.Devices.Select(d => d.Name));
+        Assert.Null(strip.InsertionGap);
+        Assert.False(strip.Input.IsInsertionPoint);
+
+        // Between two devices; then selecting a device goes back to inserting after the selection.
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        Assert.Equal(2, strip.InsertionGap);
+        Assert.Equal("Into Piano, after Arpeggiator", _vm.Browser.TargetText);
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        Assert.Null(strip.InsertionGap);
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        Assert.True(strip.Devices[1].Output.IsInsertionPoint);
+        strip.Devices[0].SelectCommand.Execute(null);
+        Assert.Null(strip.InsertionGap);
+        Assert.False(strip.Devices[1].Output.IsInsertionPoint);
+        Assert.Equal("Into Piano, after Event Filter", _vm.Browser.TargetText);
+
+        // Choosing a device any other way (here, directly, as the inspector's instrument link does) also lets it go.
+        strip.InsertAtJunctionCommand.Execute(strip.Input);
+        Assert.Equal(0, strip.InsertionGap);
+        strip.SelectedDevice = strip.Devices[2];
+        Assert.Null(strip.InsertionGap);
+
+        // The chosen gap follows its junction through edits made elsewhere, and is let go when its junction goes.
+        strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
+        var piano = _vm.Tracks[0].Id;
+        var lookup = Bluestone.Signal.DeviceCatalog.BuiltIn.Lookup;
+        _session.Execute(Bluestone.Application.Editing.DeviceCommands.InsertDevice(piano, Bluestone.Domain.Devices.DeviceInstance.Create(Bluestone.Domain.Devices.BuiltInDevices.Transpose.ToReference()), lookup, 0));
+        await Settle();
+        Assert.Equal(3, strip.InsertionGap);
+        Assert.True(strip.Devices[2].Output.IsInsertionPoint);
+        Assert.Equal("Into Piano, after Arpeggiator", _vm.Browser.TargetText);
+        _session.Execute(Bluestone.Application.Editing.DeviceCommands.RemoveDevice(strip.Devices[2].Id, lookup));
+        await Settle();
+        Assert.Null(strip.InsertionGap);
+        Assert.DoesNotContain(strip.Junctions, j => j.IsInsertionPoint);
+    }
+
+    [Fact]
+    public async Task AReceiversPicker_OffersOnlyPointsThatCanFeedIt_AndChoosingOneIsOneUndoStep()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        AddDevice("Note Receiver");
+        await Settle();
+        var panel = strip.Devices[1];
+        Assert.True(panel.IsReceiver);
+        Assert.Null(panel.Sidechain);
+        Assert.Empty(panel.VisibleParameters);
+        var receiver = panel.Receiver!;
+        Assert.False(receiver.HasSource);
+        Assert.Equal("Choose a source", receiver.SourceText);
+
+        // Its own chain only before it (later points would feed back), and other tracks' points that carry notes.
+        receiver.Picker.Open();
+        Assert.Equal(["Piano", "Piano · Input", "Piano · After Arpeggiator", "Strings", "Strings · Output"], receiver.Picker.Rows.Select(r => r.ToString()));
+        receiver.Picker.Query = "arp";
+        Assert.Equal(["Piano", "Piano · After Arpeggiator"], receiver.Picker.Rows.Select(r => r.ToString()));
+        receiver.Picker.Query = "zzz";
+        Assert.True(receiver.Picker.IsEmpty);
+        receiver.Picker.Query = "strings";
+        var closed = false;
+        receiver.Picker.Chosen += (_, _) => closed = true;
+        receiver.Picker.ChooseFirstCommand.Execute(null);
+        await Settle();
+
+        receiver = strip.Devices[1].Receiver!;
+        Assert.True(closed);
+        Assert.True(receiver.HasSource);
+        Assert.Equal("Strings · Output", receiver.SourceText);
+        Assert.True(receiver.Picker.CanClear);
+        Assert.Single(_session.Project.Connections);
+
+        // Choosing again replaces the source; one undo brings the first back.
+        receiver.Picker.Open();
+        receiver.Picker.ChooseCommand.Execute(receiver.Picker.Rows.Single(r => r.Name == "Input"));
+        await Settle();
+        Assert.Equal("Piano · Input", strip.Devices[1].Receiver!.SourceText);
+        Assert.Single(_session.Project.Connections);
+        _vm.UndoCommand.Execute(null);
+        await Settle();
+        Assert.Equal("Strings · Output", strip.Devices[1].Receiver!.SourceText);
+
+        // Mix | Replace is the receiver's Replace parameter.
+        Assert.True(strip.Devices[1].Mixes);
+        strip.Devices[1].Replaces = true;
+        await Settle();
+        Assert.True(Bluestone.Domain.Devices.BuiltInDevices.ReplacesOf(_session.Project.FindDevice(strip.Devices[1].Id)!.Value.Device));
+        Assert.False(strip.Devices[1].Mixes);
+
+        strip.Devices[1].Receiver!.ClearCommand.Execute(null);
+        await Settle();
+        Assert.False(strip.Devices[1].Receiver!.HasSource);
+        Assert.Empty(_session.Project.Connections);
+    }
+
+    [Fact]
+    public async Task RouteFromAJunction_InAViewLockedToAnotherTrack_StartsTheConnectionThere()
+    {
+        var (first, second) = await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        strip.LockToTrack(first.Id);
+        _vm.Select(second);
+        await Settle();
+        Assert.Equal("Piano", strip.Heading);
+
+        strip.RouteFromJunctionCommand.Execute(strip.Input);
+        await Settle();
+
+        Assert.Equal("Piano input (before devices)", _vm.Connections.Source!.Name);
+        Assert.Equal(first.Id, Assert.Single(_vm.SelectedTracks).Id);
+    }
+
+    [Fact]
+    public async Task ATrackWithNoDevicesYet_HasOneWorkingJunction_AndShowsNothingLeftFromTheTrackBefore()
+    {
+        var (first, second) = await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        _playback.Live.Post(first.Id, ChannelMessage.NoteOn(MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.Max), _clock.Now);
+        _vm.OnFrame();
+        Assert.True(strip.Input.NotesHeld);
+
+        _vm.Select(second);
+        await Settle();
+        Assert.Null(_session.Project.ChainOf(second.Id));
+        Assert.False(strip.Input.NotesHeld);
+        Assert.Same(strip.Input, Assert.Single(strip.Junctions));
+
+        // Its + aims the Browser at the start; its route starts at the track's output (the input, with no devices).
+        strip.InsertAtJunctionCommand.Execute(strip.Input);
+        Assert.Equal(0, strip.InsertionGap);
+        Assert.Equal("Into Strings, as its first device", _vm.Browser.TargetText);
+        AddDevice("Transpose");
+        await Settle();
+        Assert.Equal("Transpose", Assert.Single(strip.Devices).Name);
+        _playback.Live.Post(first.Id, ChannelMessage.NoteOff(MidiChannel.FromIndex(0), NoteNumber.MiddleC, Velocity.DefaultRelease), _clock.Now);
+    }
+
+    [Fact]
+    public async Task TheLastJunction_IsRoutedWhenADeviceInputTakesTheChainsOutput_ButNotForAnOrdinaryOutput()
+    {
+        var (first, second) = await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        Assert.False(strip.LastJunction!.IsRouted);
+
+        // Strings gets a Note Receiver fed from Piano's output.
+        _vm.Select(second);
+        await Settle();
+        AddDevice("Note Receiver");
+        await Settle();
+        var receiver = _vm.DeviceView!.Devices[0].Receiver!;
+        receiver.Picker.Open();
+        receiver.Picker.ChooseCommand.Execute(receiver.Picker.Rows.Single(r => r.Owner == "Piano" && r.Name == "Output"));
+        await Settle();
+
+        _vm.Select(first);
+        await Settle();
+        Assert.True(strip.LastJunction!.IsRouted);
+        Assert.Contains("Note Receiver", strip.LastJunction.Routes, StringComparison.Ordinal);
+        Assert.False(strip.Input.IsRouted);
+    }
+
+    [Fact]
+    public async Task AReceiverFedBySeveralConnections_SaysSo_AndNamesThemAll()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        AddDevice("Note Receiver");
+        await Settle();
+        var receiver = strip.Devices[1].Receiver!;
+        receiver.Picker.Open();
+        receiver.Picker.ChooseCommand.Execute(receiver.Picker.Rows.Single(r => r.Owner == "Strings" && r.Name == "Output"));
+        await Settle();
+
+        // A second connection into it, as the Connections inspector can make.
+        var inlet = SignalNode.DeviceInput(strip.Devices[1].Id, Bluestone.Domain.Devices.DeviceInputPort.Receive);
+        _session.Execute(Bluestone.Application.Editing.RoutingCommands.Connect(SignalConnection.Create(Bluestone.Domain.Devices.SignalKind.Events, SignalNode.ChainInput(_session.Project.ChainOf(_vm.Tracks[0].Id)!.Id), inlet), Bluestone.Signal.DeviceCatalog.BuiltIn.Lookup));
+        await Settle();
+
+        receiver = strip.Devices[1].Receiver!;
+        Assert.Equal("2 sources", receiver.SourceText);
+        Assert.Contains("Strings, output", receiver.SourceDetail, StringComparison.Ordinal);
+        Assert.Contains("Piano, input", receiver.SourceDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AJunctionShownForAnotherPoint_StartsItsLevelFromNothing()
+    {
+        var junction = new JunctionSignal { Key = Guid.NewGuid(), CanCarryAudio = true };
+        junction.Update(false, new Bluestone.Audio.MeterReading(0.9f, 0.9f, 0.5f, 0.5f), System.Diagnostics.Stopwatch.GetTimestamp());
+        Assert.True(junction.Levels.HoldLeft > MeterLevels.FloorDecibels);
+
+        junction.Key = Guid.NewGuid();
+
+        Assert.Equal(MeterLevels.FloorDecibels, junction.Levels.HoldLeft);
+        Assert.Equal(MeterLevels.FloorDecibels, junction.Levels.PeakLeft);
+        Assert.False(junction.Levels.IsActive);
+    }
+
+    [Fact]
+    public async Task ReorderingTwoReceivers_GivesEachPanelAPickerForItsOwnDevice()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Note Receiver");
+        AddDevice("Note Receiver");
+        await Settle();
+        var firstId = strip.Devices[0].Id;
+        var firstInput = strip.Devices[0].Receiver!;
+
+        strip.Devices[0].MoveRightCommand.Execute(null);
+        await Settle();
+
+        Assert.Equal(firstId, strip.Devices[1].Id);
+        Assert.NotSame(firstInput, strip.Devices[0].Receiver);
+        Assert.Equal(strip.Devices[0].Id, strip.Devices[0].Receiver!.Device);
+        Assert.Equal(strip.Devices[1].Id, strip.Devices[1].Receiver!.Device);
+    }
+
+    [Fact]
+    public async Task RouteFromAJunction_OpensTheInspectorWithThatPointAsTheSource()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        await Settle();
+        var shown = 0;
+        _vm.Connections.ShowRequested += (_, _) => shown++;
+
+        strip.RouteFromJunctionCommand.Execute(strip.Input);
+        Assert.Equal("Piano input (before devices)", _vm.Connections.Source!.Name);
+        _vm.Connections.Destination = _vm.Connections.Destinations.Single(d => d.Name == "Track: Strings");
+        _vm.Connections.ConnectCommand.Execute(null);
+        await Settle();
+        Assert.True(strip.Input.IsRouted);
+        Assert.False(strip.Devices[0].Output.IsRouted);
+
+        strip.RouteFromJunctionCommand.Execute(strip.Devices[0].Output);
+        Assert.Equal("After Arpeggiator", _vm.Connections.Source!.Name);
+        Assert.Equal(2, shown);
     }
 
     [Fact]

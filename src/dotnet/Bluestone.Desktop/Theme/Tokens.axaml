@@ -52,6 +52,15 @@
   <Color x:Key="Signal.InstrumentColor">#9C82D9</Color>
   <Color x:Key="Signal.AudioColor">#4FB3B0</Color>
   <Color x:Key="Signal.OtherColor">#8A8A92</Color>
+  <!-- Levels (the mixer's meters, a junction's level): cyan, brightening to white-cyan near full scale, red past it. -->
+  <Color x:Key="Meter.LowColor">#3CC8FF</Color>
+  <Color x:Key="Meter.MidColor">#3D5BFF</Color>
+  <Color x:Key="Meter.HotColor">#FF2E93</Color>
+  <Color x:Key="Meter.ClipColor">#FF3036</Color>
+  <Color x:Key="Meter.TrackColor">#222225</Color>
+  <!-- A junction's note lamp: a warm pilot-lamp amber segment under its level, lit while notes are held there. -->
+  <!-- The MIDI icon: the level's first segment colour (Meter.Low), lightened 25%. -->
+  <Color x:Key="Junction.LampColor">#6DD6FF</Color>
 
   <!-- Brushes for the tokens above. -->
   <SolidColorBrush x:Key="Surface.Sunken" Color="{StaticResource Surface.SunkenColor}" />
@@ -248,7 +257,7 @@
   <x:Double x:Key="DevicePanel.SmallWidth">152</x:Double>
   <x:Double x:Key="DevicePanel.MediumWidth">216</x:Double>
   <x:Double x:Key="DevicePanel.LargeWidth">280</x:Double>
-  <x:Double x:Key="DevicePanel.Gap">14</x:Double>
+  <x:Double x:Key="DevicePanel.Gap">20</x:Double>
   <x:Double x:Key="DevicePanel.KnobCellWidth">64</x:Double>
   <x:Double x:Key="DevicePanel.KnobCellHeight">66</x:Double>
   <x:Double x:Key="DevicePanel.SwitchWidth">128</x:Double>
@@ -258,6 +267,14 @@
   <x:Double x:Key="DevicePanel.NodeSize">10</x:Double>
   <x:Double x:Key="DevicePanel.NodeWidth">56</x:Double>
   <x:Double x:Key="DevicePanel.FooterHeight">22</x:Double>
+  <!-- A junction between devices (ADR 0037): a segmented level with a small glowing MIDI icon under it. -->
+  <x:Double x:Key="Junction.LinkY">105</x:Double>
+  <x:Double x:Key="Junction.LevelHeight">52</x:Double>
+  <x:Double x:Key="Junction.LevelBarWidth">5</x:Double>
+  <x:Double x:Key="Junction.LevelSegmentHeight">1</x:Double>
+  <x:Double x:Key="Junction.LevelSegmentGap">1</x:Double>
+  <x:Double x:Key="Junction.LampHeight">11</x:Double>
+  <x:Double x:Key="Junction.LampGap">7</x:Double>
   <BoxShadows x:Key="Shadow.Focus">0 0 6 0 #806AA2E4</BoxShadows>
 
   <!-- Icons. -->
@@ -268,4 +285,6 @@
   <!-- Motion: short and only where it explains a change. -->
   <sys:TimeSpan x:Key="Motion.Fast">0:0:0.10</sys:TimeSpan>
   <sys:TimeSpan x:Key="Motion.Normal">0:0:0.16</sys:TimeSpan>
+  <!-- A note lamp lets go softly, so short notes still read as a pulse. -->
+  <sys:TimeSpan x:Key="Motion.LampRelease">0:0:0.22</sys:TimeSpan>
 </ResourceDictionary>

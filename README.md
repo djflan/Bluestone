@@ -18,7 +18,7 @@ Bluestone combines deep, flexible signal flow with clear, approachable workflows
 > [!IMPORTANT]
 > Bluestone is alpha software. It is usable for music production today and intended for musicians who enjoy adopting new creative tools early. Important production workflows are still incomplete, project formats may evolve, and several hardware and platform paths still need physical verification.
 
-![Bluestone's workspace: the inspector beside the arrangement, a Device View with an Arpeggiator, Bluestone's reference instrument, and Transpose, and the Browser](docs/images/bluestone-workspace.png)
+![Bluestone's workspace while playing: the inspector beside the arrangement, and a Device View whose chain (Arpeggiator, Transpose, Bluestone's reference instrument and gain) shows its signal between every device, glowing MIDI icons where notes are held and levels where audio flows](docs/images/bluestone-workspace.png)
 
 ## The idea
 

@@ -215,6 +215,7 @@ public partial class App : Avalonia.Application
             Plugins = new PluginsViewModel(library, dispatcher, devices, hosting, activities),
             LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
+        viewModel.Display.Use(new DisplaySettingsStore(DisplaySettingsPath));
         var initialized = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices, viewModel);
         await Step(splash, "Finding MIDI devices and resolving routes…");
@@ -273,6 +274,10 @@ public partial class App : Avalonia.Application
     /// <summary>Where the audio settings are kept, e.g. ~/Library/Application Support/Bluestone/audio-settings.json on macOS.</summary>
     public static string AudioSettingsPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "audio-settings.json");
+
+    /// <summary>Display preferences (Settings ▸ Display), e.g. ~/Library/Application Support/Bluestone/display-settings.json on macOS.</summary>
+    public static string DisplaySettingsPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "display-settings.json");
 
     /// <summary>How plugins share worker processes (ADR 0034), e.g. ~/Library/Application Support/Bluestone/plugin-hosting.json on macOS.</summary>
     public static string PluginHostingSettingsPath =>

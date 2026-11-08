@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             x:Class="Bluestone.Desktop.Views.DisplaySettingsPage"
+             x:DataType="vm:DisplayViewModel"
+             AutomationProperties.Name="Display settings">
+  <!-- Display preferences for the whole application, saved as soon as they change. -->
+  <StackPanel Classes="settingsGroups">
+    <StackPanel Classes="settingsGroup">
+      <TextBlock Classes="overline" Text="DEVICE VIEW" />
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Signal indicators" />
+        <ComboBox x:Name="IndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Positions}" SelectedItem="{Binding IndicatorPositionChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Levels show" />
+        <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
+      </Grid>
+      <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, and whether a level follows the average loudness (with the peak held above it) or the peaks, in every Device View." />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

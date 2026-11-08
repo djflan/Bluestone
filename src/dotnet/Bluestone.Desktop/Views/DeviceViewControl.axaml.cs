@@ -101,7 +101,8 @@ public partial class DeviceViewControl : UserControl
         }
 
         vm.Activate();
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is not Control source)
+        // A seam belongs to the gap, not the device after it: pressing it does not select that device.
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is not Control source || source is Controls.JunctionSeam)
         {
             return;
         }

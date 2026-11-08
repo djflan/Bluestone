@@ -7,6 +7,7 @@ internal static class Palette
 {
     public static readonly Color Base = Color.Parse("#1C1C1E");
     public static readonly Color Panel = Color.Parse("#252527");
+    public static readonly Color Sunken = Color.Parse("#161618");
     public static readonly Color Raised = Color.Parse("#2E2E31");
     public static readonly Color Divider = Color.Parse("#111113");
 
@@ -48,6 +49,14 @@ internal static class Palette
     public static readonly Color SignalInstrument = Color.Parse("#9C82D9");
     public static readonly Color SignalAudio = Color.Parse("#4FB3B0");
     public static readonly Color SignalOther = Color.Parse("#8A8A92");
+
+    // Levels (Meter.* tokens)
+    public static readonly Color MeterLow = Color.Parse("#3CC8FF");
+    public static readonly Color MeterMid = Color.Parse("#3D5BFF");
+    public static readonly Color MeterHot = Color.Parse("#FF2E93");
+    public static readonly Color MeterClip = Color.Parse("#FF3036");
+    public static readonly Color MeterTrack = Color.Parse("#222225");
+    public static readonly Color JunctionLamp = Lighten(MeterLow, 0.25);
 
     /// <summary>Track colours, muted so dense arrangements stay readable; status is never conveyed by these alone.</summary>
     public static readonly Color[] Tracks =

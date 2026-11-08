@@ -63,7 +63,8 @@ search and category filters. Recommendations are hints for the target chain (an 
 then effects); nothing is hidden or refused for being unusual. Insertion is by drag and drop onto a Device View,
 which decides the chain and the exact gap (`DeviceViewViewModel.GapAt`, shown by an insertion marker). Double-click
 or Return inserts into the **most recently active** Device View (`WorkspaceViewModel.InsertionTarget`), after its
-selected device, if that view is open and shows a chain; otherwise nothing is inserted and a message says why.
+selected device (or into the gap chosen with a junction's **+**, ADR 0037), if that view is open and shows a chain;
+otherwise nothing is inserted and a message says why.
 Bluestone never guesses a destination.
 
 The arrangement is also an explicit drop target for Browser devices: empty space creates a named hybrid track with

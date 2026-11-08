@@ -346,6 +346,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _plugins?.StatusOf(device) is { } runtime
             ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
             {
+                HasSidechain = runtime.HasSidechain,
                 Editor = EditorWindows is { } windows && windows.IsOpen(device.Id)
                     ? new EditorWindowStatus(windows.IsPinned(device.Id), windows.SendsKeysToBluestone(device.Id), windows.IsHiddenByFollow(device.Id), windows.FollowsSelection)
                     {
@@ -1675,6 +1676,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public Func<Guid, Bluestone.Audio.MeterReading?>? JunctionLevelSource { get; set; }
 
+    /// <summary>Application-wide display preferences (Settings ▸ Display), such as where junction indicators sit.</summary>
+    public DisplayViewModel Display { get; } = new();
+
     /// <summary>
     /// Tells the audio engine which junctions to measure: those the open Device Views show. Set by the app; called on
     /// the UI thread whenever that set changes, and once when set.
@@ -1713,7 +1717,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Select(j => j.Key).ToHashSet();
+        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Select(j => j.Key).Where(k => k != Guid.Empty).ToHashSet();
         if (!keys.SetEquals(_watchedJunctions))
         {
             _watchedJunctions = keys;

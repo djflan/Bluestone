@@ -110,6 +110,10 @@ Group tracks show their members beneath them. Use the group's arrow to fold or u
 
 Open the Device View with E. A chain runs left to right between its input and output. Device panels provide parameters, bypass, plugin-editor and restart controls, and collapse buttons. Drag a panel by its name to reorder it; long chains scroll horizontally.
 
+Between devices, each point of the chain shows what is there: a small level for its audio and, under it, a MIDI icon that glows while notes are held. Hover a point to read it in words. Its **+** opens the Browser aimed at that gap, so the next device you insert lands there (Return on a focused point does the same; click it again to cancel); right-click it for **Insert Device Here** and **Route from Here…**. A point that also sends its signal somewhere shows a small dot on the line; click it to see the connections. **Settings ▸ Display** chooses where these indicators sit and whether levels show the average with the held peak or just the peak.
+
+A **Note Receiver** or **Audio Receiver** brings signal from anywhere in the project into the chain at its place: click its source to choose a track or rack and the point to take (its input, after any of its devices, or its output), then choose **Mix** to add it to the chain's signal or **Replace** to use it instead. An effect plugin with a sidechain input shows an **SC** chip in its header; click it to choose what keys it. The source list only offers points that can be connected, and choosing one is a single undo step.
+
 An unlocked Device View follows the selected track. Lock it to keep its current track or rack visible. Use + beside the detail tabs for another Device View. Each view can be docked, collapsed to a border-rail icon, or detached. Several views of one chain share project device state but keep their own selection, collapse, and scroll state.
 
 Open the Browser with Shift + B. Search or filter devices, plugins, and project racks. Drag a device to an exact gap in the Device View, or double-click/press Return to insert it into the most recently active Device View. Drop a Browser item over a device panel to replace that device in one undo step.

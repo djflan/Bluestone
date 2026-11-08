@@ -64,6 +64,16 @@ public sealed class MeterLevels
 
     public void ResetClip() => Clipped = false;
 
+    /// <summary>Forgets everything shown so far: the meter is at the floor, with no peak held and no clip.</summary>
+    public void Reset()
+    {
+        IsActive = false;
+        PeakLeft = PeakRight = RmsLeft = RmsRight = HoldLeft = HoldRight = FloorDecibels;
+        _heldLeftAt = _heldRightAt = 0;
+        Clipped = false;
+        Updated?.Invoke(this, EventArgs.Empty);
+    }
+
     private static (double Hold, long At) Hold(double peak, double hold, long heldAt, long timestamp) =>
         peak >= hold || Stopwatch.GetElapsedTime(heldAt, timestamp) >= HoldTime ? (peak, timestamp) : (hold, heldAt);
 

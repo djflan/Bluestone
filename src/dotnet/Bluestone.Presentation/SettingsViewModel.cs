@@ -9,6 +9,7 @@ public enum SettingsPage
 {
     Audio,
     Plugins,
+    Display,
 }
 
 /// <summary>One category in the Settings list: its page, name, one-line description, the words a search finds it by, and its content.</summary>
@@ -20,6 +21,7 @@ public sealed record SettingsCategory(SettingsPage Page, string Name, string Des
     public string UnavailableText => Page switch
     {
         SettingsPage.Audio => "Audio output is not available in this session.",
+        SettingsPage.Display => "Display settings are not available in this session.",
         _ => "Plugin hosting is not available in this session.",
     };
 
@@ -43,6 +45,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly List<SettingsCategory> _all = [];
     private AudioViewModel? _audio;
     private PluginsViewModel? _plugins;
+    private DisplayViewModel? _display;
 
     public SettingsViewModel() => Rebuild();
 
@@ -64,6 +67,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         set
         {
             _plugins = value;
+            Rebuild();
+        }
+    }
+
+    /// <summary>Display preferences, once the host has composed them.</summary>
+    public DisplayViewModel? Display
+    {
+        get => _display;
+        set
+        {
+            _display = value;
             Rebuild();
         }
     }
@@ -129,6 +143,12 @@ public sealed partial class SettingsViewModel : ObservableObject
             "Scanned VST3 and CLAP plugins, how they share worker processes, crash recovery, and quarantined modules.",
             "vst3 clap scan rescan hosting worker process sandbox crash restart quarantine folders",
             _plugins));
+        _all.Add(new SettingsCategory(
+            SettingsPage.Display,
+            "Display",
+            "How the Device View shows signal: where each junction's level and MIDI icon sit, and what the levels show.",
+            "display appearance device view junction indicator level meter note midi lamp position top bottom half rms peak average",
+            _display));
         Filter();
     }
 

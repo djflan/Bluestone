@@ -399,6 +399,76 @@ public sealed class DeviceViewTests
     }
 
     [Fact]
+    public Task ASeamsPlus_AimsTheBrowserAtItsGap_AndItsRoutedMark_OpensTheConnections() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var seam = deviceView.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[1].Arriving);
+        Assert.False(seam.ShowsPlus);
+
+        // Hovering shows the +, clear of the indicators; clicking it aims the Browser here without selecting a device.
+        var (plus, _) = seam.Targets;
+        app.Window.MouseMove(app.InWindow(seam, plus.Center));
+        app.Settle();
+        Assert.True(seam.ShowsPlus);
+        var selected = view.SelectedDevice;
+        app.ClickAt(seam, plus.Center);
+        Assert.Equal(1, view.InsertionGap);
+        Assert.True(view.Devices[0].Output.IsInsertionPoint);
+        Assert.Same(selected, view.SelectedDevice);
+        Assert.True(app.Find<BrowserView>("DockedBrowser").IsEffectivelyVisible);
+        app.SaveFrame("device-view-seam-insert");
+        view.Insert(Definition("Transpose"));
+        app.Settle();
+        Assert.Equal(["Transpose", "Transpose", "Event Filter", "Arpeggiator"], view.Devices.Select(d => d.Definition!.Name));
+
+        // A junction a connection takes signal from shows the routed mark; it opens the connections from there.
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        view.RouteFromJunctionCommand.Execute(view.Devices[0].Output);
+        app.ViewModel.Connections.Destination = app.ViewModel.Connections.Destinations.Single(d => d.Name == "Track: Pad");
+        app.ViewModel.Connections.ConnectCommand.Execute(null);
+        app.Settle();
+        seam = deviceView.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[0].Output);
+        Assert.True(view.Devices[0].Output.IsRouted);
+        app.ViewModel.Connections.Source = app.ViewModel.Connections.Sources[^1];
+        var (_, routed) = seam.Targets;
+        Assert.False(routed.Intersects(seam.Targets.Plus));
+        app.Window.MouseMove(app.InWindow(seam, routed.Center));
+        app.ClickAt(seam, routed.Center);
+        Assert.Equal("After Transpose", app.ViewModel.Connections.Source!.Name);
+        Assert.Contains("also sent to", seam.Describe(), StringComparison.Ordinal);
+        app.SaveFrame("device-view-seam-routed");
+    });
+
+    [Fact]
+    public Task ASeam_IsAButtonToScreenReaders_NamedForItsPlace_AndInvokingItAimsTheBrowserThere() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[0].Output);
+
+        var peer = Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(seam);
+
+        Assert.Equal(Avalonia.Automation.Peers.AutomationControlType.Button, peer.GetAutomationControlType());
+        Assert.Equal("After Transpose", peer.GetName());
+        Assert.Contains("After Transpose", peer.GetHelpText(), StringComparison.Ordinal);
+        Assert.IsAssignableFrom<Avalonia.Automation.Provider.IInvokeProvider>(peer).Invoke();
+        app.Settle();
+        Assert.Equal(1, view.InsertionGap);
+        Assert.True(seam.Focusable);
+
+        // An empty chain's trailing wire is only drawing: not a tab stop, and not in the automation tree.
+        app.ViewModel.Select(app.ViewModel.Tracks[1]);
+        app.Settle();
+        var trail = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Border>().Single(b => b.Name == "TrailLink").GetVisualDescendants().OfType<JunctionSeam>().Single();
+        Assert.Null(trail.Signal);
+        Assert.False(trail.Focusable);
+        Assert.False(Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(trail).IsControlElement());
+    });
+
+    [Fact]
     public Task TheCodePalette_MatchesTheDesignTokens() => HeadlessApp.RunAsync(() =>
     {
         var tokens = (ResourceDictionary)Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(new Uri("avares://Bluestone.Desktop/Theme/Tokens.axaml"));
@@ -407,6 +477,7 @@ public sealed class DeviceViewTests
         {
             (Palette.Base, "Surface.BaseColor"),
             (Palette.Panel, "Surface.PanelColor"),
+            (Palette.Sunken, "Surface.SunkenColor"),
             (Palette.Raised, "Surface.RaisedColor"),
             (Palette.Divider, "Line.DividerColor"),
             (Palette.Border, "Line.BorderColor"),
@@ -425,6 +496,12 @@ public sealed class DeviceViewTests
             (Palette.SignalInstrument, "Signal.InstrumentColor"),
             (Palette.SignalAudio, "Signal.AudioColor"),
             (Palette.SignalOther, "Signal.OtherColor"),
+            (Palette.MeterLow, "Meter.LowColor"),
+            (Palette.MeterMid, "Meter.MidColor"),
+            (Palette.MeterHot, "Meter.HotColor"),
+            (Palette.MeterClip, "Meter.ClipColor"),
+            (Palette.MeterTrack, "Meter.TrackColor"),
+            (Palette.JunctionLamp, "Junction.LampColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));

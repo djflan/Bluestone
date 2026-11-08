@@ -180,9 +180,12 @@ public sealed partial class ConnectionsViewModel : ObservableObject
     }
 
     /// <summary>Shows the inspector with <paramref name="device"/>'s output as the source of the next connection.</summary>
-    internal void RouteFrom(DeviceId device)
+    internal void RouteFrom(DeviceId device) => RouteFrom(SignalNode.Device(device));
+
+    /// <summary>Shows the inspector with <paramref name="node"/> (a junction of the selected chain) as the source of the next connection.</summary>
+    internal void RouteFrom(SignalNode node)
     {
-        Source = Sources.FirstOrDefault(s => s.Node == SignalNode.Device(device)) ?? Source;
+        Source = Sources.FirstOrDefault(s => s.Node == node) ?? Source;
         ShowRequested?.Invoke(this, EventArgs.Empty);
     }
 

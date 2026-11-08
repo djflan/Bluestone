@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
@@ -140,6 +141,289 @@ public sealed class WorkspaceShowcaseTests
         Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-chain")));
         Assert.True(app.Find<ContentControl>("DockedDeviceView").IsEffectivelyVisible);
     });
+
+    [Theory]
+    [InlineData(1280, 800, "laptop")]
+    [InlineData(1440, 900, "normal")]
+    public Task TheDeviceView_ShowsTheSignalAtEveryJunction(double width, double height, string size) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = width;
+        app.Window.Height = height;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3 && view.Devices[1].Parameters.Count > 0, "the chain and the plugin's parameters");
+        await app.SettleTransitionsAsync();
+
+        // Idle: seams are quiet hairlines; only the lamp where notes can be is outlined.
+        app.ViewModel.OnFrame();
+        await app.SettleTransitionsAsync();
+        Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-junctions-idle")));
+        Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-idle-closeup")));
+
+        // Playing: notes held on the track light every lamp they reach; the synth and the effect after it have levels.
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[1].Output.Key] = new(0.62f, 0.55f, 0.32f, 0.28f),
+            [view.Devices[2].Output.Key] = new(0.93f, 0.88f, 0.5f, 0.46f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        var lead = app.ViewModel.Tracks[0].Id;
+        app.Playback.Live.Post(lead, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        app.ViewModel.OnFrame();
+        app.ViewModel.OnFrame();
+        await app.SettleTransitionsAsync();
+
+        Assert.True(view.Input.NotesHeld);
+        Assert.True(view.Devices[2].Output.Levels.IsActive);
+        Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-junctions-playing")));
+        Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-playing-closeup")));
+
+        // An over lights the top of the level while it lasts; it does not stay lit as the mixer's clip light does.
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Desktop.Controls.JunctionSeam>().Single(s => s.Signal == view.Devices[2].Output);
+        levels[view.Devices[2].Output.Key] = new(1.1f, 0.9f, 0.6f, 0.5f);
+        app.ViewModel.OnFrame();
+        Assert.Contains("clipping", seam.Describe(), StringComparison.Ordinal);
+        levels[view.Devices[2].Output.Key] = new(0.5f, 0.5f, 0.3f, 0.3f);
+        app.ViewModel.OnFrame();
+        Assert.True(view.Devices[2].Output.Levels.Clipped);
+        Assert.DoesNotContain("clip", seam.Describe(), StringComparison.Ordinal);
+    });
+
+    /// <summary>
+    /// The README's screenshot (docs/images/bluestone-workspace.png): the workspace mid-performance, a Device View chain with
+    /// notes held and audio flowing, so every junction shows its signal, and one point routed on to another track. Only
+    /// built-in devices and Bluestone's reference plugins appear (TRADEMARKS.md: no third-party artwork).
+    /// </summary>
+    [Fact]
+    public Task TheReadmeScreenshot_ShowsAChainWithItsSignalAtEveryJunction() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, BuiltIn("Transpose"));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(3, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 4 && view.Devices[2].Parameters.Count > 0 && view.Devices[3].Parameters.Count > 0, "the chain and the plugins' parameters");
+        await AppUnderTest.WaitUntilAsync(() => app.ViewModel.Tracks[0].StatusLine == Sine.DisplayName, "the track to name its instrument");
+
+        // The arpeggiated line also plays the Pad: the point after the Arpeggiator is routed on, and shows it.
+        app.Session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.Device(view.Devices[0].Id), SignalNode.Track(app.ViewModel.Tracks[2].Id)), app.Playback.Devices.Lookup));
+        app.ViewModel.Workspace.Browser.CollapseCommand.Execute(null);
+        app.Settle();
+        Assert.True(view.Devices[0].Output.IsRouted);
+
+        // Playing: notes held light the MIDI icons; the synth sounds and the gain after it lifts it towards the top.
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[2].Output.Key] = new(0.42f, 0.36f, 0.22f, 0.19f),
+            [view.Devices[3].Output.Key] = new(0.79f, 0.7f, 0.43f, 0.38f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        view.SelectedDevice = view.Devices[2];
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        for (var frame = 0; frame < 20; frame++)
+        {
+            app.ViewModel.OnFrame();
+            await Task.Delay(20);
+            app.Settle();
+        }
+
+        await app.SettleTransitionsAsync();
+        Assert.True(view.Input.NotesHeld);
+        Assert.True(view.Devices[3].Output.Levels.IsActive);
+        Assert.True(File.Exists(app.SaveFrame("readme-workspace")));
+    });
+
+    /// <summary>
+    /// A receiver says where it takes its signal from and whether it mixes or replaces, its pill opens the source picker,
+    /// and an effect whose sidechain is keyed shows the SC chip in its key's colour.
+    /// </summary>
+    [Fact]
+    public Task TheDeviceInputs_ShowWhereReceiversAndSidechainsTakeTheirSignal() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Gain));
+        view.InsertAt(2, BuiltIn("Audio Receiver"));
+        view.InsertAt(3, BuiltIn("Note Receiver"));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 4 && view.Devices[0].Parameters.Count > 0, "the chain and the plugin's parameters");
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+
+        // The effect's sidechain is not shown until it can be used: reference plugins have no aux bus.
+        Assert.Null(view.Devices[1].Sidechain);
+        var chip = deviceView.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("scChip")).ToList();
+        Assert.All(chip, c => Assert.False(c.IsEffectivelyVisible));
+
+        // Keyed through the routing (as a project made where it has one would be), the chip shows, in the key's colour.
+        app.Session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(app.ViewModel.Tracks[2].Id), SignalNode.DeviceInput(view.Devices[1].Id, DeviceInputPort.Sidechain)), app.Playback.Devices.Lookup));
+        app.Settle();
+        Assert.Equal("Pad · Output", view.Devices[1].Sidechain!.SourceText);
+        var keyed = deviceView.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("scChip") && b.IsEffectivelyVisible);
+        Assert.Contains("keyed", keyed.Classes);
+
+        // The Audio Receiver takes the Pad's output; the Note Receiver has no source yet, and invites one.
+        var audio = view.Devices[2].Receiver!;
+        audio.Picker.Open();
+        audio.Picker.ChooseCommand.Execute(audio.Picker.Rows.First(r => r.Owner == "Pad" && r.Name == "Output"));
+        app.Settle();
+        Assert.Equal("Pad · Output", view.Devices[2].Receiver!.SourceText);
+        Assert.Equal("0 dB", view.Devices[2].VisibleParameters.Single().ValueText);
+        Assert.False(view.Devices[3].Receiver!.HasSource);
+        await app.SettleTransitionsAsync();
+        Assert.True(File.Exists(SaveDeviceView(app, "device-inputs")));
+
+        // Clicking the empty pill opens the picker.
+        var pills = deviceView.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("sourcePill") && b.IsEffectivelyVisible).ToList();
+        Assert.Equal(2, pills.Count);
+        app.Click(pills[1]);
+        await app.SettleTransitionsAsync();
+        var picker = app.Window.GetVisualDescendants().OfType<Desktop.Views.SourcePickerView>().FirstOrDefault()
+            ?? Avalonia.Controls.Primitives.OverlayLayer.GetOverlayLayer(app.Window)?.GetVisualDescendants().OfType<Desktop.Views.SourcePickerView>().FirstOrDefault();
+        Assert.NotNull(picker);
+        // Its own chain before it (never itself or later), and the other tracks.
+        var rows = view.Devices[3].Receiver!.Picker.Rows;
+        Assert.Contains(rows, r => r.Owner == "Lead" && r.Name == "Input");
+        Assert.DoesNotContain(rows, r => r.Owner == "Lead" && r.Name is "After Note Receiver" or "Output");
+        Assert.Contains(rows, r => r.Owner == "Bass" && r.Name == "Output");
+        Assert.True(File.Exists(app.SaveFrame("device-inputs-picker")));
+    });
+
+    /// <summary>
+    /// Design options for the seams, rendered side by side for choosing (frames/junction-gallery.html): where the note lamp
+    /// sits, and colours for the MIDI icon. Not a check of behaviour; it keeps the options reproducible.
+    /// </summary>
+    [Fact]
+    public Task TheJunctionDesignOptions_AreRenderedForComparison() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3 && view.Devices[1].Parameters.Count > 0, "the chain and the plugin's parameters");
+
+        // The synth at a healthy level; the effect after it pushed into clipping, so every colour of a scheme shows.
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[1].Output.Key] = new(0.5f, 0.45f, 0.25f, 0.22f),
+            [view.Devices[2].Output.Key] = new(1.05f, 0.97f, 0.62f, 0.58f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+
+        var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string? Note, bool Playing)[]
+        {
+            ("segments", "Line-segment level, glowing MIDI icon under it (sky blue)", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, true),
+            ("segments-idle", "Idle", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, false),
+            ("note-above", "MIDI icon over the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, null, true),
+        };
+
+        var html = new System.Text.StringBuilder("<!doctype html><meta charset=utf-8><title>Junction design options</title><style>body{background:#111113;color:#D9D9DC;font:14px -apple-system,sans-serif;margin:24px}h2{font-weight:600;font-size:15px;margin:28px 0 8px}img{width:860px;border:1px solid #2E2E31;border-radius:6px}</style><h1>Junction design options</h1>");
+        foreach (var option in options)
+        {
+            foreach (var seam in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>())
+            {
+                seam.LampPlacement = option.Lamp;
+                if (option.Note is { } note)
+                {
+                    seam.LampColor = Avalonia.Media.Color.Parse(note);
+                }
+                else
+                {
+                    seam.ClearValue(Desktop.Controls.JunctionSeam.LampColorProperty);
+                }
+            }
+
+            app.ViewModel.JunctionLevelSource = option.Playing ? key => levels.TryGetValue(key, out var reading) ? reading : null : _ => null;
+            if (option.Playing)
+            {
+                app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+            }
+            else
+            {
+                app.Playback.Live.ReleaseAll();
+            }
+
+            for (var frame = 0; frame < 20; frame++)
+            {
+                app.ViewModel.OnFrame();
+                await Task.Delay(20);
+                app.Settle();
+            }
+
+            var file = SaveDeviceView(app, $"junction-{option.Name}");
+            html.Append(System.Globalization.CultureInfo.InvariantCulture, $"<h2>{option.Caption}</h2><img src=\"{Path.GetFileName(file)}\">");
+        }
+
+        // The chosen design at each indicator position, set the way Settings ▸ Display sets it.
+        foreach (var seam in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>())
+        {
+            seam.ClearValue(Desktop.Controls.JunctionSeam.LampPlacementProperty);
+            seam.ClearValue(Desktop.Controls.JunctionSeam.LampColorProperty);
+        }
+
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        foreach (var position in Presentation.DisplayViewModel.Positions)
+        {
+            app.ViewModel.Display.IndicatorPosition = position.Position;
+            for (var frame = 0; frame < 20; frame++)
+            {
+                app.ViewModel.OnFrame();
+                await Task.Delay(20);
+                app.Settle();
+            }
+
+            Assert.All(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>(), s => Assert.Equal(position.Position, s.IndicatorPosition));
+            var file = SaveDeviceView(app, $"junction-position-{position.Position}");
+            html.Append(System.Globalization.CultureInfo.InvariantCulture, $"<h2>Position: {position.Name}</h2><img src=\"{Path.GetFileName(file)}\">");
+        }
+
+        var gallery = Path.Combine(AppContext.BaseDirectory, "frames", "junction-gallery.html");
+        File.WriteAllText(gallery, html.ToString());
+        Assert.True(File.Exists(gallery));
+    });
+
+    // The docked Device View alone, at twice the size, for looking at the seams closely.
+    private static string SaveDeviceView(AppUnderTest app, string name)
+    {
+        var control = app.Find<ContentControl>("DockedDeviceView");
+        var size = new PixelSize((int)(control.Bounds.Width * 2), (int)(control.Bounds.Height * 2));
+        using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(size, new Vector(192, 192));
+        bitmap.Render(control);
+        var directory = Path.Combine(AppContext.BaseDirectory, "frames");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{name}.png");
+        bitmap.Save(path, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        return path;
+    }
 
     [Theory]
     [InlineData(1280, 800, "laptop")]

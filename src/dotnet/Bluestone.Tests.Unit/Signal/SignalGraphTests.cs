@@ -299,6 +299,19 @@ public sealed class SignalGraphTests
     }
 
     [Fact]
+    public void ATrackWithNoDevices_RecordsItsNotes_AtItsOneJunction_KeyedByTheTrack()
+    {
+        var keys = TrackOf("Keys", Note(0, 60));
+        var project = NewProject().With(keys);
+        Assert.Null(project.ChainOf(keys.Id));
+
+        var result = project.Evaluate();
+
+        Assert.True(result.NotesAt(keys.Id.Value, 0));
+        Assert.False(result.NotesAt(keys.Id.Value, 100_000));
+    }
+
+    [Fact]
     public void AConnectionIntoADeviceInput_OrdersItsOwner_WithinTheSameChainToo()
     {
         // Into another track's device: that track is evaluated after the source. From the same chain's input: no loop.
