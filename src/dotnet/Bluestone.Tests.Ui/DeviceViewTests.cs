@@ -426,6 +426,7 @@ public sealed class DeviceViewTests
             (Palette.SignalAudio, "Signal.AudioColor"),
             (Palette.SignalOther, "Signal.OtherColor"),
             (Palette.MeterLow, "Meter.LowColor"),
+            (Palette.MeterMid, "Meter.MidColor"),
             (Palette.MeterHot, "Meter.HotColor"),
             (Palette.MeterClip, "Meter.ClipColor"),
             (Palette.MeterTrack, "Meter.TrackColor"),

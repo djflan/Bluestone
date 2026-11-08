@@ -187,7 +187,7 @@ public sealed class WorkspaceShowcaseTests
 
     /// <summary>
     /// Design options for the seams, rendered side by side for choosing (frames/junction-gallery.html): where the note lamp
-    /// sits, and colour schemes for the level. Not a check of behaviour; it keeps the options reproducible.
+    /// sits, and colours for the note. Not a check of behaviour; it keeps the options reproducible.
     /// </summary>
     [Fact]
     public Task TheJunctionDesignOptions_AreRenderedForComparison() => HeadlessApp.RunAsync(async () =>
@@ -214,20 +214,14 @@ public sealed class WorkspaceShowcaseTests
         app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
         app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
 
-        var blue = Avalonia.Media.Color.Parse("#5EA8F2");
-        var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string Low, string Hot, bool Playing)[]
+        var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string? Note, bool Playing)[]
         {
-            ("lamp-yellow-foot", "Chosen: yellow note segment under the cyan level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#2FB8D8", "#C2F3FF", true),
-            ("lamp-header", "Lamp at header height (blue)", Desktop.Controls.JunctionLampPlacement.Header, "#4FB3B0", "#E0A43A", true),
-            ("lamp-above", "Lamp as a cap on the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", true),
-            ("lamp-below", "Lamp as a foot under the level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#4FB3B0", "#E0A43A", true),
-            ("lamp-above-idle", "Cap, idle", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", false),
-            ("bars-teal", "Bars: teal to amber (current)", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", true),
-            ("bars-ocean", "Bars: ocean blue to ice", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#3E7FD6", "#A9D6FF", true),
-            ("bars-cyan", "Bars: cyan to white-cyan", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#2FB8D8", "#C2F3FF", true),
-            ("bars-green", "Bars: studio green to yellow", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#3FB56E", "#E3C93A", true),
-            ("bars-silver", "Bars: silver to white", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#8E9099", "#F0F0F2", true),
-            ("bars-violet", "Bars: violet to pink", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#8C72D6", "#E58FD0", true),
+            ("segments", "Segmented level, glowing note under it (amber)", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, true),
+            ("segments-idle", "Idle", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, false),
+            ("note-white", "Note: warm white", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#F3E6CF", true),
+            ("note-sky", "Note: sky blue, as the level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#8FD0FF", true),
+            ("note-violet", "Note: violet", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#A08CFF", true),
+            ("note-above", "Note over the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, null, true),
         };
 
         var html = new System.Text.StringBuilder("<!doctype html><meta charset=utf-8><title>Junction design options</title><style>body{background:#111113;color:#D9D9DC;font:14px -apple-system,sans-serif;margin:24px}h2{font-weight:600;font-size:15px;margin:28px 0 8px}img{width:860px;border:1px solid #2E2E31;border-radius:6px}</style><h1>Junction design options</h1>");
@@ -236,9 +230,14 @@ public sealed class WorkspaceShowcaseTests
             foreach (var seam in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>())
             {
                 seam.LampPlacement = option.Lamp;
-                seam.LampColor = option.Name == "lamp-yellow-foot" ? Desktop.Theme.Palette.JunctionLamp : blue;
-                seam.LevelLowColor = Avalonia.Media.Color.Parse(option.Low);
-                seam.LevelHotColor = Avalonia.Media.Color.Parse(option.Hot);
+                if (option.Note is { } note)
+                {
+                    seam.LampColor = Avalonia.Media.Color.Parse(note);
+                }
+                else
+                {
+                    seam.ClearValue(Desktop.Controls.JunctionSeam.LampColorProperty);
+                }
             }
 
             app.ViewModel.JunctionLevelSource = option.Playing ? key => levels.TryGetValue(key, out var reading) ? reading : null : _ => null;
@@ -267,8 +266,6 @@ public sealed class WorkspaceShowcaseTests
         {
             seam.ClearValue(Desktop.Controls.JunctionSeam.LampPlacementProperty);
             seam.ClearValue(Desktop.Controls.JunctionSeam.LampColorProperty);
-            seam.ClearValue(Desktop.Controls.JunctionSeam.LevelLowColorProperty);
-            seam.ClearValue(Desktop.Controls.JunctionSeam.LevelHotColorProperty);
         }
 
         app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;

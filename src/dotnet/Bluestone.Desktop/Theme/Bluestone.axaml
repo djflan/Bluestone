@@ -1021,18 +1021,20 @@
   </Style>
   <Style Selector="controls|JunctionSeam">
     <Setter Property="HeaderHeight" Value="{StaticResource DevicePanel.HeaderHeight}" />
-    <Setter Property="LampSize" Value="{StaticResource DevicePanel.LampSize}" />
     <Setter Property="LinkY" Value="{StaticResource Junction.LinkY}" />
     <Setter Property="LevelHeight" Value="{StaticResource Junction.LevelHeight}" />
     <Setter Property="FooterHeight" Value="{StaticResource DevicePanel.FooterHeight}" />
     <Setter Property="IndicatorInset" Value="{StaticResource Junction.IndicatorInset}" />
     <Setter Property="LevelBarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
+    <Setter Property="LevelSegmentHeight" Value="{StaticResource Junction.LevelSegmentHeight}" />
+    <Setter Property="LevelSegmentGap" Value="{StaticResource Junction.LevelSegmentGap}" />
     <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
     <Setter Property="LampPlacement" Value="BelowLevel" />
     <Setter Property="LampHeight" Value="{StaticResource Junction.LampHeight}" />
     <Setter Property="LampGap" Value="{StaticResource Junction.LampGap}" />
     <Setter Property="LampColor" Value="{StaticResource Junction.LampColor}" />
     <Setter Property="LevelLowColor" Value="{StaticResource Meter.LowColor}" />
+    <Setter Property="LevelMidColor" Value="{StaticResource Meter.MidColor}" />
     <Setter Property="LevelHotColor" Value="{StaticResource Meter.HotColor}" />
     <Setter Property="LevelClipColor" Value="{StaticResource Meter.ClipColor}" />
     <Setter Property="Cursor" Value="Arrow" />

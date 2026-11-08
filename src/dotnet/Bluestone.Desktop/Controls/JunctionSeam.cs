@@ -11,13 +11,7 @@ using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Controls;
 
-/// <summary>
-/// The seam between two devices of a chain (ADR 0037): the hairline the signal flows along, and in the lower body a slim
-/// stereo level for its audio with a yellow note segment just under it, lit while notes are held there and letting go
-/// softly. Only what can be there is drawn; an idle seam is nearly invisible. Hovering shows
-/// what is there in words. Drawing allocates nothing.
-/// </summary>
-/// <summary>Where a seam's note lamp sits: at header height, or coupled with the level, as a cap on it or a foot under it.</summary>
+/// <summary>Where a seam's note sits: at header height, or coupled with the level, over it or under it.</summary>
 internal enum JunctionLampPlacement
 {
     Header,
@@ -25,17 +19,25 @@ internal enum JunctionLampPlacement
     BelowLevel,
 }
 
+/// <summary>
+/// The seam between two devices of a chain (ADR 0037): the hairline the signal flows along, and a slim segmented stereo
+/// level for its audio with a small note under it that glows while notes are held there and lets go softly. Where they
+/// sit is the musician's choice (Settings ▸ Display). Only what can be there is drawn; an idle seam is quiet. Hovering
+/// shows what is there in words. Drawing allocates nothing.
+/// </summary>
 internal sealed class JunctionSeam : Control
 {
     public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.BelowLevel);
 
-    public static readonly StyledProperty<double> LampHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampHeight), 3);
+    public static readonly StyledProperty<double> LampHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampHeight), 9);
 
-    public static readonly StyledProperty<double> LampGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampGap), 3);
+    public static readonly StyledProperty<double> LampGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampGap), 4);
 
     public static readonly StyledProperty<Color> LampColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LampColor), Palette.JunctionLamp);
 
     public static readonly StyledProperty<Color> LevelLowColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelLowColor), Palette.MeterLow);
+
+    public static readonly StyledProperty<Color> LevelMidColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelMidColor), Palette.MeterMid);
 
     public static readonly StyledProperty<Color> LevelHotColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelHotColor), Palette.MeterHot);
 
@@ -47,8 +49,6 @@ internal sealed class JunctionSeam : Control
 
     public static readonly StyledProperty<double> HeaderHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(HeaderHeight), 30);
 
-    public static readonly StyledProperty<double> LampSizeProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampSize), 6);
-
     public static readonly StyledProperty<double> LinkYProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LinkY), 105);
 
     public static readonly StyledProperty<double> LevelHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelHeight), 44);
@@ -59,16 +59,35 @@ internal sealed class JunctionSeam : Control
 
     public static readonly StyledProperty<double> IndicatorInsetProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(IndicatorInset), 6);
 
-    public static readonly StyledProperty<double> LevelBarWidthProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBarWidth), 3);
+    public static readonly StyledProperty<double> LevelBarWidthProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBarWidth), 4);
+
+    public static readonly StyledProperty<double> LevelSegmentHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelSegmentHeight), 2);
+
+    public static readonly StyledProperty<double> LevelSegmentGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelSegmentGap), 1);
 
     public static readonly StyledProperty<TimeSpan> LampReleaseProperty = AvaloniaProperty.Register<JunctionSeam, TimeSpan>(nameof(LampRelease), TimeSpan.FromMilliseconds(220));
 
     private static readonly IBrush Link = new SolidColorBrush(Palette.Lighten(Palette.Border, 0.08));
     private static readonly IBrush QuietLink = new SolidColorBrush(Palette.Border);
-    private static readonly IBrush LampOff = new SolidColorBrush(Palette.Raised);
-    private static readonly IPen LampRim = new Pen(new SolidColorBrush(Palette.Border), 1);
-    private static readonly IBrush Track = new SolidColorBrush(Palette.MeterTrack);
+    private const double LowFraction = 0.45;
+    private const double MidFraction = 0.68;
+    private const double NoteWidth = 8;
+    private const double NoteHeight = 10.5;
+    private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
+    private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
     private static readonly double HotFraction = MeterLevels.Fraction(-6);
+    private static readonly double ZeroFraction = MeterLevels.Fraction(0);
+
+    // An eighth note in an 8 x 10.5 box: a tilted head, its stem, and a flag.
+    private static readonly Geometry NoteGlyph = new GeometryGroup
+    {
+        FillRule = FillRule.NonZero,
+        Children =
+        [
+            new EllipseGeometry(new Rect(0.1, 6.5, 5.6, 3.8)) { Transform = new MatrixTransform(Matrix.CreateTranslation(-2.9, -8.4) * Matrix.CreateRotation(-22 * Math.PI / 180) * Matrix.CreateTranslation(2.9, 8.4)) },
+            Geometry.Parse("M4.55,8.1 L4.55,0.3 L5.55,0.3 C5.8,2.4 8.1,3.1 7.6,6.3 C7.3,4.7 6.6,3.9 5.55,3.7 L5.55,8.1 Z"),
+        ],
+    };
 
     private readonly EventHandler _updated;
     private readonly PropertyChangedEventHandler _changed;
@@ -76,18 +95,15 @@ internal sealed class JunctionSeam : Control
     private double _glow;
     private long _lastFrame;
     private (double PeakL, double PeakR, double RmsL, double RmsR, bool Clipped, double Glow) _drawn = (-1, -1, -1, -1, false, -1);
-    private LinearGradientBrush? _levelBrush;
-    private (double Top, double Bottom) _levelBrushSpan;
+    private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
     private SolidColorBrush? _lampBrush;
-    private SolidColorBrush? _filamentBrush;
     private RadialGradientBrush? _haloBrush;
-    private SolidColorBrush? _peakTick;
-    private SolidColorBrush? _clipLight;
 
     static JunctionSeam()
     {
-        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LampSizeProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, IndicatorInsetProperty, LevelBarWidthProperty,
-            LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelHotColorProperty, LevelClipColorProperty);
+        AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, IndicatorInsetProperty, LevelBarWidthProperty,
+            LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelMidColorProperty, LevelHotColorProperty, LevelClipColorProperty,
+            LevelSegmentHeightProperty, LevelSegmentGapProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
     }
 
@@ -111,14 +127,14 @@ internal sealed class JunctionSeam : Control
         set => SetValue(LampPlacementProperty, value);
     }
 
-    /// <summary>The lamp's height when it is coupled with the level: a segment as wide as both bars.</summary>
+    /// <summary>The note's height when it is coupled with the level.</summary>
     public double LampHeight
     {
         get => GetValue(LampHeightProperty);
         set => SetValue(LampHeightProperty, value);
     }
 
-    /// <summary>The space between a coupled lamp and the level's bars.</summary>
+    /// <summary>The space between a coupled note and the level's bars.</summary>
     public double LampGap
     {
         get => GetValue(LampGapProperty);
@@ -136,6 +152,13 @@ internal sealed class JunctionSeam : Control
     {
         get => GetValue(LevelLowColorProperty);
         set => SetValue(LevelLowColorProperty, value);
+    }
+
+    /// <summary>The level's colour between ordinary levels and hot ones.</summary>
+    public Color LevelMidColor
+    {
+        get => GetValue(LevelMidColorProperty);
+        set => SetValue(LevelMidColorProperty, value);
     }
 
     /// <summary>The level's colour approaching full scale (from about -6 dB).</summary>
@@ -169,12 +192,6 @@ internal sealed class JunctionSeam : Control
     {
         get => GetValue(HeaderHeightProperty);
         set => SetValue(HeaderHeightProperty, value);
-    }
-
-    public double LampSize
-    {
-        get => GetValue(LampSizeProperty);
-        set => SetValue(LampSizeProperty, value);
     }
 
     public double LinkY
@@ -216,6 +233,20 @@ internal sealed class JunctionSeam : Control
         set => SetValue(LevelBarWidthProperty, value);
     }
 
+    /// <summary>The height of one of the level's segments.</summary>
+    public double LevelSegmentHeight
+    {
+        get => GetValue(LevelSegmentHeightProperty);
+        set => SetValue(LevelSegmentHeightProperty, value);
+    }
+
+    /// <summary>The dark space between the level's segments.</summary>
+    public double LevelSegmentGap
+    {
+        get => GetValue(LevelSegmentGapProperty);
+        set => SetValue(LevelSegmentGapProperty, value);
+    }
+
     public TimeSpan LampRelease
     {
         get => GetValue(LampReleaseProperty);
@@ -250,14 +281,11 @@ internal sealed class JunctionSeam : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == LampColorProperty || change.Property == LevelLowColorProperty || change.Property == LevelHotColorProperty || change.Property == LevelClipColorProperty)
+        if (change.Property == LampColorProperty || change.Property == LevelLowColorProperty || change.Property == LevelMidColorProperty || change.Property == LevelHotColorProperty || change.Property == LevelClipColorProperty)
         {
             _haloBrush = null;
             _lampBrush = null;
-            _filamentBrush = null;
-            _levelBrush = null;
-            _peakTick = null;
-            _clipLight = null;
+            _segments = null;
         }
 
         if (change.Property == SignalProperty)
@@ -334,48 +362,42 @@ internal sealed class JunctionSeam : Control
 
     private void DrawLamp(DrawingContext context, double center)
     {
-        // At header height a small square; coupled with the level, a cap or foot as wide as both bars.
-        Rect lamp;
-        var radius = 1.5;
+        // A small eighth note: at header height, or coupled with the level, over or under its bars.
+        var height = LampHeight;
+        var width = height * NoteWidth / NoteHeight;
+        double top;
         if (LampPlacement == JunctionLampPlacement.Header)
         {
-            var size = LampSize;
-            lamp = new Rect(center - (size / 2), Math.Round((HeaderHeight - size) / 2), size, size);
+            top = Math.Round((HeaderHeight - height) / 2);
         }
         else
         {
-            var (top, bottom, left, width) = LevelFrame(center);
-            var height = LampHeight;
-            var gap = LampGap;
-            lamp = new Rect(left, LampPlacement == JunctionLampPlacement.AboveLevel ? top - gap - height : bottom + gap, width, height);
+            var (levelTop, levelBottom, _, _) = LevelFrame(center);
+            top = LampPlacement == JunctionLampPlacement.AboveLevel ? levelTop - LampGap - height : levelBottom + LampGap;
         }
 
+        var box = new Rect(center - (width / 2), top, width, height);
+        var scale = height / NoteHeight;
         var color = LampColor;
         if (_glow > 0)
         {
-            // A soft halo, then the lamp: lit, fading back to the unlit lamp as the notes let go.
+            // Lit, it glows: a soft halo behind it, and the note itself fading back to unlit as the notes let go.
             _haloBrush ??= new RadialGradientBrush
             {
-                GradientStops = [new GradientStop(Color.FromArgb(170, color.R, color.G, color.B), 0), new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1)],
+                GradientStops = [new GradientStop(Color.FromArgb(120, color.R, color.G, color.B), 0), new GradientStop(Color.FromArgb(40, color.R, color.G, color.B), 0.45), new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1)],
             };
             using (context.PushOpacity(_glow))
             {
-                context.DrawEllipse(_haloBrush, null, lamp.Center, Math.Max(lamp.Width, 6) * 1.3, Math.Max(lamp.Height, 6) * 1.3);
+                context.DrawEllipse(_haloBrush, null, box.Center, height * 0.75, height * 0.75);
             }
 
-            // Lit like a pilot lamp: the colour, with a brighter filament line along its top.
             _lampBrush ??= new SolidColorBrush(color);
-            _lampBrush.Color = Palette.Mix(Palette.Raised, color, _glow);
-            context.DrawRectangle(_lampBrush, null, lamp, radius, radius);
-            _filamentBrush ??= new SolidColorBrush(Palette.Lighten(color, 0.55));
-            using (context.PushOpacity(_glow))
-            {
-                context.FillRectangle(_filamentBrush, new Rect(lamp.X + 1, lamp.Y, Math.Max(0, lamp.Width - 2), 1));
-            }
+            _lampBrush.Color = Palette.Mix(NoteOff, Palette.Lighten(color, 0.12), _glow);
         }
-        else
+
+        using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(box.X, box.Y)))
         {
-            context.DrawRectangle(LampOff, LampRim, lamp.Deflate(0.5), radius, radius);
+            context.DrawGeometry(_glow > 0 ? _lampBrush : NoteOffBrush, null, NoteGlyph);
         }
     }
 
@@ -383,14 +405,21 @@ internal sealed class JunctionSeam : Control
     {
         var bar = LevelBarWidth;
         var (top, bottom, left, _) = LevelFrame(center);
-        var height = LevelHeight;
+        var segment = Math.Max(1, LevelSegmentHeight);
+        var gap = Math.Max(0, LevelSegmentGap);
+        var count = Math.Max(1, (int)Math.Floor((LevelHeight + gap) / (segment + gap)));
+        var segments = Segments(count);
         var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
 
-        // An idle level is only a faint track; a sounding one fills with its gradient.
-        using (context.PushOpacity(silent ? 0.5 : 1))
+        // Like a hardware LED meter: every segment is there, unlit ones only a dim tint of their colour; idle, dimmer still.
+        using (context.PushOpacity(silent ? 0.55 : 1))
         {
-            context.DrawRectangle(Track, null, new Rect(left, top, bar, height), 1, 1);
-            context.DrawRectangle(Track, null, new Rect(left + bar + 1, top, bar, height), 1, 1);
+            for (var i = 0; i < count; i++)
+            {
+                var y = SegmentTop(i);
+                context.DrawRectangle(segments.Dim[i], null, new Rect(left, y, bar, segment), 0.5, 0.5);
+                context.DrawRectangle(segments.Dim[i], null, new Rect(left + bar + 1, y, bar, segment), 0.5, 0.5);
+            }
         }
 
         if (silent)
@@ -398,50 +427,66 @@ internal sealed class JunctionSeam : Control
             return;
         }
 
-        var low = LevelLowColor;
-        if (_levelBrush is null || _levelBrushSpan != (top, bottom))
-        {
-            _levelBrush = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, bottom, RelativeUnit.Absolute),
-                EndPoint = new RelativePoint(0, top, RelativeUnit.Absolute),
-                GradientStops =
-                [
-                    new GradientStop(low, 0),
-                    new GradientStop(low, HotFraction * 0.82),
-                    new GradientStop(LevelHotColor, HotFraction),
-                    new GradientStop(LevelClipColor, 1),
-                ],
-            };
-            _levelBrushSpan = (top, bottom);
-        }
-
-        _peakTick ??= new SolidColorBrush(Palette.Lighten(low, 0.45));
-        _clipLight ??= new SolidColorBrush(LevelClipColor);
+        var clipped = levels.Clipped;
         Side(levels.RmsLeft, levels.PeakLeft, left);
         Side(levels.RmsRight, levels.PeakRight, left + bar + 1);
 
-        // Clipping marks the top of the bars themselves, so nothing else needs room above them.
-        if (levels.Clipped)
-        {
-            context.DrawRectangle(_clipLight, null, new Rect(left, top, bar, 2), 1, 1);
-            context.DrawRectangle(_clipLight, null, new Rect(left + bar + 1, top, bar, 2), 1, 1);
-        }
+        double SegmentTop(int index) => bottom - ((index + 1) * segment) - (index * gap);
 
         void Side(double rms, double peak, double x)
         {
-            var body = Math.Round(MeterLevels.Fraction(rms) * height);
-            if (body > 0)
+            // Lit up to the RMS, the peak as one held segment above it, and the top segment while clipping.
+            var lit = (int)Math.Round(MeterLevels.Fraction(rms) * count);
+            var held = Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(peak) * count)) - 1;
+            for (var i = 0; i < count; i++)
             {
-                context.DrawRectangle(_levelBrush, null, new Rect(x, bottom - body, bar, body), 1, 1);
-            }
-
-            var tick = Math.Round(MeterLevels.Fraction(peak) * height);
-            if (tick > body + 1)
-            {
-                context.FillRectangle(_peakTick, new Rect(x, bottom - tick, bar, 1));
+                if (i < lit || i == held || (clipped && i == count - 1))
+                {
+                    var cell = new Rect(x, SegmentTop(i), bar, segment);
+                    context.DrawRectangle(segments.Halo[i], null, cell.Inflate(new Thickness(1, 0.75)), 1.5, 1.5);
+                    context.DrawRectangle(segments.Lit[i], null, cell, 0.5, 0.5);
+                }
             }
         }
+    }
+
+    // A colour for each segment from the bottom up: low, through mid and hot (about -6 dB), to clip at 0 dB and over.
+    private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim) Segments(int count)
+    {
+        if (_segments is { } cached && cached.Lit.Length == count)
+        {
+            return cached;
+        }
+
+        var lit = new SolidColorBrush[count];
+        var halo = new SolidColorBrush[count];
+        var dim = new SolidColorBrush[count];
+        for (var i = 0; i < count; i++)
+        {
+            var color = SegmentColor((i + 0.5) / count);
+            lit[i] = new SolidColorBrush(color);
+            halo[i] = new SolidColorBrush(Color.FromArgb(70, color.R, color.G, color.B));
+            dim[i] = new SolidColorBrush(Palette.Mix(Palette.MeterTrack, color, 0.2));
+        }
+
+        _segments = (lit, halo, dim);
+        return _segments.Value;
+    }
+
+    private Color SegmentColor(double fraction)
+    {
+        var low = LevelLowColor;
+        var mid = LevelMidColor;
+        var hot = LevelHotColor;
+        var clip = LevelClipColor;
+        return fraction switch
+        {
+            < LowFraction => low,
+            < MidFraction => Palette.Mix(low, mid, (fraction - LowFraction) / (MidFraction - LowFraction)),
+            _ when fraction < HotFraction => Palette.Mix(mid, hot, (fraction - MidFraction) / (HotFraction - MidFraction)),
+            _ when fraction < ZeroFraction => Palette.Mix(hot, clip, (fraction - HotFraction) / (ZeroFraction - HotFraction)),
+            _ => clip,
+        };
     }
 
     // Each frame: the lamp follows the notes (on at once, off over LampRelease), and the seam redraws only if what it
