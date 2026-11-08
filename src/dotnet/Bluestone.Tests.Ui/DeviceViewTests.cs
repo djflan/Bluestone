@@ -457,6 +457,15 @@ public sealed class DeviceViewTests
         Assert.IsAssignableFrom<Avalonia.Automation.Provider.IInvokeProvider>(peer).Invoke();
         app.Settle();
         Assert.Equal(1, view.InsertionGap);
+        Assert.True(seam.Focusable);
+
+        // An empty chain's trailing wire is only drawing: not a tab stop, and not in the automation tree.
+        app.ViewModel.Select(app.ViewModel.Tracks[1]);
+        app.Settle();
+        var trail = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Border>().Single(b => b.Name == "TrailLink").GetVisualDescendants().OfType<JunctionSeam>().Single();
+        Assert.Null(trail.Signal);
+        Assert.False(trail.Focusable);
+        Assert.False(Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(trail).IsControlElement());
     });
 
     [Fact]

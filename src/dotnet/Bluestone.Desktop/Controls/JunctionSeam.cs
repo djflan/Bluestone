@@ -137,7 +137,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, LevelBarWidthProperty,
             LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelMidColorProperty, LevelHotColorProperty, LevelClipColorProperty,
             LevelSegmentHeightProperty, LevelSegmentGapProperty, LevelStyleProperty, InsertCommandProperty, AccentColorProperty);
-        FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
+        FocusableProperty.OverrideDefaultValue<JunctionSeam>(false);
     }
 
     public JunctionSeam()
@@ -378,6 +378,9 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
 
         if (change.Property == SignalProperty)
         {
+            // Without a junction (the trailing wire of an empty chain) the seam is only drawing: not a tab stop, no menu.
+            Focusable = Signal is not null;
+            ContextMenu!.IsEnabled = Signal is not null;
             Subscribe(VisualRoot is not null ? Signal : null);
             UpdateName();
         }
@@ -842,8 +845,8 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
 
         protected override string? GetHelpTextCore() => owner.Describe();
 
-        protected override bool IsContentElementCore() => true;
+        protected override bool IsContentElementCore() => owner.Signal is not null;
 
-        protected override bool IsControlElementCore() => true;
+        protected override bool IsControlElementCore() => owner.Signal is not null;
     }
 }
