@@ -1027,6 +1027,11 @@
     <Setter Property="LevelBottom" Value="{StaticResource Junction.LevelBottom}" />
     <Setter Property="LevelBarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
     <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
+    <Setter Property="LampPlacement" Value="AboveLevel" />
+    <Setter Property="LampColor" Value="{StaticResource Junction.LampColor}" />
+    <Setter Property="LevelLowColor" Value="{StaticResource Meter.LowColor}" />
+    <Setter Property="LevelHotColor" Value="{StaticResource Meter.HotColor}" />
+    <Setter Property="LevelClipColor" Value="{StaticResource Meter.ClipColor}" />
     <Setter Property="Cursor" Value="Arrow" />
   </Style>
   <Style Selector="controls|JunctionSeam:focus-visible">

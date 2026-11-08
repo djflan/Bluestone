@@ -52,11 +52,13 @@
   <Color x:Key="Signal.InstrumentColor">#9C82D9</Color>
   <Color x:Key="Signal.AudioColor">#4FB3B0</Color>
   <Color x:Key="Signal.OtherColor">#8A8A92</Color>
-  <!-- Levels (the mixer's meters, a junction's level): calm teal, warming to amber near full scale, red past it. -->
-  <Color x:Key="Meter.LowColor">#4FB3B0</Color>
-  <Color x:Key="Meter.HotColor">#E0A43A</Color>
+  <!-- Levels (the mixer's meters, a junction's level): cyan, brightening to white-cyan near full scale, red past it. -->
+  <Color x:Key="Meter.LowColor">#2FB8D8</Color>
+  <Color x:Key="Meter.HotColor">#C2F3FF</Color>
   <Color x:Key="Meter.ClipColor">#E5484D</Color>
   <Color x:Key="Meter.TrackColor">#222225</Color>
+  <!-- A junction's note lamp: a blue cap on its level, lit while notes are held there. -->
+  <Color x:Key="Junction.LampColor">#5EA8F2</Color>
 
   <!-- Brushes for the tokens above. -->
   <SolidColorBrush x:Key="Surface.Sunken" Color="{StaticResource Surface.SunkenColor}" />

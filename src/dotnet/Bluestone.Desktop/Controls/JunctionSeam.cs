@@ -12,9 +12,8 @@ using Bluestone.Presentation;
 namespace Bluestone.Desktop.Controls;
 
 /// <summary>
-/// The seam between two devices of a chain (ADR 0037), as Bitwig's device panel shows it: the hairline the signal flows
-/// along, a note lamp at header height that is lit while notes are held there and lets go softly, and a slim stereo level
-/// for its audio in the lower body. Only what can be there is drawn; an idle seam is nearly invisible. Hovering shows
+/// The seam between two devices of a chain (ADR 0037): the hairline the signal flows along, and in the lower body a slim
+/// stereo level for its audio capped by a blue note lamp, lit while notes are held there and letting go softly. Only what can be there is drawn; an idle seam is nearly invisible. Hovering shows
 /// what is there in words. Drawing allocates nothing.
 /// </summary>
 /// <summary>Where a seam's note lamp sits: at header height, or coupled with the level, as a cap on it or a foot under it.</summary>
@@ -29,7 +28,7 @@ internal sealed class JunctionSeam : Control
 {
     public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.AboveLevel);
 
-    public static readonly StyledProperty<Color> LampColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LampColor), Palette.Focus);
+    public static readonly StyledProperty<Color> LampColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LampColor), Palette.JunctionLamp);
 
     public static readonly StyledProperty<Color> LevelLowColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LevelLowColor), Palette.MeterLow);
 

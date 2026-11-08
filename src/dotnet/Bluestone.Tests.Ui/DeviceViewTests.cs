@@ -429,6 +429,7 @@ public sealed class DeviceViewTests
             (Palette.MeterHot, "Meter.HotColor"),
             (Palette.MeterClip, "Meter.ClipColor"),
             (Palette.MeterTrack, "Meter.TrackColor"),
+            (Palette.JunctionLamp, "Junction.LampColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));

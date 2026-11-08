@@ -50,10 +50,11 @@ internal static class Palette
     public static readonly Color SignalOther = Color.Parse("#8A8A92");
 
     // Levels (Meter.* tokens)
-    public static readonly Color MeterLow = Color.Parse("#4FB3B0");
-    public static readonly Color MeterHot = Color.Parse("#E0A43A");
+    public static readonly Color MeterLow = Color.Parse("#2FB8D8");
+    public static readonly Color MeterHot = Color.Parse("#C2F3FF");
     public static readonly Color MeterClip = Color.Parse("#E5484D");
     public static readonly Color MeterTrack = Color.Parse("#222225");
+    public static readonly Color JunctionLamp = Color.Parse("#5EA8F2");
 
     /// <summary>Track colours, muted so dense arrangements stay readable; status is never conveyed by these alone.</summary>
     public static readonly Color[] Tracks =
