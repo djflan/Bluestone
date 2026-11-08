@@ -21,7 +21,7 @@ internal enum JunctionLampPlacement
 
 /// <summary>
 /// The seam between two devices of a chain (ADR 0037): the hairline the signal flows along, and a slim segmented stereo
-/// level for its audio with a small note under it that glows while notes are held there and lets go softly. Where they
+/// level for its audio with a small MIDI icon under it that glows while notes are held there and lets go softly. Where they
 /// sit is the musician's choice (Settings ▸ Display). Only what can be there is drawn; an idle seam is quiet. Hovering
 /// shows what is there in words. Drawing allocates nothing.
 /// </summary>
@@ -29,9 +29,9 @@ internal sealed class JunctionSeam : Control
 {
     public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.BelowLevel);
 
-    public static readonly StyledProperty<double> LampHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampHeight), 9);
+    public static readonly StyledProperty<double> LampHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampHeight), 11);
 
-    public static readonly StyledProperty<double> LampGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampGap), 4);
+    public static readonly StyledProperty<double> LampGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampGap), 7);
 
     public static readonly StyledProperty<Color> LampColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LampColor), Palette.JunctionLamp);
 
@@ -51,7 +51,7 @@ internal sealed class JunctionSeam : Control
 
     public static readonly StyledProperty<double> LinkYProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LinkY), 105);
 
-    public static readonly StyledProperty<double> LevelHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelHeight), 44);
+    public static readonly StyledProperty<double> LevelHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelHeight), 52);
 
     public static readonly StyledProperty<JunctionIndicatorPosition> IndicatorPositionProperty = AvaloniaProperty.Register<JunctionSeam, JunctionIndicatorPosition>(nameof(IndicatorPosition), JunctionIndicatorPosition.LowerHalf);
 
@@ -59,9 +59,9 @@ internal sealed class JunctionSeam : Control
 
     public static readonly StyledProperty<double> IndicatorInsetProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(IndicatorInset), 6);
 
-    public static readonly StyledProperty<double> LevelBarWidthProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBarWidth), 4);
+    public static readonly StyledProperty<double> LevelBarWidthProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelBarWidth), 5);
 
-    public static readonly StyledProperty<double> LevelSegmentHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelSegmentHeight), 2);
+    public static readonly StyledProperty<double> LevelSegmentHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelSegmentHeight), 1);
 
     public static readonly StyledProperty<double> LevelSegmentGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LevelSegmentGap), 1);
 
@@ -69,23 +69,29 @@ internal sealed class JunctionSeam : Control
 
     private static readonly IBrush Link = new SolidColorBrush(Palette.Lighten(Palette.Border, 0.08));
     private static readonly IBrush QuietLink = new SolidColorBrush(Palette.Border);
-    private const double LowFraction = 0.45;
-    private const double MidFraction = 0.68;
-    private const double NoteWidth = 8;
-    private const double NoteHeight = 10.5;
+    private const double LowFraction = 0.4;
+    private const double MidFraction = 0.62;
+    private const double NoteWidth = 12;
+    private const double NoteHeight = 12;
     private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
     private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
     private static readonly double HotFraction = MeterLevels.Fraction(-6);
     private static readonly double ZeroFraction = MeterLevels.Fraction(0);
 
-    // An eighth note in an 8 x 10.5 box: a tilted head, its stem, and a flag.
+    // A MIDI connector in a 12 x 12 box: the ring with its key notch at the top, and the five pins in a horseshoe.
     private static readonly Geometry NoteGlyph = new GeometryGroup
     {
-        FillRule = FillRule.NonZero,
+        FillRule = FillRule.EvenOdd,
         Children =
         [
-            new EllipseGeometry(new Rect(0.1, 6.5, 5.6, 3.8)) { Transform = new MatrixTransform(Matrix.CreateTranslation(-2.9, -8.4) * Matrix.CreateRotation(-22 * Math.PI / 180) * Matrix.CreateTranslation(2.9, 8.4)) },
-            Geometry.Parse("M4.55,8.1 L4.55,0.3 L5.55,0.3 C5.8,2.4 8.1,3.1 7.6,6.3 C7.3,4.7 6.6,3.9 5.55,3.7 L5.55,8.1 Z"),
+            new EllipseGeometry(new Rect(0, 0, 12, 12)),
+            new EllipseGeometry(new Rect(1.25, 1.25, 9.5, 9.5)),
+            new RectangleGeometry(new Rect(5.1, 0, 1.8, 1.25)),
+            Pin(180),
+            Pin(135),
+            Pin(90),
+            Pin(45),
+            Pin(0),
         ],
     };
 
@@ -362,7 +368,7 @@ internal sealed class JunctionSeam : Control
 
     private void DrawLamp(DrawingContext context, double center)
     {
-        // A small eighth note: at header height, or coupled with the level, over or under its bars.
+        // A small MIDI connector: at header height, or coupled with the level, over or under its bars.
         var height = LampHeight;
         var width = height * NoteWidth / NoteHeight;
         double top;
@@ -443,11 +449,19 @@ internal sealed class JunctionSeam : Control
                 if (i < lit || i == held || (clipped && i == count - 1))
                 {
                     var cell = new Rect(x, SegmentTop(i), bar, segment);
-                    context.DrawRectangle(segments.Halo[i], null, cell.Inflate(new Thickness(1, 0.75)), 1.5, 1.5);
+                    context.DrawRectangle(segments.Halo[i], null, cell.Inflate(new Thickness(1, 0.4)), 1, 1);
                     context.DrawRectangle(segments.Lit[i], null, cell, 0.5, 0.5);
                 }
             }
         }
+    }
+
+    // A pin of the connector, at an angle round its centre (0 to the right, 90 straight down).
+    private static EllipseGeometry Pin(double degrees)
+    {
+        var radians = degrees * Math.PI / 180;
+        var center = new Point(6 + (3.1 * Math.Cos(radians)), 6.4 + (3.1 * Math.Sin(radians)) - 0.9);
+        return new EllipseGeometry(new Rect(center.X - 0.85, center.Y - 0.85, 1.7, 1.7));
     }
 
     // A colour for each segment from the bottom up: low, through mid and hot (about -6 dB), to clip at 0 dB and over.
@@ -464,9 +478,9 @@ internal sealed class JunctionSeam : Control
         for (var i = 0; i < count; i++)
         {
             var color = SegmentColor((i + 0.5) / count);
-            lit[i] = new SolidColorBrush(color);
-            halo[i] = new SolidColorBrush(Color.FromArgb(70, color.R, color.G, color.B));
-            dim[i] = new SolidColorBrush(Palette.Mix(Palette.MeterTrack, color, 0.2));
+            lit[i] = new SolidColorBrush(Palette.Lighten(color, 0.12));
+            halo[i] = new SolidColorBrush(Color.FromArgb(95, color.R, color.G, color.B));
+            dim[i] = new SolidColorBrush(Palette.Mix(Palette.MeterTrack, color, 0.3));
         }
 
         _segments = (lit, halo, dim);

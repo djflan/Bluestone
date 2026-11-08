@@ -187,7 +187,7 @@ public sealed class WorkspaceShowcaseTests
 
     /// <summary>
     /// Design options for the seams, rendered side by side for choosing (frames/junction-gallery.html): where the note lamp
-    /// sits, and colours for the note. Not a check of behaviour; it keeps the options reproducible.
+    /// sits, and colours for the MIDI icon. Not a check of behaviour; it keeps the options reproducible.
     /// </summary>
     [Fact]
     public Task TheJunctionDesignOptions_AreRenderedForComparison() => HeadlessApp.RunAsync(async () =>
@@ -216,12 +216,12 @@ public sealed class WorkspaceShowcaseTests
 
         var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string? Note, bool Playing)[]
         {
-            ("segments", "Segmented level, glowing note under it (amber)", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, true),
+            ("segments", "Line-segment level, glowing MIDI icon under it (amber)", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, true),
             ("segments-idle", "Idle", Desktop.Controls.JunctionLampPlacement.BelowLevel, null, false),
-            ("note-white", "Note: warm white", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#F3E6CF", true),
-            ("note-sky", "Note: sky blue, as the level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#8FD0FF", true),
-            ("note-violet", "Note: violet", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#A08CFF", true),
-            ("note-above", "Note over the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, null, true),
+            ("note-white", "MIDI icon: warm white", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#F3E6CF", true),
+            ("note-sky", "MIDI icon: sky blue", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#8FD0FF", true),
+            ("note-violet", "MIDI icon: violet", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#A08CFF", true),
+            ("note-above", "MIDI icon over the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, null, true),
         };
 
         var html = new System.Text.StringBuilder("<!doctype html><meta charset=utf-8><title>Junction design options</title><style>body{background:#111113;color:#D9D9DC;font:14px -apple-system,sans-serif;margin:24px}h2{font-weight:600;font-size:15px;margin:28px 0 8px}img{width:860px;border:1px solid #2E2E31;border-radius:6px}</style><h1>Junction design options</h1>");
