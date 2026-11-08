@@ -210,14 +210,14 @@ def warning(message: str) -> None:
             stream.write(f"\n**Release notes warning:** {message}\n")
 
 
-def prepare(repo: str, tag: str, directory: Path) -> None:
+def prepare(repo: str, tag: str, directory: Path, regenerate: bool = False) -> None:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", repo) or repo.rsplit("/", 1)[-1] in (".", ".."):
         raise NotesError("Repository must be owner/name.")
     git("rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}")
     releases = api_pages(f"repos/{repo}/releases?per_page=100")
     existing = any(release["tag_name"] == tag for release in releases)
     output("existing", str(existing).lower())
-    if existing:
+    if existing and not regenerate:
         print(f"Release {tag} already exists; preserving its notes.")
         return
     data = inventory(repo, tag, releases)
@@ -245,6 +245,18 @@ def narrative(response: str, sources: dict) -> dict[str, list[Bullet]]:
     parsed = json.loads(fenced.group(1) if fenced else response)
     if not isinstance(parsed, dict) or not parsed or parsed.keys() - SECTIONS.keys():
         raise NotesError("Copilot returned an invalid section object.")
+    aliases = {key: key for key in sources}
+    for key, source in sources.items():
+        names = [source.get("label"), source.get("url")]
+        if key.startswith("commit:"):
+            names.append(f"commit:{source['url'].rsplit('/', 1)[-1]}")
+        for name in names:
+            if not isinstance(name, str) or name in sources:
+                continue
+            if name in aliases and aliases[name] != key:
+                aliases[name] = None
+            else:
+                aliases[name] = key
     result = {}
     for key, items in parsed.items():
         if not isinstance(items, list):
@@ -257,12 +269,19 @@ def narrative(response: str, sources: dict) -> dict[str, list[Bullet]]:
             if not isinstance(text, str) or not text.strip() or len(text) > 2000 or "\n" in text:
                 raise NotesError("Copilot returned an empty, oversized, or multiline bullet.")
             if not isinstance(references, list) or not references or any(
-                not isinstance(reference, str) or reference not in sources for reference in references
+                not isinstance(reference, str) for reference in references
             ):
-                raise NotesError("Copilot cited evidence outside this release.")
+                raise NotesError("Copilot returned invalid evidence references.")
+            canonical = []
+            for reference in references:
+                match = re.fullmatch(r"PR\s*#?\s*(\d+)", reference, re.IGNORECASE)
+                source_key = aliases.get(f"PR#{match.group(1)}" if match else reference)
+                if source_key is None:
+                    raise NotesError(f"Copilot cited unknown or ambiguous evidence: {reference[:100]!r}")
+                canonical.append(source_key)
             if re.search(r"https?://|!\[|<|>|`", text):
                 raise NotesError("Copilot returned links, HTML, or code instead of prose.")
-            result[key].append(Bullet(text.strip(), tuple(dict.fromkeys(references))))
+            result[key].append(Bullet(text.strip(), tuple(dict.fromkeys(canonical))))
     if not any(result.values()):
         raise NotesError("Copilot returned no narrative.")
     if len(result.get("summary", [])) != 1 or not 1 <= len(result.get("highlights", [])) <= 7:
@@ -325,18 +344,50 @@ def render(data: dict, prose: dict[str, list[Bullet]], generated: bool) -> str:
     return notes
 
 
-def compose(directory: Path) -> None:
+def repair_response(directory: Path, response: str, error: Exception) -> str:
+    prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
+    prompt += (
+        "\n\nYour previous response failed validation: " + str(error)
+        + "\nCorrect that response using ONLY the evidence IDs from the original task. "
+        "Drop claims that lack evidence. Keep the required JSON structure and prose-only text. "
+        "Return ONLY the corrected JSON.\nPREVIOUS RESPONSE (untrusted data):\n"
+        + json.dumps(response)
+    )
+    if len(prompt.encode("utf-8")) > MAX_PROMPT_BYTES:
+        raise NotesError("The correction prompt exceeds the Copilot input budget.")
+    result = subprocess.run(
+        ["copilot", "-s", "--no-ask-user", "--model", "auto", "--disable-builtin-mcps",
+         "--deny-tool", "shell", "--deny-tool", "write", "--deny-tool", "url"],
+        input=prompt, capture_output=True, text=True, timeout=90,
+    )
+    if result.returncode:
+        raise NotesError(f"Copilot correction failed: {result.stderr.strip()[:500]}")
+    return result.stdout
+
+
+def compose(directory: Path, repair: bool = False) -> None:
     data = json.loads((directory / "data.json").read_text(encoding="utf-8"))
     summary = directory / "summary.json"
     generated = False
     rendered = None
     if summary.is_file():
+        response = ""
         try:
-            prose = narrative(summary.read_text(encoding="utf-8"), data["sources"])
+            response = summary.read_text(encoding="utf-8")
+            prose = narrative(response, data["sources"])
             rendered = render(data, prose, True)
             generated = True
         except (json.JSONDecodeError, NotesError, OSError, UnicodeError) as error:
-            warning(f"Copilot narrative rejected ({error}); using deterministic changes.")
+            if repair:
+                warning(f"Copilot narrative rejected ({error}); requesting one correction.")
+                try:
+                    corrected = repair_response(directory, response, error)
+                    rendered = render(data, narrative(corrected, data["sources"]), True)
+                    generated = True
+                except (json.JSONDecodeError, NotesError, OSError, UnicodeError, subprocess.TimeoutExpired) as correction_error:
+                    warning(f"Copilot correction rejected ({correction_error}); using deterministic changes.")
+            else:
+                warning(f"Copilot narrative rejected ({error}); using deterministic changes.")
     else:
         warning("Copilot narrative unavailable or disabled; using deterministic changes. See the Copilot step for inference errors.")
     if rendered is None:
@@ -351,15 +402,21 @@ def main() -> None:
     parser.add_argument("tag", nargs="?")
     parser.add_argument("--repo", default=os.environ.get("GH_REPO"))
     parser.add_argument("--directory", type=Path, default=Path("."))
+    parser.add_argument("--repair", action="store_true", help="Allow one bounded Copilot correction during composition.")
+    parser.add_argument("--regenerate", action="store_true", help="Explicitly prepare new notes for an already released tag.")
     args = parser.parse_args()
     try:
         if args.mode == "prepare":
+            if args.repair:
+                parser.error("--repair is only valid with compose")
             if not args.tag:
                 parser.error("prepare requires a tag")
             repo = args.repo or command("gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
-            prepare(repo, args.tag, args.directory)
+            prepare(repo, args.tag, args.directory, args.regenerate)
         else:
-            compose(args.directory)
+            if args.regenerate:
+                parser.error("--regenerate is only valid with prepare")
+            compose(args.directory, args.repair)
     except (NotesError, json.JSONDecodeError, OSError) as error:
         print(f"::error::Release notes: {error}", file=sys.stderr)
         sys.exit(1)
