@@ -13,7 +13,8 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// The seam between two devices of a chain (ADR 0037): the hairline the signal flows along, and in the lower body a slim
-/// stereo level for its audio capped by a blue note lamp, lit while notes are held there and letting go softly. Only what can be there is drawn; an idle seam is nearly invisible. Hovering shows
+/// stereo level for its audio with a yellow note segment just under it, lit while notes are held there and letting go
+/// softly. Only what can be there is drawn; an idle seam is nearly invisible. Hovering shows
 /// what is there in words. Drawing allocates nothing.
 /// </summary>
 /// <summary>Where a seam's note lamp sits: at header height, or coupled with the level, as a cap on it or a foot under it.</summary>
@@ -26,7 +27,11 @@ internal enum JunctionLampPlacement
 
 internal sealed class JunctionSeam : Control
 {
-    public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.AboveLevel);
+    public static readonly StyledProperty<JunctionLampPlacement> LampPlacementProperty = AvaloniaProperty.Register<JunctionSeam, JunctionLampPlacement>(nameof(LampPlacement), JunctionLampPlacement.BelowLevel);
+
+    public static readonly StyledProperty<double> LampHeightProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampHeight), 3);
+
+    public static readonly StyledProperty<double> LampGapProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(LampGap), 3);
 
     public static readonly StyledProperty<Color> LampColorProperty = AvaloniaProperty.Register<JunctionSeam, Color>(nameof(LampColor), Palette.JunctionLamp);
 
@@ -77,7 +82,7 @@ internal sealed class JunctionSeam : Control
     static JunctionSeam()
     {
         AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LampSizeProperty, LinkYProperty, LevelHeightProperty, LevelBottomProperty, LevelBarWidthProperty,
-            LampPlacementProperty, LampColorProperty, LevelLowColorProperty, LevelHotColorProperty, LevelClipColorProperty);
+            LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelHotColorProperty, LevelClipColorProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(true);
     }
 
@@ -99,6 +104,20 @@ internal sealed class JunctionSeam : Control
     {
         get => GetValue(LampPlacementProperty);
         set => SetValue(LampPlacementProperty, value);
+    }
+
+    /// <summary>The lamp's height when it is coupled with the level: a segment as wide as both bars.</summary>
+    public double LampHeight
+    {
+        get => GetValue(LampHeightProperty);
+        set => SetValue(LampHeightProperty, value);
+    }
+
+    /// <summary>The space between a coupled lamp and the level's bars.</summary>
+    public double LampGap
+    {
+        get => GetValue(LampGapProperty);
+        set => SetValue(LampGapProperty, value);
     }
 
     public Color LampColor
@@ -292,7 +311,8 @@ internal sealed class JunctionSeam : Control
         else
         {
             var (top, bottom, left, width) = LevelFrame(center);
-            const double height = 3, gap = 4;
+            var height = LampHeight;
+            var gap = LampGap;
             lamp = new Rect(left, LampPlacement == JunctionLampPlacement.AboveLevel ? top - gap - height : bottom + gap, width, height);
         }
 

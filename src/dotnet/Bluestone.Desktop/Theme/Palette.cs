@@ -54,7 +54,7 @@ internal static class Palette
     public static readonly Color MeterHot = Color.Parse("#C2F3FF");
     public static readonly Color MeterClip = Color.Parse("#E5484D");
     public static readonly Color MeterTrack = Color.Parse("#222225");
-    public static readonly Color JunctionLamp = Color.Parse("#5EA8F2");
+    public static readonly Color JunctionLamp = Color.Parse("#EFC94C");
 
     /// <summary>Track colours, muted so dense arrangements stay readable; status is never conveyed by these alone.</summary>
     public static readonly Color[] Tracks =

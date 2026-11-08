@@ -217,6 +217,7 @@ public sealed class WorkspaceShowcaseTests
         var blue = Avalonia.Media.Color.Parse("#5EA8F2");
         var options = new (string Name, string Caption, Desktop.Controls.JunctionLampPlacement Lamp, string Low, string Hot, bool Playing)[]
         {
+            ("lamp-yellow-foot", "Chosen: yellow note segment under the cyan level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#2FB8D8", "#C2F3FF", true),
             ("lamp-header", "Lamp at header height (blue)", Desktop.Controls.JunctionLampPlacement.Header, "#4FB3B0", "#E0A43A", true),
             ("lamp-above", "Lamp as a cap on the level", Desktop.Controls.JunctionLampPlacement.AboveLevel, "#4FB3B0", "#E0A43A", true),
             ("lamp-below", "Lamp as a foot under the level", Desktop.Controls.JunctionLampPlacement.BelowLevel, "#4FB3B0", "#E0A43A", true),
@@ -235,7 +236,7 @@ public sealed class WorkspaceShowcaseTests
             foreach (var seam in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(app.Find<ContentControl>("DockedDeviceView")).OfType<Desktop.Controls.JunctionSeam>())
             {
                 seam.LampPlacement = option.Lamp;
-                seam.LampColor = blue;
+                seam.LampColor = option.Name == "lamp-yellow-foot" ? Desktop.Theme.Palette.JunctionLamp : blue;
                 seam.LevelLowColor = Avalonia.Media.Color.Parse(option.Low);
                 seam.LevelHotColor = Avalonia.Media.Color.Parse(option.Hot);
             }

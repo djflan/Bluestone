@@ -1027,7 +1027,9 @@
     <Setter Property="LevelBottom" Value="{StaticResource Junction.LevelBottom}" />
     <Setter Property="LevelBarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
     <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
-    <Setter Property="LampPlacement" Value="AboveLevel" />
+    <Setter Property="LampPlacement" Value="BelowLevel" />
+    <Setter Property="LampHeight" Value="{StaticResource Junction.LampHeight}" />
+    <Setter Property="LampGap" Value="{StaticResource Junction.LampGap}" />
     <Setter Property="LampColor" Value="{StaticResource Junction.LampColor}" />
     <Setter Property="LevelLowColor" Value="{StaticResource Meter.LowColor}" />
     <Setter Property="LevelHotColor" Value="{StaticResource Meter.HotColor}" />
