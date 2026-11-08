@@ -35,6 +35,10 @@ internal sealed class MidiEngine : IDisposable
     private static readonly TimeSpan IdleStatusInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan TimingInterval = TimeSpan.FromMilliseconds(250);
 
+    // How long a retired route's plugin note effects stay loaded, so its last releases (an instrument route's are sent at
+    // the next audio block) still reach them. Under _routes.
+    private static readonly TimeSpan RetireGrace = TimeSpan.FromMilliseconds(250);
+    private readonly List<(IReadOnlyList<Guid> Plugins, TimeSpan Until)> _retiredRoutes = [];
     private readonly bool _restarted;
     private readonly SystemMonotonicClock _clock = SystemMonotonicClock.Instance;
     private readonly PlaybackThread? _thread;
@@ -46,7 +50,8 @@ internal sealed class MidiEngine : IDisposable
     // Live routes: the input callbacks, the live thread, and the control thread, under _routes.
     private readonly Lock _routes = new();
     private readonly Dictionary<int, EngineRoute> _routeById = [];
-    private readonly Dictionary<Guid, EngineRoute> _routeByTrack = [];
+    // Every live route of each track (a layered chain, several outputs: ADR 0037), rebuilt off the input path.
+    private readonly Dictionary<Guid, EngineRoute[]> _routeByTrack = [];
     private readonly Dictionary<PluginNode, LiveSourceSet> _players = [];
     private IReadOnlyDictionary<Guid, (PluginNode Node, int DelayToMaster)> _instruments = new Dictionary<Guid, (PluginNode, int)>();
     private readonly PluginRegistry _plugins;
@@ -169,10 +174,7 @@ internal sealed class MidiEngine : IDisposable
                         if (_routeById.Remove(remove.Route, out var removed))
                         {
                             Retire(removed);
-                            if (_routeByTrack.TryGetValue(removed.Track, out var current) && ReferenceEquals(current, removed))
-                            {
-                                _routeByTrack.Remove(removed.Track);
-                            }
+                            Index(removed.Track);
                         }
 
                         UseRoutePlugins();
@@ -313,6 +315,16 @@ internal sealed class MidiEngine : IDisposable
         lock (_routes)
         {
             var now = _clock.Now;
+            // A retired route's grace is over: its plugin effects are let go now, not at the next routing edit.
+            for (var i = 0; i < _retiredRoutes.Count; i++)
+            {
+                if (_retiredRoutes[i].Until <= now)
+                {
+                    UseRoutePlugins();
+                    break;
+                }
+            }
+
             var tempo = Tempo();
             var stopped = StoppedTempo();
             foreach (var route in _routeById.Values)
@@ -353,13 +365,22 @@ internal sealed class MidiEngine : IDisposable
 
         lock (_routes)
         {
-            if (!_routeByTrack.TryGetValue(track, out var route) || route.Released)
+            if (!_routeByTrack.TryGetValue(track, out var routes))
             {
                 return false;
             }
 
-            Play(route, e, timestamp);
-            return true;
+            var played = false;
+            foreach (var route in routes)
+            {
+                if (!route.Released)
+                {
+                    Play(route, e, timestamp);
+                    played = true;
+                }
+            }
+
+            return played;
         }
     }
 
@@ -497,15 +518,25 @@ internal sealed class MidiEngine : IDisposable
         }
     }
 
-    // Ends a route: an output's notes now, an instrument's at its next audio block. Under _routes.
+    // Ends a route: an output's notes now, an instrument's at its next audio block. Its plugin note effects stay loaded a
+    // moment longer, so those releases still pass through them. Under _routes.
     private void Retire(EngineRoute route)
     {
         route.ReleaseNow();
         route.Unbind(_players);
+        if (route.PluginDevices.Count > 0)
+        {
+            _retiredRoutes.Add((route.PluginDevices, _clock.Now + RetireGrace));
+        }
     }
 
-    // The registry keeps the plugin effects that routes use. Under _routes.
-    private void UseRoutePlugins() => _plugins.Use(graph: false, _routeById.Values.SelectMany(r => r.PluginDevices));
+    // The registry keeps the plugin effects that routes use, and those of routes retired within RetireGrace. Under _routes.
+    private void UseRoutePlugins()
+    {
+        var now = _clock.Now;
+        _retiredRoutes.RemoveAll(r => r.Until <= now);
+        _plugins.Use(graph: false, _routeById.Values.SelectMany(r => r.PluginDevices).Concat(_retiredRoutes.SelectMany(r => r.Plugins)));
+    }
 
     private void Open(OpenOutput open, List<EngineProblem> problems)
     {
@@ -621,7 +652,7 @@ internal sealed class MidiEngine : IDisposable
             }
 
             _routeById[spec.Route] = route;
-            _routeByTrack[spec.Track] = route;
+            Index(spec.Track);
             route.StoppedTempo = StoppedTempo();
             Bind(route);
             UseRoutePlugins();
@@ -629,6 +660,20 @@ internal sealed class MidiEngine : IDisposable
             {
                 problems.Add(new EngineProblem(-1, $"The engine has no live processor for {unknown}; it passes events through."));
             }
+        }
+    }
+
+    // Under _routes, on the control thread: the track's routes, in the order Bluestone added them (nearest first).
+    private void Index(Guid track)
+    {
+        EngineRoute[] routes = [.. _routeById.OrderBy(r => r.Key).Select(r => r.Value).Where(r => r.Track == track)];
+        if (routes.Length == 0)
+        {
+            _routeByTrack.Remove(track);
+        }
+        else
+        {
+            _routeByTrack[track] = routes;
         }
     }
 
@@ -675,21 +720,34 @@ internal sealed class MidiEngine : IDisposable
             if (input.Held[slot] is { } holding)
             {
                 input.Held[slot] = null;
-                Play(holding, e, timestamp);
+                foreach (var route in holding)
+                {
+                    if (!IsFeedback(input, route))
+                    {
+                        Play(route, e, timestamp);
+                    }
+                }
             }
 
             return;
         }
 
-        if (!_hasThru || !_routeByTrack.TryGetValue(_thruTrack, out var route) || route.Released || IsFeedback(input, route))
+        if (!_hasThru || !_routeByTrack.TryGetValue(_thruTrack, out var routes))
         {
             return;
         }
 
-        Play(route, e, timestamp);
+        foreach (var route in routes)
+        {
+            if (!route.Released && !IsFeedback(input, route))
+            {
+                Play(route, e, timestamp);
+            }
+        }
+
         if (message.IsNoteOn)
         {
-            input.Held[slot] = route;
+            input.Held[slot] = routes;
         }
     }
 
@@ -699,10 +757,17 @@ internal sealed class MidiEngine : IDisposable
         {
             for (var slot = 0; slot < input.Held.Length; slot++)
             {
-                if (input.Held[slot] is { } route)
+                if (input.Held[slot] is { } routes)
                 {
                     input.Held[slot] = null;
-                    Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
+                    foreach (var route in routes)
+                    {
+                        // As for an ordinary release: a route the note was not played on (feedback) gets no note-off.
+                        if (!IsFeedback(input, route))
+                        {
+                            Play(route, LiveEvent.NoteOff(0, slot >> 7, slot & 127), _clock.Now);
+                        }
+                    }
                 }
             }
         }
@@ -787,6 +852,7 @@ internal sealed class MidiEngine : IDisposable
 
         public string Name { get; } = name;
 
-        public EngineRoute?[] Held { get; } = new EngineRoute?[LiveEvent.NoteSlots];
+        /// <summary>For each held key, the routes its note went to: the release goes there too.</summary>
+        public EngineRoute[]?[] Held { get; } = new EngineRoute[]?[LiveEvent.NoteSlots];
     }
 }

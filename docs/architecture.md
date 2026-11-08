@@ -475,8 +475,9 @@ instrument played live skips its compensation delay.
 
 ### Live input
 
-Live notes (audition, MIDI thru, the on-screen and computer keyboards) follow the track's live route: the
-nearest playable instrument through its connections, through every device on the way (ADR 0035).
+Live notes (audition, MIDI thru, the on-screen and computer keyboards) follow the track's live routes: every
+instrument they reach through the whole chain and its connections, through every device on the way (ADR 0035,
+ADR 0037).
 Built-in devices run in a real-time form that puts out the same notes as at plan time
 (`Bluestone.Signal/Live`); a plugin MIDI effect runs in its own instance; a plugin instrument is played
 through the audio engine, an external one by MIDI out. `LiveInput` (`Bluestone.Application/Live`) runs
@@ -584,8 +585,8 @@ Deliberate for now, each with a known cost:
   input goes through the device's running instance (ADR 0035). Each render is independent, so the plan
   cannot reflect what the live instance does.
 - **Live input ignores device automation** of built-in devices: they run live at their stored values.
-- **Live input sounds only the first plugin instrument of a chain.** At plan time instruments layer (ADR 0037),
-  but the live route (ADR 0035) still ends at the first instrument that takes the notes.
+- **Live input does not bring in a receiver's source**: a Note Receiver passes or stops the track's own live notes
+  only (ADR 0037).
 
 ### Not verified on hardware
 

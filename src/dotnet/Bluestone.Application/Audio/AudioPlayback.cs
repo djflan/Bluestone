@@ -294,7 +294,7 @@ public sealed class AudioPlayback : IAudioPlayback
             }
 
             var directory = _session.FilePath is { } path ? Path.GetDirectoryName(Path.GetFullPath(path)) : null;
-            graph.Monitored = _wanted?.LowLatencyMonitoring == true && _playback.Live.MonitoredInstrument is { } monitored ? [monitored] : [];
+            graph.Monitored = _wanted?.LowLatencyMonitoring == true ? _playback.Live.MonitoredInstruments : [];
             var result = graph.Build(_session.Project, routing.Graph, _playback.Devices, directory);
             engine.Publish(result.Graph);
             _playback.Live.UseInstruments(graph.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);

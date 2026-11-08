@@ -20,9 +20,10 @@ built-in devices, and plugin delay compensation, in scope for this epic.
 
 - **The route.** `LiveRoutePlan.Find` keeps decision 21's breadth-first search but now records every device on the
   way: each device that is not bypassed and consumes events is a stage in chain order (built-in devices and plugin
-  MIDI effects), and each connection's forced channel is a stage where the connection is. A plugin instrument in a
-  chain ends the route there: it takes the notes, as at plan time. Otherwise the first usable external port does. A
-  device with nothing running it passes events through, as at plan time.
+  MIDI effects), and each connection's forced channel is a stage where the connection is. A device with nothing
+  running it passes events through, as at plan time. *Amended by ADR 0037:* the route fans out as playback does
+  (`LiveRoutePlan.FindAll`), to every plugin instrument in the chain and every usable external port reached, each
+  with the stages in front of it; a track keeps one runner per way it is heard.
 - **Built-in devices run in a real-time form.** Each built-in device has a live processor beside its plan-time one
   (`ILiveProcessor`: `LiveTransposeProcessor`, `LiveEventFilterProcessor`, `LiveArpeggiatorProcessor`), registered in
   `DeviceCatalog.BuiltIn`. They work on `LiveEvent`, a MIDI 1.0 channel message value at a tick, in fixed buffers, and
