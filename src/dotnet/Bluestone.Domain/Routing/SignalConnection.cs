@@ -84,10 +84,11 @@ public readonly record struct SignalNode
     /// <summary>The start of <paramref name="chain"/>, before its first device.</summary>
     public static SignalNode ChainInput(DeviceChainId chain) => new(SignalNodeKind.ChainInput, chain.Value, null);
 
-    /// <summary>The input port <paramref name="port"/> of <paramref name="device"/>.</summary>
+    /// <summary>The input port <paramref name="port"/> of <paramref name="device"/>. A port ID is at most <see cref="DeviceInputPort.MaxIdLength"/> characters, as a project file allows.</summary>
     public static SignalNode DeviceInput(DeviceId device, string port)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(port);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(port.Length, DeviceInputPort.MaxIdLength, nameof(port));
         return new(SignalNodeKind.DeviceInput, device.Value, port);
     }
 
