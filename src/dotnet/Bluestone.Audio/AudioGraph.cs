@@ -410,13 +410,14 @@ public sealed class AudioGraphBuilder
         int Due(int s) => monitoredStrip[s] ? latency : strip[s];
 
         // From a node's output to the master: an unmonitored node is aligned with everything at the graph's latency; a
-        // monitored one goes through the nodes it feeds undelayed, and then on undelayed.
+        // monitored one goes through the nodes it feeds undelayed, and then on undelayed. A sidechain it keys is not on its
+        // way to the master.
         var delayToMaster = new int[_nodes.Count];
         for (var i = nodeOrder.Count - 1; i >= 0; i--)
         {
             var index = nodeOrder[i];
             delayToMaster[index] = monitored[index]
-                ? _nodeEdges.Where(e => e.From == index).Select(e => built[e.To] + delayToMaster[e.To]).DefaultIfEmpty(0).Max()
+                ? _nodeEdges.Where(e => e.From == index && !e.Sidechain).Select(e => built[e.To] + delayToMaster[e.To]).DefaultIfEmpty(0).Max()
                 : latency - nodeOutput[index];
         }
 
