@@ -308,17 +308,13 @@ public sealed class MidiRecorder : IDisposable
 
         if (message.Kind == ChannelMessageKind.ControlChange && message.Data1 is 120 or 123)
         {
-            // All Sound Off and All Notes Off release the channel's notes wherever they went, as each note-off would.
+            // All Sound Off and All Notes Off go wherever the channel's notes went, as each note-off would. The notes' own
+            // release targets are kept: a device that filters controllers drops this message, and the keys' later
+            // note-offs must still reach the tracks that are sounding them.
             List<TrackId> releasing;
             lock (_gate)
             {
-                var held = _thruHeld.Keys.Where(k => k.Item1 == inputKey && k.Item2 == message.Channel.Index).ToList();
-                releasing = [.. held.Select(k => _thruHeld[k]).Distinct()];
-                foreach (var k in held)
-                {
-                    _thruHeld.Remove(k);
-                }
-
+                releasing = [.. _thruHeld.Where(h => h.Key.Input == inputKey && h.Key.Channel == message.Channel.Index).Select(h => h.Value).Distinct()];
                 if (_thru is { } current && !releasing.Contains(current))
                 {
                     releasing.Add(current);

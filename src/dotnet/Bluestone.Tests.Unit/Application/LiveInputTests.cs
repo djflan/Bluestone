@@ -274,6 +274,23 @@ public sealed class LiveInputTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AKeysNoteOff_StillReachesItsTrack_AfterAnAllNotesOffThatADeviceFilteredOut()
+    {
+        var filter = BuiltInDevices.CreateEventFilter(EventClass.Controllers);
+        var track = await TrackWith(filter);
+        _controller.SetThruTrack(track);
+        Play(60);
+        _controller.Engine.Pump();
+        Assert.Equal(1, Count(0x90, 60));
+
+        _keys.Inject([0xB0, 123, 0]);
+        Release(60);
+        _controller.Engine.Pump();
+
+        Assert.Equal(1, Count(0x80, 60));
+    }
+
+    [Fact]
     public async Task AKeyOnATrackThatCannotPlay_IsHeldUntilItsRelease_FromAKeyboardOrTheScreen()
     {
         // A track with no output: nothing can play its notes.

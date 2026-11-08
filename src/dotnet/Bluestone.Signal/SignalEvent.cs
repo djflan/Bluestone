@@ -73,6 +73,40 @@ public static class SignalOrder
         }
     }
 
+    /// <summary>
+    /// Puts <paramref name="events"/>, which are ordered runs one after another (what several connections deliver), in
+    /// order into <paramref name="output"/> by merging the runs: linear in the events for each run, where sorting the
+    /// whole would be quadratic. On equal keys an earlier run goes first, as a stable sort would keep them.
+    /// </summary>
+    public static void MergeRuns(ReadOnlySpan<SignalEvent> events, SignalBuffer output, SignalBuffer scratch)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(scratch);
+        output.Clear();
+        var start = 0;
+        for (var i = 1; i <= events.Length; i++)
+        {
+            if (i < events.Length && Compare(events[i - 1], events[i]) <= 0)
+            {
+                continue;
+            }
+
+            if (output.Count == 0)
+            {
+                output.AddRange(events[start..i]);
+            }
+            else
+            {
+                scratch.Clear();
+                Merge(output.Events, events[start..i], scratch);
+                output.Clear();
+                output.AddRange(scratch.Events);
+            }
+
+            start = i;
+        }
+    }
+
     /// <summary>Merges two ordered spans into <paramref name="output"/>; on equal keys, <paramref name="first"/> goes first.</summary>
     public static void Merge(ReadOnlySpan<SignalEvent> first, ReadOnlySpan<SignalEvent> second, SignalBuffer output)
     {

@@ -386,6 +386,28 @@ public sealed class ProjectAudioGraphTests : IDisposable
     }
 
     [Fact]
+    public void TwoConnectionsIntoAReceiver_ThatReachTheSameAudio_AreEachHeard()
+    {
+        // The chain's input and the point after a Transpose carry the same clip; the receiver takes both and mixes them in.
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var transpose = BuiltInDevices.CreateTranspose(12);
+        var receiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference());
+        var chain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [transpose, receiver] };
+        var inlet = SignalNode.DeviceInput(receiver.Id, DeviceInputPort.Receive);
+        project = project.WithChain(chain) with
+        {
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.ChainInput(chain.Id), inlet),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Device(transpose.Id), inlet),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master),
+            ],
+        };
+
+        Assert.Equal(3 * _tone[100], Left(Render(project, Rate / 4, out _))[100], 3);
+    }
+
+    [Fact]
     public void RemovingOneOfAReceiversSources_LeavesTheOtherSourcesGainNode_AsItWas()
     {
         var (project, vocal, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
