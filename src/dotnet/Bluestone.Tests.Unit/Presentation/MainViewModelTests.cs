@@ -665,6 +665,65 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AReceiversPicker_OffersOnlyPointsThatCanFeedIt_AndChoosingOneIsOneUndoStep()
+    {
+        await TwoTracksAsync();
+        var strip = _vm.DeviceView!;
+        AddDevice("Arpeggiator");
+        AddDevice("Note Receiver");
+        await Settle();
+        var panel = strip.Devices[1];
+        Assert.True(panel.IsReceiver);
+        Assert.Null(panel.Sidechain);
+        Assert.Empty(panel.VisibleParameters);
+        var receiver = panel.Receiver!;
+        Assert.False(receiver.HasSource);
+        Assert.Equal("Choose a source", receiver.SourceText);
+
+        // Its own chain only before it (later points would feed back), and other tracks' points that carry notes.
+        receiver.Picker.Open();
+        Assert.Equal(["Piano", "Piano · Input", "Piano · After Arpeggiator", "Strings", "Strings · Output"], receiver.Picker.Rows.Select(r => r.ToString()));
+        receiver.Picker.Query = "arp";
+        Assert.Equal(["Piano", "Piano · After Arpeggiator"], receiver.Picker.Rows.Select(r => r.ToString()));
+        receiver.Picker.Query = "zzz";
+        Assert.True(receiver.Picker.IsEmpty);
+        receiver.Picker.Query = "strings";
+        var closed = false;
+        receiver.Picker.Chosen += (_, _) => closed = true;
+        receiver.Picker.ChooseFirstCommand.Execute(null);
+        await Settle();
+
+        receiver = strip.Devices[1].Receiver!;
+        Assert.True(closed);
+        Assert.True(receiver.HasSource);
+        Assert.Equal("Strings · Output", receiver.SourceText);
+        Assert.True(receiver.Picker.CanClear);
+        Assert.Single(_session.Project.Connections);
+
+        // Choosing again replaces the source; one undo brings the first back.
+        receiver.Picker.Open();
+        receiver.Picker.ChooseCommand.Execute(receiver.Picker.Rows.Single(r => r.Name == "Input"));
+        await Settle();
+        Assert.Equal("Piano · Input", strip.Devices[1].Receiver!.SourceText);
+        Assert.Single(_session.Project.Connections);
+        _vm.UndoCommand.Execute(null);
+        await Settle();
+        Assert.Equal("Strings · Output", strip.Devices[1].Receiver!.SourceText);
+
+        // Mix | Replace is the receiver's Replace parameter.
+        Assert.True(strip.Devices[1].Mixes);
+        strip.Devices[1].Replaces = true;
+        await Settle();
+        Assert.True(Bluestone.Domain.Devices.BuiltInDevices.ReplacesOf(_session.Project.FindDevice(strip.Devices[1].Id)!.Value.Device));
+        Assert.False(strip.Devices[1].Mixes);
+
+        strip.Devices[1].Receiver!.ClearCommand.Execute(null);
+        await Settle();
+        Assert.False(strip.Devices[1].Receiver!.HasSource);
+        Assert.Empty(_session.Project.Connections);
+    }
+
+    [Fact]
     public async Task RouteFromAJunction_OpensTheInspectorWithThatPointAsTheSource()
     {
         await TwoTracksAsync();

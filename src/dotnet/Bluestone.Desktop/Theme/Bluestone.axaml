@@ -1238,6 +1238,198 @@
     <Setter Property="Spacing" Value="6" />
     <Setter Property="Margin" Value="2,4" />
   </Style>
+  <!-- Device inputs (ADR 0037): a receiver's source pill and Mix | Replace switch, an effect plugin's SC chip, and the
+       source picker both open. -->
+  <Style Selector="StackPanel.receiverBlock">
+    <Setter Property="Spacing" Value="8" />
+    <Setter Property="Margin" Value="2,4,2,0" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style Selector="Panel.deviceBody.receiver > ItemsControl">
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Margin" Value="0,66,0,0" />
+  </Style>
+  <Style Selector="Button.sourcePill">
+    <Setter Property="Height" Value="24" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Padding" Value="8,0,7,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Field}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Round}" />
+  </Style>
+  <Style Selector="Button.sourcePill:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.sourcePill:focus-visible /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+  </Style>
+  <Style Selector="Button.sourcePill.empty">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Border.sourceSwatch">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    <Setter Property="Margin" Value="0,0,7,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="PathIcon.pillIcon">
+    <Setter Property="Width" Value="9" />
+    <Setter Property="Height" Value="9" />
+    <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+  </Style>
+  <Style Selector="PathIcon.pillChevron">
+    <Setter Property="Width" Value="9" />
+    <Setter Property="Height" Value="9" />
+    <Setter Property="Margin" Value="4,0,0,0" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+  </Style>
+  <Style Selector="TextBlock.pillText">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="Button.sourcePill.empty TextBlock.pillText">
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+  </Style>
+  <Style Selector="Border.segmented">
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="2" />
+    <Setter Property="Background" Value="{StaticResource Surface.Field}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+  </Style>
+  <Style Selector="RadioButton.segment">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_Segment" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{StaticResource Radius.Small}">
+          <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="RadioButton.segment:pointerover">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <Style Selector="RadioButton.segment:checked">
+    <Setter Property="Background" Value="{StaticResource Surface.Raised}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="RadioButton.segment:focus-visible">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.scChip">
+    <Setter Property="Height" Value="14" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="MinWidth" Value="20" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,0,2,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+  </Style>
+  <Style Selector="Button.scChip:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="Button.scChip:focus-visible /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+  </Style>
+  <Style Selector="Button.scChip TextBlock">
+    <Setter Property="FontSize" Value="8.5" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LetterSpacing" Value="0.5" />
+    <Setter Property="Margin" Value="4,0" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.scFill">
+    <Setter Property="IsVisible" Value="False" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+  </Style>
+  <Style Selector="Button.scChip.keyed">
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Button.scChip.keyed Border.scFill">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+  <Style Selector="Button.scChip.keyed TextBlock">
+    <Setter Property="Foreground" Value="{StaticResource Text.OnAccent}" />
+  </Style>
+  <Style Selector="FlyoutPresenter.sourcePicker">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Width" Value="260" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Overlay}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+  </Style>
+  <Style Selector="Grid.sourceHeading">
+    <Setter Property="Margin" Value="12,8,12,3" />
+  </Style>
+  <Style Selector="TextBlock.sourceOwner">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="Button.sourceRow">
+    <Setter Property="Height" Value="24" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Padding" Value="27,0,12,0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+  </Style>
+  <Style Selector="Button.sourceRow:pointerover /template/ ContentPresenter, Button.sourceRow:focus-visible /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="Ellipse.sourceRole">
+    <Setter Property="Width" Value="6" />
+    <Setter Property="Height" Value="6" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Ellipse.sourceRole.boundary">
+    <Setter Property="Stroke" Value="{StaticResource Text.Muted}" />
+    <Setter Property="StrokeThickness" Value="1" />
+  </Style>
+  <Style Selector="TextBlock.sourcePoint">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="Border.sourceFooter">
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="Padding" Value="12,6" />
+  </Style>
   <Style Selector="TextBlock.statusTitle">
     <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
     <Setter Property="FontWeight" Value="SemiBold" />

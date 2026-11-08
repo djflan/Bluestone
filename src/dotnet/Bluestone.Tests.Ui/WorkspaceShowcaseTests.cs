@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
@@ -183,6 +184,67 @@ public sealed class WorkspaceShowcaseTests
         Assert.True(view.Devices[2].Output.Levels.IsActive);
         Assert.True(File.Exists(app.SaveFrame($"showcase-{size}-junctions-playing")));
         Assert.True(File.Exists(SaveDeviceView(app, $"showcase-{size}-junctions-playing-closeup")));
+    });
+
+    /// <summary>
+    /// A receiver says where it takes its signal from and whether it mixes or replaces, its pill opens the source picker,
+    /// and an effect whose sidechain is keyed shows the SC chip in its key's colour.
+    /// </summary>
+    [Fact]
+    public Task TheDeviceInputs_ShowWhereReceiversAndSidechainsTakeTheirSignal() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Gain));
+        view.InsertAt(2, BuiltIn("Audio Receiver"));
+        view.InsertAt(3, BuiltIn("Note Receiver"));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 4 && view.Devices[0].Parameters.Count > 0, "the chain and the plugin's parameters");
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+
+        // The effect's sidechain is not shown until it can be used: reference plugins have no aux bus.
+        Assert.Null(view.Devices[1].Sidechain);
+        var chip = deviceView.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("scChip")).ToList();
+        Assert.All(chip, c => Assert.False(c.IsEffectivelyVisible));
+
+        // Keyed through the routing (as a project made where it has one would be), the chip shows, in the key's colour.
+        app.Session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(app.ViewModel.Tracks[2].Id), SignalNode.DeviceInput(view.Devices[1].Id, DeviceInputPort.Sidechain)), app.Playback.Devices.Lookup));
+        app.Settle();
+        Assert.Equal("Pad · Output", view.Devices[1].Sidechain!.SourceText);
+        var keyed = deviceView.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("scChip") && b.IsEffectivelyVisible);
+        Assert.Contains("keyed", keyed.Classes);
+
+        // The Audio Receiver takes the Pad's output; the Note Receiver has no source yet, and invites one.
+        var audio = view.Devices[2].Receiver!;
+        audio.Picker.Open();
+        audio.Picker.ChooseCommand.Execute(audio.Picker.Rows.First(r => r.Owner == "Pad" && r.Name == "Output"));
+        app.Settle();
+        Assert.Equal("Pad · Output", view.Devices[2].Receiver!.SourceText);
+        Assert.Equal("0 dB", view.Devices[2].VisibleParameters.Single().ValueText);
+        Assert.False(view.Devices[3].Receiver!.HasSource);
+        await app.SettleTransitionsAsync();
+        Assert.True(File.Exists(SaveDeviceView(app, "device-inputs")));
+
+        // Clicking the empty pill opens the picker.
+        var pills = deviceView.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("sourcePill") && b.IsEffectivelyVisible).ToList();
+        Assert.Equal(2, pills.Count);
+        app.Click(pills[1]);
+        await app.SettleTransitionsAsync();
+        var picker = app.Window.GetVisualDescendants().OfType<Desktop.Views.SourcePickerView>().FirstOrDefault()
+            ?? Avalonia.Controls.Primitives.OverlayLayer.GetOverlayLayer(app.Window)?.GetVisualDescendants().OfType<Desktop.Views.SourcePickerView>().FirstOrDefault();
+        Assert.NotNull(picker);
+        // Its own chain before it (never itself or later), and the other tracks.
+        var rows = view.Devices[3].Receiver!.Picker.Rows;
+        Assert.Contains(rows, r => r.Owner == "Lead" && r.Name == "Input");
+        Assert.DoesNotContain(rows, r => r.Owner == "Lead" && r.Name is "After Note Receiver" or "Output");
+        Assert.Contains(rows, r => r.Owner == "Bass" && r.Name == "Output");
+        Assert.True(File.Exists(app.SaveFrame("device-inputs-picker")));
     });
 
     /// <summary>

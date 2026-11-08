@@ -198,6 +198,13 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
     internal DeviceDefinitionLookup Definitions => _owner.Devices.Lookup;
 
+    internal Project Project => _owner.Project;
+
+    internal bool Execute(IProjectCommand command) => _owner.Execute(command);
+
+    /// <summary>A track's colour index, as its header shows it; -1 if it is not in the list.</summary>
+    internal int AccentOf(TrackId track) => _owner.Tracks.FirstOrDefault(t => t.Id == track)?.ColorIndex ?? -1;
+
     /// <summary>Whether this view shows <paramref name="device"/> collapsed. Other views of the same chain are unaffected.</summary>
     public bool IsCollapsed(DeviceId device) => _collapsed.Contains(device);
 
@@ -904,6 +911,49 @@ public sealed partial class DevicePanelViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(MoveRightCommand))]
     public partial bool CanMoveRight { get; private set; }
 
+    /// <summary>A Note or Audio Receiver: the panel shows where it receives from, and Mix or Replace.</summary>
+    [ObservableProperty]
+    public partial bool IsReceiver { get; private set; }
+
+    /// <summary>A receiver's source: its one input. Null for other devices.</summary>
+    [ObservableProperty]
+    public partial DeviceInputViewModel? Receiver { get; private set; }
+
+    /// <summary>An effect plugin's sidechain, shown as the SC chip while the plugin has one (or is keyed). Null otherwise.</summary>
+    [ObservableProperty]
+    public partial DeviceInputViewModel? Sidechain { get; private set; }
+
+    /// <summary>A receiver replaces the chain's signal at its place, rather than mixing with it.</summary>
+    public bool Replaces
+    {
+        get => Parameters.FirstOrDefault(p => p.Id == BuiltInDevices.ReceiverReplace)?.IsOn == true;
+        set
+        {
+            if (Parameters.FirstOrDefault(p => p.Id == BuiltInDevices.ReceiverReplace) is { } replace && replace.IsOn != value)
+            {
+                replace.IsOn = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Mixes));
+            }
+        }
+    }
+
+    /// <summary>The other half of <see cref="Replaces"/>, for the Mix | Replace switch.</summary>
+    public bool Mixes
+    {
+        get => !Replaces;
+        set => Replaces = !value;
+    }
+
+    /// <summary>The role a definition gives a panel's stripe and knobs.</summary>
+    internal static DeviceRole RoleOf(DeviceDefinition? definition) => definition is null ? DeviceRole.Unavailable : definition.Category switch
+    {
+        DeviceCategory.MidiEffect => DeviceRole.Note,
+        DeviceCategory.Instrument => DeviceRole.Instrument,
+        DeviceCategory.AudioEffect => DeviceRole.Audio,
+        _ => DeviceRole.Other,
+    };
+
     /// <summary>Every parameter the device declares.</summary>
     public ObservableCollection<ParameterViewModel> Parameters { get; } = [];
 
@@ -947,15 +997,16 @@ public sealed partial class DevicePanelViewModel : ObservableObject
             IsCollapsed = collapsed;
             CanMoveLeft = index > 0;
             CanMoveRight = index < count - 1;
-            Role = definition is null || status.NeedsAttention ? DeviceRole.Unavailable : definition.Category switch
-            {
-                DeviceCategory.MidiEffect => DeviceRole.Note,
-                DeviceCategory.Instrument => DeviceRole.Instrument,
-                DeviceCategory.AudioEffect => DeviceRole.Audio,
-                _ => DeviceRole.Other,
-            };
+            Role = status.NeedsAttention ? DeviceRole.Unavailable : RoleOf(definition);
             UsesNotes = definition?.Consumes.HasFlag(SignalKinds.Events) == true;
             MakesAudio = definition?.Produces.HasFlag(SignalKinds.Audio) == true;
+
+            var ports = definition?.Inputs ?? [];
+            IsReceiver = definition?.Id == BuiltInDevices.NoteReceiver.Id || definition?.Id == BuiltInDevices.AudioReceiver.Id;
+            Receiver = IsReceiver ? Input(project, ports.FirstOrDefault(p => p.Id == DeviceInputPort.Receive), Receiver) : null;
+            var sidechain = ports.FirstOrDefault(p => p.Id == DeviceInputPort.Sidechain);
+            var keyed = project.ConnectionsTo(SignalNode.DeviceInput(device.Id, DeviceInputPort.Sidechain)).Any();
+            Sidechain = sidechain is not null && (status.HasSidechain || keyed) ? Input(project, sidechain, Sidechain) : null;
 
             var descriptors = definition?.Parameters ?? [];
             // Panels are reused by position, so a replaced device can share parameter ids with the old one (Event Filter
@@ -981,22 +1032,40 @@ public sealed partial class DevicePanelViewModel : ObservableObject
                 _ => DevicePanelSize.Large,
             };
             var shown = ParametersShown(NaturalSize);
-            if (!VisibleParameters.SequenceEqual(Parameters.Take(shown)))
+            // A receiver's Replace is its Mix | Replace switch, not a parameter cell.
+            var visible = Parameters.Where(p => !IsReceiver || p.Id != BuiltInDevices.ReceiverReplace).Take(shown).ToList();
+            if (!VisibleParameters.SequenceEqual(visible))
             {
                 VisibleParameters.Clear();
-                foreach (var parameter in Parameters.Take(shown))
+                foreach (var parameter in visible)
                 {
                     VisibleParameters.Add(parameter);
                 }
             }
 
-            var more = Parameters.Count - VisibleParameters.Count;
+            OnPropertyChanged(nameof(Replaces));
+            OnPropertyChanged(nameof(Mixes));
+
+            var more = Parameters.Count - VisibleParameters.Count - (IsReceiver ? 1 : 0);
             MoreParametersText = more <= 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"+{more} more{(CanOpenEditor ? " in editor" : string.Empty)}");
         }
         finally
         {
             _syncing = false;
         }
+    }
+
+    // The input view for port, reusing the current one when it is the same port, so an open picker survives a sync.
+    private DeviceInputViewModel? Input(Project project, DeviceInputPort? port, DeviceInputViewModel? current)
+    {
+        if (port is null)
+        {
+            return null;
+        }
+
+        var input = current is not null && current.Port == port ? current : new DeviceInputViewModel(_view, port);
+        input.Sync(project, Id);
+        return input;
     }
 
     partial void OnIsBypassedChanged(bool value)
@@ -1110,8 +1179,11 @@ public sealed partial class ParameterViewModel : ObservableObject
 
     public string ValueText => IsSwitch ? (IsOn ? "On" : "Off")
         : Descriptor.Steps > 0
-        ? string.Create(CultureInfo.InvariantCulture, $"{Value:0.##} {Descriptor.Unit}").Trim()
-        : string.Create(CultureInfo.InvariantCulture, $"{Value:0.###} {Descriptor.Unit}").Trim();
+        ? string.Create(CultureInfo.InvariantCulture, $"{Shown(0.005):0.##} {Descriptor.Unit}").Trim()
+        : string.Create(CultureInfo.InvariantCulture, $"{Shown(0.0005):0.###} {Descriptor.Unit}").Trim();
+
+    // The value as shown: one that rounds to zero is shown as 0, not "-0".
+    private double Shown(double half) => Math.Abs(Value) < half ? 0 : Value;
 
     internal void Sync(ControlValue stored)
     {
@@ -1154,6 +1226,9 @@ public sealed record EditorWindowStatus(bool Pinned, bool KeysToBluestone, bool 
 
 public sealed record DeviceStatus(string Text, bool NeedsAttention = false, bool CanRestart = false, bool CanOpenEditor = false, string Hosting = "", string Detail = "")
 {
+    /// <summary>A running plugin with a sidechain input: its panel offers the SC chip.</summary>
+    public bool HasSidechain { get; init; }
+
     /// <summary>The plugin's editor window, while it is open.</summary>
     public EditorWindowStatus? Editor { get; init; }
 

@@ -346,6 +346,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _plugins?.StatusOf(device) is { } runtime
             ? new DeviceStatus(runtime.Text, runtime.NeedsAttention, runtime.CanRestart, runtime.CanOpenEditor, runtime.Hosting ?? string.Empty, runtime.Detail ?? string.Empty)
             {
+                HasSidechain = runtime.HasSidechain,
                 Editor = EditorWindows is { } windows && windows.IsOpen(device.Id)
                     ? new EditorWindowStatus(windows.IsPinned(device.Id), windows.SendsKeysToBluestone(device.Id), windows.IsHiddenByFollow(device.Id), windows.FollowsSelection)
                     {

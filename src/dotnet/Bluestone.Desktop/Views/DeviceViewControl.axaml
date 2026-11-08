@@ -3,6 +3,7 @@
              xmlns:vm="using:Bluestone.Presentation"
              xmlns:controls="using:Bluestone.Desktop.Controls"
              xmlns:theme="using:Bluestone.Desktop.Theme"
+             xmlns:views="using:Bluestone.Desktop.Views"
              x:Class="Bluestone.Desktop.Views.DeviceViewControl"
              x:DataType="vm:DeviceViewViewModel"
              AutomationProperties.Name="Device View">
@@ -91,18 +92,31 @@
                       <!-- Expanded: header, controls, footer. -->
                       <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCollapsed}">
                         <Border Classes="deviceHeader">
-                          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                            <Border Grid.ColumnSpan="4" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
+                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                            <Border Grid.ColumnSpan="5" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
                             <Button Classes="power" Classes.off="{Binding IsBypassed}" Command="{Binding ToggleBypassedCommand}"
                                     ToolTip.Tip="On or bypassed. A bypassed device passes every signal through unchanged."
                                     AutomationProperties.Name="Bypass device">
                               <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
                             </Button>
                             <TextBlock Grid.Column="1" Classes="deviceName grip" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Kind}" />
-                            <Button Grid.Column="2" Classes="tool tiny" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="Collapse in this view" AutomationProperties.Name="Collapse device">
+                            <!-- The sidechain (ADR 0037): outlined while nothing keys it, the key's colour once something does. -->
+                            <Button Grid.Column="2" Classes="scChip" Classes.keyed="{Binding Sidechain.HasSource, FallbackValue=False}" IsVisible="{Binding Sidechain, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                    ToolTip.Tip="{Binding Sidechain.SourceDetail, FallbackValue={x:Null}}" AutomationProperties.Name="Sidechain">
+                              <Panel>
+                                <Border Classes="scFill" Background="{Binding Sidechain.SourceAccent, Converter={x:Static theme:SourceAccentConverter.Instance}, FallbackValue={x:Null}}" />
+                                <TextBlock Text="SC" />
+                              </Panel>
+                              <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="sourcePicker">
+                                  <views:SourcePickerView DataContext="{Binding Sidechain.Picker, FallbackValue={x:Null}}" />
+                                </Flyout>
+                              </Button.Flyout>
+                            </Button>
+                            <Button Grid.Column="3" Classes="tool tiny" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="Collapse in this view" AutomationProperties.Name="Collapse device">
                               <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronLeft}" />
                             </Button>
-                            <Button Grid.Column="3" Classes="tool tiny" ToolTip.Tip="Device options" AutomationProperties.Name="Device options">
+                            <Button Grid.Column="4" Classes="tool tiny" ToolTip.Tip="Device options" AutomationProperties.Name="Device options">
                               <PathIcon Classes="stroke" Data="{StaticResource Icon.More}" />
                               <Button.Flyout>
                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
@@ -122,7 +136,34 @@
                         </Border>
 
                         <!-- Controls, or why there are none. -->
-                        <Panel Grid.Row="1" Classes="deviceBody">
+                        <Panel Grid.Row="1" Classes="deviceBody" Classes.receiver="{Binding IsReceiver}">
+                          <!-- A receiver: where it takes its signal from, and whether that mixes with the chain's or replaces it. -->
+                          <StackPanel Classes="receiverBlock" IsVisible="{Binding IsReceiver}">
+                            <Button Classes="sourcePill" Classes.empty="{Binding !Receiver.HasSource, FallbackValue=True}"
+                                    ToolTip.Tip="{Binding Receiver.SourceDetail, FallbackValue={x:Null}}" AutomationProperties.Name="Receive from">
+                              <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="sourceSwatch" Background="{Binding Receiver.SourceAccent, Converter={x:Static theme:SourceAccentConverter.Instance}, FallbackValue={x:Null}}"
+                                        IsVisible="{Binding Receiver.HasSource, FallbackValue=False}" />
+                                <PathIcon Classes="stroke pillIcon" Data="{StaticResource Icon.Plus}" IsVisible="{Binding !Receiver.HasSource, FallbackValue=True}" />
+                                <TextBlock Grid.Column="1" Classes="pillText" Text="{Binding Receiver.SourceText, FallbackValue={x:Null}}" />
+                                <PathIcon Grid.Column="2" Classes="stroke pillChevron" Data="{StaticResource Icon.ChevronDown}" />
+                              </Grid>
+                              <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="sourcePicker">
+                                  <views:SourcePickerView DataContext="{Binding Receiver.Picker, FallbackValue={x:Null}}" />
+                                </Flyout>
+                              </Button.Flyout>
+                            </Button>
+                            <Border Classes="segmented" AutomationProperties.Name="Mix or replace">
+                              <UniformGrid Rows="1">
+                                <RadioButton Classes="segment" Content="Mix" IsChecked="{Binding Mixes}"
+                                             ToolTip.Tip="Add what it receives to the chain's signal here" AutomationProperties.Name="Mix" />
+                                <RadioButton Classes="segment" Content="Replace" IsChecked="{Binding Replaces}"
+                                             ToolTip.Tip="Replace the chain's signal here with what it receives" AutomationProperties.Name="Replace" />
+                              </UniformGrid>
+                            </Border>
+                          </StackPanel>
+
                           <ItemsControl ItemsSource="{Binding VisibleParameters}" IsVisible="{Binding !NeedsAttention}">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate>

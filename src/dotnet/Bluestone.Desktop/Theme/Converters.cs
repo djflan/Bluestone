@@ -18,6 +18,18 @@ public sealed class TrackBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>A source's colour: its track's (an index of 0 or more), or the neutral signal colour for a rack or nothing (-1).</summary>
+public sealed class SourceAccentConverter : IValueConverter
+{
+    public static readonly SourceAccentConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        new SolidColorBrush(value is int index and >= 0 ? Palette.Track(index) : Palette.SignalOther);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>"TRACK" or "TRACKS" for the inspector header.</summary>
 public sealed class SelectionHeaderConverter : IValueConverter
 {

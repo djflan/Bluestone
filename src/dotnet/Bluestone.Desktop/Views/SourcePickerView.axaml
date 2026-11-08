@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Bluestone.Presentation"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             x:Class="Bluestone.Desktop.Views.SourcePickerView"
+             x:DataType="vm:SourcePickerViewModel"
+             AutomationProperties.Name="Choose a source">
+  <!--
+    Where a device input takes its signal from (ADR 0037): every track and rack, and in each its input, the point after
+    each device, and its output. Only points that can be connected are listed. Typing filters; Enter takes the first.
+  -->
+  <Grid Classes="sourcePicker" RowDefinitions="Auto,*,Auto">
+    <Border Classes="searchField" Margin="8,8,8,6">
+      <Grid ColumnDefinitions="Auto,*">
+        <PathIcon Classes="stroke" Data="{StaticResource Icon.Search}" Width="12" Height="12" Foreground="{StaticResource Text.Muted}" Margin="8,0,2,0" />
+        <TextBox x:Name="QueryBox" Grid.Column="1" Classes="bare" Text="{Binding Query}" PlaceholderText="Search tracks and devices…"
+                 AutomationProperties.Name="Search sources" />
+      </Grid>
+    </Border>
+    <ScrollViewer Grid.Row="1" MaxHeight="300" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="0,0,0,6">
+        <TextBlock Classes="caption" Text="No track or device here can be connected." Margin="12,4,12,8" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}" />
+        <ItemsControl x:Name="SourceRows" ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SourceRow">
+              <Panel>
+                <Grid Classes="sourceHeading" ColumnDefinitions="Auto,*" IsVisible="{Binding IsHeading}">
+                  <Border Classes="sourceSwatch" Background="{Binding AccentIndex, Converter={x:Static theme:SourceAccentConverter.Instance}}" />
+                  <TextBlock Grid.Column="1" Classes="sourceOwner" Text="{Binding Owner}" />
+                </Grid>
+                <Button Classes="sourceRow" IsVisible="{Binding !IsHeading}"
+                        Command="{Binding $parent[ItemsControl].((vm:SourcePickerViewModel)DataContext).ChooseCommand, FallbackValue={x:Null}}" CommandParameter="{Binding}"
+                        AutomationProperties.Name="{Binding}">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <Ellipse Classes="sourceRole" IsVisible="{Binding HasRole}" Fill="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue={x:Null}}" />
+                    <Ellipse Classes="sourceRole boundary" IsVisible="{Binding !HasRole}" />
+                    <TextBlock Grid.Column="1" Classes="sourcePoint" Text="{Binding Name}" />
+                  </Grid>
+                </Button>
+              </Panel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+    <Border Grid.Row="2" Classes="sourceFooter" IsVisible="{Binding CanClear}">
+      <Button Classes="link" Content="{Binding ClearText}" Command="{Binding ClearCommand}" HorizontalAlignment="Left" />
+    </Border>
+  </Grid>
+</UserControl>

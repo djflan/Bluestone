@@ -25,7 +25,11 @@ public sealed record PluginParameterEdit(DeviceId Device, uint ParameterId, doub
 /// <param name="CanOpenEditor">The plugin is a running VST3 or CLAP plugin, whose editor can be asked for.</param>
 /// <param name="Hosting">Which worker process it is in: "Hosted by plugin (Surge XT) · shares its process with Pad".</param>
 /// <param name="Detail">More about a failure, for example which other devices went down with it.</param>
-public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart, bool CanOpenEditor = false, string? Hosting = null, string? Detail = null);
+public sealed record DeviceRuntimeStatus(string Text, bool NeedsAttention, bool CanRestart, bool CanOpenEditor = false, string? Hosting = null, string? Detail = null)
+{
+    /// <summary>The running plugin has a sidechain input (an aux audio input bus) that a connection can key.</summary>
+    public bool HasSidechain { get; init; }
+}
 
 /// <summary>How often a plugin's worker has failed under it this session.</summary>
 /// <param name="Crashes">Worker processes that crashed, hung, or misbehaved while running this plugin.</param>
@@ -485,7 +489,10 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
         var hosting = HostingOf(device.Id, instance);
         return status.State switch
         {
-            PluginInstanceState.Running => new DeviceRuntimeStatus(instance.IsEditorOpen ? "Running, editor open" : "Running", false, false, CanOpenEditor: instance.Plugin.Format is "vst3" or "clap", hosting),
+            PluginInstanceState.Running => new DeviceRuntimeStatus(instance.IsEditorOpen ? "Running, editor open" : "Running", false, false, CanOpenEditor: instance.Plugin.Format is "vst3" or "clap", hosting)
+            {
+                HasSidechain = instance.PluginSidechainChannels > 0,
+            },
             PluginInstanceState.Starting or PluginInstanceState.Restarting => new DeviceRuntimeStatus("Starting", false, false, Hosting: hosting),
             PluginInstanceState.Quarantined => new DeviceRuntimeStatus("Stopped after repeated crashes", true, true, Hosting: hosting, Detail: WentDownWith(device.Id, instance)),
             PluginInstanceState.Unavailable => new DeviceRuntimeStatus(status.Reason switch
