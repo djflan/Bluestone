@@ -51,7 +51,9 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   (`SignalGraphResult.NoteActivity`, the held tick ranges at every junction, read at the playhead, so nothing is added
   to the real-time path), and for live input while keys are held on the chain's track (`LiveInput.HasHeldNotes`) at
   every junction notes can reach. The live lamp is therefore approximate: it does not follow what a device does to live
-  notes (an arpeggiator's steps, a filter that blocks them) and is not shown for racks. The Device View keeps the
+  notes (an arpeggiator's steps, a filter that blocks them) and is not shown for racks. The playback lamp reads
+  each note's held range, so after starting or seeking into the middle of a note (which playback does not restart) its
+  lamp is lit until that note ends. The Device View keeps the
   indicators in `JunctionSignal`s, which the UI draws as Bitwig-style indicators between devices, not as meters.
 
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
