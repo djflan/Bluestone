@@ -30,7 +30,13 @@ public sealed class NoteReceiverProcessor : ISignalProcessor
         foreach (var e in input)
         {
             var passes = !_replace;
-            if (e.Event is ControllerEvent { Controller.Value: 121 } reset)
+            if (e.Event is ControllerEvent { Controller.Value: 120 } soundOff)
+            {
+                // All Sound Off gets through for a channel with a pedal it let down (its notes end with their durations).
+                var channel = soundOff.Channel.Index;
+                passes |= _sustainDown[channel] || _sostenutoDown[channel];
+            }
+            else if (e.Event is ControllerEvent { Controller.Value: 121 } reset)
             {
                 // Reset All Controllers lifts the pedals too: it gets through for a channel with a pedal it let down.
                 var channel = reset.Channel.Index;

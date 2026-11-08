@@ -157,6 +157,29 @@ public sealed class ReceiverTests
     }
 
     [Fact]
+    public void AChannelWideRelease_GetsThroughReplace_ForAChannelWithNotesOrAPedalItLetThrough()
+    {
+        var live = new LiveNoteReceiverProcessor();
+        var liveOut = new LiveEventBuffer(16);
+        var block = new LiveBlock(0, 0);
+        live.Process(block, [LiveEvent.NoteOn(0, 0, 60, 100)], liveOut);
+        live.SetParameter(BuiltInDevices.ReceiverReplace, ControlValue.Max);
+        live.Process(block, [new LiveEvent(0, LiveEventKind.ControlChange, 0, 123, 0), new LiveEvent(0, LiveEventKind.ControlChange, 1, 123, 0)], liveOut);
+        Assert.Equal([(0, 0x90 >> 4), (0, 0xB0 >> 4)], liveOut.Events.ToArray().Select(e => ((int)e.Channel, e.Status >> 4)));
+        liveOut.Clear();
+        live.Release(block, liveOut);
+        Assert.Equal(0, liveOut.Count);
+
+        static SignalEvent Controller(int tick, int controller, int value) => new(new ControllerEvent(new Tick(tick), MidiChannel.FromIndex(0), new ControllerNumber(controller), ControlValue.FromSevenBit(value)), 0, tick);
+        var playback = new Bluestone.Signal.BuiltIn.NoteReceiverProcessor();
+        var output = new SignalBuffer();
+        playback.Process(new SignalBlock(Tick.Zero, new Tick(10)), [Controller(0, 64, 127)], output);
+        playback.SetParameter(BuiltInDevices.ReceiverReplace, ControlValue.Max);
+        playback.Process(new SignalBlock(new Tick(10), new Tick(40)), [Controller(10, 120, 0), Controller(20, 64, 0)], output);
+        Assert.Equal([64, 120, 64], output.Events.ToArray().Select(e => (int)((ControllerEvent)e.Event).Controller.Value));
+    }
+
+    [Fact]
     public void ReceivedEventsFromSeveralConnections_AreMergedInOrder_WithTheDevicesOwnFirstOnEqualKeys()
     {
         static SignalEvent At(int tick, int origin) => new(new ControllerEvent(new Tick(tick), MidiChannel.FromIndex(0), new ControllerNumber(1), ControlValue.Min), origin, tick);
