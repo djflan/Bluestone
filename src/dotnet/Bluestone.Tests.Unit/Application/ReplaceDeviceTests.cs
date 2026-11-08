@@ -184,6 +184,26 @@ public sealed class ReplaceDeviceTests
     }
 
     [Fact]
+    public void DuplicatingATrack_LeavesOutACopiedRoute_ThatWouldDependOnAConnectionNotCopied()
+    {
+        // Keys (an instrument track) carries audio at its input only because Drums is routed into it.
+        var keys = Track.Create("keys", TrackRole.Instrument);
+        var drums = Track.Create("drums", TrackRole.Hybrid);
+        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keys).WithTrack(drums) });
+        history.Execute(DeviceCommands.InsertDevice(drums.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
+        history.Execute(DeviceCommands.InsertDevice(keys.Id, TestDevices.Instance(TestDevices.MidiFx), TestDevices.Lookup));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id)), TestDevices.Lookup));
+        var input = SignalNode.ChainInput(history.Current.ChainOf(keys.Id)!.Id);
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, input, SignalNode.Master), TestDevices.Lookup));
+
+        history.Execute(ProjectCommands.DuplicateTracks([keys.Id], TestDevices.Lookup));
+
+        var copy = history.Current.Sequence.Tracks.Single(t => t.Name == "keys copy");
+        Assert.DoesNotContain(history.Current.Connections, c => c.Source == SignalNode.ChainInput(history.Current.ChainOf(copy.Id)!.Id));
+        Assert.Empty(SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(history.Current, TestDevices.Lookup)));
+    }
+
+    [Fact]
     public void Taps_MoveToTheReplacement_OnlyWhenItProducesTheirKindOfSignal()
     {
         var (history, track, fx, synth) = Chain();
