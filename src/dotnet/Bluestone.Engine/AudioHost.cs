@@ -66,6 +66,8 @@ internal sealed class AudioHost : IDisposable
     private IAudioOutput? _output;
     private AudioEngine? _engine;
     private AudioGraphRealizer? _realizer;
+    private readonly Lock _watchGate = new();
+    private Guid[] _watched = [];
     private (LoadAudioGraph Load, AudioGraphDescription Description)? _lastGraph;
     private string? _problem;
     private string? _waitingReason;
@@ -117,7 +119,7 @@ internal sealed class AudioHost : IDisposable
     internal AudioEngine? Engine => Volatile.Read(ref _engine);
 
     /// <summary>Whether <paramref name="message"/> is an audio command.</summary>
-    public static bool Handles(EngineMessage message) => message is SetAudio or LoadAudioGraph or TestRender;
+    public static bool Handles(EngineMessage message) => message is SetAudio or LoadAudioGraph or TestRender or WatchJunctions;
 
     /// <summary>
     /// Queues one command from Bluestone for the audio thread, in order: the control thread never waits for a device to
@@ -125,6 +127,19 @@ internal sealed class AudioHost : IDisposable
     /// </summary>
     public void Apply(EngineMessage message)
     {
+        // Watching changes flags the audio thread reads; it never waits behind a device that is opening.
+        if (message is WatchJunctions watch)
+        {
+            // Under the gate a realizer being created either sees the new set or is already published to receive it.
+            lock (_watchGate)
+            {
+                _watched = watch.Keys.IsDefault ? [] : [.. watch.Keys];
+                Volatile.Read(ref _realizer)?.Watch(_watched);
+            }
+
+            return;
+        }
+
         lock (_queues)
         {
             if (message is LoadAudioGraph load)
@@ -402,7 +417,12 @@ internal sealed class AudioHost : IDisposable
         };
         var device = Math.Max(Math.Max(wanted.BufferFrames, output.Status.MaxBufferFrames), block);
         engine.Transport.Follow(_timeline, ToleranceFrames(rate, device, block));
-        Volatile.Write(ref _realizer, new AudioGraphRealizer(rate, block, ProcessorFor));
+        var realizer = new AudioGraphRealizer(rate, block, ProcessorFor);
+        lock (_watchGate)
+        {
+            realizer.Watch(_watched);
+            Volatile.Write(ref _realizer, realizer);
+        }
         _liveQueue = false;
         Volatile.Write(ref _engine, engine);
         _slot.Engine = engine;
@@ -745,7 +765,16 @@ internal sealed class AudioHost : IDisposable
             graph.LatencyFrames,
             output.QueuedFrames,
             _liveQueue);
-        return new AudioStatus(Meter(realizer.Master.Meter.Read()), strips.ToImmutable(), counters, _meter.Read(_plugins.DeadlineMisses));
+        var junctions = ImmutableArray.CreateBuilder<StripMeter>();
+        foreach (var (key, meter) in realizer.WatchedJunctions)
+        {
+            if (junctions.Count < EngineLimits.MaxWatchedJunctions)
+            {
+                junctions.Add(new StripMeter(key, Meter(meter.Read())));
+            }
+        }
+
+        return new AudioStatus(Meter(realizer.Master.Meter.Read()), strips.ToImmutable(), counters, _meter.Read(_plugins.DeadlineMisses)) { Junctions = junctions.ToImmutable() };
     }
 
     private static MeterSpec Meter(MeterReading reading) => new(Level(reading.PeakLeft), Level(reading.PeakRight), Level(reading.RmsLeft), Level(reading.RmsRight));

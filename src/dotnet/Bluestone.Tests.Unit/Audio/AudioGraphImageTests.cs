@@ -221,6 +221,9 @@ public sealed class AudioGraphImageTests : IDisposable
         builder.Connect(clips, effect);
         builder.ConnectToStrip(effect, channel);
         builder.ConnectToMaster(clips);
+        builder.AddMeterPoint(Key(), []);
+        builder.AddMeterPoint(Key(), [synth, clips]);
+        builder.AddMeterPoint(Key(), [effect]);
         return builder.Build(-2.5, [Key(), Key()]);
     }
 
@@ -229,6 +232,7 @@ public sealed class AudioGraphImageTests : IDisposable
         Assert.Equal(expected.MasterGainDecibels, actual.MasterGainDecibels);
         Assert.Equal(expected.Strips, actual.Strips);
         Assert.Equal(expected.Steps, actual.Steps);
+        Assert.Equal(expected.MeterPoints.Select(p => (p.Key, string.Join(",", p.Nodes))), actual.MeterPoints.Select(p => (p.Key, string.Join(",", p.Nodes))));
         Assert.True(expected.Retained.SetEquals(actual.Retained));
         Assert.Equal(expected.Nodes.Length, actual.Nodes.Length);
         foreach (var (e, a) in expected.Nodes.Zip(actual.Nodes))

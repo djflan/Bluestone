@@ -270,6 +270,43 @@ public sealed class ProjectAudioGraphTests : IDisposable
         ProjectAudioGraphResult Build(Project p) => graphs.Build(p, SignalGraph.Evaluate(p, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
     }
 
+    [Fact]
+    public void EveryJunctionOfAChainItReaches_HasAMeter_MeasuredOnlyWhileWatched()
+    {
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var transpose = BuiltInDevices.CreateTranspose(12);
+        var chain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [transpose] };
+        project = project.WithChain(chain);
+        using var graphs = new ProjectAudioGraph(Rate, Block, _ => null);
+        graphs.WatchJunctions([chain.Id.Value]);
+        var result = graphs.Build(project, SignalGraph.Evaluate(project, DeviceCatalog.BuiltIn), DeviceCatalog.BuiltIn, _directory);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(result.Graph);
+        engine.Transport.Play(0);
+
+        new OfflineAudioDriver(engine).Render(Rate / 10, Block);
+
+        // The clips arrive at the chain's input, and pass the note device unchanged to the point after it.
+        var input = graphs.JunctionMeterOf(chain.Id.Value)!;
+        var afterTranspose = graphs.JunctionMeterOf(transpose.Id.Value)!;
+        Assert.Equal(_tone.Take(Rate / 10).Max(), input.Read().PeakLeft, 3);
+        Assert.Equal(default, afterTranspose.Read());
+
+        graphs.WatchJunctions([transpose.Id.Value]);
+        Assert.True(afterTranspose.IsWatched);
+        Assert.False(input.IsWatched);
+    }
+
+    [Fact]
+    public void AChainsInput_CanBeRoutedAsAudio()
+    {
+        var (project, track, _) = ProjectWithClip(start: 0, length: 480, offset: 0);
+        var chain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [BuiltInDevices.CreateTranspose(12)] };
+        var dry = project.WithChain(chain) with { Connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.ChainInput(chain.Id), SignalNode.Master)] };
+
+        Assert.Equal(_tone[100], Left(Render(dry, Rate / 4, out _))[100], 4);
+    }
+
     private static float[] Left(float[] interleaved) => [.. interleaved.Where((_, i) => i % 2 == 0)];
 
     private float[] Render(Project project, int frames, out ProjectAudioGraphResult result)

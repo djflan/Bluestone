@@ -47,9 +47,12 @@ public sealed class EngineAudioTests
         Assert.Contains(Rig.ClipPart(expected), s => Math.Abs(s) > 0.1f);
         Assert.Contains(plugin, s => Math.Abs(s) > 0.1f);
 
+        // The junction after the synth is metered in the engine only once it is watched (ADR 0037).
+        rig.Audio.WatchJunctions([rig.Synth.Value]);
         var rendered = await rig.RenderInEngineAsync();
         Assert.Equal(expected, rendered);
         await WaitUntilAsync(() => rig.Audio.MeterOf(rig.Channel) is { PeakLeft: > 0 }, Patience, "the channel's meter from the engine");
+        await WaitUntilAsync(() => rig.Audio.JunctionMeterOf(rig.Synth.Value) is { PeakLeft: > 0 }, Patience, "the synth junction's meter from the engine");
 
         // The worker dies: Bluestone marks its exchange, and the engine plays the failure policy (silence) for it.
         var instance = rig.Devices.InstanceOf(rig.Synth)!;

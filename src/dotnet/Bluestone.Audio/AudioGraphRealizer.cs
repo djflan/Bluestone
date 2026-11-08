@@ -30,6 +30,9 @@ public sealed class AudioGraphRealizer : IDisposable
     private readonly int _blockFrames;
     private readonly Func<DescribedNode, IPluginProcessor?> _instances;
     private readonly ConcurrentDictionary<Guid, MixerStripState> _strips = new();
+    private readonly ConcurrentDictionary<Guid, AudioMeter> _junctions = new();
+    private readonly Lock _watchGate = new();
+    private ImmutableHashSet<Guid> _watched = [];
     private readonly Dictionary<Guid, PluginNode> _plugins = [];
     private readonly Dictionary<Guid, (ImmutableArray<AudioClipRegion> Regions, ClipPlayerNode Node, IReadOnlyList<string> Problems)> _clips = [];
     private readonly List<ClipPlayerNode> _retired = [];
@@ -59,6 +62,29 @@ public sealed class AudioGraphRealizer : IDisposable
 
     /// <summary>Every strip state kept, by its channel's key. Any thread (meters are read while graphs change).</summary>
     public IEnumerable<KeyValuePair<Guid, MixerStripState>> Strips => _strips;
+
+    /// <summary>A chain junction's meter (by its <see cref="DescribedMeterPoint.Key"/>), once a graph has described it. Any thread.</summary>
+    public AudioMeter? JunctionMeterOf(Guid key) => _junctions.GetValueOrDefault(key);
+
+    /// <summary>The meters of the watched junctions in the last graph realized, by key. Any thread.</summary>
+    public IEnumerable<KeyValuePair<Guid, AudioMeter>> WatchedJunctions => _junctions.Where(j => j.Value.IsWatched);
+
+    /// <summary>
+    /// The junctions to measure (a Device View's chain), replacing the previous set; every other junction costs nothing.
+    /// Takes effect at once, and holds for junctions that later graphs add. Any thread.
+    /// </summary>
+    public void Watch(IEnumerable<Guid> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        lock (_watchGate)
+        {
+            _watched = [.. keys];
+            foreach (var (key, meter) in _junctions)
+            {
+                meter.IsWatched = _watched.Contains(key);
+            }
+        }
+    }
 
     /// <summary>Every plugin node kept, by device key. Any thread.</summary>
     public ImmutableDictionary<Guid, PluginNode> PluginNodes { get; private set; } = ImmutableDictionary<Guid, PluginNode>.Empty;
@@ -116,6 +142,23 @@ public sealed class AudioGraphRealizer : IDisposable
                     break;
                 default:
                     throw new ArgumentException($"Unknown step {step.Kind}.", nameof(description));
+            }
+        }
+
+        lock (_watchGate)
+        {
+            var points = description.MeterPoints.IsDefault ? [] : description.MeterPoints;
+            foreach (var point in points)
+            {
+                var meter = _junctions.GetOrAdd(point.Key, _ => new AudioMeter());
+                meter.IsWatched = _watched.Contains(point.Key);
+                builder.AddMeterPoint(meter, point.Nodes.Select(n => indices[n]));
+            }
+
+            var kept = points.Select(p => p.Key).ToHashSet();
+            foreach (var gone in _junctions.Keys.Where(key => !kept.Contains(key)).ToList())
+            {
+                _junctions.TryRemove(gone, out _);
             }
         }
 

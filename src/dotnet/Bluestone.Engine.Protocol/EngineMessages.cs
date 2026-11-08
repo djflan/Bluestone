@@ -41,6 +41,7 @@ public enum EngineMessageType : ushort
     AudioStatus = 36,
     TestRender = 37,
     TestRendered = 38,
+    WatchJunctions = 39,
 }
 
 /// <summary>A control-channel message (ADR 0044). Nothing here is real-time: commands, state, and telemetry.</summary>

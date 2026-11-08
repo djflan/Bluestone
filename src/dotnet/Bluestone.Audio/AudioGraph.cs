@@ -9,14 +9,18 @@ public sealed class AudioGraph
 {
     private readonly NodeEntry[] _nodes;
     private readonly StripEntry[] _strips;
+    private readonly MeterEntry[] _meterPoints;
     private readonly float[] _silence;
     private readonly float[] _delayed;
+    private readonly float[] _metered;
 
-    internal AudioGraph(int blockFrames, NodeEntry[] nodes, StripEntry[] strips, MixerStripState master, float masterGain, IReadOnlyList<IStreamedSource> streams, int latencyFrames)
+    internal AudioGraph(int blockFrames, NodeEntry[] nodes, StripEntry[] strips, MixerStripState master, float masterGain, IReadOnlyList<IStreamedSource> streams, int latencyFrames, MeterEntry[]? meterPoints = null)
     {
         BlockFrames = blockFrames;
         _nodes = nodes;
         _strips = strips;
+        _meterPoints = meterPoints ?? [];
+        _metered = _meterPoints.Length > 0 ? new float[2 * blockFrames] : [];
         Master = master;
         MasterGain = masterGain;
         Streams = streams;
@@ -125,6 +129,23 @@ public sealed class AudioGraph
             }
         }
 
+        foreach (var point in _meterPoints)
+        {
+            if (!point.Meter.IsWatched)
+            {
+                continue;
+            }
+
+            var sum = StereoBuffer.Of(_metered, stride, frames);
+            sum.Clear();
+            foreach (var node in point.Nodes)
+            {
+                sum.Add(StereoBuffer.Of(_nodes[node].OutputStorage, stride, frames));
+            }
+
+            point.Meter.Update(sum, context.SampleRate);
+        }
+
         foreach (var strip in _strips)
         {
             var buffer = StereoBuffer.Of(strip.Storage, stride, frames);
@@ -167,6 +188,8 @@ public sealed class AudioGraph
 
     internal readonly record struct EdgeDelay(DelayLine? Line, int Frames);
 
+    internal sealed record MeterEntry(AudioMeter Meter, int[] Nodes);
+
     internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int DelayToMaster);
 
     internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends, EdgeDelay OutputDelay);
@@ -190,6 +213,7 @@ public sealed class AudioGraphBuilder
     private readonly List<(int Strip, int Destination, double LevelDecibels, bool PreFader)> _sends = [];
     private readonly List<IStreamedSource> _streams = [];
     private readonly HashSet<int> _monitored = [];
+    private readonly List<(AudioMeter Meter, int[] Nodes)> _meterPoints = [];
 
     /// <returns>The node's index in this builder.</returns>
     public int AddNode(AudioNode node)
@@ -228,6 +252,25 @@ public sealed class AudioGraphBuilder
     {
         CheckNode(node);
         _toMaster.Add(node);
+    }
+
+    /// <summary>
+    /// Measures the sum of <paramref name="nodes"/>' outputs with <paramref name="meter"/> while it is watched: a chain
+    /// junction (ADR 0037), which is a point in a chain, not a node of its own. Nothing is rendered for it, so it changes
+    /// neither what is heard nor the delay compensation. Its sources are summed as they leave their nodes, before any
+    /// compensation delay; a meter does not need them aligned. No nodes measures silence.
+    /// </summary>
+    public void AddMeterPoint(AudioMeter meter, IEnumerable<int> nodes)
+    {
+        ArgumentNullException.ThrowIfNull(meter);
+        ArgumentNullException.ThrowIfNull(nodes);
+        int[] members = [.. nodes.Distinct()];
+        foreach (var node in members)
+        {
+            CheckNode(node);
+        }
+
+        _meterPoints.Add((meter, members));
     }
 
     /// <returns>The strip's index in this builder.</returns>
@@ -400,7 +443,8 @@ public sealed class AudioGraphBuilder
         }).ToArray();
 
         compensation.EndBuild();
-        return new AudioGraph(blockFrames, nodes, strips, master, PanLaw.DecibelsToGain(masterGainDecibels), [.. _streams], latency);
+        AudioGraph.MeterEntry[] meterPoints = [.. _meterPoints.Select(p => new AudioGraph.MeterEntry(p.Meter, [.. p.Nodes.Select(n => nodePosition[n])]))];
+        return new AudioGraph(blockFrames, nodes, strips, master, PanLaw.DecibelsToGain(masterGainDecibels), [.. _streams], latency, meterPoints);
     }
 
     // See Build for the rule.

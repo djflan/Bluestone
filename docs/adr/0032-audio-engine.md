@@ -49,7 +49,11 @@ and in the worst case within the buffer period; garbage-collection pauses during
   multiplied by `cos(|pan| × π/2)` (−3 dB half way, silent at the edge); centre is unity. **Solo:** while any strip
   is soloed, a strip sounds if it is soloed, feeds a soloed strip, or is a bus a soloed strip reaches; mute always
   silences its own strip. **Meters** (per strip and master, post-fader): peak held and falling 20 dB/s, RMS with a
-  300 ms time constant, read lock-free from any thread.
+  300 ms time constant, read lock-free from any thread. **Junction meters** (ADR 0037) measure a point in a chain:
+  a meter point names the nodes whose sum is the audio there, and the graph sums and measures them after rendering
+  its nodes, only while the junction is watched (`AudioMeter.IsWatched`). A meter point is not a node: it changes
+  neither what is heard nor the delay compensation, and its sources are summed before compensation, which a meter
+  does not need. Every junction of a chain the graph reaches has one; a chain whose audio goes nowhere has none.
 - `OfflineAudioDriver` drives the same render path with virtual time, for deterministic tests and measurement.
 - Sends are strip-to-strip edges with their own gain; see "Sends, clip gain and fades, and device loss" below.
 

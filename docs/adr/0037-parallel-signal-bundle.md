@@ -42,7 +42,11 @@ with its output, and a note effect leaves audio alone. Only the event side was e
 - **Junctions.** A chain of n devices has n + 1 junctions, as in Bitwig's device panel: its input (before the first
   device), the output of each device, and the last one, which is the chain's output. Each carries the whole bundle.
   Every junction is a routing source (ADR 0023), and a device can declare input ports that bring signal from elsewhere
-  into the chain at that device (receivers, sidechains).
+  into the chain at that device (receivers, sidechains). Each junction's audio can be metered (ADR 0032): a chain's
+  input by the chain's ID, the rest by the device before it, measured only while a view watches it
+  (`IAudioPlayback.WatchJunctions`), so a project's many junctions cost nothing until shown. A meter point sums its
+  sources as they are, without delay compensation, so it never changes what is heard; sources with different latencies
+  at one junction can read lower there than where compensation aligns them.
 
 The UI shows this model rather than hiding another: Device View panels are coloured by role (note, instrument, audio,
 other), the chain runs between fixed input and output nodes, and nothing in the chain suggests a MIDI-to-audio

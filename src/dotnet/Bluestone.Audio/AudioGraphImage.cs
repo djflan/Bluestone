@@ -16,11 +16,11 @@ namespace Bluestone.Audio;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Layout (version 2), native-endian, which is little-endian on every supported platform, every section 8-aligned:
+/// Layout (version 3), native-endian, which is little-endian on every supported platform, every section 8-aligned:
 /// a 128-byte header (magic "BSGR", version, each section's count and offset, and the master gain), then nodes, clip
 /// regions, plugin events, plugin parameter changes, strips, steps, retained keys, strings, bytes (UTF-8 names and
-/// paths, and SysEx), and plugin links (each plugin instance's block exchange file, generation, and shape, for the
-/// engine to attach to). A plugin event is stored compactly, with its SysEx in the bytes section, not as the 272-byte
+/// paths, and SysEx), plugin links (each plugin instance's block exchange file, generation, and shape, for the
+/// engine to attach to), and chain junction meter points with the node indices each sums. A plugin event is stored compactly, with its SysEx in the bytes section, not as the 272-byte
 /// <see cref="PluginEvent"/>.
 /// </para>
 /// <para>
@@ -33,7 +33,7 @@ namespace Bluestone.Audio;
 /// </remarks>
 public static class AudioGraphImage
 {
-    public const int Version = 2;
+    public const int Version = 3;
 
     private const uint Magic = 0x52475342; // "BSGR"
     private const int HeaderSize = 128;
@@ -49,7 +49,9 @@ public static class AudioGraphImage
     private const int StringSection = 7;
     private const int ByteSection = 8;
     private const int LinkSection = 9;
-    private const int SectionCount = 10;
+    private const int MeterPointSection = 10;
+    private const int MeterNodeSection = 11;
+    private const int SectionCount = 12;
     private static readonly long MaxCollectWaitTicks = TimeSpan.FromMinutes(1).Ticks;
 
     private static readonly int[] ElementSizes =
@@ -64,6 +66,8 @@ public static class AudioGraphImage
         Unsafe.SizeOf<StringEntry>(),
         1,
         Unsafe.SizeOf<LinkEntry>(),
+        Unsafe.SizeOf<MeterPointEntry>(),
+        sizeof(int),
     ];
 
     /// <summary>Writes <paramref name="description"/> to a new array.</summary>
@@ -136,6 +140,8 @@ public static class AudioGraphImage
         var strings = Section<StringEntry>(image, counts, offsets, StringSection);
         var bytes = image.Slice(offsets[ByteSection], counts[ByteSection]);
         var links = Section<LinkEntry>(image, counts, offsets, LinkSection);
+        var meterPoints = Section<MeterPointEntry>(image, counts, offsets, MeterPointSection);
+        var meterNodes = Section<int>(image, counts, offsets, MeterNodeSection);
 
         try
         {
@@ -191,6 +197,11 @@ public static class AudioGraphImage
             if (added != described.Length)
             {
                 throw new InvalidDataException("The audio graph image is damaged: some of its nodes are never added.");
+            }
+
+            foreach (var point in meterPoints)
+            {
+                builder.AddMeterPoint(point.Key, Range(meterNodes, point.FirstNode, point.NodeCount).ToArray());
             }
 
             return builder.Build(Finite(masterGain), retained.ToArray());
@@ -349,6 +360,8 @@ public static class AudioGraphImage
         private readonly List<ParameterEntry> _parameters = [];
         private readonly List<StringEntry> _strings = [];
         private readonly List<LinkEntry> _links = [];
+        private readonly List<MeterPointEntry> _meterPoints = [];
+        private readonly List<int> _meterNodes = [];
         private readonly List<byte> _bytes = [];
         private readonly int[] _counts;
         private readonly int[] _offsets = new int[SectionCount];
@@ -414,6 +427,12 @@ public static class AudioGraphImage
                 _nodes.Add(entry);
             }
 
+            foreach (var point in description.MeterPoints.IsDefault ? [] : description.MeterPoints)
+            {
+                _meterPoints.Add(new MeterPointEntry { Key = point.Key, FirstNode = _meterNodes.Count, NodeCount = point.Nodes.Length });
+                _meterNodes.AddRange(point.Nodes);
+            }
+
             _counts =
             [
                 _nodes.Count,
@@ -426,6 +445,8 @@ public static class AudioGraphImage
                 _strings.Count,
                 _bytes.Count,
                 _links.Count,
+                _meterPoints.Count,
+                _meterNodes.Count,
             ];
             long position = HeaderSize;
             for (var section = 0; section < SectionCount; section++)
@@ -477,6 +498,8 @@ public static class AudioGraphImage
             CollectionsMarshal.AsSpan(_strings).CopyTo(Section<StringEntry>(image, StringSection));
             CollectionsMarshal.AsSpan(_bytes).CopyTo(Section<byte>(image, ByteSection));
             CollectionsMarshal.AsSpan(_links).CopyTo(Section<LinkEntry>(image, LinkSection));
+            CollectionsMarshal.AsSpan(_meterPoints).CopyTo(Section<MeterPointEntry>(image, MeterPointSection));
+            CollectionsMarshal.AsSpan(_meterNodes).CopyTo(Section<int>(image, MeterNodeSection));
         }
 
         private Span<T> Section<T>(Span<byte> image, int section)
@@ -570,6 +593,14 @@ public static class AudioGraphImage
         public int A;
         public int B;
         public int PreFader;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MeterPointEntry
+    {
+        public Guid Key;
+        public int FirstNode;
+        public int NodeCount;
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -240,6 +240,88 @@ public sealed class AudioGraphTests
         Assert.Equal(0, Allocations.InSteadyState(() => driver.Render(buffer, 512), 200));
     }
 
+    [Fact]
+    public void AMeterPoint_MeasuresTheSumOfItsNodes_OnlyWhileWatched_AndChangesNothingHeard()
+    {
+        // Two layered sources, as at the junction after a second instrument; the master hears only the first.
+        var builder = new AudioGraphBuilder();
+        var first = builder.AddNode(new ToneNode(1000, 0.25));
+        var second = builder.AddNode(new ToneNode(1000, 0.5));
+        builder.ConnectToMaster(first);
+        var junction = new AudioMeter();
+        var idle = new AudioMeter { IsWatched = false };
+        builder.AddMeterPoint(junction, [first, second]);
+        builder.AddMeterPoint(idle, [first]);
+        builder.AddMeterPoint(new AudioMeter(), []);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(builder.Build(Block, new MixerStripState()));
+
+        var output = new OfflineAudioDriver(engine).Render(Rate / 100, Block);
+
+        Assert.Equal(0.75f, junction.Read().PeakLeft, 2);
+        Assert.Equal(0.75f, junction.Read().PeakRight, 2);
+        Assert.Equal(default, idle.Read());
+        Assert.Equal(0.25, output.Max(), 2);
+    }
+
+    [Fact]
+    public void AMeterPointWatchedAgain_StartsFromSilence_NotFromWhatItHeldBefore()
+    {
+        var junction = new AudioMeter();
+        var loud = new AudioGraphBuilder();
+        loud.AddMeterPoint(junction, [loud.AddNode(new ToneNode(1000, 0.5))]);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(loud.Build(Block, new MixerStripState()));
+        new OfflineAudioDriver(engine).Render(Rate / 100, Block);
+        Assert.Equal(0.5f, junction.Read().PeakLeft, 2);
+
+        // Unwatched while the junction falls silent, then watched again: the old peak and average are gone.
+        junction.IsWatched = false;
+        var silent = new AudioGraphBuilder();
+        silent.AddNode(new ToneNode(1000, 0.5));
+        silent.AddMeterPoint(junction, []);
+        engine.Publish(silent.Build(Block, new MixerStripState()));
+        new OfflineAudioDriver(engine).Render(Rate, Block);
+        junction.IsWatched = true;
+        new OfflineAudioDriver(engine).Render(Block, Block);
+
+        Assert.Equal(0f, junction.Read().PeakLeft);
+        Assert.Equal(0f, junction.Read().RmsLeft);
+    }
+
+    [Fact]
+    public void Builder_RefusesAMeterPointOnAMissingNode()
+    {
+        var builder = new AudioGraphBuilder();
+        builder.AddNode(new ToneNode());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.AddMeterPoint(new AudioMeter(), [1]));
+    }
+
+    [Fact]
+    public void Render_WithWatchedMeterPoints_AllocatesNothing()
+    {
+        var builder = new AudioGraphBuilder();
+        var nodes = Enumerable.Range(0, 8).Select(i => builder.AddNode(new ToneNode(200 * (i + 1), 0.1))).ToList();
+        nodes.ForEach(builder.ConnectToMaster);
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            builder.AddMeterPoint(new AudioMeter(), nodes.Take(i + 1));
+        }
+
+        using var engine = new AudioEngine(Rate, 128, streamFromDisk: false);
+        engine.Publish(builder.Build(128, new MixerStripState()));
+        engine.Transport.Play(0);
+        var driver = new OfflineAudioDriver(engine, serviceStreams: false);
+        var buffer = new float[512 * 2];
+        for (var i = 0; i < 50; i++)
+        {
+            driver.Render(buffer, 512);
+        }
+
+        Assert.Equal(0, Allocations.InSteadyState(() => driver.Render(buffer, 512), 200));
+    }
+
     private static AudioGraph StripGraph(MixerStripState state, MixerStripSettings settings)
     {
         var builder = new AudioGraphBuilder();

@@ -8,7 +8,7 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 9;
+    public const int Version = 10;
 
     /// <summary>The largest frame body either side accepts.</summary>
     public const int MaxFrameBytes = 64 * 1024;
@@ -41,6 +41,9 @@ public static class EngineLimits
 
     /// <summary>The most mixer strips in one <see cref="AudioStatus"/>.</summary>
     public const int MaxMeters = 1024;
+
+    /// <summary>The most chain junctions watched at once (<see cref="WatchJunctions"/>), and so metered in one <see cref="AudioStatus"/>.</summary>
+    public const int MaxWatchedJunctions = 512;
 
     /// <summary>The most problems in one <see cref="AudioGraphLoaded"/>.</summary>
     public const int MaxGraphProblems = 64;

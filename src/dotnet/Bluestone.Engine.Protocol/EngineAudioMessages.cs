@@ -113,6 +113,18 @@ public readonly record struct LiveLatencySpec(long Notes, long Average, long Min
 public sealed record AudioStatus(MeterSpec Master, ImmutableArray<StripMeter> Strips, AudioCounters Counters, LiveLatencySpec Live = default) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.AudioStatus;
+
+    /// <summary>The watched chain junctions' meters (ADR 0037), by junction key, for those the playing graph has.</summary>
+    public ImmutableArray<StripMeter> Junctions { get; init; } = [];
+}
+
+/// <summary>
+/// Bluestone → engine: measure these chain junctions (a chain's ID for its input, a device's for the point after it),
+/// replacing the previous set, until the next such message. Junctions not named cost nothing to render.
+/// </summary>
+public sealed record WatchJunctions(ImmutableArray<Guid> Keys) : EngineMessage
+{
+    public override EngineMessageType Type => EngineMessageType.WatchJunctions;
 }
 
 /// <summary>

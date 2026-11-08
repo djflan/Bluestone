@@ -179,6 +179,36 @@ public sealed class EngineAudioTests : IAsyncDisposable
     }
 
     [Fact]
+    public void WatchedJunctions_AreSent_ResentToARestartedEngine_AndTheirMetersRead()
+    {
+        var first = new RecordingLink();
+        var junction = Guid.NewGuid();
+        Client.Connected(first, restarted: false);
+        _audio.WatchJunctions([junction, junction]);
+        Assert.Equal([junction], Assert.IsType<WatchJunctions>(Assert.Single(first.Sent)).Keys);
+
+        _audio.Start(new AudioSettings(true));
+        Client.Received(first, new AudioDeviceStatus(1, AudioDeviceState.Running, null, 48_000, 2, 256, 0, null));
+        Client.Received(first, new AudioStatus(default, [], default) { Junctions = [new StripMeter(junction, new MeterSpec(0.5f, 0.25f, 0, 0))] });
+        Assert.Equal(0.5f, _audio.JunctionMeterOf(junction)!.Value.PeakLeft);
+        Assert.Null(_audio.JunctionMeterOf(Guid.NewGuid()));
+
+        // Unwatched, its last reading is not shown, even before (or if) a newer status arrives; watched again, it is.
+        _audio.WatchJunctions([]);
+        Assert.Null(_audio.JunctionMeterOf(junction));
+        Client.Received(first, new AudioStatus(default, [], default) { Junctions = [new StripMeter(junction, new MeterSpec(0.5f, 0.25f, 0, 0))] });
+        Assert.Null(_audio.JunctionMeterOf(junction));
+        _audio.WatchJunctions([junction]);
+        Assert.Equal(0.5f, _audio.JunctionMeterOf(junction)!.Value.PeakLeft);
+
+        Client.Disconnected(first);
+        Assert.Null(_audio.JunctionMeterOf(junction));
+        var second = new RecordingLink();
+        Client.Connected(second, restarted: true);
+        Assert.Equal([junction], Assert.IsType<WatchJunctions>(second.Sent[0]).Keys);
+    }
+
+    [Fact]
     public async Task ARestartedEngine_IsSentTheSettingsAgain_AndTheGraphFollowsTheStreamItOpens()
     {
         var first = new RecordingLink();

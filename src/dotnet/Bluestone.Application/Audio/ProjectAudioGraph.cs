@@ -40,7 +40,9 @@ public sealed record ProjectAudioGraphResult(AudioGraph Graph, ImmutableArray<st
 /// solo rule, plus audio connected into the track or rack). Each device in order: a plugin audio effect processes
 /// it; a plugin instrument adds its output; anything else (bypassed devices, MIDI effects, built-in event devices,
 /// plugins that are not running) passes it on unchanged. A tap takes the audio after its device. Connections that
-/// routing validation rejects are left out, and so are mixer outputs and sends that would close a loop. Control
+/// routing validation rejects are left out, and so are mixer outputs and sends that would close a loop. Every junction of a
+/// chain the graph reaches gets a meter point (the chain's input by the chain's key, the point after a device by the
+/// device's); a chain whose audio goes nowhere is not in the graph, so its junctions have no meter. Control
 /// thread only (it opens files). It owns the clip nodes it opens: a node it replaces is closed at the next build (by
 /// then the graph that replaced it is the one playing), and <see cref="Dispose"/> closes the rest.
 /// </remarks>
@@ -121,6 +123,12 @@ public sealed class ProjectAudioGraph : IDisposable
 
     /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
     public MixerStripState? StripOf(MixerChannelId channel) => _realizer.StripOf(channel.Value);
+
+    /// <summary>A chain junction's meter (a chain's ID for its input, a device's for the point after it), once a graph has it. Any thread.</summary>
+    public AudioMeter? JunctionMeterOf(Guid junction) => _realizer.JunctionMeterOf(junction);
+
+    /// <summary>The junctions to measure, replacing the previous set (see <see cref="AudioGraphRealizer.Watch"/>). Any thread.</summary>
+    public void WatchJunctions(IEnumerable<Guid> junctions) => _realizer.Watch(junctions);
 
     /// <summary>The node playing a plugin device, once a graph has included it. Control thread.</summary>
     public PluginNode? PluginNodeOf(DeviceId device) => _realizer.PluginNodes.GetValueOrDefault(device.Value);
@@ -405,6 +413,13 @@ public sealed class ProjectAudioGraph : IDisposable
                 }
 
                 points[i + 1] = audio;
+            }
+
+            // Every junction can be metered (ADR 0037): the chain's input by the chain, the rest by the device before it.
+            _builder.AddMeterPoint(chain.Id.Value, points[0]);
+            for (var i = 0; i < chain.Devices.Length; i++)
+            {
+                _builder.AddMeterPoint(chain.Devices[i].Id.Value, points[i + 1]);
             }
 
             _chains[chain.Id] = points;

@@ -99,4 +99,13 @@ public interface IAudioPlayback : IDisposable
 
     /// <summary>A mixer channel's meter, or the master's for null; null when audio is off or the channel is not in the graph. Allocates nothing.</summary>
     MeterReading? MeterOf(MixerChannelId? channel);
+
+    /// <summary>
+    /// A chain junction's meter (ADR 0037): a chain's ID for its input, a device's for the point after it. Null when audio
+    /// is off, the junction is not watched, or its chain's audio goes nowhere. Allocates nothing.
+    /// </summary>
+    MeterReading? JunctionMeterOf(Guid junction);
+
+    /// <summary>The junctions to measure (a Device View's chain), replacing the previous set; holds across graphs and restarts. Any thread.</summary>
+    void WatchJunctions(IReadOnlyCollection<Guid> junctions);
 }
