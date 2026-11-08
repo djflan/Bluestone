@@ -196,16 +196,17 @@ public sealed class AttachedPluginInstance : IPluginProcessor, IDisposable
             throw new ArgumentException("The output must hold OutputChannels * frames samples.", nameof(output));
         }
 
+        if (!sidechain.IsEmpty && sidechain.Length != Shape.SidechainChannels * frames)
+        {
+            throw new ArgumentException("The sidechain must be empty or hold SidechainChannels * frames samples.", nameof(sidechain));
+        }
+
         if (Volatile.Read(ref _sweep) != 0 && Interlocked.Exchange(ref _sweep, 0) != 0)
         {
             inputEvents = WithSweep(inputEvents);
         }
 
         var live = _pipeline.PipelineDepth == 1;
-        if (!sidechain.IsEmpty && sidechain.Length != Shape.SidechainChannels * frames)
-        {
-            sidechain = default;
-        }
 
         var outcome = _pipeline.Process(Volatile.Read(ref _exchange), frames, input, output[..(Shape.OutputChannels * frames)], inputEvents, outputEvents, transport, sidechain);
         var block = _blocks++;

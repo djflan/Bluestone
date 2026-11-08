@@ -140,6 +140,9 @@ public sealed class AudioGraphDescriptionBuilder
         return _nodes.Count - 1;
     }
 
+    /// <summary>The key of the node at <paramref name="index"/>, which stays the same between descriptions of the same thing.</summary>
+    public Guid KeyOf(int index) => _nodes[index].Key;
+
     public void Connect(int from, int to)
     {
         CheckNode(from);

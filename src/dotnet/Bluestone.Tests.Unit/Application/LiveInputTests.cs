@@ -258,6 +258,22 @@ public sealed class LiveInputTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AllNotesOff_AfterTheThruTrackChanged_ReleasesTheKeysOnTheTrackTheyWentTo()
+    {
+        var first = await TrackWith(BuiltInDevices.CreateTranspose(12));
+        var second = await TrackWith(BuiltInDevices.CreateTranspose(7));
+        _controller.SetThruTrack(first);
+        Play(60);
+        Assert.True(_controller.Live.HasHeldNotes(first));
+
+        _controller.SetThruTrack(second);
+        _keys.Inject([0xB0, 123, 0]);
+
+        Assert.False(_controller.Live.HasHeldNotes(first));
+        Assert.False(_controller.Live.HasHeldNotes(second));
+    }
+
+    [Fact]
     public async Task AKeyOnATrackThatCannotPlay_IsHeldUntilItsRelease_FromAKeyboardOrTheScreen()
     {
         // A track with no output: nothing can play its notes.

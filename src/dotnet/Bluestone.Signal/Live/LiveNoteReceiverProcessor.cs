@@ -34,7 +34,8 @@ public sealed class LiveNoteReceiverProcessor : ILiveProcessor
             var passes = !_replace;
             if (e.IsNoteOn)
             {
-                _passed[e.NoteSlot] = passes;
+                // A blocked repeat of a note already let through keeps that note's release coming.
+                _passed[e.NoteSlot] |= passes;
             }
             else if (e.IsNoteOff && _passed[e.NoteSlot])
             {

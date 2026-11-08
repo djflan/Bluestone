@@ -61,6 +61,9 @@ public sealed class AttachedPluginInstanceTests
         using var attached = new AttachedPluginInstance(new ExchangeOptions(Frames * 2, 2, 2), gain.PipelineDepth, gain.CollectWait, bypassOnFailure: false);
 
         Assert.Throws<Bluestone.Plugins.Protocol.ProtocolException>(() => attached.Attach(gain.DataPlane));
+
+        // A sidechain of the wrong size is refused as PluginInstance refuses it, not replaced with silence.
+        Assert.Throws<ArgumentException>(() => attached.ProcessBlock(Frames, new float[2 * Frames], new float[2 * Frames], [], new PluginEvent[attached.EventCapacity], new TransportState(0, 120, false), new float[3]));
         Assert.Throws<Bluestone.Plugins.Protocol.ProtocolException>(() => attached.Attach(gain.DataPlane! with { Generation = gain.Generation + 1, Options = new ExchangeOptions(Frames * 2, 2, 2) }));
         Assert.False(attached.IsAttached);
     }
