@@ -68,7 +68,9 @@ The Device View draws each junction as a **seam** in the gap between panels (`Ju
 reads along; a slim stereo level of thin LED segments (sky blue through indigo and magenta to red at full scale,
 `Meter.*` tokens) that by default follows the average level with the peak held as one segment, or the peak alone; and
 under it a small MIDI connector icon that glows (`Junction.LampColor`, derived from `Meter.Low`) while notes are held,
-fading over `Motion.LampRelease`. Only what can be at a junction is drawn, and an idle seam is quiet. Settings ▸ Display
+fading over `Motion.LampRelease`. An indicator that cannot apply at a junction (the level after a device that only puts out notes) is drawn flat dark grey
+(`Junction.DisabledColor`) and never lit, and an idle seam is quiet. Only junctions audio can reach are measured, and a
+meter point with no audio sources reads silence without summing anything. Settings ▸ Display
 chooses, for every view, where the indicators sit (top, upper half, lower half, bottom) and what the levels show; the
 choice is an application preference (`display-settings.json`), not part of the project. A seam is also where a
 junction is used: hovering shows a **+** that aims the Browser's next insert at that gap (marked like a drop's

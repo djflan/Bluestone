@@ -502,6 +502,7 @@ public sealed class DeviceViewTests
             (Palette.MeterClip, "Meter.ClipColor"),
             (Palette.MeterTrack, "Meter.TrackColor"),
             (Palette.JunctionLamp, "Junction.LampColor"),
+            (Palette.JunctionDisabled, "Junction.DisabledColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));

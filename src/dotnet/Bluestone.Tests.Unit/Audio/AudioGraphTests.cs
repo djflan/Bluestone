@@ -290,6 +290,27 @@ public sealed class AudioGraphTests
     }
 
     [Fact]
+    public void AMeterPointThatLosesItsLastSource_ReadsSilenceAtOnce_WithoutMeasuring()
+    {
+        var junction = new AudioMeter();
+        var loud = new AudioGraphBuilder();
+        loud.AddMeterPoint(junction, [loud.AddNode(new ToneNode(1000, 0.5))]);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(loud.Build(Block, new MixerStripState()));
+        new OfflineAudioDriver(engine).Render(Rate / 100, Block);
+        Assert.Equal(0.5f, junction.Read().PeakLeft, 2);
+
+        // The device before it now puts out notes only: the junction has no audio sources.
+        var none = new AudioGraphBuilder();
+        none.AddNode(new ToneNode(1000, 0.5));
+        none.AddMeterPoint(junction, []);
+        engine.Publish(none.Build(Block, new MixerStripState()));
+        new OfflineAudioDriver(engine).Render(Block, Block);
+
+        Assert.Equal(default, junction.Read());
+    }
+
+    [Fact]
     public void Builder_RefusesAMeterPointOnAMissingNode()
     {
         var builder = new AudioGraphBuilder();

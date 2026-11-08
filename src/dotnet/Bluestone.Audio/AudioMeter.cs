@@ -52,6 +52,23 @@ public sealed class AudioMeter
         BitConverter.Int32BitsToSingle(Volatile.Read(ref _rmsLeft)),
         BitConverter.Int32BitsToSingle(Volatile.Read(ref _rmsRight)));
 
+    /// <summary>Reads silence at once, with nothing held: for a meter with no audio to measure. Audio thread only.</summary>
+    internal void Silence()
+    {
+        _restart = false;
+        if (_heldLeft == 0 && _heldRight == 0 && _meanSquareLeft == 0 && _meanSquareRight == 0)
+        {
+            return;
+        }
+
+        _heldLeft = _heldRight = 0;
+        _meanSquareLeft = _meanSquareRight = 0;
+        Volatile.Write(ref _peakLeft, 0);
+        Volatile.Write(ref _peakRight, 0);
+        Volatile.Write(ref _rmsLeft, 0);
+        Volatile.Write(ref _rmsRight, 0);
+    }
+
     /// <summary>Audio thread only.</summary>
     internal void Update(StereoBuffer block, int sampleRate)
     {

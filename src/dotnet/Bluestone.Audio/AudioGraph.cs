@@ -147,6 +147,13 @@ public sealed class AudioGraph
                 continue;
             }
 
+            // A junction no audio reaches (after a device that only puts out notes) is not measured: it reads silence.
+            if (point.Nodes.Length == 0)
+            {
+                point.Meter.Silence();
+                continue;
+            }
+
             var sum = StereoBuffer.Of(_metered, stride, frames);
             sum.Clear();
             foreach (var node in point.Nodes)

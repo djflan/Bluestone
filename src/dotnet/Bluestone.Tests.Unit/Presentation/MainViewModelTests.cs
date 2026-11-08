@@ -933,8 +933,8 @@ public sealed class MainViewModelTests : IAsyncLifetime
         var chain = _session.Project.ChainOf(first.Id)!;
         var output = view.Devices[0].Output;
 
-        // The view's chain input and the point after its one device are watched, and nothing else.
-        Assert.Equal(new HashSet<Guid> { chain.Id.Value, chain.Devices[0].Id.Value }, watched[^1].ToHashSet());
+        // An instrument track's chain carries no audio, so none of its junctions is measured.
+        Assert.True(watched.Count == 0 || watched[^1].Count == 0);
         Assert.Equal(chain.Id.Value, view.Input.Key);
         Assert.True(view.Input.CanCarryNotes);
         Assert.False(output.CanCarryAudio);
@@ -951,6 +951,11 @@ public sealed class MainViewModelTests : IAsyncLifetime
         _vm.OnFrame();
         Assert.False(view.Input.NotesHeld);
         Assert.False(output.NotesHeld);
+
+        // As a hybrid track it can carry audio: the chain's input and the point after its one device are watched, and nothing else.
+        _session.Execute(Bluestone.Application.Editing.TrackRoleCommands.SetRole(first.Id, TrackRole.Hybrid, Bluestone.Signal.DeviceCatalog.BuiltIn.Lookup, confirmed: true));
+        await Settle();
+        Assert.Equal(new HashSet<Guid> { chain.Id.Value, chain.Devices[0].Id.Value }, watched[^1].ToHashSet());
     }
 
     [Fact]

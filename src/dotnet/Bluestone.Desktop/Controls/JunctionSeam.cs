@@ -96,6 +96,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private const double NoteHeight = 12;
     private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
     private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
+    private static readonly IBrush DisabledBrush = new SolidColorBrush(Palette.JunctionDisabled);
     private static readonly double HotFraction = MeterLevels.Fraction(-6);
     private static readonly double ZeroFraction = MeterLevels.Fraction(0);
 
@@ -338,6 +339,10 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         {
             parts.Add(signal.NotesHeld ? "notes held" : "no notes");
         }
+        else
+        {
+            parts.Add("no notes reach here");
+        }
 
         if (signal.CanCarryAudio)
         {
@@ -345,6 +350,10 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             var peak = Math.Max(levels.PeakLeft, levels.PeakRight);
             parts.Add(!levels.IsActive || peak <= MeterLevels.FloorDecibels ? "silent"
                 : string.Create(CultureInfo.InvariantCulture, $"peak {peak:0.0} dB{(peak > 0 ? ", clipping" : string.Empty)}"));
+        }
+        else
+        {
+            parts.Add("no audio reaches here");
         }
 
         if (signal.IsRouted)
@@ -576,15 +585,9 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             return;
         }
 
-        if (signal.CanCarryNotes)
-        {
-            DrawLamp(context, center);
-        }
-
-        if (signal.CanCarryAudio)
-        {
-            DrawLevel(context, center, signal.Levels);
-        }
+        // Both are always there, so seams line up; one that cannot apply at this junction is flat dark grey and never lit.
+        DrawLamp(context, center, signal.CanCarryNotes);
+        DrawLevel(context, center, signal.Levels, signal.CanCarryAudio);
 
         _accentBrush ??= new SolidColorBrush(AccentColor);
         if (signal.IsRouted)
@@ -644,7 +647,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         return (count, (count * segment) + ((count - 1) * gap));
     }
 
-    private void DrawLamp(DrawingContext context, double center)
+    private void DrawLamp(DrawingContext context, double center, bool enabled)
     {
         // A small MIDI connector: at header height, or coupled with the level, over or under its bars.
         var height = LampHeight;
@@ -663,6 +666,16 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         var box = new Rect(center - (width / 2), top, width, height);
         var scale = height / NoteHeight;
         var color = LampColor;
+        if (!enabled)
+        {
+            using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(box.X, box.Y)))
+            {
+                context.DrawGeometry(DisabledBrush, null, NoteGlyph);
+            }
+
+            return;
+        }
+
         if (_glow > 0)
         {
             // Lit, it glows: a soft halo behind it, and the note itself fading back to unlit as the notes let go.
@@ -685,13 +698,25 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         }
     }
 
-    private void DrawLevel(DrawingContext context, double center, MeterLevels levels)
+    private void DrawLevel(DrawingContext context, double center, MeterLevels levels, bool enabled)
     {
         var bar = LevelBarWidth;
         var (top, bottom, left, _) = LevelFrame(center);
         var segment = Math.Max(1, LevelSegmentHeight);
         var gap = Math.Max(0, LevelSegmentGap);
         var count = LevelSpan().Count;
+        if (!enabled)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var y = bottom - ((i + 1) * segment) - (i * gap);
+                context.DrawRectangle(DisabledBrush, null, new Rect(left, y, bar, segment), 0.5, 0.5);
+                context.DrawRectangle(DisabledBrush, null, new Rect(left + bar + 1, y, bar, segment), 0.5, 0.5);
+            }
+
+            return;
+        }
+
         var segments = Segments(count);
         var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
 

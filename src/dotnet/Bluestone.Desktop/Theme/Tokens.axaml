@@ -60,6 +60,8 @@
   <Color x:Key="Meter.TrackColor">#222225</Color>
   <!-- A junction's note lamp: a warm pilot-lamp amber segment under its level, lit while notes are held there. -->
   <!-- The MIDI icon: the level's first segment colour (Meter.Low), lightened 25%. -->
+  <!-- An indicator that cannot apply at a junction (audio after a notes-only device): there, but flat and never lit. -->
+  <Color x:Key="Junction.DisabledColor">#2A2A2E</Color>
   <Color x:Key="Junction.LampColor">#6DD6FF</Color>
 
   <!-- Brushes for the tokens above. -->

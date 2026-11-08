@@ -1717,7 +1717,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Select(j => j.Key).Where(k => k != Guid.Empty).ToHashSet();
+        // Only junctions audio can reach are measured: a level after a device that only puts out notes would cost the
+        // engine a meter for silence.
+        var keys = Workspace.DeviceViews.SelectMany(v => v.Junctions).Where(j => j.CanCarryAudio).Select(j => j.Key).Where(k => k != Guid.Empty).ToHashSet();
         if (!keys.SetEquals(_watchedJunctions))
         {
             _watchedJunctions = keys;
