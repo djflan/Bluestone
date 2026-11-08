@@ -4,7 +4,6 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Views;
 
@@ -119,7 +118,7 @@ public sealed class SplashWindowTests
         using var image = new Bitmap(png);
         Assert.Equal(new PixelSize(100, 100), image.PixelSize);
 
-        var pixels = Pixels(image);
+        var pixels = AppUnderTest.Pixels(image);
         Assert.All(Enumerable.Range(0, image.PixelSize.Width * 8), pixel => Assert.Equal((byte)0, pixels[(pixel * 4) + 3]));
         Assert.Contains(pixels.Where((_, index) => index % 4 == 3), alpha => alpha > 0);
         return Task.CompletedTask;
@@ -163,7 +162,7 @@ public sealed class SplashWindowTests
     /// <summary>Counts dark, blue, and gold pixels in the marble, inside the shadow margin. Gold flecks are a pixel or two, so every pixel is checked for them.</summary>
     private static (int Dark, int Blue, int Gold, int Total) Sample(Bitmap frame)
     {
-        var pixels = Pixels(frame);
+        var pixels = AppUnderTest.Pixels(frame);
         var width = frame.PixelSize.Width;
         var height = frame.PixelSize.Height;
         int dark = 0, blue = 0, gold = 0, total = 0;
@@ -197,29 +196,5 @@ public sealed class SplashWindowTests
         }
 
         return (dark, blue, gold, total);
-    }
-
-    private static byte[] Pixels(Bitmap frame)
-    {
-        var size = frame.PixelSize;
-        var stride = size.Width * 4;
-        var pixels = new byte[stride * size.Height];
-        using var copy = new WriteableBitmap(size, frame.Dpi, PixelFormat.Bgra8888, AlphaFormat.Premul);
-        using (var buffer = copy.Lock())
-        {
-            frame.CopyPixels(new PixelRect(size), buffer.Address, pixels.Length, stride);
-            System.Runtime.InteropServices.Marshal.Copy(buffer.Address, pixels, 0, pixels.Length);
-        }
-
-        // Frames from the headless renderer may be RGBA; normalise to BGRA so the checks read the right channels.
-        if (frame.Format == PixelFormat.Rgba8888)
-        {
-            for (var i = 0; i < pixels.Length; i += 4)
-            {
-                (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
-            }
-        }
-
-        return pixels;
     }
 }

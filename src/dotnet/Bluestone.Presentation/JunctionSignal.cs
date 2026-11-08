@@ -36,7 +36,7 @@ public sealed partial class JunctionSignal : ObservableObject
     [ObservableProperty]
     public partial bool CanCarryNotes { get; internal set; }
 
-    /// <summary>Audio can be present at this point; the level is shown only where it can.</summary>
+    /// <summary>Audio can be present at this point; otherwise the level is disabled and dark grey.</summary>
     [ObservableProperty]
     public partial bool CanCarryAudio { get; internal set; }
 

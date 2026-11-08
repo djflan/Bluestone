@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Sessions;
@@ -11,6 +12,7 @@ using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
 using Bluestone.Desktop.Views;
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Midi;
 using Bluestone.Domain.Sequencing;
 
 namespace Bluestone.Tests.Ui;
@@ -466,6 +468,94 @@ public sealed class DeviceViewTests
         Assert.Null(trail.Signal);
         Assert.False(trail.Focusable);
         Assert.False(Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(trail).IsControlElement());
+    });
+
+    [Theory]
+    [InlineData(TrackRole.Instrument, 1280, 800)]
+    [InlineData(TrackRole.Instrument, 1440, 900)]
+    [InlineData(TrackRole.Audio, 1280, 800)]
+    [InlineData(TrackRole.Audio, 1440, 900)]
+    public Task AnUnavailableIndicator_StaysVisibleAndGrey_EvenAfterItWasActive(TrackRole role, double width, double height) => HeadlessApp.RunAsync(async () =>
+    {
+        var session = new ProjectSession();
+        var track = Track.Create("Hybrid", TrackRole.Hybrid);
+        session.Execute(ProjectCommands.AddTrack(track));
+        await using var app = await AppUnderTest.OpenAsync(session);
+        app.Window.Width = width;
+        app.Window.Height = height;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.ViewModel.DeviceView!.InsertAt(0, Definition("Transpose"));
+        app.Settle();
+        var signal = app.ViewModel.DeviceView.Input;
+        var chain = AppUnderTest.Within<ItemsControl>(app.Find<ContentControl>("DockedDeviceView"), c => c.Name == "Chain");
+        var seam = chain.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == signal);
+        seam.LampPlacement = JunctionLampPlacement.Header;
+        seam.IndicatorPosition = Presentation.JunctionIndicatorPosition.Bottom;
+        seam.LampRelease = TimeSpan.FromHours(1);
+        seam.LinkY = -1;
+
+        app.Playback.Live.Post(track.Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        app.ViewModel.OnFrame();
+        Assert.True(signal.NotesHeld);
+        signal.Levels.Update(new Audio.MeterReading(0.5f, 0.5f, 0.4f, 0.4f), System.Diagnostics.Stopwatch.GetTimestamp());
+        app.Settle();
+        AssertIndicator(disabled: false);
+
+        session.Execute(TrackRoleCommands.SetRole(track.Id, role, Signal.DeviceCatalog.BuiltIn.Lookup, confirmed: true));
+        app.Settle();
+        Assert.Same(signal, app.ViewModel.DeviceView.Input);
+        Assert.True(seam.IsEffectivelyVisible);
+        Assert.Equal(role == TrackRole.Instrument, signal.CanCarryNotes);
+        Assert.Equal(role == TrackRole.Audio, signal.CanCarryAudio);
+
+        // Keep a stale live reading and a long lamp release: neither may light an unavailable indicator.
+        signal.Levels.Update(new Audio.MeterReading(0.5f, 0.5f, 0.4f, 0.4f), System.Diagnostics.Stopwatch.GetTimestamp());
+        Assert.True(signal.Levels.IsActive);
+        AssertIndicator(disabled: true);
+        var unavailable = role == TrackRole.Instrument ? "no audio reaches here" : "no notes reach here";
+        Assert.Contains(unavailable, seam.Describe(), StringComparison.Ordinal);
+        var peer = Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(seam);
+        Assert.Contains(unavailable, peer.GetHelpText(), StringComparison.Ordinal);
+        app.SaveFrame($"device-view-disabled-{role}-{width}");
+
+        void AssertIndicator(bool disabled)
+        {
+            var size = new PixelSize((int)(seam.Bounds.Width * 2), (int)(seam.Bounds.Height * 2));
+            using var bitmap = new RenderTargetBitmap(size, new Vector(192, 192));
+            bitmap.Render(seam);
+            var pixels = AppUnderTest.Pixels(bitmap);
+            var boundary = (int)(seam.HeaderHeight * 2);
+            var start = role == TrackRole.Instrument ? boundary : 0;
+            var end = role == TrackRole.Instrument ? size.Height : boundary;
+            var grey = 0;
+            var lit = 0;
+            for (var y = start; y < end; y++)
+            {
+                for (var x = 0; x < size.Width; x++)
+                {
+                    var i = ((y * size.Width) + x) * 4;
+                    var (b, g, r) = (pixels[i], pixels[i + 1], pixels[i + 2]);
+                    grey += r == Palette.JunctionDisabled.R && g == Palette.JunctionDisabled.G && b == Palette.JunctionDisabled.B ? 1 : 0;
+                    lit += b > 100 ? 1 : 0;
+                    if (disabled)
+                    {
+                        Assert.InRange(r, 0, Palette.JunctionDisabled.R);
+                        Assert.InRange(g, 0, Palette.JunctionDisabled.G);
+                        Assert.InRange(b, 0, Palette.JunctionDisabled.B);
+                    }
+                }
+            }
+
+            if (disabled)
+            {
+                Assert.True(grey >= 12, $"The unavailable indicator must remain drawn in its disabled colour, found {grey} pixels.");
+                Assert.Equal(0, lit);
+            }
+            else
+            {
+                Assert.True(lit >= 12, $"The indicator must have been visibly active before disabling it, found {lit} pixels.");
+            }
+        }
     });
 
     [Fact]

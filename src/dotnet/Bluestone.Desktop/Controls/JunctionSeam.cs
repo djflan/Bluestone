@@ -26,7 +26,7 @@ internal enum JunctionLampPlacement
 /// <summary>
 /// The seam between two devices of a chain (ADR 0037): the hairline the signal flows along, and a slim segmented stereo
 /// level for its audio with a small MIDI icon under it that glows while notes are held there and lets go softly. Where they
-/// sit is the musician's choice (Settings ▸ Display). Only what can be there is drawn; an idle seam is quiet. Hovering
+/// sit is the musician's choice (Settings ▸ Display). Unavailable indicators stay visible in dark grey; an idle seam is quiet. Hovering
 /// shows what is there in words. Drawing allocates nothing.
 /// </summary>
 internal sealed class JunctionSeam : Control, ICustomHitTest

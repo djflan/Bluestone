@@ -4,6 +4,8 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Bluestone.Application.Plugins;
@@ -289,6 +291,30 @@ internal sealed class AppUnderTest : IAsyncDisposable
         var path = Path.Combine(directory, $"{name}.png");
         frame.Save(path, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         return path;
+    }
+
+    internal static byte[] Pixels(Bitmap frame)
+    {
+        var size = frame.PixelSize;
+        var stride = size.Width * 4;
+        var pixels = new byte[stride * size.Height];
+        using var copy = new WriteableBitmap(size, frame.Dpi, PixelFormat.Bgra8888, AlphaFormat.Premul);
+        using (var buffer = copy.Lock())
+        {
+            frame.CopyPixels(new PixelRect(size), buffer.Address, pixels.Length, stride);
+            System.Runtime.InteropServices.Marshal.Copy(buffer.Address, pixels, 0, pixels.Length);
+        }
+
+        // Frames from the headless renderer may be RGBA; normalise to BGRA so the checks read the right channels.
+        if (frame.Format == PixelFormat.Rgba8888)
+        {
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
+            }
+        }
+
+        return pixels;
     }
 
     public async ValueTask DisposeAsync()
