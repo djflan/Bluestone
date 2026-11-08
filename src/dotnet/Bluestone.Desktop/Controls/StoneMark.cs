@@ -5,190 +5,328 @@ using Avalonia.Media.Imaging;
 
 namespace Bluestone.Desktop.Controls;
 
-/// <summary>Bluestone's mark: a raw sapphire crystal, a few broad faces from frosted pale to deep blue, with a little rock still on it.</summary>
-internal sealed class StoneMark : Control
+internal enum LogoVariant
 {
-    private static readonly Color Darkest = Color.Parse("#050C2E");
-    private static readonly Color Middle = Color.Parse("#1F48B0");
-    private static readonly Color Lightest = Color.Parse("#C6D8F5");
-    private static readonly Color Frost = Color.Parse("#DCE5F0");
+    /// <summary>Full facets with the luminous bloom, for the splash and About.</summary>
+    Splash,
 
-    // The crystal in a design box: the outline A–I clockwise from the top left, and the inner ridge points J–M.
-    private static readonly Point A = new(36, 8), B = new(66, 4), C = new(74, 12), D = new(80, 44), E = new(70, 70);
-    private static readonly Point F = new(50, 90), G = new(26, 86), H = new(14, 64), I = new(20, 36);
-    private static readonly Point J = new(56, 30), K = new(58, 56), L = new(40, 22), M = new(34, 60);
+    /// <summary>Full facets without the bloom, for window, taskbar, and Dock icons.</summary>
+    ApplicationIcon,
 
-    // The far side's ridge, seen faintly through the stone.
-    private static readonly Point P = new(42, 44), Q = new(52, 72);
-    private static readonly Rect Design = new(14, 4, 66, 86);
+    /// <summary>Twelve broad facets and heavier edges, for roughly 16–32 pixels.</summary>
+    Small,
+}
 
-    // Glints inside the deep face, and faint fracture streaks through the stone (design units).
-    private static readonly (Point At, double Radius)[] Glints =
-        [(new(66, 22), 0.9), (new(70, 34), 0.6), (new(62, 40), 0.7), (new(73, 46), 0.5), (new(65, 50), 0.6), (new(60, 28), 0.5),
-         (new(75, 40), 0.4), (new(58, 48), 0.4), (new(46, 16), 0.5), (new(72, 62), 0.4)];
+/// <summary>
+/// Bluestone's mark: a faceted gemstone in a dark recess inside a luminous hexagonal shell, cyan on the left and amber on
+/// the right. Everything is drawn from fixed geometry in a 100-unit design box, so it scales to any size and DPI and is
+/// identical on every launch. Colours come from one smooth light field sampled across the facets, so neighbouring faces
+/// change gradually while each face keeps a crisp edge.
+/// </summary>
+internal sealed class StoneMark : Panel
+{
+    private const double OuterRadius = 46;
+    private const double ShellInnerRadius = 41.2;
+    private const double GemRadius = 36.8;
 
-    private static readonly (Point From, Point To)[] Streaks = [(new(44, 34), new(54, 52)), (new(48, 30), new(62, 46))];
+    private static readonly Point Middle = new(50, 50);
 
-    public override void Render(DrawingContext context)
+    private static readonly Geometry OuterHex = Hexagon(OuterRadius);
+    private static readonly Geometry ShellInnerHex = Hexagon(ShellInnerRadius);
+    private static readonly Geometry ShellBand = Band(OuterRadius, ShellInnerRadius);
+    private static readonly Geometry GemHex = Hexagon(GemRadius);
+
+    // The shell: cyan on the left, pale where the light crosses the top and bottom points, amber to the right.
+    private static readonly IBrush ShellFill = Across(
+        ("#E01ED8F0", 0), ("#E070F4FF", 0.3), ("#E038E8F4", 0.5), ("#E0B8FAFF", 0.66), ("#E0FFD9A0", 0.72), ("#E0FF9A2A", 0.8), ("#E0FF600A", 1));
+    private static readonly IBrush ShellRim = Across(
+        ("#9EFFFF", 0), ("#E0FFFF", 0.3), ("#B0FFFF", 0.5), ("#FFFFFF", 0.66), ("#FFE7B0", 0.72), ("#FFB050", 0.82), ("#FF9030", 1));
+    private static readonly IBrush ShellGlow = Across(
+        ("#FF00E5FF", 0), ("#FF40F0FF", 0.5), ("#C0C0F8FF", 0.66), ("#FFFFB43A", 0.74), ("#FFFF6A0A", 1));
+    private static readonly IBrush RecessFill = new RadialGradientBrush
     {
-        var size = Math.Min(Bounds.Width, Bounds.Height);
-        if (size <= 0)
+        GradientStops = { new GradientStop(Color.Parse("#0C1C40"), 0.6), new GradientStop(Color.Parse("#040A1C"), 1) },
+    };
+    private static readonly IBrush GemEdge = Across(("#C060F8FF", 0), ("#A0CFF4FF", 0.5), ("#C0FFB040", 1));
+    private static readonly IBrush Ridge = new SolidColorBrush(Color.Parse("#16E8FBFF"));
+
+    private static readonly Color Highlight = Color.Parse("#F2FFFF");
+
+    /// <summary>
+    /// The colour of light through the stone at points in the gem's own units (centre 0,0; corners at radius 1), sampled
+    /// from the reference: ice and cyan across the top face to a white-hot centre, dusk violet toward the upper right,
+    /// cobalt falling to navy down the left face, and amber on the right face over a smoky interior near the centre.
+    /// </summary>
+    private static readonly (Vector At, Color Color)[] LightField =
+    [
+        (new(-0.30, -0.80), Color.Parse("#22F1FD")),
+        (new(-0.80, -0.45), Color.Parse("#40EEFE")),
+        (new(-0.40, -0.30), Color.Parse("#8DF9FD")),
+        (new(0.12, -0.72), Color.Parse("#0A90F2")),
+        (new(0.30, -0.30), Color.Parse("#73B3EA")),
+        (new(0.50, -0.55), Color.Parse("#5A50A0")),
+        (new(0.88, -0.42), Color.Parse("#A42C16")),
+        (new(0.00, -0.20), Color.Parse("#69DDFD")),
+        (new(0.00, -0.08), Color.Parse("#B4F4FD")),
+        (new(-0.75, -0.20), Color.Parse("#0A86F0")),
+        (new(-0.88, 0.05), Color.Parse("#007FE8")),
+        (new(-0.40, 0.10), Color.Parse("#005AD4")),
+        (new(-0.10, 0.08), Color.Parse("#0A4CC4")),
+        (new(-0.14, 0.18), Color.Parse("#013291")),
+        (new(-0.30, 0.34), Color.Parse("#012F8B")),
+        (new(-0.62, 0.50), Color.Parse("#001C5B")),
+        (new(-0.08, 0.55), Color.Parse("#06246E")),
+        (new(-0.12, 0.84), Color.Parse("#0A2466")),
+        (new(0.38, -0.08), Color.Parse("#984545")),
+        (new(0.10, 0.08), Color.Parse("#8A3A22")),
+        (new(0.14, 0.18), Color.Parse("#7A3426")),
+        (new(0.08, 0.55), Color.Parse("#C84C12")),
+        (new(0.22, 0.48), Color.Parse("#C1491B")),
+        (new(0.86, 0.10), Color.Parse("#FC760C")),
+        (new(0.70, 0.46), Color.Parse("#FB6A04")),
+        (new(0.50, 0.72), Color.Parse("#FFA61A")),
+        (new(0.12, 0.86), Color.Parse("#FD8A10")),
+    ];
+
+    // Each sixth of the stone from the top clockwise, paired into the faces of a cube seen point-on as in the reference:
+    // the top face is lifted and the left face lowered a little, so the cube's edges read crisply between the faces.
+    private static readonly double[] SectorLight = [0.12, 0.04, 0.04, -0.12, -0.12, 0.12];
+
+    private static readonly Facet[] Facets = CutFacets();
+    private static readonly Facet[] SmallFacets = CutSmallFacets();
+
+    private readonly LogoLayer _halo;
+    private readonly LogoLayer _flare;
+    private LogoVariant _variant;
+
+    public StoneMark()
+    {
+        _halo = new LogoLayer(this, LayerKind.Halo);
+        var artwork = new LogoLayer(this, LayerKind.Artwork);
+        _flare = new LogoLayer(this, LayerKind.Flare) { Opacity = 0.8 };
+        Children.Add(_halo);
+        Children.Add(artwork);
+        Children.Add(_flare);
+        IsHitTestVisible = false;
+    }
+
+    public LogoVariant Variant
+    {
+        get => _variant;
+        set
         {
-            return;
+            _variant = value;
+            _halo.IsVisible = _flare.IsVisible = value == LogoVariant.Splash;
+            foreach (var layer in Children)
+            {
+                layer.InvalidateVisual();
+            }
+        }
+    }
+
+    /// <summary>Exports the scalable vector mark as a PNG at the requested pixel size.</summary>
+    public static byte[] CreatePng(int pixels, LogoVariant variant, double inset = 0)
+    {
+        using var bitmap = Render(pixels, inset, variant);
+        using var png = new MemoryStream();
+        bitmap.Save(png, PngBitmapEncoderOptions.Default);
+        return png.ToArray();
+    }
+
+    /// <summary>The application-window and taskbar icon, rendered without the splash bloom.</summary>
+    public static WindowIcon CreateIcon(int pixels = 256) =>
+        new(Render(pixels, inset: 0, variant: pixels <= 32 ? LogoVariant.Small : LogoVariant.ApplicationIcon));
+
+    /// <summary>The macOS Dock image, padded to sit on Apple's icon grid.</summary>
+    public static byte[] CreateDockImage(int pixels = 512) => CreatePng(pixels, LogoVariant.ApplicationIcon, inset: pixels / 10.0);
+
+    private static RenderTargetBitmap Render(int pixels, double inset, LogoVariant variant)
+    {
+        var mark = new StoneMark { Variant = variant };
+        var frame = new Decorator { Padding = new Thickness(inset), Child = mark, Width = pixels, Height = pixels };
+        frame.Measure(new Size(pixels, pixels));
+        frame.Arrange(new Rect(0, 0, pixels, pixels));
+        var bitmap = new RenderTargetBitmap(new PixelSize(pixels, pixels));
+        bitmap.Render(frame);
+        return bitmap;
+    }
+
+    private static void DrawArtwork(DrawingContext context, LogoVariant variant)
+    {
+        var small = variant == LogoVariant.Small;
+
+        context.DrawGeometry(ShellFill, null, ShellBand);
+        context.DrawGeometry(RecessFill, null, ShellInnerHex);
+
+        // Each face is stroked in its own fill so neighbouring faces meet without a hairline seam.
+        foreach (var facet in small ? SmallFacets : Facets)
+        {
+            context.DrawGeometry(facet.Fill, new Pen(facet.Fill, 0.3, lineJoin: PenLineJoin.Round), facet.Shape);
         }
 
-        var scale = size / Math.Max(Design.Width, Design.Height);
-        var origin = new Point((Bounds.Width - (Design.Width * scale)) / 2, (Bounds.Height - (Design.Height * scale)) / 2);
-        Point At(Point p) => origin + ((p - Design.TopLeft) * scale);
-
-        // Broad faces, each with its own light: frosted where it catches the sky, deep blue where you see into the stone.
-        var topFace = Facet(context, [At(A), At(B), At(J), At(L)], 0.82, frost: 0.45);
-        Facet(context, [At(B), At(C), At(J)], 0.72, frost: 0.2);
-        var deepFace = Facet(context, [At(C), At(D), At(K), At(J)], 0.2, frost: 0);
-        var lowerFace = Facet(context, [At(D), At(E), At(F), At(K)], 0.58, frost: 0.35);
-        var frontFace = Facet(context, [At(L), At(J), At(K), At(M)], 0.4, frost: 0);
-        Facet(context, [At(A), At(L), At(M), At(H), At(I)], 0.55, frost: 0.15);
-        var rockFace = Facet(context, [At(M), At(K), At(F), At(G), At(H)], 0.3, frost: 0);
-
-        // Small chips knocked off the edges, each a little facet of its own.
-        Facet(context, [At(A), At(new Point(44, 7)), At(new Point(39, 15))], 0.9, frost: 0.55);
-        Facet(context, [At(D), At(new Point(76, 34)), At(new Point(73, 46))], 0.62, frost: 0.3);
-        Facet(context, [At(I), At(new Point(24, 30)), At(new Point(26, 42))], 0.66, frost: 0.3);
-        Facet(context, [At(F), At(new Point(43, 89)), At(new Point(47, 83))], 0.24, frost: 0.05);
-        Facet(context, [At(B), At(new Point(70, 6)), At(new Point(64, 11))], 0.86, frost: 0.4);
-
-        // Shallow secondary facets break up the broad faces.
-        Facet(context, [At(L), At(J), At(new Point(47, 46))], 0.48, frost: 0);
-        Facet(context, [At(A), At(L), At(new Point(28, 40)), At(I)], 0.63, frost: 0.22);
-        Facet(context, [At(E), At(F), At(new Point(64, 74))], 0.5, frost: 0.28);
-
-        // Light gathers inside the deep face; fine needles of "silk" lie across it at 60°, as in natural sapphire.
-        using (context.PushGeometryClip(deepFace))
+        if (!small)
         {
-            context.DrawEllipse(new RadialGradientBrush
+            var ridge = new Pen(Ridge, 0.28, lineCap: PenLineCap.Round);
+            var edge = new Pen(Ridge, 0.5, lineCap: PenLineCap.Round);
+            for (var k = 0; k < 6; k++)
             {
-                GradientStops = { new GradientStop(Color.Parse("#504C8DDB"), 0), new GradientStop(Color.Parse("#004C8DDB"), 1) },
-            }, null, At(new Point(68, 34)), scale * 10, scale * 12);
-
-            var silk = new Pen(new SolidColorBrush(Color.Parse("#30DCE5F0")), Math.Max(0.4, scale * 0.25), lineCap: PenLineCap.Round);
-            for (var i = 0; i < 8; i++)
-            {
-                var from = new Point(61 + (i * 2.2), 18 + (i * 3.6));
-                context.DrawLine(silk, At(from), At(from + new Point(3, 5.2)));
+                // The odd spokes are the cube's edges (to the upper right, bottom and upper left), so they catch more light.
+                context.DrawLine(k % 2 == 1 ? edge : ridge, Middle, Corner(GemRadius, k));
+                context.DrawLine(ridge, Corner(GemRadius, k), Corner(GemRadius, k + 2));
             }
         }
 
-        // Sapphire grows in bands; lighter zones run across the deep face.
-        using (context.PushGeometryClip(deepFace))
+        context.DrawGeometry(null, new Pen(GemEdge, small ? 1.4 : 0.6), GemHex);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.Parse("#B0030818")), small ? 1.2 : 0.7), ShellInnerHex);
+        context.DrawGeometry(null, new Pen(ShellRim, small ? 2.4 : 1.5, lineJoin: PenLineJoin.Miter), Hexagon(OuterRadius - (small ? 1.2 : 0.75)));
+    }
+
+    private static void DrawHalo(DrawingContext context)
+    {
+        context.DrawGeometry(ShellGlow, new Pen(ShellGlow, 6, lineJoin: PenLineJoin.Round), ShellBand);
+    }
+
+    private static void DrawFlare(DrawingContext context)
+    {
+        context.DrawGeometry(null, new Pen(ShellGlow, 1.4, lineJoin: PenLineJoin.Round), ShellInnerHex);
+        context.DrawGeometry(null, new Pen(GemEdge, 0.8), GemHex);
+    }
+
+    /// <summary>
+    /// The full cut: each sixth of the gem is split by the spokes and the two crossing triangles of a hexagram into
+    /// five triangles, thirty in all.
+    /// </summary>
+    private static Facet[] CutFacets()
+    {
+        var facets = new List<Facet>();
+        for (var k = 0; k < 6; k++)
         {
-            var band = new Pen(new SolidColorBrush(Color.Parse("#283C78D8")), scale * 2.2);
-            context.DrawLine(band, At(new Point(60, 14)), At(new Point(82, 30)));
-            context.DrawLine(band, At(new Point(56, 36)), At(new Point(82, 54)));
+            var corner = Corner(GemRadius, k);
+            var next = Corner(GemRadius, k + 1);
+            var spoke = Corner(GemRadius / 2, k);
+            var nextSpoke = Corner(GemRadius / 2, k + 1);
+            var crossing = Middle + (Direction(-60 + (60 * k)) * (GemRadius / Math.Sqrt(3)));
+
+            var tone = SectorLight[k];
+            facets.Add(Cut([corner, spoke, crossing], light: tone + 0.05));
+            facets.Add(Cut([crossing, nextSpoke, next], light: tone - 0.04));
+            facets.Add(Cut([corner, next, crossing], light: tone));
+            facets.Add(Cut([Middle, spoke, crossing], light: tone + 0.02));
+            facets.Add(Cut([Middle, crossing, nextSpoke], light: tone - 0.02));
         }
 
-        // Frosted faces are rough: a fine scatter of paler grains.
-        Speckle(context, topFace, At, new Rect(36, 4, 30, 26), seed: 3, count: 22, "#55F4F8FF", 0.35 * scale);
-        Speckle(context, lowerFace, At, new Rect(50, 44, 30, 46), seed: 5, count: 22, "#45F4F8FF", 0.35 * scale);
+        return [.. facets];
+    }
 
-        // A few dark inclusions deep in the front face.
-        Speckle(context, frontFace, At, new Rect(36, 24, 22, 34), seed: 11, count: 5, "#90050C2E", 0.5 * scale);
-
-        // The back faces show through, as if the stone were partly clear: light where they catch the light, darker below.
-        Ghost(context, [At(I), At(P), At(Q), At(G), At(H)], "#18DCE5F0");
-        Ghost(context, [At(C), At(D), At(Q), At(P)], "#26C6D8F5");
-        Ghost(context, [At(D), At(E), At(F), At(G), At(Q)], "#30050C2E");
-        var backEdge = new Pen(new SolidColorBrush(Color.Parse("#38DCE5F0")), Math.Max(0.5, scale * 0.5), lineCap: PenLineCap.Round);
-        foreach (var (from, to) in new[] { (I, P), (C, P), (P, Q), (D, Q), (G, Q) })
+    /// <summary>The cut for small icons: each sixth halved at its edge's midpoint, twelve broad faces.</summary>
+    private static Facet[] CutSmallFacets()
+    {
+        var facets = new List<Facet>();
+        for (var k = 0; k < 6; k++)
         {
-            context.DrawLine(backEdge, At(from), At(to));
+            var corner = Corner(GemRadius, k);
+            var next = Corner(GemRadius, k + 1);
+            var edge = new Point((corner.X + next.X) / 2, (corner.Y + next.Y) / 2);
+            facets.Add(Cut([Middle, corner, edge], light: SectorLight[k] + 0.06));
+            facets.Add(Cut([Middle, edge, next], light: SectorLight[k] - 0.06));
         }
 
-        // A little of the host rock still clings to the lower left.
-        using (context.PushGeometryClip(rockFace))
+        return [.. facets];
+    }
+
+    /// <summary>A face shaded from its first corner across to the middle of its opposite edge, sampling the light field.</summary>
+    private static Facet Cut(Point[] corners, double light)
+    {
+        var shape = Shape(corners);
+        var from = corners[0];
+        var to = new Point((corners[1].X + corners[2].X) / 2, (corners[1].Y + corners[2].Y) / 2);
+        var centroid = new Point((corners[0].X + corners[1].X + corners[2].X) / 3, (corners[0].Y + corners[1].Y + corners[2].Y) / 3);
+
+        // Sample a little inside the face so a corner shared by several faces (the centre most of all) doesn't bleed
+        // one face's light into its neighbours.
+        var fill = Gradient(from, to, shape.Bounds,
+            (Shade(LightAt(Inside(from, centroid)), light + 0.04), 0),
+            (Shade(LightAt(centroid), light), 0.5),
+            (Shade(LightAt(Inside(to, centroid)), light - 0.04), 1));
+        return new Facet(shape, fill);
+
+        static Point Inside(Point point, Point centroid) => point + ((centroid - point) * 0.3);
+    }
+
+    /// <summary>Inverse-distance blend of <see cref="LightField"/>: smooth, and fixed for every launch.</summary>
+    private static Color LightAt(Point point)
+    {
+        var x = (point.X - Middle.X) / GemRadius;
+        var y = (point.Y - Middle.Y) / GemRadius;
+        double r = 0, g = 0, b = 0, total = 0;
+        foreach (var (at, color) in LightField)
         {
-            foreach (var (centre, radius) in new[] { (new Point(28, 76), 11.0), (new Point(38, 84), 8.0), (new Point(20, 68), 6.0) })
+            var distance = ((x - at.X) * (x - at.X)) + ((y - at.Y) * (y - at.Y)) + 0.004;
+            var weight = 1 / Math.Pow(distance, 1.6);
+            r += color.R * weight;
+            g += color.G * weight;
+            b += color.B * weight;
+            total += weight;
+        }
+
+        return Color.FromRgb((byte)Math.Round(r / total), (byte)Math.Round(g / total), (byte)Math.Round(b / total));
+    }
+
+    /// <summary>
+    /// Brightens or darkens by scaling the channels, which keeps the hue and saturation of the light field; strong light
+    /// also lifts slightly toward ice.
+    /// </summary>
+    private static Color Shade(Color color, double light)
+    {
+        var scale = 1 + light;
+        var shaded = Color.FromRgb(
+            (byte)Math.Clamp(Math.Round(color.R * scale), 0, 255),
+            (byte)Math.Clamp(Math.Round(color.G * scale), 0, 255),
+            (byte)Math.Clamp(Math.Round(color.B * scale), 0, 255));
+        return light > 0 ? Mix(shaded, Highlight, light * 0.25) : shaded;
+    }
+
+    private static Color Mix(Color from, Color to, double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return Color.FromArgb(
+            (byte)Math.Round(from.A + ((to.A - from.A) * t)),
+            (byte)Math.Round(from.R + ((to.R - from.R) * t)),
+            (byte)Math.Round(from.G + ((to.G - from.G) * t)),
+            (byte)Math.Round(from.B + ((to.B - from.B) * t)));
+    }
+
+    /// <summary>Corner <paramref name="index"/> of a pointy-topped hexagon, clockwise from the top.</summary>
+    private static Point Corner(double radius, int index) => Middle + (Direction(-90 + (60 * index)) * radius);
+
+    private static Vector Direction(double degrees)
+    {
+        var radians = degrees * Math.PI / 180;
+        return new Vector(Math.Cos(radians), Math.Sin(radians));
+    }
+
+    private static StreamGeometry Hexagon(double radius) => Shape([.. Enumerable.Range(0, 6).Select(k => Corner(radius, k))]);
+
+    private static StreamGeometry Band(double outer, double inner)
+    {
+        var geometry = new StreamGeometry();
+        using (var draw = geometry.Open())
+        {
+            draw.SetFillRule(FillRule.EvenOdd);
+            foreach (var radius in new[] { outer, inner })
             {
-                var r = radius * scale;
-                context.DrawEllipse(new RadialGradientBrush
+                draw.BeginFigure(Corner(radius, 0), isFilled: true);
+                for (var k = 1; k < 6; k++)
                 {
-                    GradientStops = { new GradientStop(Color.Parse("#A0745E4A"), 0), new GradientStop(Color.Parse("#00745E4A"), 1) },
-                }, null, At(centre), r, r * 0.8);
+                    draw.LineTo(Corner(radius, k));
+                }
+
+                draw.EndFigure(isClosed: true);
             }
         }
 
-        // The rock is gritty: darker and paler grains through it.
-        Speckle(context, rockFace, At, new Rect(16, 62, 30, 26), seed: 17, count: 24, "#A04A3A2C", 0.45 * scale);
-        Speckle(context, rockFace, At, new Rect(16, 62, 30, 26), seed: 19, count: 14, "#80B89E80", 0.35 * scale);
-
-        // The ridges that face the light catch a thin bright edge, fading along their length.
-        foreach (var (from, to) in new[] { (B, J), (L, J), (J, K) })
-        {
-            context.DrawLine(new Pen(new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(At(from), RelativeUnit.Absolute),
-                EndPoint = new RelativePoint(At(to), RelativeUnit.Absolute),
-                GradientStops = { new GradientStop(Color.Parse("#90F2F7FF"), 0), new GradientStop(Color.Parse("#00F2F7FF"), 1) },
-            }, Math.Max(0.5, scale * 0.5), lineCap: PenLineCap.Round), At(from), At(to));
-        }
-
-        var streak = new Pen(new SolidColorBrush(Color.Parse("#40DCE5F0")), Math.Max(0.5, scale * 0.6), lineCap: PenLineCap.Round);
-        foreach (var (from, to) in Streaks)
-        {
-            context.DrawLine(streak, At(from), At(to));
-        }
-
-        // A hairline fracture in the front face, branching once.
-        var fracture = new Pen(new SolidColorBrush(Color.Parse("#50DCE5F0")), Math.Max(0.4, scale * 0.3), lineCap: PenLineCap.Round);
-        context.DrawLine(fracture, At(new Point(40, 30)), At(new Point(44, 38)));
-        context.DrawLine(fracture, At(new Point(44, 38)), At(new Point(43, 45)));
-        context.DrawLine(fracture, At(new Point(44, 38)), At(new Point(50, 41)));
-
-        // The edges turning away from the light fall into shadow.
-        using (context.PushGeometryClip(Shape([At(A), At(B), At(C), At(D), At(E), At(F), At(G), At(H), At(I)])))
-        {
-            context.DrawGeometry(null, new Pen(new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops = { new GradientStop(Color.Parse("#00050C2E"), 0.45), new GradientStop(Color.Parse("#A0050C2E"), 1) },
-            }, scale * 3), Shape([At(A), At(B), At(C), At(D), At(E), At(F), At(G), At(H), At(I)]));
-        }
-
-        var glint = new SolidColorBrush(Color.Parse("#D0F2F7FF"));
-        foreach (var (at, radius) in Glints)
-        {
-            context.DrawEllipse(glint, null, At(at), radius * scale, radius * scale);
-        }
-
-        // One star of light where the top face meets the ridge.
-        var star = new Pen(new SolidColorBrush(Color.Parse("#B0FFFFFF")), Math.Max(0.5, scale * 0.4), lineCap: PenLineCap.Round);
-        var spark = At(new Point(54, 12));
-        context.DrawLine(star, spark - new Point(scale * 4, 0), spark + new Point(scale * 4, 0));
-        context.DrawLine(star, spark - new Point(0, scale * 2.5), spark + new Point(0, scale * 2.5));
-        context.DrawEllipse(glint, null, spark, scale * 0.8, scale * 0.8);
+        return geometry;
     }
-
-    /// <summary>Scatters <paramref name="count"/> fixed grains over <paramref name="area"/> (design units), kept inside <paramref name="face"/>.</summary>
-    private static void Speckle(DrawingContext context, Geometry face, Func<Point, Point> at, Rect area, int seed, int count, string color, double radius)
-    {
-#pragma warning disable CA5394 // Decorative grain from a fixed seed, not security.
-        var random = new Random(seed);
-        var brush = new SolidColorBrush(Color.Parse(color));
-        using (context.PushGeometryClip(face))
-        {
-            for (var i = 0; i < count; i++)
-            {
-                var point = new Point(area.X + (random.NextDouble() * area.Width), area.Y + (random.NextDouble() * area.Height));
-                var r = radius * (0.6 + random.NextDouble());
-                context.DrawEllipse(brush, null, at(point), r, r);
-            }
-        }
-#pragma warning restore CA5394
-    }
-
-    /// <summary>A back face seen through the stone: a faint wash of <paramref name="color"/> (#AARRGGBB).</summary>
-    private static void Ghost(DrawingContext context, Point[] corners, string color) =>
-        context.DrawGeometry(new SolidColorBrush(Color.Parse(color)), null, Shape(corners));
 
     private static StreamGeometry Shape(Point[] corners)
     {
@@ -207,59 +345,96 @@ internal sealed class StoneMark : Control
         return geometry;
     }
 
-    /// <summary>Fills a face in the blue for <paramref name="brightness"/>, washed toward frosted white by <paramref name="frost"/>.</summary>
-    private static StreamGeometry Facet(DrawingContext context, Point[] corners, double brightness, double frost)
+    /// <summary>
+    /// Across the whole mark on a slight diagonal, as the light falls in the reference: amber reaches the upper right only
+    /// near its corner but wraps the lower right from just past the bottom point.
+    /// </summary>
+    private static LinearGradientBrush Across(params (string Color, double Offset)[] stops)
     {
-        var geometry = Shape(corners);
-
-        // Each face darkens away from the light, top left to bottom right.
-        var color = Lerp(Ramp(Math.Clamp(brightness, 0, 1)), Frost, frost);
-        var fill = new LinearGradientBrush
+        var brush = new LinearGradientBrush
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Lerp(color, Lightest, 0.2), 0),
-                new GradientStop(color, 0.382),
-                new GradientStop(Lerp(color, Darkest, 0.6), 1),
-            },
+            StartPoint = new RelativePoint(Middle.X - (OuterRadius * 0.93), Middle.Y - (OuterRadius * 0.37), RelativeUnit.Absolute),
+            EndPoint = new RelativePoint(Middle.X + (OuterRadius * 0.93), Middle.Y + (OuterRadius * 0.37), RelativeUnit.Absolute),
         };
-        // Stroked in its own fill so neighbouring faces meet without a hairline seam.
-        context.DrawGeometry(fill, new Pen(fill, 0.75, lineJoin: PenLineJoin.Round), geometry);
-        return geometry;
+        foreach (var (color, offset) in stops)
+        {
+            brush.GradientStops.Add(new GradientStop(Color.Parse(color), offset));
+        }
+
+        return brush;
     }
 
-    private static Color Ramp(double shade) =>
-        shade < 0.5 ? Lerp(Darkest, Middle, shade * 2) : Lerp(Middle, Lightest, (shade - 0.5) * 2);
+    /// <summary>A gradient between two design points, expressed relative to the bounds of the shape it fills.</summary>
+    private static LinearGradientBrush Gradient(Point from, Point to, Rect bounds, params (Color Color, double Offset)[] stops)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint((from.X - bounds.X) / bounds.Width, (from.Y - bounds.Y) / bounds.Height, RelativeUnit.Relative),
+            EndPoint = new RelativePoint((to.X - bounds.X) / bounds.Width, (to.Y - bounds.Y) / bounds.Height, RelativeUnit.Relative),
+        };
+        foreach (var (color, offset) in stops)
+        {
+            brush.GradientStops.Add(new GradientStop(color, offset));
+        }
 
-    private static Color Lerp(Color from, Color to, double t) => Color.FromRgb(
-        (byte)(from.R + ((to.R - from.R) * t)),
-        (byte)(from.G + ((to.G - from.G) * t)),
-        (byte)(from.B + ((to.B - from.B) * t)));
+        return brush;
+    }
 
-    /// <summary>The mark drawn at <paramref name="pixels"/> square, for window and taskbar icons.</summary>
-    public static WindowIcon CreateIcon(int pixels = 256) => new(Render(pixels, inset: 0));
+    private enum LayerKind
+    {
+        Halo,
+        Artwork,
+        Flare,
+    }
 
     /// <summary>
-    /// The mark as PNG for the macOS Dock, which ignores window icons. Inset to sit on Apple's icon grid, so it is no
-    /// larger than its neighbours.
+    /// One pass of the mark. The halo (wide blur, behind) and flare (tight blur, in front) are the splash bloom; the
+    /// artwork pass is the crisp geometry between them. Blur radii are in design units, so the glow scales with the mark.
     /// </summary>
-    public static byte[] CreateDockImage(int pixels = 512)
+    private sealed class LogoLayer(StoneMark owner, LayerKind kind) : Control
     {
-        using var bitmap = Render(pixels, inset: pixels / 10.0);
-        using var png = new MemoryStream();
-        bitmap.Save(png, PngBitmapEncoderOptions.Default);
-        return png.ToArray();
+        protected override void OnSizeChanged(SizeChangedEventArgs e)
+        {
+            base.OnSizeChanged(e);
+            var blur = kind switch
+            {
+                LayerKind.Halo => 4,
+                LayerKind.Flare => 1.6,
+                _ => 0,
+            };
+            if (blur > 0)
+            {
+                Effect = new BlurEffect { Radius = blur * Math.Min(e.NewSize.Width, e.NewSize.Height) / 100 };
+            }
+        }
+
+        public override void Render(DrawingContext context)
+        {
+            var size = Math.Min(Bounds.Width, Bounds.Height);
+            if (size <= 0)
+            {
+                return;
+            }
+
+            var scale = size / 100;
+            var origin = new Point((Bounds.Width - size) / 2, (Bounds.Height - size) / 2);
+            using (context.PushTransform(new Matrix(scale, 0, 0, scale, origin.X, origin.Y)))
+            {
+                switch (kind)
+                {
+                    case LayerKind.Halo:
+                        DrawHalo(context);
+                        break;
+                    case LayerKind.Flare:
+                        DrawFlare(context);
+                        break;
+                    default:
+                        DrawArtwork(context, owner.Variant);
+                        break;
+                }
+            }
+        }
     }
 
-    private static RenderTargetBitmap Render(int pixels, double inset)
-    {
-        var frame = new Decorator { Padding = new Thickness(inset), Child = new StoneMark(), Width = pixels, Height = pixels };
-        frame.Measure(new Size(pixels, pixels));
-        frame.Arrange(new Rect(0, 0, pixels, pixels));
-        var bitmap = new RenderTargetBitmap(new PixelSize(pixels, pixels));
-        bitmap.Render(frame);
-        return bitmap;
-    }
+    private sealed record Facet(Geometry Shape, IBrush Fill);
 }
