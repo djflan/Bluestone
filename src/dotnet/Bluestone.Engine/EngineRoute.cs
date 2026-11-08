@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Diagnostics;
 using Bluestone.Audio;
 using Bluestone.Audio.Plugins;
@@ -75,7 +74,6 @@ internal sealed class EngineRoute : ILiveEventSource
     {
         Id = spec.Route;
         Track = spec.Track;
-        Target = (spec.Output, spec.Instrument, spec.Stages);
         Instrument = spec.Instrument;
         Output = output;
         PluginDevices = [.. spec.Stages.Where(s => s.Plugin is not null).Select(s => s.Plugin!.Device)];
@@ -93,16 +91,6 @@ internal sealed class EngineRoute : ILiveEventSource
 
     public Guid Track { get; }
 
-    /// <summary>Where the route plays and through what (its output handle, instrument, and stages): two routes of a track with
-    /// the same target are two generations of one route, while one replaces the other.</summary>
-    public (int Output, Guid? Instrument, ImmutableArray<RouteStageSpec> Stages) Target { get; }
-
-    /// <summary>Whether <paramref name="other"/> plays to the same target through the same stages.</summary>
-    public bool SameTargetAs(EngineRoute other) =>
-        Target.Output == other.Target.Output && Target.Instrument == other.Target.Instrument
-        && Target.Stages.Length == other.Target.Stages.Length
-        && Target.Stages.Zip(other.Target.Stages).All(p => p.First.Device == p.Second.Device && p.First.Channel == p.Second.Channel
-            && p.First.Parameters.SequenceEqual(p.Second.Parameters) && p.First.Plugin?.Device == p.Second.Plugin?.Device);
 
     /// <summary>The plugin instrument the route plays (rendered in the device callback), or null for an output.</summary>
     public Guid? Instrument { get; }

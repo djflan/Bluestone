@@ -118,6 +118,30 @@ public sealed class LatencyCompensationTests
     }
 
     [Fact]
+    public void AMonitoredKey_DoesNotTakeTheEffectItKeys_OutOfCompensation()
+    {
+        // The effect's main input comes through 40 frames, its key from a monitored (live-played) path; another path takes 100.
+        var builder = new AudioGraphBuilder();
+        var main = Path(builder, latency: 40);
+        var keySource = Path(builder, latency: 70);
+        builder.Monitor(keySource);
+        var key = new KeyNode();
+        var effect = builder.AddNode(key);
+        builder.Connect(main, effect);
+        builder.ConnectSidechain(keySource, effect);
+        builder.ConnectToMaster(effect);
+        builder.ConnectToMaster(Path(builder, latency: 100));
+        var graph = builder.Build(Block, new MixerStripState());
+
+        Render(graph, 512);
+
+        // The effect stays compensated: its output is delayed to meet the 100-frame path at the master.
+        Assert.Equal(100, graph.LatencyFrames);
+        Assert.Equal(60, graph.DelayToMasterOf(key));
+        Assert.Equal(40, key.InputImpulse);
+    }
+
+    [Fact]
     public void ALatencyChange_MakesTheGraphStale_AndARebuildAlignsAtTheNewLatency()
     {
         var compensation = new LatencyCompensation();
