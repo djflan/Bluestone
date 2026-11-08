@@ -197,6 +197,58 @@ public sealed class WorkspaceShowcaseTests
     });
 
     /// <summary>
+    /// The README's screenshot (docs/images/bluestone-workspace.png): the workspace mid-performance, a Device View chain with
+    /// notes held and audio flowing, so every junction shows its signal, and one point routed on to another track. Only
+    /// built-in devices and Bluestone's reference plugins appear (TRADEMARKS.md: no third-party artwork).
+    /// </summary>
+    [Fact]
+    public Task TheReadmeScreenshot_ShowsAChainWithItsSignalAtEveryJunction() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, BuiltIn("Transpose"));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(3, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 4 && view.Devices[2].Parameters.Count > 0 && view.Devices[3].Parameters.Count > 0, "the chain and the plugins' parameters");
+        await AppUnderTest.WaitUntilAsync(() => app.ViewModel.Tracks[0].StatusLine == Sine.DisplayName, "the track to name its instrument");
+
+        // The arpeggiated line also plays the Pad: the point after the Arpeggiator is routed on, and shows it.
+        app.Session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.Device(view.Devices[0].Id), SignalNode.Track(app.ViewModel.Tracks[2].Id)), app.Playback.Devices.Lookup));
+        app.ViewModel.Workspace.Browser.CollapseCommand.Execute(null);
+        app.Settle();
+        Assert.True(view.Devices[0].Output.IsRouted);
+
+        // Playing: notes held light the MIDI icons; the synth sounds and the gain after it lifts it towards the top.
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[2].Output.Key] = new(0.42f, 0.36f, 0.22f, 0.19f),
+            [view.Devices[3].Output.Key] = new(0.79f, 0.7f, 0.43f, 0.38f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        view.SelectedDevice = view.Devices[2];
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        for (var frame = 0; frame < 20; frame++)
+        {
+            app.ViewModel.OnFrame();
+            await Task.Delay(20);
+            app.Settle();
+        }
+
+        await app.SettleTransitionsAsync();
+        Assert.True(view.Input.NotesHeld);
+        Assert.True(view.Devices[3].Output.Levels.IsActive);
+        Assert.True(File.Exists(app.SaveFrame("readme-workspace")));
+    });
+
+    /// <summary>
     /// A receiver says where it takes its signal from and whether it mixes or replaces, its pill opens the source picker,
     /// and an effect whose sidechain is keyed shows the SC chip in its key's colour.
     /// </summary>
