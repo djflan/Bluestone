@@ -81,6 +81,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
     private DeviceChainId? _lockedRack;
     private DeviceId? _restoredSelection;
     private bool _syncing;
+    private bool _restoringSelection;
 
     internal DeviceViewViewModel(MainViewModel owner, string id)
     {
@@ -240,6 +241,13 @@ public sealed partial class DeviceViewViewModel : ObservableObject
         if (newValue is not null)
         {
             newValue.IsSelected = true;
+
+            // Choosing a device (from the panel, the inspector, anywhere) goes back to inserting after the selection; a sync
+            // putting back the same selection does not.
+            if (!_restoringSelection)
+            {
+                InsertionGap = null;
+            }
         }
 
         // Where the Browser inserts follows this view's selection.
@@ -406,7 +414,9 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
         MarkInsertionGap();
 
+        _restoringSelection = true;
         SelectedDevice = Devices.FirstOrDefault(d => d.Id == selectedId);
+        _restoringSelection = false;
         OnPropertyChanged(nameof(IsEmpty));
         SavePresetCommand.NotifyCanExecuteChanged();
         LoadPresetCommand.NotifyCanExecuteChanged();

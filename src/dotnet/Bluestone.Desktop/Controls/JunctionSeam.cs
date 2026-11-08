@@ -805,6 +805,12 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         if (_drawn != (levels.IsActive, levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow))
         {
             InvalidateVisual();
+
+            // Under the pointer, the description follows what is there now (only while hovered, so idle seams cost nothing).
+            if (_hovered && _over == Part.None)
+            {
+                ToolTip.SetTip(this, Describe());
+            }
         }
     }
 

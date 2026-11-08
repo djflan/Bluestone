@@ -666,6 +666,12 @@ public sealed class MainViewModelTests : IAsyncLifetime
         Assert.False(strip.Devices[1].Output.IsInsertionPoint);
         Assert.Equal("Into Piano, after Event Filter", _vm.Browser.TargetText);
 
+        // Choosing a device any other way (here, directly, as the inspector's instrument link does) also lets it go.
+        strip.InsertAtJunctionCommand.Execute(strip.Input);
+        Assert.Equal(0, strip.InsertionGap);
+        strip.SelectedDevice = strip.Devices[2];
+        Assert.Null(strip.InsertionGap);
+
         // The chosen gap follows its junction through edits made elsewhere, and is let go when its junction goes.
         strip.InsertAtJunctionCommand.Execute(strip.Devices[1].Output);
         var piano = _vm.Tracks[0].Id;
