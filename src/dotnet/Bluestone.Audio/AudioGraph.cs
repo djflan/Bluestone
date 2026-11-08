@@ -382,7 +382,9 @@ public sealed class AudioGraphBuilder
         var monitored = new bool[_nodes.Count];
         foreach (var index in nodeOrder)
         {
-            monitored[index] = _monitored.Contains(index) || _nodeEdges.Any(e => e.To == index && monitored[e.From]);
+            // Monitoring follows the audio path, not a sidechain: a live-played key does not take the effect it keys (and
+            // that effect's main signal) out of delay compensation.
+            monitored[index] = _monitored.Contains(index) || _nodeEdges.Any(e => e.To == index && !e.Sidechain && monitored[e.From]);
             nodeInput[index] = _nodeEdges.Where(e => e.To == index && !monitored[e.From]).Select(e => nodeOutput[e.From]).DefaultIfEmpty(0).Max();
             nodeOutput[index] = nodeInput[index] + built[index];
         }
