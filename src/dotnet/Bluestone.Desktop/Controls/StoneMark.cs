@@ -19,7 +19,7 @@ internal enum LogoVariant
 }
 
 /// <summary>
-/// Bluestone's mark: a faceted gemstone in a dark recess inside a luminous hexagonal shell, cyan on the left and amber on
+/// Bluestone's mark: a faceted gemstone in a dark recess inside a luminous hexagonal shell, azure on the left and amber on
 /// the right. Everything is drawn from fixed geometry in a 100-unit design box, so it scales to any size and DPI and is
 /// identical on every launch. Colours come from one smooth light field sampled across the facets, so neighbouring faces
 /// change gradually while each face keeps a crisp edge.
@@ -39,16 +39,17 @@ internal sealed partial class StoneMark : Panel
     private static readonly Geometry ShellBand = Band(OuterRadius, ShellInnerRadius);
     private static readonly Geometry GemHex = Hexagon(GemRadius);
 
-    // The shell: cyan on the left, pale where the light crosses the top and bottom points, amber to the right.
+    // The shell: azure on the left, pale where the light crosses the top and bottom points, amber to the right. The
+    // azure is the splash marble's blue veins (MarbleSlab), from their glow (#297AFF) up to their white-hot core (#CCEBFF).
     private static readonly (string Color, double Offset)[] ShellFillStops =
-        [("#E01ED8F0", 0), ("#E070F4FF", 0.3), ("#E038E8F4", 0.5), ("#E0B8FAFF", 0.66), ("#E0FFD9A0", 0.72), ("#E0FF9A2A", 0.8), ("#E0FF600A", 1)];
+        [("#E02E86FF", 0), ("#E07AB3FF", 0.3), ("#E04A95FF", 0.5), ("#E0C4E4FF", 0.66), ("#E0FFD9A0", 0.72), ("#E0FF9A2A", 0.8), ("#E0FF600A", 1)];
     private static readonly (string Color, double Offset)[] ShellRimStops =
-        [("#9EFFFF", 0), ("#E0FFFF", 0.3), ("#B0FFFF", 0.5), ("#FFFFFF", 0.66), ("#FFE7B0", 0.72), ("#FFB050", 0.82), ("#FF9030", 1)];
+        [("#7AB3FF", 0), ("#CCEBFF", 0.3), ("#8CC0FF", 0.5), ("#FFFFFF", 0.66), ("#FFE7B0", 0.72), ("#FFB050", 0.82), ("#FF9030", 1)];
     private static readonly (string Color, double Offset)[] ShellGlowStops =
-        [("#FF00E5FF", 0), ("#FF40F0FF", 0.5), ("#C0C0F8FF", 0.66), ("#FFFFB43A", 0.74), ("#FFFF6A0A", 1)];
-    private static readonly (string Color, double Offset)[] GemEdgeStops = [("#C060F8FF", 0), ("#A0CFF4FF", 0.5), ("#C0FFB040", 1)];
+        [("#FF2E80FF", 0), ("#FF5196FF", 0.5), ("#C0C4E2FF", 0.66), ("#FFFFB43A", 0.74), ("#FFFF6A0A", 1)];
+    private static readonly (string Color, double Offset)[] GemEdgeStops = [("#C06AA8FF", 0), ("#A0CCE6FF", 0.5), ("#C0FFB040", 1)];
     private static readonly (string Color, double Offset)[] RecessStops = [("#0C1C40", 0.6), ("#040A1C", 1)];
-    private const string RidgeColor = "#16E8FBFF";
+    private const string RidgeColor = "#16DCEEFF";
     private const string RecessOutlineColor = "#B0030818";
 
     private static readonly IBrush ShellFill = Across(ShellFillStops);
@@ -61,24 +62,24 @@ internal sealed partial class StoneMark : Panel
     private static readonly IBrush GemEdge = Across(GemEdgeStops);
     private static readonly IBrush Ridge = new SolidColorBrush(Color.Parse(RidgeColor));
 
-    private static readonly Color Highlight = Color.Parse("#F2FFFF");
+    private static readonly Color Highlight = Color.Parse("#EEF6FF");
 
     /// <summary>
     /// The colour of light through the stone at points in the gem's own units (centre 0,0; corners at radius 1), sampled
-    /// from the reference: ice and cyan across the top face to a white-hot centre, dusk violet toward the upper right,
+    /// from the reference: the blue veins' azure across the top face to a white-hot centre, dusk violet toward the upper right,
     /// cobalt falling to navy down the left face, and amber on the right face over a smoky interior near the centre.
     /// </summary>
     private static readonly (Vector At, Color Color)[] LightField =
     [
-        (new(-0.30, -0.80), Color.Parse("#22F1FD")),
-        (new(-0.80, -0.45), Color.Parse("#40EEFE")),
-        (new(-0.40, -0.30), Color.Parse("#8DF9FD")),
+        (new(-0.30, -0.80), Color.Parse("#4C9BFF")),
+        (new(-0.80, -0.45), Color.Parse("#5CA4FF")),
+        (new(-0.40, -0.30), Color.Parse("#A3CFFF")),
         (new(0.12, -0.72), Color.Parse("#0A90F2")),
         (new(0.30, -0.30), Color.Parse("#73B3EA")),
         (new(0.50, -0.55), Color.Parse("#5A50A0")),
         (new(0.88, -0.42), Color.Parse("#A42C16")),
-        (new(0.00, -0.20), Color.Parse("#69DDFD")),
-        (new(0.00, -0.08), Color.Parse("#B4F4FD")),
+        (new(0.00, -0.20), Color.Parse("#7AB3FF")),
+        (new(0.00, -0.08), Color.Parse("#CCEBFF")),
         (new(-0.75, -0.20), Color.Parse("#0A86F0")),
         (new(-0.88, 0.05), Color.Parse("#007FE8")),
         (new(-0.40, 0.10), Color.Parse("#005AD4")),

@@ -3,7 +3,7 @@ using SkiaSharp;
 namespace Bluestone.Desktop.Controls;
 
 /// <summary>
-/// The corona: streamers of light flowing off the shell like a solar wind, in the shell's own glow colours (cyan on the
+/// The corona: streamers of light flowing off the shell like a solar wind, in the shell's own glow colours (azure on the
 /// left, amber on the right, swaying as the shell's colours do). A GPU shader draws it on the render thread with the
 /// rest of the animated mark; where the shader cannot run there is simply no corona.
 /// </summary>

@@ -83,7 +83,7 @@ internal sealed partial class StoneMark
     }
 
     /// <summary>
-    /// Where the shell's colours lie: the cyan-to-amber gradient moves with the light inside the gem and turns slowly
+    /// Where the shell's colours lie: the azure-to-amber gradient moves with the light inside the gem and turns slowly
     /// about the centre, so the colours travel round the hexagon. Identity (the still mark) until the light wakes.
     /// </summary>
     private static SKMatrix ShellLight(double seconds, double wake, Vector sway)

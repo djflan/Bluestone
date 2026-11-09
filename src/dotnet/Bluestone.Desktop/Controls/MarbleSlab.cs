@@ -9,7 +9,7 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// Polished black marble with glowing azure veins and a fleck of amber beside them, plus one to three glowing amber veins
-/// with cyan flecks, drawn by a GPU shader, with light travelling along the veins while it is shown. Each slab shows a
+/// with azure flecks, drawn by a GPU shader, with light travelling along the veins while it is shown. Each slab shows a
 /// different part of the marble (<see cref="Seed"/>).
 /// Where Skia or the shader is unavailable it draws a plain dark rounded card instead, so it can never stop start-up.
 /// The marble is drawn and animated on the render thread (a composition visual), so work on the UI thread, such as
@@ -145,7 +145,7 @@ internal sealed class MarbleSlab : Control
             col += float3(0.99, 0.46, 0.05) * sparkle * near * shine;
 
             // A few amber veins (one to three, chosen by the seed): the blue veins' complement, each with its own
-            // travelling glow and cyan flecks (#22F1FD) gathered beside it.
+            // travelling glow and flecks of the blue veins' azure gathered beside it.
             float2 slab = floor(seed * 97.0);
             float amberVeins = 1.0 + floor(hash(slab + 0.37) * 2.999);
             // Each is traced the same way as the blue veins (a contour of the same warped noise, at the same scale), in
@@ -170,7 +170,7 @@ internal sealed class MarbleSlab : Control
                 float aflow = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(along * 1.15 + 1.0 + k * 2.1 - time * 1.2), 6.0);
                 col += amber * aglow * 0.9 * aflow + mix(amber, amberHot, aflow) * acore * 1.4 * aflow;
                 float aNear = smoothstep(0.04, 0.012, ad) * (1.0 - acore) * taper;
-                col += float3(0.13, 0.95, 0.99) * sparkle * aNear * shine;
+                col += mix(azure, hot, 0.4) * 1.15 * sparkle * aNear * shine;
             }
 
             // A polished sheen from the top left.
