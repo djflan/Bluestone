@@ -95,18 +95,25 @@ internal sealed class StoneMark : Panel
     private static readonly Facet[] Facets = CutFacets();
     private static readonly Facet[] SmallFacets = CutSmallFacets();
 
-    private readonly LogoLayer _halo;
-    private readonly LogoLayer _flare;
+    private readonly LogoLayer[] _bloom;
     private LogoVariant _variant;
 
     public StoneMark()
     {
-        _halo = new LogoLayer(this, LayerKind.Halo);
-        var artwork = new LogoLayer(this, LayerKind.Artwork);
-        _flare = new LogoLayer(this, LayerKind.Flare) { Opacity = 0.8 };
-        Children.Add(_halo);
-        Children.Add(artwork);
-        Children.Add(_flare);
+        // The bloom builds outward in steps, as a real glow does: a far, faint aura that spills well into whatever is
+        // behind the mark, a nearer and stronger one, the halo hugging the shell, and the flare over the artwork.
+        _bloom =
+        [
+            new LogoLayer(this, LayerKind.Aura, blur: 30) { Opacity = 0.45 },
+            new LogoLayer(this, LayerKind.Aura, blur: 14) { Opacity = 0.5 },
+            new LogoLayer(this, LayerKind.Halo, blur: 4),
+            new LogoLayer(this, LayerKind.Flare, blur: 1.6) { Opacity = 0.8 },
+        ];
+        Children.Add(_bloom[0]);
+        Children.Add(_bloom[1]);
+        Children.Add(_bloom[2]);
+        Children.Add(new LogoLayer(this, LayerKind.Artwork, blur: 0));
+        Children.Add(_bloom[3]);
         IsHitTestVisible = false;
     }
 
@@ -116,7 +123,11 @@ internal sealed class StoneMark : Panel
         set
         {
             _variant = value;
-            _halo.IsVisible = _flare.IsVisible = value == LogoVariant.Splash;
+            foreach (var layer in _bloom)
+            {
+                layer.IsVisible = value == LogoVariant.Splash;
+            }
+
             foreach (var layer in Children)
             {
                 layer.InvalidateVisual();
@@ -183,6 +194,11 @@ internal sealed class StoneMark : Panel
         context.DrawGeometry(null, new Pen(GemEdge, small ? 1.4 : 0.6), GemHex);
         context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.Parse("#B0030818")), small ? 1.2 : 0.7), ShellInnerHex);
         context.DrawGeometry(null, new Pen(ShellRim, small ? 2.4 : 1.5, lineJoin: PenLineJoin.Miter), Hexagon(OuterRadius - (small ? 1.2 : 0.75)));
+    }
+
+    private static void DrawAura(DrawingContext context)
+    {
+        context.DrawGeometry(ShellGlow, new Pen(ShellGlow, 4, lineJoin: PenLineJoin.Round), OuterHex);
     }
 
     private static void DrawHalo(DrawingContext context)
@@ -386,26 +402,21 @@ internal sealed class StoneMark : Panel
 
     private enum LayerKind
     {
+        Aura,
         Halo,
         Artwork,
         Flare,
     }
 
     /// <summary>
-    /// One pass of the mark. The halo (wide blur, behind) and flare (tight blur, in front) are the splash bloom; the
-    /// artwork pass is the crisp geometry between them. Blur radii are in design units, so the glow scales with the mark.
+    /// One pass of the mark. The auras and halo (behind) and flare (in front) are the splash bloom; the artwork pass is
+    /// the crisp geometry between them. Blur radii are in design units, so the glow scales with the mark.
     /// </summary>
-    private sealed class LogoLayer(StoneMark owner, LayerKind kind) : Control
+    private sealed class LogoLayer(StoneMark owner, LayerKind kind, double blur) : Control
     {
         protected override void OnSizeChanged(SizeChangedEventArgs e)
         {
             base.OnSizeChanged(e);
-            var blur = kind switch
-            {
-                LayerKind.Halo => 4,
-                LayerKind.Flare => 1.6,
-                _ => 0,
-            };
             if (blur > 0)
             {
                 Effect = new BlurEffect { Radius = blur * Math.Min(e.NewSize.Width, e.NewSize.Height) / 100 };
@@ -426,6 +437,9 @@ internal sealed class StoneMark : Panel
             {
                 switch (kind)
                 {
+                    case LayerKind.Aura:
+                        DrawAura(context);
+                        break;
                     case LayerKind.Halo:
                         DrawHalo(context);
                         break;

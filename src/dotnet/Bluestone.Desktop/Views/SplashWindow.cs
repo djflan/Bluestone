@@ -8,9 +8,9 @@ using Bluestone.Desktop.Theme;
 namespace Bluestone.Desktop.Views;
 
 /// <summary>
-/// A borderless window that is a slab of black marble with glowing blue veins and the product name. While Bluestone
-/// starts it shows what start-up is doing right now; a failed start shows the error and a Quit button instead of
-/// leaving the splash up for ever. As About Bluestone (<see cref="CreateAbout"/>) it shows the licence and the
+/// A borderless window that is a slab of black marble with glowing blue and amber veins and the product name. While
+/// Bluestone starts it shows what start-up is doing right now; a failed start shows the error and a Quit button instead
+/// of leaving the splash up for ever. As About Bluestone (<see cref="CreateAbout"/>) it shows the licence and the
 /// non-affiliation notice instead, and closes on Esc or when another window is clicked.
 /// </summary>
 internal sealed class SplashWindow : Window
