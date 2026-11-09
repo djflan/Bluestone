@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Bluestone.Desktop.Controls;
@@ -17,6 +18,7 @@ public sealed class SplashWindowTests
     public Task Report_ShowsTheStepAndItsProgress() => HeadlessApp.RunAsync(async () =>
     {
         var splash = new SplashWindow();
+        splash.GetLogicalDescendants().OfType<MarbleSlab>().Single().Seed = new Vector(7.3, 21.9);
         splash.Show();
         splash.Report("Scanning plugins (2 of 4)…", "Surge XT.vst3", 0.25);
         await splash.RenderedAsync();
@@ -27,9 +29,18 @@ public sealed class SplashWindowTests
         Assert.Contains(Bluestone.Desktop.AppVersion.Release, texts);
         Assert.Contains("Scanning plugins (2 of 4)…", texts);
         Assert.Contains("Surge XT.vst3", texts);
+        Assert.Equal(LogoVariant.Splash, splash.GetLogicalDescendants().OfType<StoneMark>().Single().Variant);
         var progress = splash.GetLogicalDescendants().OfType<ProgressBar>().Single();
         Assert.False(progress.IsIndeterminate);
         Assert.Equal(0.25, progress.Value);
+
+        splash.UpdateLayout();
+        using (var frame = splash.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered."))
+        {
+            var directory = Path.Combine(AppContext.BaseDirectory, "frames");
+            Directory.CreateDirectory(directory);
+            frame.Save(Path.Combine(directory, "splash-logo.png"), new PngBitmapEncoderOptions());
+        }
 
         splash.Report("Loading device profiles…");
         Assert.True(progress.IsIndeterminate);
@@ -122,6 +133,110 @@ public sealed class SplashWindowTests
         var pixels = Pixels(image);
         Assert.All(Enumerable.Range(0, image.PixelSize.Width * 8), pixel => Assert.Equal((byte)0, pixels[(pixel * 4) + 3]));
         Assert.Contains(pixels.Where((_, index) => index % 4 == 3), alpha => alpha > 0);
+        return Task.CompletedTask;
+    });
+
+    [Theory]
+    [InlineData(0, 512, 40)]
+    [InlineData(1, 256, 0)]
+    [InlineData(2, 32, 0)]
+    public Task StoneMark_ExportsTheCyanBlueAndOrangeHexGemstone(int variantValue, int pixels, double inset) => HeadlessApp.RunAsync(() =>
+    {
+        var variant = (LogoVariant)variantValue;
+        var png = StoneMark.CreatePng(pixels, variant, inset);
+        var directory = Path.Combine(AppContext.BaseDirectory, "frames");
+        Directory.CreateDirectory(directory);
+        File.WriteAllBytes(Path.Combine(directory, $"stone-mark-{variant.ToString().ToLowerInvariant()}.png"), png);
+
+        if (variant == LogoVariant.Splash)
+        {
+            var preview = new Border
+            {
+                Width = pixels,
+                Height = pixels,
+                Padding = new Thickness(inset),
+                Background = new SolidColorBrush(Color.Parse("#030D24")),
+                Child = new StoneMark(),
+            };
+            preview.Measure(new Size(pixels, pixels));
+            preview.Arrange(new Rect(0, 0, pixels, pixels));
+            using var frame = new RenderTargetBitmap(new PixelSize(pixels, pixels));
+            frame.Render(preview);
+            frame.Save(Path.Combine(directory, "stone-mark-preview.png"), new PngBitmapEncoderOptions());
+        }
+
+        using var stream = new MemoryStream(png);
+        using var image = new Bitmap(stream);
+        Assert.Equal(new PixelSize(pixels, pixels), image.PixelSize);
+
+        var rgba = Pixels(image);
+        int cyan = 0, blue = 0, orange = 0;
+        for (var i = 0; i < rgba.Length; i += 4)
+        {
+            if (rgba[i + 3] < 180)
+            {
+                continue;
+            }
+
+            var (b, g, r) = (rgba[i], rgba[i + 1], rgba[i + 2]);
+            if (g > r + 35 && b > r + 35)
+            {
+                cyan++;
+            }
+
+            if (b > r + 40)
+            {
+                blue++;
+            }
+
+            if (r > b + 40 && g > b + 20)
+            {
+                orange++;
+            }
+        }
+
+        Assert.True(cyan > 1, $"Expected cyan facets in the {variant} logo.");
+        Assert.True(blue > 1, $"Expected blue facets in the {variant} logo.");
+        Assert.True(orange > 1, $"Expected orange facets in the {variant} logo.");
+        return Task.CompletedTask;
+    });
+
+    /// <summary>The splash bloom spills a few design units beyond the shell: cyan on the left, amber on the right. Icons have none.</summary>
+    [Fact]
+    public Task StoneMark_SplashBloom_IsCyanAndAmberOutsideTheShell() => HeadlessApp.RunAsync(() =>
+    {
+        using var splashStream = new MemoryStream(StoneMark.CreatePng(256, LogoVariant.Splash, inset: 24));
+        using var iconStream = new MemoryStream(StoneMark.CreatePng(256, LogoVariant.ApplicationIcon, inset: 24));
+        using var splash = new Bitmap(splashStream);
+        using var icon = new Bitmap(iconStream);
+        var glowing = Pixels(splash);
+        var plain = Pixels(icon);
+
+        // The mark spans 208 px from x = 24; the shell's flat sides are at design x ≈ 10 and 90, so these mirrored pixels are 4 units outside.
+        var left = ((128 * 256) + 36) * 4;
+        var right = ((128 * 256) + 219) * 4;
+
+        Assert.Equal((byte)0, plain[left + 3]);
+        Assert.Equal((byte)0, plain[right + 3]);
+        Assert.True(glowing[left + 3] > 40, $"Expected bloom beyond the cyan shell edge; alpha was {glowing[left + 3]}.");
+        Assert.True(glowing[right + 3] > 40, $"Expected bloom beyond the amber shell edge; alpha was {glowing[right + 3]}.");
+        Assert.True(glowing[left] > glowing[left + 2] + 3 && glowing[left + 1] > glowing[left + 2] + 3);
+        Assert.True(glowing[right + 2] > glowing[right] + 3);
+        return Task.CompletedTask;
+    });
+
+    /// <summary>As in the reference, the spoke below the centre divides deep blue on the left from refracted amber on the right.</summary>
+    [Fact]
+    public Task StoneMark_LowerHalf_IsDeepBlueLeftAndAmberRightOfTheBottomSpoke() => HeadlessApp.RunAsync(() =>
+    {
+        using var stream = new MemoryStream(StoneMark.CreatePng(256, LogoVariant.ApplicationIcon));
+        using var image = new Bitmap(stream);
+        var pixels = Pixels(image);
+        var leftOfSpoke = ((185 * 256) + 114) * 4;
+        var rightOfSpoke = ((185 * 256) + 142) * 4;
+
+        Assert.True(pixels[leftOfSpoke] > pixels[leftOfSpoke + 2] + 60, "Expected deep blue left of the bottom spoke.");
+        Assert.True(pixels[rightOfSpoke + 2] > pixels[rightOfSpoke] + 60, "Expected amber right of the bottom spoke.");
         return Task.CompletedTask;
     });
 

@@ -8,8 +8,9 @@ using SkiaSharp;
 namespace Bluestone.Desktop.Controls;
 
 /// <summary>
-/// Polished black marble with glowing azure veins and a fleck of gold beside them, drawn by a GPU shader, with light
-/// travelling along the veins while it is shown. Each slab shows a different part of the marble (<see cref="Seed"/>).
+/// Polished black marble with glowing azure veins and a fleck of amber beside them, plus one to three glowing amber veins
+/// with cyan flecks, drawn by a GPU shader, with light travelling along the veins while it is shown. Each slab shows a
+/// different part of the marble (<see cref="Seed"/>).
 /// Where Skia or the shader is unavailable it draws a plain dark rounded card instead, so it can never stop start-up.
 /// The marble is drawn and animated on the render thread (a composition visual), so work on the UI thread, such as
 /// start-up behind the splash, cannot make it stutter.
@@ -33,7 +34,7 @@ internal sealed class MarbleSlab : Control
 #pragma warning restore CA5394
     private CompositionCustomVisual? _visual;
 
-    /// <summary>The SkSL source: marble base, blue veins with a travelling glow, gold fleck, a calm area for the title, rounded edge.</summary>
+    /// <summary>The SkSL source: marble base, blue and amber veins with travelling glows, flecks, a calm area for the title, rounded edge.</summary>
     internal const string Source = """
         uniform float2 size;
         uniform float time;
@@ -126,16 +127,51 @@ internal sealed class MarbleSlab : Control
             float3 hot = float3(0.80, 0.92, 1.0);
             col += azure * glow * 0.9 * flow + mix(azure, hot, flow) * core * 1.1 * flow;
             col += azure * glow2 * 0.70 * flow2 + mix(azure, hot, flow2) * core2 * 0.7 * flow2;
+            float3 amber = float3(0.99, 0.46, 0.05);
+            float3 amberHot = float3(1.0, 0.86, 0.60);
 
-            // Gold fleck: sparse sparkles only just beside the blue veins.
+            // Amber fleck, the orange of the stone mark (#FC760C): sparse sparkles only just beside the blue veins.
             // The seed changes which cells sparkle (cell), not where a cell is on the card (grid).
             float2 grid = floor(xy / 5.0);
             float2 cell = grid + floor(seed * 97.0);
             float2 centre = (grid + 0.2 + 0.6 * float2(hash(cell + 3.1), hash(cell + 8.7))) * 5.0;
             float fleck = 1.0 - smoothstep(0.4, 1.3 * (0.6 + hash(cell + 1.9)), length(xy - centre));
-            float sparkle = step(0.80, hash(cell + 7.0)) * fleck;
-            float near = smoothstep(0.05, 0.02, d) * (1.0 - core);
-            col += float3(0.95, 0.74, 0.34) * sparkle * near * (0.55 + 0.45 * hash(cell));
+            // Slow noise in the marble's own space gathers flecks into clusters along some stretches of vein and leaves
+            // others bare, as mineral inclusions settle; most are faint and only a few catch the light.
+            float cluster = smoothstep(0.3, 0.62, noise(at * 15.0 + float2(13.0, 4.0)));
+            float sparkle = step(1.0 - 0.4 * cluster, hash(cell + 7.0)) * fleck;
+            float near = smoothstep(0.055, 0.02, d) * (1.0 - core);
+            float shine = 0.55 + 0.75 * pow(hash(cell), 2.0);
+            col += float3(0.99, 0.46, 0.05) * sparkle * near * shine;
+
+            // A few amber veins (one to three, chosen by the seed): the blue veins' complement, each with its own
+            // travelling glow and cyan flecks (#22F1FD) gathered beside it.
+            float2 slab = floor(seed * 97.0);
+            float amberVeins = 1.0 + floor(hash(slab + 0.37) * 2.999);
+            // Each is traced the same way as the blue veins (a contour of the same warped noise, at the same scale), in
+            // its own part of the noise, through a random point on the card, and only for a stretch around that point,
+            // tapering out at both ends, so they curve and break like the blue ones rather than crossing the card.
+            float aspect = size.x / size.y;
+            for (int i = 0; i < 3; i++) {
+                float k = float(i);
+                float on = step(k + 0.5, amberVeins);
+                float2 origin = float2((0.15 + 0.7 * hash(slab + float2(k * 5.1, 2.9))) * aspect,
+                                       0.15 + 0.7 * hash(slab + float2(k * 2.3, 6.1)));
+                float2 offset = float2(20.0 + k * 13.7, 9.0 + k * 5.3);
+                float2 atO = origin + seed;
+                float2 wO = float2(fbm(atO * 1.6 + float2(3.1, 7.4)), fbm(atO * 1.6 + float2(8.3, 2.8)));
+                float level = fbm3(atO * 1.1 + wO * 0.8 + offset);
+                float ad = abs(fbm3(at * 1.1 + w * 0.8 + offset) - level);
+                float reach = 0.22 + 0.18 * hash(slab + float2(k * 4.3, 8.8));
+                float taper = (1.0 - smoothstep(reach * 0.3, reach, length(uv - origin))) * on;
+                // Thinner than the blue veins, with a tighter glow and a hotter core, so they read as finer and brighter.
+                float acore = (1.0 - smoothstep(0.0, 0.005 * taper + 0.0001, ad)) * taper;
+                float aglow = exp(-ad * 80.0 / max(taper, 0.05)) * taper;
+                float aflow = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(along * 1.15 + 1.0 + k * 2.1 - time * 1.2), 6.0);
+                col += amber * aglow * 0.9 * aflow + mix(amber, amberHot, aflow) * acore * 1.4 * aflow;
+                float aNear = smoothstep(0.04, 0.012, ad) * (1.0 - acore) * taper;
+                col += float3(0.13, 0.95, 0.99) * sparkle * aNear * shine;
+            }
 
             // A polished sheen from the top left.
             float sheen = exp(-length((uv - float2(0.25, -0.15)) * float2(0.9, 1.6)) * 2.2);

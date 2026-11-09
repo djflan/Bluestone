@@ -8,9 +8,9 @@ using Bluestone.Desktop.Theme;
 namespace Bluestone.Desktop.Views;
 
 /// <summary>
-/// A borderless window that is a slab of black marble with glowing blue veins and the product name. While Bluestone
-/// starts it shows what start-up is doing right now; a failed start shows the error and a Quit button instead of
-/// leaving the splash up for ever. As About Bluestone (<see cref="CreateAbout"/>) it shows the licence and the
+/// A borderless window that is a slab of black marble with glowing blue and amber veins and the product name. While
+/// Bluestone starts it shows what start-up is doing right now; a failed start shows the error and a Quit button instead
+/// of leaving the splash up for ever. As About Bluestone (<see cref="CreateAbout"/>) it shows the licence and the
 /// non-affiliation notice instead, and closes on Esc or when another window is clicked.
 /// </summary>
 internal sealed class SplashWindow : Window
@@ -75,7 +75,6 @@ internal sealed class SplashWindow : Window
                     Width = 104,
                     Height = 104,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Effect = new DropShadowEffect { Color = Color.Parse("#3B86FF"), BlurRadius = 30, OffsetX = 0, OffsetY = 0, Opacity = 0.9 },
                 },
                 new StackPanel
                 {
@@ -244,31 +243,16 @@ internal sealed class SplashWindow : Window
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 
-    /// <summary>The product name: bold white capitals over two blurred azure copies, a wide halo and a tight bright glow.</summary>
-    private static Panel Wordmark()
+    /// <summary>The product name in bold white capitals.</summary>
+    private static TextBlock Wordmark() => new()
     {
-        static TextBlock Layer(IBrush brush, double blur, double opacity) => new()
-        {
-            Text = "BLUESTONE",
-            FontSize = 48,
-            FontWeight = FontWeight.Bold,
-            Foreground = brush,
-            Opacity = opacity,
-            Effect = blur > 0 ? new BlurEffect { Radius = blur } : null,
-            IsHitTestVisible = false,
-        };
-
-        return new Panel
-        {
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Children =
-            {
-                Layer(new SolidColorBrush(Color.Parse("#2F7BFF")), blur: 8, opacity: 0.5),
-                Layer(new SolidColorBrush(Color.Parse("#7DB8FF")), blur: 2, opacity: 0.25),
-                Layer(Brushes.White, blur: 0, opacity: 1),
-            },
-        };
-    }
+        Text = "BLUESTONE",
+        FontSize = 48,
+        FontWeight = FontWeight.Bold,
+        Foreground = Brushes.White,
+        HorizontalAlignment = HorizontalAlignment.Left,
+        IsHitTestVisible = false,
+    };
 
     private static Control WithDock(Control control, Dock dock)
     {
