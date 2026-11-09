@@ -141,7 +141,7 @@ public sealed class SplashWindowTests
     [InlineData(0, 512, 40)]
     [InlineData(1, 256, 0)]
     [InlineData(2, 32, 0)]
-    public Task StoneMark_ExportsTheCyanBlueAndOrangeHexGemstone(int variantValue, int pixels, double inset) => HeadlessApp.RunAsync(() =>
+    public Task StoneMark_ExportsTheAzureBlueAndOrangeHexGemstone(int variantValue, int pixels, double inset) => HeadlessApp.RunAsync(() =>
     {
         var variant = (LogoVariant)variantValue;
         var png = StoneMark.CreatePng(pixels, variant, inset);
@@ -171,7 +171,7 @@ public sealed class SplashWindowTests
         Assert.Equal(new PixelSize(pixels, pixels), image.PixelSize);
 
         var rgba = Pixels(image);
-        int cyan = 0, blue = 0, orange = 0;
+        int azure = 0, blue = 0, orange = 0;
         for (var i = 0; i < rgba.Length; i += 4)
         {
             if (rgba[i + 3] < 180)
@@ -182,7 +182,7 @@ public sealed class SplashWindowTests
             var (b, g, r) = (rgba[i], rgba[i + 1], rgba[i + 2]);
             if (g > r + 35 && b > r + 35)
             {
-                cyan++;
+                azure++;
             }
 
             if (b > r + 40)
@@ -196,15 +196,15 @@ public sealed class SplashWindowTests
             }
         }
 
-        Assert.True(cyan > 1, $"Expected cyan facets in the {variant} logo.");
+        Assert.True(azure > 1, $"Expected azure facets in the {variant} logo.");
         Assert.True(blue > 1, $"Expected blue facets in the {variant} logo.");
         Assert.True(orange > 1, $"Expected orange facets in the {variant} logo.");
         return Task.CompletedTask;
     });
 
-    /// <summary>The splash bloom spills a few design units beyond the shell: cyan on the left, amber on the right. Icons have none.</summary>
+    /// <summary>The splash bloom spills a few design units beyond the shell: azure on the left, amber on the right. Icons have none.</summary>
     [Fact]
-    public Task StoneMark_SplashBloom_IsCyanAndAmberOutsideTheShell() => HeadlessApp.RunAsync(() =>
+    public Task StoneMark_SplashBloom_IsAzureAndAmberOutsideTheShell() => HeadlessApp.RunAsync(() =>
     {
         using var splashStream = new MemoryStream(StoneMark.CreatePng(256, LogoVariant.Splash, inset: 24));
         using var iconStream = new MemoryStream(StoneMark.CreatePng(256, LogoVariant.ApplicationIcon, inset: 24));
@@ -219,7 +219,7 @@ public sealed class SplashWindowTests
 
         Assert.Equal((byte)0, plain[left + 3]);
         Assert.Equal((byte)0, plain[right + 3]);
-        Assert.True(glowing[left + 3] > 40, $"Expected bloom beyond the cyan shell edge; alpha was {glowing[left + 3]}.");
+        Assert.True(glowing[left + 3] > 40, $"Expected bloom beyond the azure shell edge; alpha was {glowing[left + 3]}.");
         Assert.True(glowing[right + 3] > 40, $"Expected bloom beyond the amber shell edge; alpha was {glowing[right + 3]}.");
         Assert.True(glowing[left] > glowing[left + 2] + 3 && glowing[left + 1] > glowing[left + 2] + 3);
         Assert.True(glowing[right + 2] > glowing[right] + 3);
