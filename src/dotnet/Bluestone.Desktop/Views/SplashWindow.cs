@@ -243,31 +243,16 @@ internal sealed class SplashWindow : Window
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 
-    /// <summary>The product name: bold white capitals over two blurred azure copies, a wide halo and a tight bright glow.</summary>
-    private static Panel Wordmark()
+    /// <summary>The product name in bold white capitals.</summary>
+    private static TextBlock Wordmark() => new()
     {
-        static TextBlock Layer(IBrush brush, double blur, double opacity) => new()
-        {
-            Text = "BLUESTONE",
-            FontSize = 48,
-            FontWeight = FontWeight.Bold,
-            Foreground = brush,
-            Opacity = opacity,
-            Effect = blur > 0 ? new BlurEffect { Radius = blur } : null,
-            IsHitTestVisible = false,
-        };
-
-        return new Panel
-        {
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Children =
-            {
-                Layer(new SolidColorBrush(Color.Parse("#2F7BFF")), blur: 8, opacity: 0.5),
-                Layer(new SolidColorBrush(Color.Parse("#7DB8FF")), blur: 2, opacity: 0.25),
-                Layer(Brushes.White, blur: 0, opacity: 1),
-            },
-        };
-    }
+        Text = "BLUESTONE",
+        FontSize = 48,
+        FontWeight = FontWeight.Bold,
+        Foreground = Brushes.White,
+        HorizontalAlignment = HorizontalAlignment.Left,
+        IsHitTestVisible = false,
+    };
 
     private static Control WithDock(Control control, Dock dock)
     {
