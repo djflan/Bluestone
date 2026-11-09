@@ -30,6 +30,7 @@ public sealed class SplashWindowTests
         Assert.Contains("Scanning plugins (2 of 4)…", texts);
         Assert.Contains("Surge XT.vst3", texts);
         Assert.Equal(LogoVariant.Splash, splash.GetLogicalDescendants().OfType<StoneMark>().Single().Variant);
+        Assert.True(splash.GetLogicalDescendants().OfType<StoneMark>().Single().IsAnimated, "Expected the on-screen splash mark to animate on the render thread.");
         var progress = splash.GetLogicalDescendants().OfType<ProgressBar>().Single();
         Assert.False(progress.IsIndeterminate);
         Assert.Equal(0.25, progress.Value);
@@ -312,6 +313,92 @@ public sealed class SplashWindowTests
         }
 
         return (dark, blue, gold, total);
+    }
+
+    private static readonly double[] DriftingSeconds = [5.5, 10.5];
+
+    /// <summary>
+    /// The splash mark starts as exactly the still mark; then the light in the gem drifts, the shell's colours sway with
+    /// it, and a corona rises round the shell and keeps streaming outward.
+    /// </summary>
+    [Fact]
+    public Task AnimatedMark_StartsAsTheStillMarkThenDriftsAndStreams() => HeadlessApp.RunAsync(() =>
+    {
+        using var stillStream = new MemoryStream(StoneMark.CreatePng(256, LogoVariant.Splash, inset: 24));
+        using var stillImage = new Bitmap(stillStream);
+        var still = Pixels(stillImage);
+
+        var first = Changed(AnimatedMarkPixels(0), still, 0, 100);
+        Assert.True(first.Max <= 16, $"Expected the first frame to match the still mark; a channel differed by {first.Max}.");
+
+        // In design units from the centre: the gem lies within 30, the shell's band within 35.7–46 (flat sides to
+        // points), and past 52 is clear of the shell.
+        var frames = DriftingSeconds.Select(AnimatedMarkPixels).ToArray();
+        foreach (var (frame, seconds) in frames.Zip(DriftingSeconds))
+        {
+            var gem = Changed(frame, still, 0, 30);
+            Assert.True(gem.Over > 2_000, $"Expected the light in the gem to have drifted by {seconds} s; only {gem.Over} channels differed.");
+            var shell = Changed(frame, still, 37, 40);
+            Assert.True(shell.Over > 500, $"Expected the shell's colours to have swayed by {seconds} s; only {shell.Over} channels differed.");
+            var corona = Light(frame, 52, 70);
+            var bloom = Light(still, 52, 70);
+            Assert.True(corona > bloom * 1.3, $"Expected the corona to brighten round the shell at {seconds} s; {corona} against {bloom} for the bloom alone.");
+        }
+
+        var streaming = Changed(frames[0], frames[1], 52, 70);
+        Assert.True(streaming.Over > 1_000, $"Expected the corona to move; only {streaming.Over} channels differed.");
+        return Task.CompletedTask;
+
+        // Channels that differ, between two radii of the mark's design box.
+        static (int Max, int Over) Changed(byte[] frame, byte[] other, double inner, double outer)
+        {
+            int max = 0, over = 0;
+            foreach (var i in Within(inner, outer))
+            {
+                for (var channel = 0; channel < 4; channel++)
+                {
+                    var difference = Math.Abs(frame[i + channel] - other[i + channel]);
+                    max = Math.Max(max, difference);
+                    over += difference > 16 ? 1 : 0;
+                }
+            }
+
+            return (max, over);
+        }
+
+        static long Light(byte[] frame, double inner, double outer) => Within(inner, outer).Sum(i => (long)frame[i] + frame[i + 1] + frame[i + 2]);
+
+        // The mark spans 208 px from 24 px in, so a design unit is 2.08 px.
+        static IEnumerable<int> Within(double inner, double outer) =>
+            from y in Enumerable.Range(0, 256)
+            from x in Enumerable.Range(0, 256)
+            let r = Math.Sqrt(Math.Pow(((x - 24) / 2.08) - 50, 2) + Math.Pow(((y - 24) / 2.08) - 50, 2))
+            where r >= inner && r < outer
+            select ((y * 256) + x) * 4;
+    });
+
+    [Fact]
+    public void CoronaShader_Compiles()
+    {
+        using var effect = SkiaSharp.SKRuntimeEffect.CreateShader(StoneMark.CoronaSource, out var errors);
+        Assert.True(effect is not null, errors);
+    }
+
+    /// <summary>One frame of the animated splash mark, drawn as <see cref="StoneMark.CreatePng"/> draws the still one (256 px, inset 24).</summary>
+    private static byte[] AnimatedMarkPixels(double seconds)
+    {
+        using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(256, 256, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul));
+        surface.Canvas.Clear(SkiaSharp.SKColors.Transparent);
+        surface.Canvas.Translate(24, 24);
+        StoneMark.DrawAnimated(surface.Canvas, 208, 208, seconds);
+        using var image = surface.Snapshot();
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        var directory = Path.Combine(AppContext.BaseDirectory, "frames");
+        Directory.CreateDirectory(directory);
+        File.WriteAllBytes(Path.Combine(directory, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"stone-mark-animated-{seconds:F2}.png")), data.ToArray());
+        using var stream = new MemoryStream(data.ToArray());
+        using var bitmap = new Bitmap(stream);
+        return Pixels(bitmap);
     }
 
     private static byte[] Pixels(Bitmap frame)

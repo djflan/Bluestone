@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Rendering.Composition;
 
 namespace Bluestone.Desktop.Controls;
 
@@ -22,8 +23,10 @@ internal enum LogoVariant
 /// the right. Everything is drawn from fixed geometry in a 100-unit design box, so it scales to any size and DPI and is
 /// identical on every launch. Colours come from one smooth light field sampled across the facets, so neighbouring faces
 /// change gradually while each face keeps a crisp edge.
+/// On screen the splash variant is animated on the render thread (StoneMark.Animated.cs): the gem builds itself, then
+/// the light inside it drifts slowly. Exported images and icons are the still mark drawn here.
 /// </summary>
-internal sealed class StoneMark : Panel
+internal sealed partial class StoneMark : Panel
 {
     private const double OuterRadius = 46;
     private const double ShellInnerRadius = 41.2;
@@ -37,18 +40,26 @@ internal sealed class StoneMark : Panel
     private static readonly Geometry GemHex = Hexagon(GemRadius);
 
     // The shell: cyan on the left, pale where the light crosses the top and bottom points, amber to the right.
-    private static readonly IBrush ShellFill = Across(
-        ("#E01ED8F0", 0), ("#E070F4FF", 0.3), ("#E038E8F4", 0.5), ("#E0B8FAFF", 0.66), ("#E0FFD9A0", 0.72), ("#E0FF9A2A", 0.8), ("#E0FF600A", 1));
-    private static readonly IBrush ShellRim = Across(
-        ("#9EFFFF", 0), ("#E0FFFF", 0.3), ("#B0FFFF", 0.5), ("#FFFFFF", 0.66), ("#FFE7B0", 0.72), ("#FFB050", 0.82), ("#FF9030", 1));
-    private static readonly IBrush ShellGlow = Across(
-        ("#FF00E5FF", 0), ("#FF40F0FF", 0.5), ("#C0C0F8FF", 0.66), ("#FFFFB43A", 0.74), ("#FFFF6A0A", 1));
+    private static readonly (string Color, double Offset)[] ShellFillStops =
+        [("#E01ED8F0", 0), ("#E070F4FF", 0.3), ("#E038E8F4", 0.5), ("#E0B8FAFF", 0.66), ("#E0FFD9A0", 0.72), ("#E0FF9A2A", 0.8), ("#E0FF600A", 1)];
+    private static readonly (string Color, double Offset)[] ShellRimStops =
+        [("#9EFFFF", 0), ("#E0FFFF", 0.3), ("#B0FFFF", 0.5), ("#FFFFFF", 0.66), ("#FFE7B0", 0.72), ("#FFB050", 0.82), ("#FF9030", 1)];
+    private static readonly (string Color, double Offset)[] ShellGlowStops =
+        [("#FF00E5FF", 0), ("#FF40F0FF", 0.5), ("#C0C0F8FF", 0.66), ("#FFFFB43A", 0.74), ("#FFFF6A0A", 1)];
+    private static readonly (string Color, double Offset)[] GemEdgeStops = [("#C060F8FF", 0), ("#A0CFF4FF", 0.5), ("#C0FFB040", 1)];
+    private static readonly (string Color, double Offset)[] RecessStops = [("#0C1C40", 0.6), ("#040A1C", 1)];
+    private const string RidgeColor = "#16E8FBFF";
+    private const string RecessOutlineColor = "#B0030818";
+
+    private static readonly IBrush ShellFill = Across(ShellFillStops);
+    private static readonly IBrush ShellRim = Across(ShellRimStops);
+    private static readonly IBrush ShellGlow = Across(ShellGlowStops);
     private static readonly IBrush RecessFill = new RadialGradientBrush
     {
-        GradientStops = { new GradientStop(Color.Parse("#0C1C40"), 0.6), new GradientStop(Color.Parse("#040A1C"), 1) },
+        GradientStops = { new GradientStop(Color.Parse(RecessStops[0].Color), RecessStops[0].Offset), new GradientStop(Color.Parse(RecessStops[1].Color), RecessStops[1].Offset) },
     };
-    private static readonly IBrush GemEdge = Across(("#C060F8FF", 0), ("#A0CFF4FF", 0.5), ("#C0FFB040", 1));
-    private static readonly IBrush Ridge = new SolidColorBrush(Color.Parse("#16E8FBFF"));
+    private static readonly IBrush GemEdge = Across(GemEdgeStops);
+    private static readonly IBrush Ridge = new SolidColorBrush(Color.Parse(RidgeColor));
 
     private static readonly Color Highlight = Color.Parse("#F2FFFF");
 
@@ -96,7 +107,9 @@ internal sealed class StoneMark : Panel
     private static readonly Facet[] SmallFacets = CutSmallFacets();
 
     private readonly LogoLayer[] _bloom;
+    private readonly LogoLayer _artwork;
     private LogoVariant _variant;
+    private CompositionCustomVisual? _animated;
 
     public StoneMark()
     {
@@ -104,18 +117,28 @@ internal sealed class StoneMark : Panel
         // behind the mark, a nearer and stronger one, the halo hugging the shell, and the flare over the artwork.
         _bloom =
         [
-            new LogoLayer(this, LayerKind.Aura, blur: 30) { Opacity = 0.45 },
-            new LogoLayer(this, LayerKind.Aura, blur: 14) { Opacity = 0.5 },
-            new LogoLayer(this, LayerKind.Halo, blur: 4),
-            new LogoLayer(this, LayerKind.Flare, blur: 1.6) { Opacity = 0.8 },
+            new LogoLayer(this, LayerKind.Aura, blur: AuraBlur) { Opacity = AuraOpacity },
+            new LogoLayer(this, LayerKind.Aura, blur: NearAuraBlur) { Opacity = NearAuraOpacity },
+            new LogoLayer(this, LayerKind.Halo, blur: HaloBlur),
+            new LogoLayer(this, LayerKind.Flare, blur: FlareBlur) { Opacity = FlareOpacity },
         ];
+        _artwork = new LogoLayer(this, LayerKind.Artwork, blur: 0);
         Children.Add(_bloom[0]);
         Children.Add(_bloom[1]);
         Children.Add(_bloom[2]);
-        Children.Add(new LogoLayer(this, LayerKind.Artwork, blur: 0));
+        Children.Add(_artwork);
         Children.Add(_bloom[3]);
         IsHitTestVisible = false;
     }
+
+    // The bloom passes: blur radii in design units, and how strongly each shows.
+    private const double AuraBlur = 30;
+    private const double AuraOpacity = 0.45;
+    private const double NearAuraBlur = 14;
+    private const double NearAuraOpacity = 0.5;
+    private const double HaloBlur = 4;
+    private const double FlareBlur = 1.6;
+    private const double FlareOpacity = 0.8;
 
     public LogoVariant Variant
     {
@@ -123,15 +146,73 @@ internal sealed class StoneMark : Panel
         set
         {
             _variant = value;
-            foreach (var layer in _bloom)
-            {
-                layer.IsVisible = value == LogoVariant.Splash;
-            }
-
+            UpdateAnimation();
             foreach (var layer in Children)
             {
                 layer.InvalidateVisual();
             }
+        }
+    }
+
+    /// <summary>Whether the mark is being drawn by the animated render-thread visual rather than the still layers.</summary>
+    internal bool IsAnimated => _animated is not null;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        UpdateAnimation();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        StopAnimation();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (_animated is not null)
+        {
+            _animated.Size = new Vector(e.NewSize.Width, e.NewSize.Height);
+        }
+    }
+
+    /// <summary>
+    /// Animates the splash mark while it is on screen, and shows the still layers otherwise (icons, exports, and anywhere
+    /// the compositor is unavailable).
+    /// </summary>
+    private void UpdateAnimation()
+    {
+        if (_variant == LogoVariant.Splash && _animated is null && ElementComposition.GetElementVisual(this)?.Compositor is { } compositor)
+        {
+            _animated = compositor.CreateCustomVisual(new AnimatedMark());
+            _animated.Size = new Vector(Bounds.Width, Bounds.Height);
+
+            // Composition visuals clip to their size by default; the bloom must spill past the mark's box.
+            _animated.ClipToBounds = false;
+            ElementComposition.SetElementChildVisual(this, _animated);
+            _animated.SendHandlerMessage(AnimatedMark.Start.Instance);
+        }
+        else if (_variant != LogoVariant.Splash)
+        {
+            StopAnimation();
+        }
+
+        _artwork.IsVisible = _animated is null;
+        foreach (var layer in _bloom)
+        {
+            layer.IsVisible = _animated is null && _variant == LogoVariant.Splash;
+        }
+    }
+
+    private void StopAnimation()
+    {
+        if (_animated is not null)
+        {
+            _animated.SendHandlerMessage(AnimatedMark.Stop.Instance);
+            ElementComposition.SetElementChildVisual(this, null);
+            _animated = null;
         }
     }
 
@@ -192,7 +273,7 @@ internal sealed class StoneMark : Panel
         }
 
         context.DrawGeometry(null, new Pen(GemEdge, small ? 1.4 : 0.6), GemHex);
-        context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.Parse("#B0030818")), small ? 1.2 : 0.7), ShellInnerHex);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.Parse(RecessOutlineColor)), small ? 1.2 : 0.7), ShellInnerHex);
         context.DrawGeometry(null, new Pen(ShellRim, small ? 2.4 : 1.5, lineJoin: PenLineJoin.Miter), Hexagon(OuterRadius - (small ? 1.2 : 0.75)));
     }
 
@@ -258,29 +339,50 @@ internal sealed class StoneMark : Panel
     private static Facet Cut(Point[] corners, double light)
     {
         var shape = Shape(corners);
+        var (from, to, colors) = Shading(corners, light, drift: default);
+        var fill = Gradient(from, to, shape.Bounds, (colors[0], 0), (colors[1], 0.5), (colors[2], 1));
+        return new Facet(shape, fill, corners, light);
+    }
+
+    /// <summary>
+    /// The gradient across a face: from its first corner to the middle of its opposite edge, with the light sampled near
+    /// each end and at the centroid. <paramref name="drift"/> moves the light field's points (empty: the still mark).
+    /// </summary>
+    private static (Point From, Point To, Color[] Colors) Shading(Point[] corners, double light, ReadOnlySpan<Vector> drift)
+    {
         var from = corners[0];
         var to = new Point((corners[1].X + corners[2].X) / 2, (corners[1].Y + corners[2].Y) / 2);
-        var centroid = new Point((corners[0].X + corners[1].X + corners[2].X) / 3, (corners[0].Y + corners[1].Y + corners[2].Y) / 3);
+        var centroid = Centroid(corners);
 
         // Sample a little inside the face so a corner shared by several faces (the centre most of all) doesn't bleed
         // one face's light into its neighbours.
-        var fill = Gradient(from, to, shape.Bounds,
-            (Shade(LightAt(Inside(from, centroid)), light + 0.04), 0),
-            (Shade(LightAt(centroid), light), 0.5),
-            (Shade(LightAt(Inside(to, centroid)), light - 0.04), 1));
-        return new Facet(shape, fill);
+        return (from, to,
+        [
+            Shade(LightAt(Inside(from, centroid), drift), light + 0.04),
+            Shade(LightAt(centroid, drift), light),
+            Shade(LightAt(Inside(to, centroid), drift), light - 0.04),
+        ]);
 
         static Point Inside(Point point, Point centroid) => point + ((centroid - point) * 0.3);
     }
 
-    /// <summary>Inverse-distance blend of <see cref="LightField"/>: smooth, and fixed for every launch.</summary>
-    private static Color LightAt(Point point)
+    private static Point Centroid(Point[] corners) =>
+        new((corners[0].X + corners[1].X + corners[2].X) / 3, (corners[0].Y + corners[1].Y + corners[2].Y) / 3);
+
+    /// <summary>Inverse-distance blend of <see cref="LightField"/>, each point moved by its <paramref name="drift"/> if given.</summary>
+    private static Color LightAt(Point point, ReadOnlySpan<Vector> drift)
     {
         var x = (point.X - Middle.X) / GemRadius;
         var y = (point.Y - Middle.Y) / GemRadius;
         double r = 0, g = 0, b = 0, total = 0;
-        foreach (var (at, color) in LightField)
+        for (var i = 0; i < LightField.Length; i++)
         {
+            var (at, color) = LightField[i];
+            if (!drift.IsEmpty)
+            {
+                at += drift[i];
+            }
+
             var distance = ((x - at.X) * (x - at.X)) + ((y - at.Y) * (y - at.Y)) + 0.004;
             var weight = 1 / Math.Pow(distance, 1.6);
             r += color.R * weight;
@@ -369,7 +471,7 @@ internal sealed class StoneMark : Panel
     /// Across the whole mark on a slight diagonal, as the light falls in the reference: amber reaches the upper right only
     /// near its corner but wraps the lower right from just past the bottom point.
     /// </summary>
-    private static LinearGradientBrush Across(params (string Color, double Offset)[] stops)
+    private static LinearGradientBrush Across((string Color, double Offset)[] stops)
     {
         var brush = new LinearGradientBrush
         {
@@ -454,5 +556,5 @@ internal sealed class StoneMark : Panel
         }
     }
 
-    private sealed record Facet(Geometry Shape, IBrush Fill);
+    private sealed record Facet(Geometry Shape, IBrush Fill, Point[] Corners, double Light);
 }

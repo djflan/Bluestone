@@ -92,7 +92,7 @@ internal sealed class SplashWindow : Window
                             {
                                 new TextBlock { Text = AppVersion.Release, FontSize = 13, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = new SolidColorBrush(Palette.Text) },
                                 new TextBlock { Text = AppVersion.Commit, FontSize = 13, LetterSpacing = 1, Foreground = new SolidColorBrush(MutedText), IsVisible = AppVersion.Commit.Length > 0 },
-                                new TextBlock { Text = "PRE-RELEASE", FontSize = 13, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(Palette.Accent) },
+                                new TextBlock { Text = "PRE-RELEASE", FontSize = 13, FontWeight = FontWeight.SemiBold, LetterSpacing = 3, Foreground = new SolidColorBrush(PreRelease) },
                             },
                         },
                     },
@@ -162,6 +162,9 @@ internal sealed class SplashWindow : Window
 
     // Palette.TextMuted is too dark to read on the marble.
     private static readonly Color MutedText = Color.Parse("#B9B9C0");
+
+    // The brightest orange of the marble's amber veins that still reads as orange rather than white.
+    private static readonly Color PreRelease = Color.Parse("#FFB466");
 
     /// <summary>Whether this is About Bluestone rather than the start-up splash.</summary>
     public bool IsAbout { get; }
