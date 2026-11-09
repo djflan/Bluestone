@@ -8,7 +8,7 @@ using SkiaSharp;
 namespace Bluestone.Desktop.Controls;
 
 /// <summary>
-/// Polished black marble with glowing azure veins and a fleck of gold beside them, drawn by a GPU shader, with light
+/// Polished black marble with glowing azure veins and a fleck of amber beside them, drawn by a GPU shader, with light
 /// travelling along the veins while it is shown. Each slab shows a different part of the marble (<see cref="Seed"/>).
 /// Where Skia or the shader is unavailable it draws a plain dark rounded card instead, so it can never stop start-up.
 /// The marble is drawn and animated on the render thread (a composition visual), so work on the UI thread, such as
@@ -33,7 +33,7 @@ internal sealed class MarbleSlab : Control
 #pragma warning restore CA5394
     private CompositionCustomVisual? _visual;
 
-    /// <summary>The SkSL source: marble base, blue veins with a travelling glow, gold fleck, a calm area for the title, rounded edge.</summary>
+    /// <summary>The SkSL source: marble base, blue veins with a travelling glow, amber fleck, a calm area for the title, rounded edge.</summary>
     internal const string Source = """
         uniform float2 size;
         uniform float time;
@@ -127,15 +127,19 @@ internal sealed class MarbleSlab : Control
             col += azure * glow * 0.9 * flow + mix(azure, hot, flow) * core * 1.1 * flow;
             col += azure * glow2 * 0.70 * flow2 + mix(azure, hot, flow2) * core2 * 0.7 * flow2;
 
-            // Gold fleck: sparse sparkles only just beside the blue veins.
+            // Amber fleck, the orange of the stone mark (#FC760C): sparse sparkles only just beside the blue veins.
             // The seed changes which cells sparkle (cell), not where a cell is on the card (grid).
             float2 grid = floor(xy / 5.0);
             float2 cell = grid + floor(seed * 97.0);
             float2 centre = (grid + 0.2 + 0.6 * float2(hash(cell + 3.1), hash(cell + 8.7))) * 5.0;
             float fleck = 1.0 - smoothstep(0.4, 1.3 * (0.6 + hash(cell + 1.9)), length(xy - centre));
-            float sparkle = step(0.80, hash(cell + 7.0)) * fleck;
-            float near = smoothstep(0.05, 0.02, d) * (1.0 - core);
-            col += float3(0.95, 0.74, 0.34) * sparkle * near * (0.55 + 0.45 * hash(cell));
+            // Slow noise in the marble's own space gathers flecks into clusters along some stretches of vein and leaves
+            // others bare, as mineral inclusions settle; most are faint and only a few catch the light.
+            float cluster = smoothstep(0.3, 0.62, noise(at * 15.0 + float2(13.0, 4.0)));
+            float sparkle = step(1.0 - 0.4 * cluster, hash(cell + 7.0)) * fleck;
+            float near = smoothstep(0.055, 0.02, d) * (1.0 - core);
+            float shine = 0.55 + 0.75 * pow(hash(cell), 2.0);
+            col += float3(0.99, 0.46, 0.05) * sparkle * near * shine;
 
             // A polished sheen from the top left.
             float sheen = exp(-length((uv - float2(0.25, -0.15)) * float2(0.9, 1.6)) * 2.2);

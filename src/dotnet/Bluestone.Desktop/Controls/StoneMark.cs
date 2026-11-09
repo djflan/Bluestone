@@ -133,17 +133,21 @@ internal sealed class StoneMark : Panel
         return png.ToArray();
     }
 
-    /// <summary>The application-window and taskbar icon, rendered without the splash bloom.</summary>
+    /// <summary>
+    /// The application-window and taskbar icon, rendered without the splash bloom. The design box leaves a margin around
+    /// the hexagon, so the icon bleeds the box past its edges until the hexagon's points nearly touch the top and bottom.
+    /// </summary>
     public static WindowIcon CreateIcon(int pixels = 256) =>
-        new(Render(pixels, inset: 0, variant: pixels <= 32 ? LogoVariant.Small : LogoVariant.ApplicationIcon));
+        new(Render(pixels, inset: -pixels * 0.035, variant: pixels <= 32 ? LogoVariant.Small : LogoVariant.ApplicationIcon));
 
     /// <summary>The macOS Dock image, padded to sit on Apple's icon grid.</summary>
     public static byte[] CreateDockImage(int pixels = 512) => CreatePng(pixels, LogoVariant.ApplicationIcon, inset: pixels / 10.0);
 
     private static RenderTargetBitmap Render(int pixels, double inset, LogoVariant variant)
     {
-        var mark = new StoneMark { Variant = variant };
-        var frame = new Decorator { Padding = new Thickness(inset), Child = mark, Width = pixels, Height = pixels };
+        // A negative inset is a negative margin: the mark is laid out larger than the bitmap, which crops its empty edges.
+        var mark = new StoneMark { Variant = variant, Margin = new Thickness(inset) };
+        var frame = new Decorator { Child = mark, Width = pixels, Height = pixels };
         frame.Measure(new Size(pixels, pixels));
         frame.Arrange(new Rect(0, 0, pixels, pixels));
         var bitmap = new RenderTargetBitmap(new PixelSize(pixels, pixels));
