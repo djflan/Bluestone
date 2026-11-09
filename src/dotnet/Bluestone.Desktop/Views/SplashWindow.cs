@@ -189,10 +189,18 @@ internal sealed class SplashWindow : Window
         base.OnOpened(e);
         if (IsAbout)
         {
-            // Closes when the user clicks another window (or switches app), like a popover.
-            Deactivated += (_, _) => CloseOnce();
+            // Closes when the user clicks another window (or switches app), like a popover. Posted, because a window also
+            // deactivates while it is being closed (by its owner closing, or quitting), and closing it again from inside
+            // that would touch the already destroyed native window and crash.
+            Deactivated += (_, _) => Dispatcher.UIThread.Post(CloseOnce);
             Activate();
         }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _closing = true;
+        base.OnClosed(e);
     }
 
     private void CloseOnce()
