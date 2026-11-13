@@ -9,7 +9,7 @@ use cpal::{
 };
 use std::ffi::c_void;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 
 use crate::stream::{STATE_FAILED, STATE_RUNNING, STATE_STOPPED, StreamRequest};
 
@@ -60,6 +60,8 @@ struct Shared {
     overruns: AtomicU64,
     oversized: AtomicU64,
     latency_ns: AtomicI64,
+    /// Set when the callback thread still has to be promoted (see `priority`); cleared by the first callback.
+    promote: AtomicBool,
 }
 
 struct Sink {
@@ -120,7 +122,10 @@ impl InputStream {
             .ok_or_else(|| "There is no default audio input device.".to_string())?,
         };
         let (config, format, buffer_range) = choose_input_config(&device, request)?;
-        let shared = Arc::new(Shared::default());
+        let shared = Arc::new(Shared {
+            promote: AtomicBool::new(crate::priority::promotes(host_name)),
+            ..Shared::default()
+        });
         let channels = u32::from(config.channels);
         let capacity_frames = buffer_range.map_or(16_384, |(_, max)| max.clamp(1, 65_536)) as usize;
         let capacity_frames = capacity_frames.max(match config.buffer_size {
@@ -247,6 +252,10 @@ where
         .build_input_stream::<T, _, _>(
             config,
             move |data: &[T], info: &InputCallbackInfo| {
+                if shared.promote.load(Ordering::Relaxed) {
+                    shared.promote.store(false, Ordering::Relaxed);
+                    crate::priority::promote_current_thread();
+                }
                 let frames = (data.len() / channels as usize) as u32;
                 let stamp = info.timestamp();
                 let latency = stamp

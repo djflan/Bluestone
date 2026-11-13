@@ -22,6 +22,7 @@ internal static class Program
 
     public static int Main(string[] args)
     {
+        _ = ProcessingThreadScheduling.PrepareProcess();
         using var mainThread = WorkerMainThread.CreateForThisThread();
         var serving = Task.Run(() => RunAsync(args, mainThread));
         mainThread.Run(serving);

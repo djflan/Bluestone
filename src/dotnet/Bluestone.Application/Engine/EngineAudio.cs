@@ -5,6 +5,7 @@ using Bluestone.Application.Audio;
 using Bluestone.Application.Live;
 using Bluestone.Application.Sessions;
 using Bluestone.Audio;
+using Bluestone.Audio.Devices;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Mixing;
 using Bluestone.Engine.Protocol;
@@ -18,8 +19,8 @@ public sealed record EngineAudioOptions
     /// <summary>Where audio graph images are written for the engine; null for a folder of its own in the temporary folder.</summary>
     public string? GraphDirectory { get; init; }
 
-    /// <summary>The block size plugin instances accept; the engine renders blocks no larger.</summary>
-    public int MaxBlockFrames { get; init; } = 256;
+    /// <summary>The largest block the engine renders; within it, the block follows the device's callback (<see cref="AudioBlockSize"/>).</summary>
+    public int MaxBlockFrames { get; init; } = AudioBlockSize.DefaultMaximum;
 }
 
 /// <summary>
@@ -36,7 +37,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private readonly PlaybackController _playback;
     private readonly ProjectSession _session;
     private readonly Func<DeviceId, PluginInstance?> _instances;
-    private readonly Func<int, Task>? _prepareSampleRate;
+    private readonly Func<AudioFormat, Task>? _prepareFormat;
     private readonly EngineAudioOptions _options;
     private readonly string _graphDirectory;
     private readonly Lock _gate = new();
@@ -58,7 +59,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private long _startRequest;
     private AudioDeviceStatus? _status;
     private (int Rate, int Block) _described;
-    private int _preparedRate;
+    private AudioFormat _preparedFormat;
     private ProjectAudioGraph? _describer;
     private long _nextGraph;
     private long _nextRender;
@@ -71,15 +72,15 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     /// <param name="playback">The MIDI playback controller: its refreshes, routing, and devices.</param>
     /// <param name="session">The project.</param>
     /// <param name="instances">The running plugin instance of a device, if any.</param>
-    /// <param name="prepareSampleRate">Called with the stream's rate whenever it changes, to run plugin instances at it; the graph is described again when it completes.</param>
+    /// <param name="prepareFormat">Called with the stream's rate and the engine's block whenever either changes, to run plugin instances at them; the graph is described again when it completes.</param>
     /// <param name="options">Where graph files go, and the block size.</param>
-    public EngineAudio(EngineSupervisor supervisor, PlaybackController playback, ProjectSession session, Func<DeviceId, PluginInstance?> instances, Func<int, Task>? prepareSampleRate = null, EngineAudioOptions? options = null)
+    public EngineAudio(EngineSupervisor supervisor, PlaybackController playback, ProjectSession session, Func<DeviceId, PluginInstance?> instances, Func<AudioFormat, Task>? prepareFormat = null, EngineAudioOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(supervisor);
         _playback = playback ?? throw new ArgumentNullException(nameof(playback));
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
-        _prepareSampleRate = prepareSampleRate;
+        _prepareFormat = prepareFormat;
         _options = options ?? new EngineAudioOptions();
         _graphDirectory = _options.GraphDirectory ?? Path.Combine(Path.GetTempPath(), $"bluestone-engine-{Environment.ProcessId}");
         _playback.Refreshed += (_, _) => _ = Task.Run(Rebuild);
@@ -222,6 +223,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
     public AudioTelemetry? Telemetry => IsRunning && Volatile.Read(ref _meters) is { Counters: { } counters } meters
         ? new AudioTelemetry(counters.Callbacks, counters.Xruns, counters.Discontinuities, counters.LateRenders, counters.QueueUnderrunFrames, counters.RenderFaults, TimeSpan.FromTicks(counters.RenderMax), TimeSpan.FromTicks(counters.OutputLatency), counters.PluginFailedBlocks, meters.Live.DeadlineMisses)
+        {
+            CallbackThreadPolicy = (AudioCallbackThreadPolicy)counters.CallbackThreadPolicy,
+        }
         : null;
 
     /// <summary>Live notes into plugin instruments, measured in the engine where they are heard (ADR 0044 step 7).</summary>
@@ -524,7 +528,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private void OnStatus(IEngineLink link, AudioDeviceStatus status)
     {
         bool describe;
-        int? prepare = null;
+        AudioFormat? prepare = null;
         lock (_gate)
         {
             if (!ReferenceEquals(link, _link))
@@ -538,10 +542,11 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             var open = status.State is AudioDeviceState.Running or AudioDeviceState.Fallback;
             describe = open && (!ReferenceEquals(_graphLink, link) || previous is null || previous.SampleRate != status.SampleRate || previous.BlockFrames != status.BlockFrames
                 || previous.State is not (AudioDeviceState.Running or AudioDeviceState.Fallback));
-            if (open && status.SampleRate != _preparedRate && _prepareSampleRate is not null)
+            var format = new AudioFormat(status.SampleRate, status.BlockFrames);
+            if (open && format != _preparedFormat && _prepareFormat is not null)
             {
-                _preparedRate = status.SampleRate;
-                prepare = status.SampleRate;
+                _preparedFormat = format;
+                prepare = format;
             }
 
             if (describe || prepare is not null)
@@ -551,9 +556,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             }
         }
 
-        if (prepare is { } rate)
+        if (prepare is { } wanted)
         {
-            _ = PrepareAsync(rate);
+            _ = PrepareAsync(wanted);
         }
         else if (describe)
         {
@@ -599,17 +604,17 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         }
     }
 
-    private async Task PrepareAsync(int rate)
+    private async Task PrepareAsync(AudioFormat format)
     {
         try
         {
-            await _prepareSampleRate!(rate).ConfigureAwait(false);
+            await _prepareFormat!(format).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // Plugins that cannot follow the rate stay silent and say so in the graph's problems.
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            System.Diagnostics.Trace.TraceWarning($"Plugins could not be restarted at {rate} Hz: {ex.Message}");
+            System.Diagnostics.Trace.TraceWarning($"Plugins could not be restarted at {format.SampleRate} Hz and {format.BlockFrames}-frame blocks: {ex.Message}");
         }
 
         Rebuild();

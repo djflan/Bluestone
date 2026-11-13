@@ -48,8 +48,9 @@ public sealed class AudioViewModelTests : IDisposable
         Assert.Null(vm.Device!.Id);
 
         vm.Device = vm.Devices[1];
-        Assert.Equal([44_100, 96_000], vm.SampleRates);
-        Assert.Equal(44_100, vm.SampleRate);
+        Assert.Equal([AudioSettings.Automatic, 44_100, 96_000], vm.SampleRates);
+        Assert.Equal(AudioSettings.Automatic, vm.SampleRate);
+        Assert.Equal(AudioSettings.Automatic, vm.BufferSizes[0]);
         Assert.False(vm.IsRunning);
         Assert.Equal("Audio is off.", vm.Status);
     }
@@ -74,7 +75,7 @@ public sealed class AudioViewModelTests : IDisposable
 
         vm.StopCommand.Execute(null);
 
-        Assert.Equal(new AudioSettings(false, "a", 48_000, 512, AudioSettings.DefaultQueuedFrames) { Host = "CoreAudio" }, Store.Load());
+        Assert.Equal(new AudioSettings(false, "a", AudioSettings.Automatic, 512, AudioSettings.DefaultQueuedFrames) { Host = "CoreAudio" }, Store.Load());
     }
 
     [Fact]
@@ -200,8 +201,64 @@ public sealed class AudioViewModelTests : IDisposable
         Assert.Equal(ActivityOutcome.Completed, ended?.Outcome);
         Assert.StartsWith("Audio is on:", ended?.Text, StringComparison.Ordinal);
         Assert.Contains("960-frame device buffer", vm.Status, StringComparison.Ordinal);
-        Assert.Contains("256-frame render blocks", vm.Status, StringComparison.Ordinal);
+        Assert.Contains("960-frame render blocks", vm.Status, StringComparison.Ordinal);
+        Assert.Equal("Running at 48 kHz · 960 samples / 20.00 ms", vm.DeviceFormat);
         Assert.Empty(activities.Running);
+
+        vm.RefreshMeters();
+        Assert.Equal("No dropouts.", vm.Health);
+        Assert.False(vm.HasDropouts);
+
+        vm.StopCommand.Execute(null);
+        Assert.Equal((string.Empty, string.Empty), (vm.DeviceFormat, vm.Health));
+    }
+
+    [Fact]
+    public void Dropouts_AndTheAudioThreadsPriority_AreShown()
+    {
+        var backend = new AudioPlaybackRecoveryTests.FakeBackend();
+        backend.Devices.Add(new AudioDeviceInfo("speakers", "Speakers", "WASAPI", true, 48_000, 2, [48_000], [2], 64, 4096));
+        using var audio = new AudioPlayback(_playback, new ProjectSession(), _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var vm = new AudioViewModel(audio, Store, new Immediate(), backend.ListDevices);
+        vm.StartCommand.Execute(null);
+        var output = backend.Opened[0];
+
+        output.CallbackThreadPolicy = AudioCallbackThreadPolicy.MmcssProAudio;
+        vm.RefreshMeters();
+        Assert.Equal("No dropouts · audio thread at MMCSS “Pro Audio” priority.", vm.Health);
+        Assert.False(vm.HasDropouts);
+
+        output.Discontinuities = 3;
+        vm.RefreshMeters();
+        Assert.Equal("Dropouts: 3 late device callbacks · audio thread at MMCSS “Pro Audio” priority.", vm.Health);
+        Assert.True(vm.HasDropouts);
+
+        output.Discontinuities = 0;
+        output.CallbackThreadPolicy = AudioCallbackThreadPolicy.Normal;
+        vm.RefreshMeters();
+        Assert.True(vm.HasDropouts);
+    }
+
+    [Fact]
+    public void AFixedRateOtherThanTheWindowsMixRate_WarnsThatItIsResampled()
+    {
+        var devices = new[] { new AudioDeviceInfo("wasapi-device", "Speakers", "WASAPI", true, 48_000, 2, [44_100, 48_000], [2], 64, 4096) };
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["WASAPI"]);
+        Assert.Empty(vm.ResampleWarning);
+
+        vm.SampleRate = 44_100;
+        Assert.Equal("Windows mixes this device at 48,000 Hz, so 44,100 Hz is resampled. Automatic follows the device.", vm.ResampleWarning);
+
+        vm.SampleRate = 48_000;
+        Assert.Empty(vm.ResampleWarning);
+    }
+
+    [Fact]
+    public void TheRateAndBlockLabels_ReadAsTheyDoInOtherDaws()
+    {
+        Assert.Equal(("Automatic", "48,000 Hz"), (AudioViewModel.RateLabel(0), AudioViewModel.RateLabel(48_000)));
+        Assert.Equal(("Automatic", "256 samples"), (AudioViewModel.BlockLabel(0), AudioViewModel.BlockLabel(256)));
+        Assert.Equal("480 samples / 10.00 ms", AudioViewModel.BufferDuration(480, 48_000));
     }
 
     [Fact]

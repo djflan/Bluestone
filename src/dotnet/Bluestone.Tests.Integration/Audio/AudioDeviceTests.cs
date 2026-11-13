@@ -76,6 +76,7 @@ public sealed class AudioDeviceTests
         Assert.True(engine.Statistics.Callbacks >= 20, $"Only {engine.Statistics.Callbacks} ASIO callbacks arrived from {device.Name}.");
         Assert.Contains(output.SampleRate, device.SampleRates);
         Assert.True(output.Status.DeviceBufferFrames > 0);
+        Assert.Equal(AudioCallbackThreadPolicy.Backend, output.Status.CallbackThreadPolicy);
     }
 
     [Fact]
@@ -95,6 +96,36 @@ public sealed class AudioDeviceTests
         using var input = AudioInput.Open(static (ReadOnlySpan<float> samples, int frames, int channels, in AudioCaptureBlock block) => { }, inputDevice.Id, 48_000, host: "ASIO");
         Assert.Equal(48_000, output.SampleRate);
         Assert.Equal(48_000, input.SampleRate);
+    }
+
+    [Fact]
+    public void DefaultDevice_AtTheAutomaticRateAndBlock_RunsAtItsOwnRate_OnAnAudioPriorityThread()
+    {
+        var device = RequireDevices().FirstOrDefault(d => d.IsDefault) ?? RequireDevices()[0];
+        using var engine = new AudioEngine(device.DefaultSampleRate, 256);
+        using var output = Open(engine, new AudioStreamRequest(device.Id, Host: device.Host));
+
+        output.Start();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (engine.Statistics.Callbacks < 20 && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(20);
+        }
+
+        output.Stop();
+        var status = output.Status;
+
+        Assert.Equal(device.DefaultSampleRate, status.SampleRate);
+        Assert.True(status.DeviceBufferFrames > 0);
+        if (OperatingSystem.IsWindows() && device.Host != "ASIO")
+        {
+            // WASAPI's thread runs at normal priority unless Bluestone promotes it, and then misses deadlines under load.
+            Assert.Contains(status.CallbackThreadPolicy, new[] { AudioCallbackThreadPolicy.MmcssProAudio, AudioCallbackThreadPolicy.TimeCritical });
+        }
+        else
+        {
+            Assert.Equal(AudioCallbackThreadPolicy.Backend, status.CallbackThreadPolicy);
+        }
     }
 
     [Fact]

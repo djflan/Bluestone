@@ -777,7 +777,7 @@ internal static class EngineProbes
             Devices = new PluginDeviceHost(_plugins, Session, [Sine], SampleRate, 256);
             Controller.UseDevices(Devices.Extend(DeviceCatalog.BuiltIn));
             Controller.Live.UsePlugins(Devices.InstanceOf);
-            Audio = new EngineAudio(rig.Supervisor, Controller, Session, Devices.InstanceOf, rate => Devices.SetSampleRateAsync(rate), new EngineAudioOptions { GraphDirectory = Path.Combine(files, "graphs") });
+            Audio = new EngineAudio(rig.Supervisor, Controller, Session, Devices.InstanceOf, format => Devices.SetFormatAsync(format.SampleRate, format.BlockFrames), new EngineAudioOptions { GraphDirectory = Path.Combine(files, "graphs") });
             Rig = rig;
         }
 

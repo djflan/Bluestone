@@ -123,6 +123,16 @@ On Windows, add `--host WASAPI` to select the shipped audio backend. ASIO probes
 explicitly ASIO-enabled local build (`-p:BluestoneAsio=true`, `CPAL_ASIO_DIR`, and LLVM/libclang); standard Windows
 CI and release builds remain WASAPI-only until the Steinberg agreement is signed.
 
+`--pressure cpu` keeps every core busy at normal priority, as a build or a browser does: an audio thread that the
+scheduler does not treat as audio misses its deadlines under it (ADR 0049). `--rate HZ` opens the device at another
+rate than 48 kHz, such as a rate the Windows mixer resamples:
+
+```sh
+$P --audio 10 --host WASAPI --pressure cpu --rate 48000 --buffers 480
+```
+
+The report's `callback thread` note says how the device's callback thread was scheduled.
+
 Add `--isolate` to run the probe in its own process while this one carries the load, and `--repeat 3` for repeated
 runs. Audio probes use the system default output unless `--device NAME` names one; name it, so a headset plugged in
 mid-series cannot change the device. Each run writes a JSON report to `TestResults/timing/`; compare two with `$P --compare before.json after.json`.
@@ -181,6 +191,8 @@ interface was connected; the callback probes rendered silence.
 | MIDI loopback timing | 1,216 sent/received, no drops; immediate OS hop p50 0.077 ms; thru round trip p50 0.312 ms | `--midi-loopback 3 --pressure none` |
 | Playback dispatch | High-resolution wait p50 0.32 ms, p99 0.87 ms, max 0.902 ms; spin max 3.067 ms with 32 messages over 2 ms late | `--jitter 10 --pressure none --final sleep|spin` |
 | WASAPI buffered output | 501 callbacks, zero missing/late/xrun/gap/underrun events; reported output latency 31.958 ms | `--audio 5 --pressure none --host WASAPI --buffers 128 --queue 1024` |
+| WASAPI under CPU load (2026-11-12) | Before ADR 0049, normal-priority callback thread: 7–12 gaps, longest render 10–20 ms in 10 s. After, MMCSS "Pro Audio": 0 gaps, late, missing, or xruns; longest render 0.53–0.78 ms | `--audio 10 --host WASAPI --pressure cpu --rate 44100 --buffers 256` and `--rate 48000 --buffers 480` |
+| Dune 3 in a worker (2026-11-12) | 480-frame blocks, six-note chord, 15 s. Throttled worker: 588 of 1,479 blocks over the 10 ms period (max 17.18 ms). Unthrottled with a 1 ms timer: 0 over (max 3.06 ms). Two back-to-back blocks every 20 ms at depth 2: 121 dropped with the 2 ms collect wait, 0 with the render-ahead allowance | A local harness on `PluginHostManager` (ADR 0049); not yet a probe |
 | ASIO output | Realtek ASIO default 960 frames (20 ms), zero missed/late/xrun/gap/underrun events | `--audio 5 --pressure none --host ASIO` |
 | ASIO device ownership | Output remains listed while open; input opens on the same driver | `AudioDeviceTests.AsioOutput_RemainsListedAndAllowsInputOnTheSameDriver` |
 | Engine live input | 27 notes measured; added latency 9.5 ms average, 16.8 ms maximum; above the 2 ms target | `--live 5 --engine --live-input midi --host WASAPI` |

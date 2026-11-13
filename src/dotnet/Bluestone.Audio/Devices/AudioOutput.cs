@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Bluestone.Plugins;
 
 namespace Bluestone.Audio.Devices;
 
@@ -88,9 +89,31 @@ public sealed record AudioStreamStatus(
 {
     /// <summary>The device callback's actual buffer size, or 0 until the device reports it.</summary>
     public int DeviceBufferFrames { get; init; }
+
+    /// <summary>How the device callback thread is scheduled; <see cref="AudioCallbackThreadPolicy.Unreported"/> before the first callback.</summary>
+    public AudioCallbackThreadPolicy CallbackThreadPolicy { get; init; }
 }
 
 public sealed class AudioDeviceException(string message) : Exception(message);
+
+/// <summary>How the device's callback thread is scheduled (the native layer promotes it where the backend does not).</summary>
+public enum AudioCallbackThreadPolicy
+{
+    /// <summary>No callback has run yet.</summary>
+    Unreported,
+
+    /// <summary>The backend's own thread, as the backend scheduled it (ASIO drivers, Core Audio, Linux backends).</summary>
+    Backend,
+
+    /// <summary>Registered with the Windows Multimedia Class Scheduler Service as a "Pro Audio" task.</summary>
+    MmcssProAudio,
+
+    /// <summary>MMCSS refused; the thread runs at the time-critical Windows priority.</summary>
+    TimeCritical,
+
+    /// <summary>Promotion was refused; the thread runs at normal priority.</summary>
+    Normal,
+}
 
 /// <summary>
 /// An open output stream on a device. In direct mode the renderer is called on the device's own audio thread
@@ -219,7 +242,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
             stream._openedQueue = Math.Max(stream._openedQueue, minimumFrames);
             stream._queued = ClampBufferedQueue(stream._queued, stream._minimumQueuedFrames, stream._openedQueue);
         }
-        stream._renderBlock = Math.Min(stream._queued, request.BufferFrames > 0 ? request.BufferFrames : 256);
+        stream._renderBlock = Math.Min(stream._queued, request.BufferFrames > 0 ? request.BufferFrames : status.DeviceBufferFrames > 0 ? status.DeviceBufferFrames : 256);
         return stream;
     }
 
@@ -312,6 +335,7 @@ public sealed unsafe class AudioOutput : IAudioOutput
                 (long)data.RingUnderrunFrames)
             {
                 DeviceBufferFrames = (int)Math.Min(data.DeviceBufferFrames, (uint)int.MaxValue),
+                CallbackThreadPolicy = data.CallbackThreadPolicy <= (uint)AudioCallbackThreadPolicy.Normal ? (AudioCallbackThreadPolicy)data.CallbackThreadPolicy : AudioCallbackThreadPolicy.Unreported,
             };
         }
     }
@@ -436,6 +460,13 @@ public sealed unsafe class AudioOutput : IAudioOutput
             {
                 (latency, deviceFrames) = ReadDeviceTiming();
             }
+
+            // The queue covers the device for its whole buffers; plugins collected in this wake's renders may wait until
+            // half of that has passed, one deadline for them all, so a plugin needing more than its collect wait for a
+            // block rendered back to back with another is not dropped, and even a hung one leaves the device half its
+            // cushion (ADR 0049).
+            var covered = deviceFrames > 0 ? queued / deviceFrames * deviceFrames : queued;
+            CollectBudget.Allow(Stopwatch.GetTimestamp() + (long)(covered * 0.5 * Stopwatch.Frequency / SampleRate));
 
             while (_rendering && queued < target)
             {

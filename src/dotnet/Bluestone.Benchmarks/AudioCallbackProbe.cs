@@ -13,20 +13,19 @@ namespace Bluestone.Benchmarks;
 /// node and strip still renders.
 /// </summary>
 /// <remarks>
-/// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|app|churn|full]
-/// [--sustained] [--buffers 64,128,256] [--strips 32] [--queue 0] [--isolate] [--device NAME]</c>. GC configuration comes from the
+/// Run: <c>dotnet run -c Release --project src/dotnet/Bluestone.Benchmarks -- --audio [seconds] [--pressure none|app|churn|full|cpu]
+/// [--sustained] [--buffers 64,128,256] [--rate 48000] [--strips 32] [--queue 0] [--isolate] [--device NAME]</c>. GC configuration comes from the
 /// environment (DOTNET_gcServer, DOTNET_gcConcurrent, DOTNET_GCgen0size, ...) and is recorded in the report.
 /// </remarks>
 internal static class AudioCallbackProbe
 {
-    private const int SampleRate = 48_000;
-
     public static void Run(ProbeOptions options)
     {
         var args = options.Args;
         var buffers = (Option(args, "--buffers") ?? "64,128,256").Split(',').Select(b => int.Parse(b, CultureInfo.InvariantCulture)).ToArray();
         var strips = options.Int("--strips", 32);
         var queue = options.Int("--queue", 0);
+        var rate = options.Int("--rate", 48_000);
         var host = Option(args, "--host");
         if (!AudioDevices.IsAvailable(out var problem))
         {
@@ -40,22 +39,22 @@ internal static class AudioCallbackProbe
             var settings = options.BaseSettings();
             settings["device"] = device;
             settings["buffer"] = buffer.ToString(CultureInfo.InvariantCulture);
-            settings["rate"] = SampleRate.ToString(CultureInfo.InvariantCulture);
+            settings["rate"] = rate.ToString(CultureInfo.InvariantCulture);
             settings["strips"] = strips.ToString(CultureInfo.InvariantCulture);
             settings["mode"] = queue == 0 ? "direct" : $"buffered {queue}";
             var report = new TimingReport("audio-callback", settings);
             report.Machine.WarnIfBusy();
-            Console.WriteLine($"Audio callback: {device}, {buffer} frames at {SampleRate} Hz, {strips} strips, {settings["mode"]}, pressure {settings["pressure"]}, {options.Seconds} s");
-            Measure(report, buffer, options, strips, queue, deviceId, host);
+            Console.WriteLine($"Audio callback: {device}, {buffer} frames at {rate} Hz, {strips} strips, {settings["mode"]}, pressure {settings["pressure"]}, {options.Seconds} s");
+            Measure(report, rate, buffer, options, strips, queue, deviceId, host);
             options.Finish(report);
         }
     }
 
-    private static void Measure(TimingReport report, int buffer, ProbeOptions options, int strips, int queue, string? deviceId, string? host)
+    private static void Measure(TimingReport report, int rate, int buffer, ProbeOptions options, int strips, int queue, string? deviceId, string? host)
     {
-        using var engine = new AudioEngine(SampleRate, buffer);
+        using var engine = new AudioEngine(rate, buffer);
         engine.Publish(Graph(buffer, strips));
-        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: SampleRate, BufferFrames: buffer, QueuedFrames: queue, Host: host));
+        using var output = AudioOutput.Open(engine, new AudioStreamRequest(DeviceId: deviceId, SampleRate: rate, BufferFrames: buffer, QueuedFrames: queue, Host: host));
         output.Start();
         Thread.Sleep(500); // warm-up: tiering, first callbacks
         using var stop = new CancellationTokenSource();
@@ -77,8 +76,8 @@ internal static class AudioCallbackProbe
         }
 
         output.Stop();
-        var period = (double)after.LastBufferFrames / SampleRate * 1000;
-        var expected = options.Seconds * SampleRate / Math.Max(1, after.LastBufferFrames);
+        var period = (double)after.LastBufferFrames / after.SampleRate * 1000;
+        var expected = options.Seconds * after.SampleRate / Math.Max(1, after.LastBufferFrames);
         report.Add(new Metric("audio.period", "ms", period));
         report.Add(new Metric("audio.device-buffer", "frames", after.LastBufferFrames));
         report.Add(new Metric("audio.output-latency", "ms", after.OutputLatency.TotalMilliseconds));
@@ -89,6 +88,7 @@ internal static class AudioCallbackProbe
         report.Add(new Metric("audio.xruns", "xruns", after.Xruns - before.Xruns, Target: 0));
         report.Add(new Metric("audio.gaps", "callbacks", after.Discontinuities - before.Discontinuities, Target: 0));
         report.Add(new Metric("audio.queue-underrun", "frames", after.QueueUnderrunFrames - before.QueueUnderrunFrames, Target: 0));
+        report.Notes.Add($"callback thread: {after.CallbackThreadPolicy}");
     }
 
     internal static AudioGraph Graph(int blockFrames, int strips, AudioNode? extra = null)

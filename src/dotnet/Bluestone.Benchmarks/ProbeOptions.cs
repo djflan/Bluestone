@@ -5,7 +5,7 @@ namespace Bluestone.Benchmarks;
 
 /// <summary>
 /// Options shared by the timing probes (ADR 0043):
-/// <c>[seconds] [--pressure none|app|edit|churn|full] [--sched default|timer|promote|realtime] [--report DIR|FILE.json]
+/// <c>[seconds] [--pressure none|app|edit|churn|full|cpu] [--sched default|timer|promote|realtime] [--report DIR|FILE.json]
 /// [--repeat N] [--isolate] [--host WASAPI|ASIO] [--device NAME]</c>.
 /// </summary>
 /// <remarks>
@@ -115,7 +115,31 @@ internal sealed record ProbeOptions(string[] Args, int Seconds, string Pressure,
             threads.Add(AudioCallbackProbe.Start(() => AudioCallbackProbe.FullCollections(stop)));
         }
 
+        // Every core busy at normal priority, as a build or a browser makes it: an audio thread that the scheduler does
+        // not treat as audio waits behind these.
+        if (Pressure == "cpu")
+        {
+            for (var i = 0; i < Environment.ProcessorCount; i++)
+            {
+                threads.Add(AudioCallbackProbe.Start(() => Spin(stop)));
+            }
+        }
+
         return threads;
+    }
+
+    private static void Spin(CancellationToken stop)
+    {
+        var x = 1.0;
+        while (!stop.IsCancellationRequested)
+        {
+            for (var i = 0; i < 100_000; i++)
+            {
+                x = Math.Sqrt(x + i);
+            }
+        }
+
+        GC.KeepAlive(x);
     }
 
     // What Bluestone itself does while a musician edits during loop playback: every edit evaluates the routing and

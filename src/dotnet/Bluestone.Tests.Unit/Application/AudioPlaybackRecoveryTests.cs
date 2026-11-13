@@ -17,7 +17,7 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
     private readonly EndpointDirectory _endpoints = new([]);
     private readonly PlaybackController _playback;
     private readonly FakeBackend _backend = new();
-    private readonly List<int> _prepared = [];
+    private readonly List<AudioFormat> _prepared = [];
     private readonly AudioPlayback _audio;
     private readonly VirtualClock _clock = new();
 
@@ -25,7 +25,7 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
     {
         var session = new ProjectSession();
         _playback = new PlaybackController(session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
-        _audio = new AudioPlayback(_playback, session, _ => null, backend: _backend, prepareSampleRate: Prepare, checkInterval: Timeout.InfiniteTimeSpan, clock: _clock);
+        _audio = new AudioPlayback(_playback, session, _ => null, backend: _backend, prepareFormat: Prepare, checkInterval: Timeout.InfiniteTimeSpan, clock: _clock);
     }
 
     public async ValueTask DisposeAsync()
@@ -36,9 +36,9 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         Assert.All(_backend.Opened, o => Assert.Equal(1, o.Disposals));
     }
 
-    private Task Prepare(int rate)
+    private Task Prepare(AudioFormat format)
     {
-        _prepared.Add(rate);
+        _prepared.Add(format);
         return Task.CompletedTask;
     }
 
@@ -76,7 +76,11 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         Assert.False(_audio.IsOnFallback);
         Assert.Null(_audio.Problem);
         Assert.Equal(44_100, _audio.Engine!.SampleRate);
-        Assert.Equal([44_100, 48_000, 44_100], _prepared);
+        Assert.Equal([44_100, 48_000, 44_100], _prepared.Select(f => f.SampleRate));
+
+        // The engine renders one block per device callback, and plugins are prepared for it.
+        Assert.Equal(960, _audio.Engine!.BlockFrames);
+        Assert.All(_prepared, f => Assert.Equal(960, f.BlockFrames));
     }
 
     [Fact]
@@ -397,6 +401,10 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         public bool StartFails { get; set; }
 
+        public long Discontinuities { get; set; }
+
+        public AudioCallbackThreadPolicy CallbackThreadPolicy { get; set; }
+
         public int SampleRate => rate;
 
         public int Channels => 2;
@@ -409,9 +417,10 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
 
         public AudioStreamStatus Status => Disposals > 0
             ? throw new ObjectDisposedException(nameof(FakeOutput))
-            : new AudioStreamStatus(Failed ? AudioStreamState.Failed : AudioStreamState.Running, rate, 2, 256, 256, 256, 256, 0, 0, 0, 0, 0, TimeSpan.Zero, Failed ? AudioStreamError.DeviceNotAvailable : AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, 0, 0, 0)
+            : new AudioStreamStatus(Failed ? AudioStreamState.Failed : AudioStreamState.Running, rate, 2, 256, 256, 256, 256, 0, 0, 0, Discontinuities, 0, TimeSpan.Zero, Failed ? AudioStreamError.DeviceNotAvailable : AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, 0, 0, 0)
             {
                 DeviceBufferFrames = 960,
+                CallbackThreadPolicy = CallbackThreadPolicy,
             };
 
         public void Start()

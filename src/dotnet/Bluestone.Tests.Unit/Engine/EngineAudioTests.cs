@@ -2,6 +2,7 @@ using Bluestone.Application.Audio;
 using Bluestone.Application.Engine;
 using Bluestone.Application.Sessions;
 using Bluestone.Application.Status;
+using Bluestone.Audio;
 using Bluestone.Domain.Mixing;
 using Bluestone.Engine.Protocol;
 using Bluestone.Midi.Endpoints;
@@ -55,7 +56,7 @@ public sealed class EngineAudioTests : IAsyncDisposable
 
         Assert.False(_audio.Start(new AudioSettings(true, "studio", 48_000, 128, QueuedFrames: 1024) { EngineQueuedFrames = 0, Host = "ASIO" }));
         var sent = Assert.IsType<SetAudio>(Assert.Single(link.Sent));
-        Assert.Equal(new SetAudio(sent.Request, true, "studio", 48_000, 128, 0, 256, false, Host: "ASIO"), sent);
+        Assert.Equal(new SetAudio(sent.Request, true, "studio", 48_000, 128, 0, AudioBlockSize.DefaultMaximum, false, Host: "ASIO"), sent);
         Assert.True(_audio.IsStarting);
         Assert.False(_audio.IsWaitingForDevice);
         Assert.True(_audio.RendersInEngine);

@@ -1,15 +1,17 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Bluestone.Presentation"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             xmlns:sys="using:System"
              x:Class="Bluestone.Desktop.Views.AudioSettingsPage"
              x:DataType="vm:AudioViewModel"
              AutomationProperties.Name="Audio settings">
-  <!-- Audio output (ADR 0032): device, rate, buffer, render-ahead, the engine on or off, a test tone, and what it is doing. -->
+  <!-- Audio output (ADR 0032): driver, device, rate and block size (Automatic follows the device), render-ahead, the engine on or off, a test tone, and what it is doing. -->
   <StackPanel Classes="settingsGroups">
     <StackPanel Classes="settingsGroup">
       <TextBlock Classes="overline" Text="OUTPUT" />
       <Grid Classes="settingRow" ColumnDefinitions="180,*">
-        <TextBlock Classes="label" Text="Host" />
+        <TextBlock Classes="label" Text="Driver" />
         <ComboBox Grid.Column="1" ItemsSource="{Binding Hosts}" SelectedItem="{Binding Host}" HorizontalAlignment="Stretch" AutomationProperties.Name="Audio host" />
       </Grid>
       <Grid Classes="settingRow" ColumnDefinitions="180,*">
@@ -22,14 +24,30 @@
       </Grid>
       <Grid Classes="settingRow" ColumnDefinitions="180,*">
         <TextBlock Classes="label" Text="Sample rate" />
-        <ComboBox Grid.Column="1" ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SelectedSampleRate}" HorizontalAlignment="Stretch" AutomationProperties.Name="Sample rate" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SelectedSampleRate}" HorizontalAlignment="Stretch" AutomationProperties.Name="Sample rate">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="sys:Int32">
+              <TextBlock Text="{Binding Converter={x:Static theme:AudioChoiceConverter.Rate}}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
       </Grid>
+      <TextBlock Classes="settingHint warning" TextWrapping="Wrap" Text="{Binding ResampleWarning}" IsVisible="{Binding ResampleWarning.Length}"
+                 AutomationProperties.Name="Resampling warning" />
       <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding !IsAsioHost}">
-        <TextBlock Classes="label" Text="Buffer (frames)" />
-        <ComboBox Grid.Column="1" ItemsSource="{Binding BufferSizes}" SelectedItem="{Binding SelectedBufferFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Buffer size" />
+        <TextBlock Classes="label" Text="Block size" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding BufferSizes}" SelectedItem="{Binding SelectedBufferFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Buffer size">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="sys:Int32">
+              <TextBlock Text="{Binding Converter={x:Static theme:AudioChoiceConverter.Block}}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
       </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap" IsVisible="{Binding IsAsioHost}"
-                 Text="Buffer size is controlled by the ASIO driver. Adjust it in the driver's control utility before starting audio." />
+                 Text="Block size is set by the ASIO driver. Adjust it in the driver's control utility before starting audio." />
+      <TextBlock Classes="settingHint" TextWrapping="Wrap" Text="{Binding DeviceFormat}" IsVisible="{Binding DeviceFormat.Length}"
+                 AutomationProperties.Name="Device format" />
     </StackPanel>
 
     <StackPanel Classes="settingsGroup">
@@ -61,6 +79,8 @@
       </StackPanel>
       <TextBlock x:Name="AudioStatus" Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.Name="Audio status" />
       <TextBlock Text="{Binding MasterLevel}" Classes="secondary" FontFamily="{StaticResource Font.Mono}" FontSize="{StaticResource FontSize.Small}" />
+      <TextBlock Text="{Binding Health}" Classes="settingHint" Classes.warning="{Binding HasDropouts}" TextWrapping="Wrap"
+                 IsVisible="{Binding Health.Length}" AutomationProperties.Name="Audio dropouts" />
       <TextBlock Text="{Binding Latency}" Classes="secondary" TextWrapping="Wrap" />
       <TextBlock Text="{Binding Problems}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding Problems.Length}" />
     </StackPanel>

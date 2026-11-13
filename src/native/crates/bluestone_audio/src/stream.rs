@@ -91,7 +91,8 @@ pub struct StreamStatus {
     pub errors: u32,
     /// The device's sample format: 0 f32, 1 i16, 2 i32, 3 u16, 4 f64, 5 i8, 6 u8, 7 i24, 8 u24, 9 u32, 10 i64, 11 u64.
     pub sample_format: u32,
-    pub reserved: u32,
+    /// How the device callback thread is scheduled: a `priority::POLICY_*` (0 until the first callback).
+    pub callback_thread_policy: u32,
     /// Longest call of the render function, in nanoseconds, measured around the call (so it includes entering
     /// and leaving .NET, and any wait for a .NET garbage collection to finish).
     pub render_max_ns: i64,
@@ -130,6 +131,8 @@ pub(crate) struct Shared {
     render_max_ns: AtomicI64,
     render_total_ns: AtomicU64,
     late_renders: AtomicU64,
+    /// A `priority::POLICY_*`; `POLICY_UNREPORTED` until the first callback promotes its thread.
+    callback_policy: AtomicU32,
     histogram: Histogram,
 }
 
@@ -142,8 +145,9 @@ impl Default for Histogram {
 }
 
 impl Shared {
-    /// Records one render call's duration. Lock-free and allocation-free.
-    fn record_render(&self, elapsed: Duration, frames: u32, sample_rate: u32) {
+    /// Records one render call's duration; `may_be_late` counts it in `late_renders` when it overran its block.
+    /// Lock-free and allocation-free.
+    fn record_render(&self, elapsed: Duration, frames: u32, sample_rate: u32, may_be_late: bool) {
         let ns = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
         self.render_total_ns.fetch_add(ns, Ordering::Relaxed);
         self.render_max_ns
@@ -152,7 +156,8 @@ impl Shared {
             .unwrap_or(usize::MAX)
             .min(HISTOGRAM_BUCKETS - 1);
         self.histogram.0[bucket].fetch_add(1, Ordering::Relaxed);
-        if sample_rate > 0
+        if may_be_late
+            && sample_rate > 0
             && u128::from(ns) * u128::from(sample_rate) > u128::from(frames) * 1_000_000_000
         {
             self.late_renders.fetch_add(1, Ordering::Relaxed);
@@ -189,7 +194,13 @@ impl Source {
             }
             Source::Buffered(ring) => ring.read(data),
         }
-        shared.record_render(started.elapsed(), frames, block.sample_rate);
+        // The first callback's warm-up is not a late render (see `Clock::block`); its duration still counts.
+        shared.record_render(
+            started.elapsed(),
+            frames,
+            block.sample_rate,
+            block.callback_index > 0,
+        );
     }
 }
 
@@ -207,6 +218,11 @@ struct Clock {
 
 impl Clock {
     fn block(&mut self, shared: &Shared, info: &OutputCallbackInfo, frames: u32) -> BlockInfo {
+        if shared.callback_policy.load(Ordering::Relaxed) == crate::priority::POLICY_UNREPORTED {
+            shared
+                .callback_policy
+                .store(crate::priority::promote_current_thread(), Ordering::Relaxed);
+        }
         let stamp = info.timestamp();
         let latency = stamp
             .playback
@@ -218,7 +234,11 @@ impl Clock {
             && is_discontinuity(elapsed.as_nanos(), previous_frames, self.sample_rate)
         {
             flags |= FLAG_DISCONTINUITY;
-            shared.discontinuities.fetch_add(1, Ordering::Relaxed);
+            // The first callback warms up (its thread's promotion, the first call into .NET) before anything is
+            // heard, so the callback after it coming late is not counted as a dropout.
+            if self.index > 1 {
+                shared.discontinuities.fetch_add(1, Ordering::Relaxed);
+            }
         }
         self.previous = Some((stamp.callback, frames));
         let block = BlockInfo {
@@ -326,6 +346,11 @@ impl OutputStream {
         let (config, format, buffer_range) = choose_config(&device, request)?;
         let shared = Arc::new(Shared {
             min_frames: AtomicU32::new(u32::MAX),
+            callback_policy: AtomicU32::new(if crate::priority::promotes(host_name) {
+                crate::priority::POLICY_UNREPORTED
+            } else {
+                crate::priority::POLICY_BACKEND
+            }),
             ..Shared::default()
         });
         let channels = u32::from(config.channels);
@@ -505,7 +530,7 @@ impl OutputStream {
             last_error: s.last_error.load(Ordering::Relaxed),
             errors: s.errors.load(Ordering::Relaxed),
             sample_format: self.format,
-            reserved: 0,
+            callback_thread_policy: s.callback_policy.load(Ordering::Relaxed),
             render_max_ns: s.render_max_ns.load(Ordering::Relaxed),
             render_total_ns: s.render_total_ns.load(Ordering::Relaxed),
             late_renders: s.late_renders.load(Ordering::Relaxed),

@@ -9,8 +9,11 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Bluestone.Presentation;
 
-/// <summary>An audio device choice; <see cref="Id"/> is null for the system's default output.</summary>
-public sealed record AudioDeviceOption(string? Id, string Name, IReadOnlyList<int> SampleRates, int MinBufferFrames = 0, int MaxBufferFrames = 0)
+/// <summary>
+/// An audio device choice; <see cref="Id"/> is null for the system's default output. <see cref="DefaultSampleRate"/> is
+/// the device's own rate (for WASAPI, the Windows mixer's), or 0 when unknown.
+/// </summary>
+public sealed record AudioDeviceOption(string? Id, string Name, IReadOnlyList<int> SampleRates, int MinBufferFrames = 0, int MaxBufferFrames = 0, int DefaultSampleRate = 0)
 {
     public override string ToString() => Name;
 }
@@ -75,6 +78,18 @@ public sealed partial class AudioViewModel : ObservableObject
 
     [ObservableProperty]
     private string _masterLevel = string.Empty;
+
+    /// <summary>What the open device actually runs at, such as "48 kHz · 480 samples / 10.00 ms"; empty while audio is off.</summary>
+    [ObservableProperty]
+    private string _deviceFormat = string.Empty;
+
+    /// <summary>Dropouts since the device opened, and how its callback thread is scheduled; empty while audio is off.</summary>
+    [ObservableProperty]
+    private string _health = string.Empty;
+
+    /// <summary>The device dropped audio, or its callback thread runs at normal priority: <see cref="Health"/> is a warning.</summary>
+    [ObservableProperty]
+    private bool _hasDropouts;
 
     /// <param name="audio">The audio, in this process or in the engine process.</param>
     /// <param name="store">Where settings are saved.</param>
@@ -159,6 +174,24 @@ public sealed partial class AudioViewModel : ObservableObject
 
     public bool IsAsioHost => Host?.Name == "ASIO";
 
+    /// <summary>
+    /// Set when WASAPI shared mode will resample: a fixed rate that is not the rate Windows mixes the device at. Empty
+    /// otherwise. (ASIO and Core Audio switch the device to the chosen rate instead.)
+    /// </summary>
+    public string ResampleWarning => Host?.Name == "WASAPI" && SampleRate != AudioSettings.Automatic && Device is { DefaultSampleRate: > 0 } device && device.DefaultSampleRate != SampleRate
+        ? string.Create(CultureInfo.InvariantCulture, $"Windows mixes this device at {device.DefaultSampleRate:N0} Hz, so {SampleRate:N0} Hz is resampled. Automatic follows the device.")
+        : string.Empty;
+
+    /// <summary>A sample rate choice as the list shows it: "Automatic" for <see cref="AudioSettings.Automatic"/>.</summary>
+    public static string RateLabel(int rate) => rate == AudioSettings.Automatic ? "Automatic" : string.Create(CultureInfo.InvariantCulture, $"{rate:N0} Hz");
+
+    /// <summary>A block size choice as the list shows it: "Automatic" for <see cref="AudioSettings.Automatic"/>.</summary>
+    public static string BlockLabel(int frames) => frames == AudioSettings.Automatic ? "Automatic" : string.Create(CultureInfo.InvariantCulture, $"{frames} samples");
+
+    /// <summary>A device buffer as samples and duration, as Bitwig and most DAWs show it: "480 samples / 10.00 ms".</summary>
+    public static string BufferDuration(int frames, int rate) =>
+        string.Create(CultureInfo.InvariantCulture, $"{frames} samples / {frames * 1000.0 / rate:0.00} ms");
+
     public bool CanRefreshDevices => !_audio.RendersInEngine || !_audio.IsRunning;
 
     /// <summary>Plays a 440 Hz tone at −18 dBFS through the open device.</summary>
@@ -198,12 +231,73 @@ public sealed partial class AudioViewModel : ObservableObject
         if (!_audio.IsRunning || _audio.MeterOf(null) is not { } reading)
         {
             MasterLevel = string.Empty;
+            UpdateHealth();
             return;
         }
 
         MasterLevel = string.Create(CultureInfo.InvariantCulture, $"Master peak {Decibels(reading.PeakLeft)} / {Decibels(reading.PeakRight)} dBFS");
         Latency = LatencyText();
+        UpdateHealth();
     }
+
+    // Dropouts in words, and the callback thread's priority. A pop is one of: a callback the device delivered late (its
+    // thread was not run in time), a render longer than its block, an underrun the driver reported, or (with
+    // render-ahead) frames the queue did not have.
+    private void UpdateHealth()
+    {
+        if (!_audio.IsRunning || _audio.Telemetry is not { } telemetry)
+        {
+            Health = string.Empty;
+            HasDropouts = false;
+            return;
+        }
+
+        var parts = new List<string>();
+        if (telemetry.Discontinuities > 0)
+        {
+            parts.Add(Count(telemetry.Discontinuities, "late device callback"));
+        }
+
+        if (telemetry.LateRenders > 0)
+        {
+            parts.Add(Count(telemetry.LateRenders, "render longer than its block", "renders longer than their block"));
+        }
+
+        if (telemetry.Xruns > 0)
+        {
+            parts.Add(Count(telemetry.Xruns, "underrun reported by the driver", "underruns reported by the driver"));
+        }
+
+        if (telemetry.QueueUnderrunFrames > 0)
+        {
+            parts.Add(Count(telemetry.QueueUnderrunFrames, "frame missing from render-ahead", "frames missing from render-ahead"));
+        }
+
+        if (telemetry.PluginFailedBlocks > 0)
+        {
+            parts.Add(Count(telemetry.PluginFailedBlocks, "plugin block played as silence", "plugin blocks played as silence"));
+        }
+
+        if (telemetry.RenderFaults > 0)
+        {
+            parts.Add(Count(telemetry.RenderFaults, "failed render", "failed renders"));
+        }
+
+        var thread = telemetry.CallbackThreadPolicy switch
+        {
+            AudioCallbackThreadPolicy.MmcssProAudio => "audio thread at MMCSS \u201cPro Audio\u201d priority",
+            AudioCallbackThreadPolicy.TimeCritical => "audio thread at time-critical priority (MMCSS refused)",
+            AudioCallbackThreadPolicy.Normal => "audio thread at normal priority: Windows refused audio priority",
+            AudioCallbackThreadPolicy.Backend => "audio thread run by the driver",
+            _ => null,
+        };
+        var dropouts = parts.Count == 0 ? "No dropouts" : $"Dropouts: {string.Join(", ", parts)}";
+        Health = thread is null ? $"{dropouts}." : $"{dropouts} \u00b7 {thread}.";
+        HasDropouts = parts.Count > 0 || telemetry.CallbackThreadPolicy == AudioCallbackThreadPolicy.Normal;
+    }
+
+    private static string Count(long count, string one, string? many = null) =>
+        string.Create(CultureInfo.InvariantCulture, $"{count:N0} {(count == 1 ? one : many ?? one + "s")}");
 
     // Delay compensation in the graph, the queue in use, and what live notes measured.
     private string LatencyText()
@@ -215,11 +309,6 @@ public sealed partial class AudioViewModel : ObservableObject
 
         var rate = (double)stream.SampleRate;
         var text = string.Create(CultureInfo.InvariantCulture, $"Delay compensation {stream.LatencyFrames / rate * 1000:0.#} ms; render-ahead {stream.QueuedFrames / rate * 1000:0.#} ms{(_audio.IsLiveQueue ? " (live)" : string.Empty)}.");
-        if (_audio.Telemetry is { } telemetry && (telemetry.Xruns > 0 || telemetry.QueueUnderrunFrames > 0))
-        {
-            text += string.Create(CultureInfo.InvariantCulture, $" {telemetry.Xruns} dropouts reported by the device, {telemetry.QueueUnderrunFrames} frames the render-ahead queue missed.");
-        }
-
         var live = _audio.LiveLatency;
         if (live.Count > 0)
         {
@@ -291,19 +380,22 @@ public sealed partial class AudioViewModel : ObservableObject
         {
             LoadDevices(value.Name, selectedDevice: null);
         }
+
+        OnPropertyChanged(nameof(ResampleWarning));
     }
 
     partial void OnDeviceChanged(AudioDeviceOption? value)
     {
         SampleRates.Clear();
+        SampleRates.Add(AudioSettings.Automatic);
         foreach (var rate in value?.SampleRates is { Count: > 0 } rates ? rates : StandardRates)
         {
             SampleRates.Add(rate);
         }
 
-        if (!SampleRates.Contains(SampleRate) && SampleRates.Count > 0)
+        if (!SampleRates.Contains(SampleRate))
         {
-            SampleRate = SampleRates.Contains(48_000) ? 48_000 : SampleRates[0];
+            SampleRate = AudioSettings.Automatic;
         }
 
         var minimum = value?.MinBufferFrames ?? 0;
@@ -315,6 +407,7 @@ public sealed partial class AudioViewModel : ObservableObject
         }
 
         BufferSizes.Clear();
+        BufferSizes.Add(AudioSettings.Automatic);
         foreach (var size in choices)
         {
             BufferSizes.Add(size);
@@ -322,16 +415,21 @@ public sealed partial class AudioViewModel : ObservableObject
 
         if (!BufferSizes.Contains(BufferFrames))
         {
-            BufferFrames = BufferSizes.MinBy(size => Math.Abs((long)size - BufferFrames));
+            BufferFrames = choices.MinBy(size => Math.Abs((long)size - BufferFrames));
         }
 
         // Rebuilding the choices cleared the dropdowns' selections even where the value itself did not change.
         OnPropertyChanged(nameof(SelectedSampleRate));
         OnPropertyChanged(nameof(SelectedBufferFrames));
         OnPropertyChanged(nameof(IsAsioHost));
+        OnPropertyChanged(nameof(ResampleWarning));
     }
 
-    partial void OnSampleRateChanged(int value) => OnPropertyChanged(nameof(SelectedSampleRate));
+    partial void OnSampleRateChanged(int value)
+    {
+        OnPropertyChanged(nameof(SelectedSampleRate));
+        OnPropertyChanged(nameof(ResampleWarning));
+    }
 
     partial void OnBufferFramesChanged(int value) => OnPropertyChanged(nameof(SelectedBufferFrames));
 
@@ -376,10 +474,10 @@ public sealed partial class AudioViewModel : ObservableObject
             ?? [.. StandardRates];
         var defaultDevice = hostDevices.FirstOrDefault(d => d.IsDefault);
         Devices.Clear();
-        Devices.Add(new AudioDeviceOption(null, "System default output", fallback, defaultDevice?.MinBufferFrames ?? 0, defaultDevice?.MaxBufferFrames ?? 0));
+        Devices.Add(new AudioDeviceOption(null, "System default output", fallback, defaultDevice?.MinBufferFrames ?? 0, defaultDevice?.MaxBufferFrames ?? 0, defaultDevice?.DefaultSampleRate ?? 0));
         foreach (var device in hostDevices)
         {
-            Devices.Add(new AudioDeviceOption(device.Id, $"{device.Name} ({device.Host})", [.. device.SampleRates], device.MinBufferFrames, device.MaxBufferFrames));
+            Devices.Add(new AudioDeviceOption(device.Id, $"{device.Name} ({device.Host})", [.. device.SampleRates], device.MinBufferFrames, device.MaxBufferFrames, device.DefaultSampleRate));
         }
 
         if (selectedDevice is not null && Devices.All(d => d.Id != selectedDevice))
@@ -397,6 +495,12 @@ public sealed partial class AudioViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(CanRefreshDevices));
+        if (_audio.Stream is null)
+        {
+            DeviceFormat = string.Empty;
+            UpdateHealth();
+        }
+
         if (_audio.Stream is { } stream)
         {
             var queue = stream.QueuedFrames > 0 ? string.Create(CultureInfo.InvariantCulture, $", {stream.QueuedFrames * 1000.0 / stream.SampleRate:0.#} ms render-ahead") : string.Empty;
@@ -408,6 +512,9 @@ public sealed partial class AudioViewModel : ObservableObject
             var where = _audio.RendersInEngine ? " in the engine" : string.Empty;
             var deviceBuffer = stream.DeviceBufferFrames > 0 ? $", {stream.DeviceBufferFrames}-frame device buffer" : string.Empty;
             Status = string.Create(CultureInfo.InvariantCulture, $"Audio is on{where}: {stream.SampleRate} Hz, {stream.Channels} channels{deviceBuffer}, {stream.BlockFrames}-frame render blocks{queue}.");
+            DeviceFormat = stream.DeviceBufferFrames > 0
+                ? string.Create(CultureInfo.InvariantCulture, $"Running at {stream.SampleRate / 1000.0:0.###} kHz \u00b7 {BufferDuration(stream.DeviceBufferFrames, stream.SampleRate)}")
+                : string.Create(CultureInfo.InvariantCulture, $"Running at {stream.SampleRate / 1000.0:0.###} kHz");
             if (_audio.Problem is { } fallback)
             {
                 Status += $" {fallback}";

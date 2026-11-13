@@ -409,7 +409,7 @@ internal sealed class AudioHost : IDisposable
         // The stand-in (if any) closes only once the chosen device is open.
         Close();
         var rate = output.SampleRate;
-        var block = Math.Clamp(wanted.BufferFrames, 32, Math.Max(32, wanted.MaxBlockFrames));
+        var block = AudioBlockSize.For(output.Status.DeviceBufferFrames, wanted.BufferFrames, wanted.MaxBlockFrames);
         var engine = new AudioEngine(rate, block, streamFromDisk: !_test)
         {
             TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null,
@@ -764,7 +764,8 @@ internal sealed class AudioHost : IDisposable
             failed,
             graph.LatencyFrames,
             output.QueuedFrames,
-            _liveQueue);
+            _liveQueue,
+            (int)stream.CallbackThreadPolicy);
         var junctions = ImmutableArray.CreateBuilder<StripMeter>();
         foreach (var (key, meter) in realizer.WatchedJunctions)
         {

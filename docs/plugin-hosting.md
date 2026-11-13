@@ -263,7 +263,13 @@ the block in flight is never collected (the output moves one block earlier); goi
 device callback every collect waits only what is left of the block's shared budget (60% of the block's period,
 `CollectBudget`), never the full `CollectWait`. A depth-1 block that misses it is silent; after 3 misses within 1,000 blocks the instance falls back to depth 2 until depth
 1 is asked for again after another depth (`PipelineDepthTests`). In Bluestone's own process every instance keeps the
-manager's depth.
+manager's depth, and its render-ahead thread lets collects wait past `CollectWait` for up to half the time its queue
+covers the device for (`CollectBudget.Allow`, ADR 0049), so a block rendered back to back with another is not dropped
+just because it was given no period to run in.
+
+Each worker opts out of Windows power throttling and asks for a 1 ms timer when it starts (ADR 0049). Without that,
+Windows 11 treats a windowless, silent worker as background work, and a plugin whose own threads wait with timeouts
+(Dune 3) woke on the ~16 ms tick.
 
 `TryCollect` spins for at most `CollectWait`. A block that is not done by then is **late**: Bluestone withdraws it if
 the worker has not started it, otherwise abandons it, and the failure policy decides the output. When an abandoned
