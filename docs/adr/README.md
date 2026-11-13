@@ -36,7 +36,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0029](0029-rename-to-bluestone.md) | The project is renamed Bluestone, with no compatibility for Cadence files | Accepted |
 | [0030](0030-group-tracks.md) | Group tracks: mute and solo reach members, membership routes, folding is saved | Accepted; amends 0021 and engineering-handoff decision 11 |
 | [0031](0031-hardware-parameter-automation.md) | Hardware parameter automation through profile parameter maps | Accepted; amends 0007 and 0024 |
-| [0032](0032-audio-engine.md) | Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport | Accepted; amended by 0035 and 0043 |
+| [0032](0032-audio-engine.md) | Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport | Accepted; amended by 0035, 0043, and 0049 |
 | [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST 3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
 | [0034](0034-plugin-hosting-modes.md) | Plugin hosting modes: how plugins share worker processes | Accepted; amends 0025 |
 | [0035](0035-live-input-and-delay-compensation.md) | Live input through every device, a live render-ahead queue, and plugin delay compensation | Accepted; amends 0028 and 0032; amended by 0043 |
@@ -50,9 +50,10 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0043](0043-timing-targets-and-measurement.md) | Timing targets, how they are measured, and how C# meets them | Accepted; amends 0012, 0026, 0032, and 0035 |
 | [0044](0044-engine-process.md) | A separate C# engine process for real-time work | Accepted |
 | [0045](0045-winmm-midi-input.md) | Windows MIDI input and WinMM endpoint polling | Accepted |
-| [0046](0046-windows-asio-audio-host.md) | ASIO audio host on Windows x64 | Accepted |
+| [0046](0046-windows-asio-audio-host.md) | ASIO audio host on Windows x64 | Accepted; amended by 0049 |
 | [0047](0047-windows-precise-wait-and-measurements.md) | Windows precise waits and native timing evidence | Accepted |
 | [0048](0048-plugin-editor-window-header.md) | Plugin editor windows: a Bluestone header, and floating above Bluestone | Accepted; amends 0040 |
+| [0049](0049-audio-thread-priority-and-automatic-format.md) | Audio and plugin-worker scheduling, and Automatic sample rate and block size | Accepted; amends 0032 and 0046 |
 
 ## Template
 

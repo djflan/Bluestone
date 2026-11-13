@@ -71,6 +71,7 @@ public sealed partial class EngineChannel
                 writer.Int32(counters.LatencyFrames);
                 writer.Int32(counters.QueuedFrames);
                 writer.Bool(counters.LiveQueue);
+                writer.Int32(counters.CallbackThreadPolicy);
                 writer.Int64(status.Live.Notes);
                 writer.Int64(status.Live.Average);
                 writer.Int64(status.Live.Min);
@@ -199,7 +200,8 @@ public sealed partial class EngineChannel
                         reader.NonNegative(),
                         reader.Int32In(0, int.MaxValue),
                         reader.Int32In(0, EngineLimits.MaxQueuedFrames),
-                        reader.Bool());
+                        reader.Bool(),
+                        reader.Int32In(0, EngineLimits.MaxCallbackThreadPolicy));
                     var live = new LiveLatencySpec(reader.NonNegative(), reader.Int64(), reader.Int64(), reader.Int64(), reader.NonNegative());
                     var junctions = ImmutableArray.CreateBuilder<StripMeter>(reader.Count(EngineLimits.MaxWatchedJunctions));
                     for (var i = 0; i < junctions.Capacity; i++)

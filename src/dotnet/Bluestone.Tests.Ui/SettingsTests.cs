@@ -27,6 +27,76 @@ public sealed class SettingsTests : IDisposable
     private AudioViewModel Audio(AppUnderTest app, AudioPlayback audio) =>
         new(audio, new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json")), new ImmediateDispatcher(), () => []);
 
+    [Theory]
+    [InlineData(1040)]
+    [InlineData(1440)]
+    public Task TheAudioPage_ShowsWhatTheDeviceRunsAt_ResamplingAndDropouts(double width) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = width;
+        app.Window.Height = 900;
+        var backend = new DroppingBackend();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var audioSettings = new AudioViewModel(audio, new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json")), new ImmediateDispatcher(), backend.ListDevices, listHosts: () => ["WASAPI"]);
+        app.Window.AttachAudio(audioSettings);
+        app.Window.ShowSettings(SettingsPage.Audio);
+        await app.SettleTransitionsAsync();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        app.Choose(AppUnderTest.ComboNamed(page, "Sample rate"), r => r is 44_100);
+        app.Choose(AppUnderTest.ComboNamed(page, "Buffer size"), b => b is AudioSettings.Automatic);
+        audioSettings.StartCommand.Execute(null);
+        audioSettings.RefreshMeters();
+        app.Settle();
+
+        TextBlock Named(string name) => AppUnderTest.Within<TextBlock>(page, t => Avalonia.Automation.AutomationProperties.GetName(t) == name);
+        Assert.True(Named("Resampling warning").IsEffectivelyVisible);
+        Assert.Equal("Running at 44.1 kHz · 441 samples / 10.00 ms", Named("Device format").Text);
+        var health = Named("Audio dropouts");
+        Assert.True(health.IsEffectivelyVisible);
+        Assert.Contains("warning", health.Classes);
+        Assert.Equal("Automatic", AppUnderTest.ComboNamed(page, "Buffer size").GetVisualDescendants().OfType<TextBlock>().First(t => t.IsEffectivelyVisible).Text);
+        Assert.True(File.Exists(app.SaveFrame($"settings-audio-format-{(int)width}")));
+        audioSettings.StopCommand.Execute(null);
+    });
+
+    // A WASAPI device mixed at 48 kHz, opened at 44.1 kHz, whose callback has come late twice.
+    private sealed class DroppingBackend : IAudioBackend
+    {
+        public IReadOnlyList<AudioDeviceInfo> ListDevices() =>
+            [new("wasapi:speakers", "Speakers", "WASAPI", true, 48_000, 2, [44_100, 48_000], [2], 64, 4096)];
+
+        public IAudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request) => new Output(request.SampleRate);
+
+        private sealed class Output(int rate) : IAudioOutput
+        {
+            public int SampleRate => rate;
+
+            public int Channels => 2;
+
+            public int QueuedFrames => 0;
+
+            public string? RenderThreadPolicy => null;
+
+            public AudioStreamStatus Status => new(AudioStreamState.Running, rate, 2, 0, 441, 441, 441, 1000, 441_000, 0, 2, 0, TimeSpan.Zero, AudioStreamError.None, 0, TimeSpan.Zero, TimeSpan.Zero, 0, 0, 0, 0)
+            {
+                DeviceBufferFrames = 441,
+                CallbackThreadPolicy = AudioCallbackThreadPolicy.MmcssProAudio,
+            };
+
+            public void SetQueuedFrames(int frames)
+            {
+            }
+
+            public void Start()
+            {
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+    }
+
     [Fact]
     public Task Settings_TakesTheWorkspacesPlace_AndGivesItBackUnchanged_WithoutTouchingTheProject() => HeadlessApp.RunAsync(async () =>
     {
@@ -145,15 +215,15 @@ public sealed class SettingsTests : IDisposable
         app.Choose(device, d => d is AudioDeviceOption { Id: "wasapi:monitor" });
         AssertSelected(44_100, 128);
 
-        // Narrower capabilities: the supported rate and the nearest buffer are chosen.
+        // Narrower capabilities: the rate follows the device (Automatic) and the nearest buffer is chosen.
         app.Choose(device, d => d is AudioDeviceOption { Id: "wasapi:headset" });
-        AssertSelected(48_000, 512);
+        AssertSelected(AudioSettings.Automatic, 512);
 
         app.Choose(device, d => d is AudioDeviceOption { Id: "wasapi:speakers" });
-        AssertSelected(48_000, 512);
+        AssertSelected(AudioSettings.Automatic, 512);
 
         app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Refresh audio devices"));
-        AssertSelected(48_000, 512);
+        AssertSelected(AudioSettings.Automatic, 512);
 
         audioSettings.SampleRate = 96_000;
         audioSettings.BufferFrames = 256;

@@ -247,11 +247,12 @@ public partial class App : Avalonia.Application
     /// </summary>
     private static void ComposeAudio(MainWindow window, ProjectSession session, PlaybackController playback, PluginDeviceHost devices, MainViewModel viewModel)
     {
-        // Plugins run at the device's rate: each time a device opens, they are restarted at its rate on the UI thread.
-        Func<int, Task> prepare = rate => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetSampleRateAsync(rate));
+        // Plugins run at the device's rate and the engine's block: each time a device opens, they are restarted at them on
+        // the UI thread.
+        Func<AudioFormat, Task> prepare = format => Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => devices.SetFormatAsync(format.SampleRate, format.BlockFrames));
         IAudioPlayback audio = _engine is { } engine
             ? new EngineAudio(engine, playback, session, devices.InstanceOf, prepare)
-            : new AudioPlayback(playback, session, devices.InstanceOf, prepareSampleRate: prepare);
+            : new AudioPlayback(playback, session, devices.InstanceOf, prepareFormat: prepare);
         if (audio is EngineAudio engineAudio)
         {
             playback.AudioReady = engineAudio.WhenReadyAsync;

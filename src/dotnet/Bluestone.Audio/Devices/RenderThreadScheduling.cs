@@ -7,7 +7,8 @@ namespace Bluestone.Audio.Devices;
 /// where an ordinary user process may: macOS's real-time time-constraint policy, the Windows MMCSS "Pro Audio" task,
 /// and on Linux <c>SCHED_FIFO</c>, which needs an rtprio limit (PipeWire and JACK set-ups grant one; otherwise it is
 /// refused and the thread stays at normal priority). .NET's own <see cref="ThreadPriority"/> only has an effect on
-/// Windows. The device callback thread is the backend's own real-time thread and is not changed here.
+/// Windows. The device callback thread is promoted in the native layer where the backend leaves it at normal priority
+/// (WASAPI); see <see cref="AudioCallbackThreadPolicy"/>.
 /// </summary>
 internal static partial class RenderThreadScheduling
 {

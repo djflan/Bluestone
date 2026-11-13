@@ -34,7 +34,7 @@ public sealed class AudioPlayback : IAudioPlayback
     private readonly Func<DeviceId, PluginInstance?> _instances;
     private readonly int _maxBlockFrames;
     private readonly IAudioBackend _backend;
-    private readonly Func<int, Task>? _prepareSampleRate;
+    private readonly Func<AudioFormat, Task>? _prepareFormat;
     private readonly TimeSpan _checkInterval;
     private readonly IMonotonicClock _clock;
     private readonly Lock _gate = new();
@@ -56,11 +56,14 @@ public sealed class AudioPlayback : IAudioPlayback
     /// <param name="playback">The MIDI playback controller whose transport the audio follows.</param>
     /// <param name="session">The project.</param>
     /// <param name="instances">The running plugin instance of a device, if any.</param>
-    /// <param name="maxBlockFrames">The block size plugin instances accept; the engine renders blocks no larger.</param>
+    /// <param name="maxBlockFrames">
+    /// The largest block the engine renders; within it, the block follows the device's callback (see
+    /// <see cref="AudioBlockSize"/>).
+    /// </param>
     /// <param name="backend">Where streams come from; the operating system's devices by default.</param>
-    /// <param name="prepareSampleRate">
-    /// Called with the device's rate whenever a device opens, to run plugin instances at it (they are silent at any
-    /// other rate); the graph is rebuilt when it completes.
+    /// <param name="prepareFormat">
+    /// Called with the device's rate and the engine's block whenever a device opens, to run plugin instances at them
+    /// (they are silent at any other rate or with a smaller block); the graph is rebuilt when it completes.
     /// </param>
     /// <param name="checkInterval">How often the device is checked (and the transport aligned); infinite for tests that call <see cref="CheckDevice"/>.</param>
     /// <param name="clock">The monotonic clock used for retry deadlines; tests may provide a virtual clock.</param>
@@ -68,9 +71,9 @@ public sealed class AudioPlayback : IAudioPlayback
         PlaybackController playback,
         ProjectSession session,
         Func<DeviceId, PluginInstance?> instances,
-        int maxBlockFrames = 256,
+        int maxBlockFrames = AudioBlockSize.DefaultMaximum,
         IAudioBackend? backend = null,
-        Func<int, Task>? prepareSampleRate = null,
+        Func<AudioFormat, Task>? prepareFormat = null,
         TimeSpan? checkInterval = null,
         IMonotonicClock? clock = null)
     {
@@ -79,7 +82,7 @@ public sealed class AudioPlayback : IAudioPlayback
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
         _maxBlockFrames = maxBlockFrames;
         _backend = backend ?? SystemAudioBackend.Instance;
-        _prepareSampleRate = prepareSampleRate;
+        _prepareFormat = prepareFormat;
         _checkInterval = checkInterval ?? DefaultCheckInterval;
         _clock = clock ?? SystemMonotonicClock.Instance;
         _playback.Refreshed += (_, _) => _ = Task.Run(Rebuild);
@@ -143,7 +146,10 @@ public sealed class AudioPlayback : IAudioPlayback
             {
                 var status = output.Status;
                 var failed = _graph?.PluginNodes.Values.Sum(n => n.FailedBlocks) ?? 0;
-                return new AudioTelemetry(status.Callbacks, status.Xruns, status.Discontinuities, status.LateRenders, status.QueueUnderrunFrames, engine.Statistics.Faults, status.RenderMax, status.OutputLatency, failed);
+                return new AudioTelemetry(status.Callbacks, status.Xruns, status.Discontinuities, status.LateRenders, status.QueueUnderrunFrames, engine.Statistics.Faults, status.RenderMax, status.OutputLatency, failed)
+                {
+                    CallbackThreadPolicy = status.CallbackThreadPolicy,
+                };
             }
             catch (Exception ex) when (ex is AudioDeviceException or ObjectDisposedException)
             {
@@ -390,7 +396,7 @@ public sealed class AudioPlayback : IAudioPlayback
         // The stand-in (if any) closes only once the chosen device is open.
         Close();
         var rate = output.SampleRate;
-        var block = Math.Clamp(settings.BufferFrames, 32, _maxBlockFrames);
+        var block = AudioBlockSize.For(output.Status.DeviceBufferFrames, settings.BufferFrames, _maxBlockFrames);
         var engine = new AudioEngine(rate, block) { TestTone = _testTone ? new ToneNode(440, 0.125) : null };
         var device = Math.Max(Math.Max(settings.BufferFrames, output.Status.MaxBufferFrames), block);
         engine.Transport.Follow(new PlaybackTimeline(_playback.Transport), toleranceFrames: Math.Max(rate / 100, 2 * (device + block)));
@@ -417,9 +423,9 @@ public sealed class AudioPlayback : IAudioPlayback
         }
 
         _output = output;
-        if (_prepareSampleRate is { } prepare)
+        if (_prepareFormat is { } prepare)
         {
-            _ = PrepareAsync(prepare, rate);
+            _ = PrepareAsync(prepare, new AudioFormat(rate, block));
         }
 
         return true;
@@ -438,17 +444,17 @@ public sealed class AudioPlayback : IAudioPlayback
         }
     }
 
-    private async Task PrepareAsync(Func<int, Task> prepare, int rate)
+    private async Task PrepareAsync(Func<AudioFormat, Task> prepare, AudioFormat format)
     {
         try
         {
-            await prepare(rate).ConfigureAwait(false);
+            await prepare(format).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // Plugins that cannot follow the rate stay silent and say so in the graph's problems.
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            System.Diagnostics.Trace.TraceWarning($"Plugins could not be restarted at {rate} Hz: {ex.Message}");
+            System.Diagnostics.Trace.TraceWarning($"Plugins could not be restarted at {format.SampleRate} Hz and {format.BlockFrames}-frame blocks: {ex.Message}");
         }
 
         Rebuild();

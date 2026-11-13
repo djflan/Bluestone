@@ -16,6 +16,9 @@ internal static partial class ProcessingThreadScheduling
     private const uint CreateWaitableTimerHighResolution = 0x00000002;
     private const uint TimerAllAccess = 0x001F0003;
     private const uint Infinite = uint.MaxValue;
+    private const int ProcessPowerThrottling = 4;
+    private const uint PowerThrottlingExecutionSpeed = 0x1;
+    private const uint PowerThrottlingIgnoreTimerResolution = 0x4;
 
     [ThreadStatic]
     private static SafeWaitHandle? _preciseTimer;
@@ -25,6 +28,24 @@ internal static partial class ProcessingThreadScheduling
 
     /// <summary>Whether <see cref="Pause"/> blocks precisely on this platform.</summary>
     public static bool HasPrecisePause => OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// On Windows, keeps this process at full speed and gives it a 1 ms timer for its life. A worker has no visible window
+    /// and plays no audio itself, so Windows 11 would otherwise throttle it as background work and ignore its timer
+    /// request; plugins whose own threads sleep or wait with a timeout (Dune 3's voice threads) then wake on the 15.6 ms
+    /// tick and miss their blocks (ADR 0049). Returns false when Windows refused the timer.
+    /// </summary>
+    public static bool PrepareProcess()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        var throttling = new PowerThrottlingState { Version = 1, ControlMask = PowerThrottlingExecutionSpeed | PowerThrottlingIgnoreTimerResolution, StateMask = 0 };
+        _ = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, ref throttling, (uint)Marshal.SizeOf<PowerThrottlingState>());
+        return timeBeginPeriod(1) == 0;
+    }
 
     /// <summary>Promotes the calling thread; false when the platform has no such policy or refused it.</summary>
     /// <param name="period">The block period: the thread may compute for half of it in every period.</param>
@@ -111,6 +132,14 @@ internal static partial class ProcessingThreadScheduling
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct PowerThrottlingState
+    {
+        public uint Version;
+        public uint ControlMask;
+        public uint StateMask;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct TimeConstraint
     {
         public uint Period;
@@ -160,5 +189,15 @@ internal static partial class ProcessingThreadScheduling
 
     [LibraryImport("kernel32.dll")]
     private static partial uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetCurrentProcess();
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetProcessInformation(IntPtr process, int informationClass, ref PowerThrottlingState information, uint size);
+
+    [LibraryImport("winmm.dll")]
+    private static partial uint timeBeginPeriod(uint period);
 
 }

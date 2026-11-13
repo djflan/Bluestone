@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Bluestone.Application.Live;
 using Bluestone.Audio;
+using Bluestone.Audio.Devices;
 using Bluestone.Domain.Mixing;
 
 namespace Bluestone.Application.Audio;
@@ -29,7 +30,11 @@ public sealed record AudioStreamInfo(int SampleRate, int Channels, int BlockFram
 /// <param name="OutputLatency">From the callback until its audio is heard, as the device says.</param>
 /// <param name="PluginFailedBlocks">Plugin blocks that followed the failure policy.</param>
 /// <param name="LiveDeadlineMisses">Blocks of instruments played live at depth 1 that missed their deadline (the engine process).</param>
-public readonly record struct AudioTelemetry(long Callbacks, long Xruns, long Discontinuities, long LateRenders, long QueueUnderrunFrames, long RenderFaults, TimeSpan RenderMax, TimeSpan OutputLatency, long PluginFailedBlocks, long LiveDeadlineMisses = 0);
+public readonly record struct AudioTelemetry(long Callbacks, long Xruns, long Discontinuities, long LateRenders, long QueueUnderrunFrames, long RenderFaults, TimeSpan RenderMax, TimeSpan OutputLatency, long PluginFailedBlocks, long LiveDeadlineMisses = 0)
+{
+    /// <summary>How the device's callback thread is scheduled.</summary>
+    public AudioCallbackThreadPolicy CallbackThreadPolicy { get; init; }
+}
 
 /// <summary>
 /// The app's audio (ADR 0032): the output device, the render graph that follows the MIDI transport, meters, and how the

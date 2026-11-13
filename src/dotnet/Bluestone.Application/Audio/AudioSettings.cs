@@ -6,8 +6,11 @@ namespace Bluestone.Application.Audio;
 /// <summary>The audio output the user chose. Saved per user, not per project.</summary>
 /// <param name="Enabled">Open the device when Bluestone starts.</param>
 /// <param name="DeviceId">An audio device id, or null for the selected host's default output.</param>
-/// <param name="SampleRate">In Hz.</param>
-/// <param name="BufferFrames">Requested frames per device callback; ASIO uses the driver's default.</param>
+/// <param name="SampleRate">In Hz, or <see cref="Automatic"/> for the device's own rate (the Windows mixer's in shared mode), so nothing resamples.</param>
+/// <param name="BufferFrames">
+/// Requested frames per device callback, or <see cref="Automatic"/> for the device's default period (WASAPI's 10 ms, the
+/// ASIO driver's setting, Core Audio's default). ASIO always uses the driver's.
+/// </param>
 /// <param name="QueuedFrames">
 /// Frames rendered ahead of the device by Bluestone's render thread (0: render in the device callback). Absorbs .NET
 /// garbage-collection pauses at the cost of this much latency; ADR 0032 has the measurements behind the default.
@@ -24,14 +27,17 @@ namespace Bluestone.Application.Audio;
 public sealed record AudioSettings(
     bool Enabled = false,
     string? DeviceId = null,
-    int SampleRate = 48_000,
-    int BufferFrames = 256,
+    int SampleRate = AudioSettings.Automatic,
+    int BufferFrames = AudioSettings.Automatic,
     int QueuedFrames = AudioSettings.DefaultQueuedFrames,
     int LiveQueuedFrames = AudioSettings.DefaultLiveQueuedFrames,
     bool LowLatencyMonitoring = false)
 {
     /// <summary>The selected audio host, or null for the system default.</summary>
     public string? Host { get; init; }
+
+    /// <summary>A <see cref="SampleRate"/> or <see cref="BufferFrames"/> that follows the device.</summary>
+    public const int Automatic = 0;
 
     public const int DefaultQueuedFrames = 1024;
 

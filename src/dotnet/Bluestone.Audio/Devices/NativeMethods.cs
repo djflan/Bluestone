@@ -147,7 +147,7 @@ internal static unsafe partial class NativeMethods
         public uint LastError;
         public uint Errors;
         public uint SampleFormat;
-        public uint Reserved;
+        public uint CallbackThreadPolicy;
         public long RenderMaxNanoseconds;
         public ulong RenderTotalNanoseconds;
         public ulong LateRenders;

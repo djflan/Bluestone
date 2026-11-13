@@ -11,12 +11,16 @@ mod devices;
 mod host;
 mod input;
 mod json;
+mod priority;
 mod ring;
 mod stream;
 
 use std::ffi::{CStr, c_char, c_void};
 
 pub use input::{CaptureFn, CaptureInfo, InputStatus, InputStream};
+pub use priority::{
+    POLICY_BACKEND, POLICY_MMCSS_PRO_AUDIO, POLICY_NORMAL, POLICY_TIME_CRITICAL, POLICY_UNREPORTED,
+};
 pub use stream::{
     BlockInfo, HISTOGRAM_BUCKET_NS, HISTOGRAM_BUCKETS, OutputStream, RenderFn, StreamRequest,
     StreamStatus,

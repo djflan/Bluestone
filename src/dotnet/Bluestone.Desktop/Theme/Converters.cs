@@ -18,6 +18,18 @@ public sealed class TrackBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>An audio setting's choice in words: a sample rate ("Automatic", "48,000 Hz") or a block size ("256 samples").</summary>
+public sealed class AudioChoiceConverter(Func<int, string> label) : IValueConverter
+{
+    public static readonly AudioChoiceConverter Rate = new(AudioViewModel.RateLabel);
+
+    public static readonly AudioChoiceConverter Block = new(AudioViewModel.BlockLabel);
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is int choice ? label(choice) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>A source's colour: its track's (an index of 0 or more), or the neutral signal colour for a rack or nothing (-1).</summary>
 public sealed class SourceAccentConverter : IValueConverter
 {

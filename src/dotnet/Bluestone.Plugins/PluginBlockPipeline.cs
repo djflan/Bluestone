@@ -119,7 +119,7 @@ public sealed class PluginBlockPipeline
         }
 
         _lastCollected = collectIndex;
-        var collected = exchange.TryCollect(collectIndex, BoundedByCallback ? CollectBudget.Bound(CollectWait) : CollectWait, audio, outputEvents, out var result);
+        var collected = exchange.TryCollect(collectIndex, BoundedByCallback ? CollectBudget.Bound(CollectWait) : CollectBudget.Extend(CollectWait), audio, outputEvents, out var result);
         if (collected == ExchangeStatus.Ok && result.Frames == frames && result.Status is BlockStatus.Ok or BlockStatus.DeadlineMissed)
         {
             return new BlockOutcome(ProcessOutcome.Processed, result.OutputEventCount, false);

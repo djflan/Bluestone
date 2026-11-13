@@ -134,8 +134,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _all.Add(new SettingsCategory(
             SettingsPage.Audio,
             "Audio",
-            "The output device, sample rate, buffer size, and render-ahead; starting audio and a test tone.",
-            "output device sample rate buffer latency render-ahead queue monitoring test tone engine master",
+            "The output device, sample rate, block size, and render-ahead; starting audio, a test tone, and dropouts.",
+            "output device sample rate buffer block size automatic latency render-ahead queue monitoring test tone engine master dropouts clicks pops",
             _audio));
         _all.Add(new SettingsCategory(
             SettingsPage.Plugins,

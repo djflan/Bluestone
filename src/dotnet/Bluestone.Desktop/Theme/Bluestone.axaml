@@ -681,6 +681,9 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
     <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
   </Style>
+  <Style Selector="TextBlock.settingHint.warning">
+    <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
+  </Style>
 
   <!-- Dense lists (messages, monitor, event list) -->
   <Style Selector="ListBox.dense">

@@ -100,7 +100,8 @@ public readonly record struct StripMeter(Guid Key, MeterSpec Levels);
 /// <param name="LatencyFrames">The playing graph's delay compensation.</param>
 /// <param name="QueuedFrames">Frames rendered ahead now (0: in the device callback).</param>
 /// <param name="LiveQueue">The smaller live queue is in use.</param>
-public readonly record struct AudioCounters(long Callbacks, long Xruns, long Discontinuities, long LateRenders, long QueueUnderrunFrames, long RenderFaults, long RenderMax, long OutputLatency, long PluginFailedBlocks, int LatencyFrames, int QueuedFrames = 0, bool LiveQueue = false);
+/// <param name="CallbackThreadPolicy">How the device callback thread is scheduled: an <c>AudioCallbackThreadPolicy</c> value.</param>
+public readonly record struct AudioCounters(long Callbacks, long Xruns, long Discontinuities, long LateRenders, long QueueUnderrunFrames, long RenderFaults, long RenderMax, long OutputLatency, long PluginFailedBlocks, int LatencyFrames, int QueuedFrames = 0, bool LiveQueue = false, int CallbackThreadPolicy = 0);
 
 /// <summary>
 /// Live notes into plugin instruments, from their input timestamp until heard (ADR 0035), measured in the engine: how

@@ -74,7 +74,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     // Devices started ahead of the edit that adds them (StageAsync): a sync must not destroy them before that edit lands.
     private readonly ConcurrentDictionary<DeviceId, byte> _staged = new();
     private double _sampleRate;
-    private readonly int _maxBlockFrames;
+    private int _maxBlockFrames;
     private volatile PluginHostingSettings _hosting;
     private volatile ImmutableDictionary<DeviceDefinitionId, PluginCrashCount> _crashes = ImmutableDictionary<DeviceDefinitionId, PluginCrashCount>.Empty;
 
@@ -400,20 +400,30 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     /// <summary>The rate plugin instances are created at (the audio device's, once audio runs).</summary>
     public double SampleRate => _sampleRate;
 
+    /// <summary>The largest block plugin instances are created for (the engine's block, once audio runs).</summary>
+    public int MaxBlockFrames => _maxBlockFrames;
+
+    /// <summary>Runs every plugin instance at <paramref name="sampleRate"/>, keeping their block size; see <see cref="SetFormatAsync"/>.</summary>
+    public Task SetSampleRateAsync(double sampleRate, CancellationToken cancellationToken = default) =>
+        SetFormatAsync(sampleRate, _maxBlockFrames, cancellationToken);
+
     /// <summary>
-    /// Runs every plugin instance at <paramref name="sampleRate"/> from now on: running instances are captured (their
-    /// state and parameters, not stored in the project), stopped, and created again at the new rate from what was
-    /// captured; others start again from their last snapshot or the project's stored state. Nothing happens when the
-    /// rate is unchanged. Plugins cannot change rate while running, so this is a restart; their status shows it.
+    /// Runs every plugin instance at <paramref name="sampleRate"/> with blocks of up to <paramref name="maxBlockFrames"/>
+    /// from now on: running instances are captured (their state and parameters, not stored in the project), stopped, and
+    /// created again from what was captured; others start again from their last snapshot or the project's stored state.
+    /// Nothing happens when neither changed. Plugins cannot change rate or block size while running, so this is a
+    /// restart; their status shows it.
     /// </summary>
-    public async Task SetSampleRateAsync(double sampleRate, CancellationToken cancellationToken = default)
+    public async Task SetFormatAsync(double sampleRate, int maxBlockFrames, CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBlockFrames);
         await _syncing.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (sampleRate != _sampleRate)
+            if (sampleRate != _sampleRate || maxBlockFrames != _maxBlockFrames)
             {
                 _sampleRate = sampleRate;
+                _maxBlockFrames = maxBlockFrames;
                 await RecreateAsync(cancellationToken).ConfigureAwait(false);
             }
         }

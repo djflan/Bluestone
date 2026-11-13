@@ -1,6 +1,6 @@
 # 0032. Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport
 
-- Status: Accepted; amended by 0035 (latency), 0043 (an engine process), and 0046 (Windows ASIO host)
+- Status: Accepted; amended by 0035 (latency), 0043 (an engine process), 0046 (Windows ASIO host), and 0049 (audio thread priority, Automatic rate and block)
 - Date: 2026-10-11
 
 ## Context

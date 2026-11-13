@@ -1,6 +1,6 @@
 # 0046. ASIO audio host on Windows x64
 
-- Status: Accepted
+- Status: Accepted; amended by 0049
 - Date: 2026-11-03
 
 ## Context
