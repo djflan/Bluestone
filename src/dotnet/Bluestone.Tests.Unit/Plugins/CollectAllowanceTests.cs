@@ -46,6 +46,10 @@ public sealed class CollectAllowanceTests : IDisposable
         using var host = HostBlockExchange.Open(path, 1, Shape);
         var pipeline = new PluginBlockPipeline(Frames, 0, Shape.ParameterChangeCapacity, pipelineDepth: 1, CollectWait, bypassOnFailure: false);
         using var answering = new CancellationTokenSource();
+
+        // Without an allowance the block is held until the collect has given up, so a descheduled test thread cannot
+        // find it already done.
+        using var release = new ManualResetEventSlim(allow);
         var slow = new Thread(() =>
         {
             while (!answering.IsCancellationRequested)
@@ -53,6 +57,7 @@ public sealed class CollectAllowanceTests : IDisposable
                 if (worker.TryBeginBlock(out var block))
                 {
                     Thread.Sleep(8);
+                    release.Wait();
                     block.Output(0)[..block.Frames].Fill(1f);
                     worker.CompleteBlock(ref block, BlockStatus.Ok);
                 }
@@ -80,6 +85,7 @@ public sealed class CollectAllowanceTests : IDisposable
         finally
         {
             CollectBudget.Allow(0);
+            release.Set();
             answering.Cancel();
             slow.Join();
         }

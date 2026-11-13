@@ -273,6 +273,16 @@ public sealed partial class AudioViewModel : ObservableObject
             parts.Add(Count(telemetry.QueueUnderrunFrames, "frame missing from render-ahead", "frames missing from render-ahead"));
         }
 
+        if (telemetry.PluginFailedBlocks > 0)
+        {
+            parts.Add(Count(telemetry.PluginFailedBlocks, "plugin block played as silence", "plugin blocks played as silence"));
+        }
+
+        if (telemetry.RenderFaults > 0)
+        {
+            parts.Add(Count(telemetry.RenderFaults, "failed render", "failed renders"));
+        }
+
         var thread = telemetry.CallbackThreadPolicy switch
         {
             AudioCallbackThreadPolicy.MmcssProAudio => "audio thread at MMCSS \u201cPro Audio\u201d priority",
