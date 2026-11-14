@@ -152,6 +152,41 @@ public sealed class SignalIndicatorSeamTests
         return Task.CompletedTask;
     });
 
+    [Fact]
+    public Task ReattachingTheSeam_ResyncsChangedSignalCapabilitiesAndNotes() => HeadlessApp.RunAsync(() =>
+    {
+        var (window, link, seam, signal) = Show(SignalIndicatorSize.Large, LedShape.Bar, JunctionIndicatorPosition.LowerHalf);
+        try
+        {
+            var indicator = Assert.IsType<SignalIndicator>(seam.Indicator);
+            Set(signal, nameof(JunctionSignal.CanCarryAudio), false);
+            Set(signal, nameof(JunctionSignal.CanCarryNotes), false);
+            Set(signal, nameof(JunctionSignal.NotesHeld), false);
+            Assert.False(indicator.CarriesAudio);
+            Assert.False(indicator.CarriesNotes);
+
+            link.Child = null;
+            Set(signal, nameof(JunctionSignal.CanCarryAudio), true);
+            Set(signal, nameof(JunctionSignal.CanCarryNotes), true);
+            Set(signal, nameof(JunctionSignal.NotesHeld), true);
+            Assert.False(indicator.CarriesAudio);
+            Assert.False(indicator.CarriesNotes);
+            link.Child = seam;
+            window.UpdateLayout();
+
+            Assert.Same(indicator, seam.Indicator);
+            Assert.True(indicator.CarriesAudio);
+            Assert.True(indicator.CarriesNotes);
+            Assert.True(indicator.NotesHeld);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
     private static (Window Window, Border Link, JunctionSeam Seam, JunctionSignal Signal) Show(SignalIndicatorSize size, LedShape shape, JunctionIndicatorPosition position)
     {
         var signal = new JunctionSignal();

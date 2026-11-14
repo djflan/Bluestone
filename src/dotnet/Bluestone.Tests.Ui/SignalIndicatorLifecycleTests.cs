@@ -310,6 +310,35 @@ public sealed class SignalIndicatorLifecycleTests
     });
 
     [Fact]
+    public Task ClearingTheClip_RefreshesEveryIndicatorSharingTheLevelsWithoutAnotherMeterUpdate() => HeadlessApp.RunAsync(() =>
+    {
+        var levels = Levels(rms: -3, peak: 1);
+        levels.Update(Reading(rms: -3, peak: -1), Now + 1);
+        var first = new SignalIndicator { Variant = SignalIndicatorSize.Large, Levels = levels };
+        var second = new SignalIndicator { Variant = SignalIndicatorSize.Large, Levels = levels };
+        var firstWindow = Show(first);
+        var secondWindow = Show(second);
+        try
+        {
+            Assert.True(first.DisplayState.ClipLatched);
+            Assert.True(second.DisplayState.ClipLatched);
+            Assert.True(first.ClearClip());
+
+            Assert.False(levels.Clipped);
+            Assert.False(first.DisplayState.ClipLatched);
+            Assert.False(second.DisplayState.ClipLatched);
+            Assert.DoesNotContain("clipping", second.Describe(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            firstWindow.Close();
+            secondWindow.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
     public Task Lamp_LightsAtOnce_AndLetsGoAtOnceWithoutLevels_OrOverItsReleaseWithThem() => HeadlessApp.RunAsync(async () =>
     {
         var indicator = new SignalIndicator { Variant = SignalIndicatorSize.Medium, CarriesNotes = true, LampRelease = TimeSpan.FromMilliseconds(20) };

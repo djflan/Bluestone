@@ -412,6 +412,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         base.OnAttachedToVisualTree(e);
         Subscribe(Signal);
         UpdateName();
+        UpdateIndicator();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

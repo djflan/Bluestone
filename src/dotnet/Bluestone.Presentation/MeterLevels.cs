@@ -22,7 +22,7 @@ public sealed class MeterLevels
     private long _heldLeftAt;
     private long _heldRightAt;
 
-    /// <summary>Raised after every <see cref="Update"/>.</summary>
+    /// <summary>Raised after every <see cref="Update"/> or <see cref="Reset"/>, and when <see cref="ResetClip"/> clears a latched clip.</summary>
     public event EventHandler? Updated;
 
     /// <summary>A reading arrived (audio is running and the strip is in the engine's graph).</summary>
@@ -62,7 +62,16 @@ public sealed class MeterLevels
         Updated?.Invoke(this, EventArgs.Empty);
     }
 
-    public void ResetClip() => Clipped = false;
+    public void ResetClip()
+    {
+        if (!Clipped)
+        {
+            return;
+        }
+
+        Clipped = false;
+        Updated?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>Forgets everything shown so far: the meter is at the floor, with no peak held and no clip.</summary>
     public void Reset()

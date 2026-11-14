@@ -443,6 +443,30 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task ClearingAHostedClip_DoesNotSelectTheDeviceAfterTheSeam() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        app.ViewModel.Display.IndicatorSize = Bluestone.Presentation.SignalIndicatorSize.Large;
+        view.SelectedDevice = view.Devices[0];
+        var selected = view.SelectedDevice;
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<JunctionSeam>()
+            .Single(s => s.Signal == view.Devices[1].Arriving);
+        var indicator = Assert.IsType<SignalIndicator>(seam.Indicator);
+        SetInternal(seam.Signal!, nameof(Bluestone.Presentation.JunctionSignal.CanCarryAudio), true);
+        seam.Signal!.Levels.Update(new Bluestone.Audio.MeterReading(1.2f, 1.1f, 0.6f, 0.5f), System.Diagnostics.Stopwatch.GetTimestamp());
+        Assert.True(indicator.DisplayState.ClipLatched);
+
+        app.Click(indicator);
+
+        Assert.False(indicator.DisplayState.ClipLatched);
+        Assert.Same(selected, view.SelectedDevice);
+    });
+
+    private static void SetInternal(object target, string property, object value) =>
+        (target.GetType().GetProperty(property) ?? throw new InvalidOperationException($"{target.GetType().Name}.{property} was not found.")).SetValue(target, value);
+
+    [Fact]
     public Task ASeam_IsAButtonToScreenReaders_NamedForItsPlace_AndInvokingItAimsTheBrowserThere() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);
