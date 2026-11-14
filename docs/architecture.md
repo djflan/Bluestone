@@ -530,7 +530,10 @@ Device View picks the chain and gap, or, over the middle of a device's panel, th
 project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
 
 Between panels, each junction is a `JunctionSeam` drawn from a `JunctionSignal` (ADR 0037): a segmented level and a
-MIDI icon for notes, updated each frame without allocating and redrawn only when they change. Only junctions a
+MIDI icon for notes, updated each frame without allocating and redrawn only when they change. The seam draws them
+through `SignalIndicatorRenderer`, which the standalone `SignalIndicator` control shares: Compact is the seam's look, and
+Medium and Large add a 0 dB tick, then a dB scale, a held-peak readout, and a clip light that stays on until cleared,
+with bar or round LEDs. Nothing places Medium or Large yet. Only junctions a
 visible Device View shows are metered (`IAudioPlayback.WatchJunctions`). A seam also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers

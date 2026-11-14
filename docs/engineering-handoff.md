@@ -176,6 +176,9 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 - The views added with the audio engine and plugins (Plugins view, mixer console, Audio Settings) were not looked at
   by eye: the app was launched as a smoke test with the screen locked. Headless UI tests cover the workflows and save
   frames.
+- The Medium and Large `SignalIndicator` variants are not used by any view yet; they were seen only in headless
+  gallery frames, with no HiDPI, GPU, or screen-reader check. The Device View seam draws through the same renderer and
+  is compared pixel for pixel against committed baseline frames.
 
 ## 7. Unresolved implementation backlog
 
