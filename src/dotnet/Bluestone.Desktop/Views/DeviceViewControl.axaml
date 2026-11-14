@@ -81,6 +81,8 @@
                     <controls:JunctionSeam Signal="{Binding Arriving}" IsQuiet="{Binding IsBypassed}"
                                            IndicatorPosition="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.IndicatorPosition, FallbackValue=LowerHalf}"
                                            LevelStyle="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.LevelStyle, FallbackValue=RmsAndPeak}"
+                                           IndicatorSize="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.IndicatorSize, FallbackValue=Compact}"
+                                           LedShape="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.LedShape, FallbackValue=Bar}"
                                            InsertCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).InsertAtJunctionCommand, FallbackValue={x:Null}}"
                                            RouteCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).RouteFromJunctionCommand, FallbackValue={x:Null}}" />
                   </Border>
@@ -272,6 +274,7 @@
           <StackPanel Orientation="Horizontal" IsVisible="{Binding IsEmpty}">
             <Border Classes="chainLink">
               <controls:JunctionSeam Signal="{Binding Input}" IndicatorPosition="{Binding Display.IndicatorPosition}" LevelStyle="{Binding Display.LevelStyle}"
+                                 IndicatorSize="{Binding Display.IndicatorSize}" LedShape="{Binding Display.LedShape}"
                                      InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
             </Border>
             <Panel x:Name="EmptySlot" Classes="emptySlot" AutomationProperties.Name="Empty chain">
@@ -288,6 +291,7 @@
 
           <Border x:Name="TrailLink" Classes="chainLink">
             <controls:JunctionSeam Signal="{Binding LastJunction}" IndicatorPosition="{Binding Display.IndicatorPosition}" LevelStyle="{Binding Display.LevelStyle}"
+                                 IndicatorSize="{Binding Display.IndicatorSize}" LedShape="{Binding Display.LedShape}"
                                  InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
           </Border>
           <!-- Output boundary: what leaves the chain for the track's destination. -->

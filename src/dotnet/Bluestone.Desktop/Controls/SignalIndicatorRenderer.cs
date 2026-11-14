@@ -7,26 +7,6 @@ using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Controls;
 
-/// <summary>How much a signal indicator shows: the junction's slim level, a mixer-strip level, or an expanded view's.</summary>
-internal enum SignalIndicatorSize
-{
-    /// <summary>The Device View junction's indicator: 1 px segments, no scale.</summary>
-    Compact,
-
-    /// <summary>2 dB segments with a 0 dB tick, for mixer strips and device panels.</summary>
-    Medium,
-
-    /// <summary>1 dB segments with a dB scale, a held-peak readout, and a clip light that stays on until cleared.</summary>
-    Large,
-}
-
-/// <summary>The shape of a Medium or Large level's LEDs: segments, or round dots (with their own, coarser pitch).</summary>
-internal enum LedShape
-{
-    Bar,
-    Round,
-}
-
 /// <summary>The colours a signal indicator draws with: the level's gradient, the MIDI lamp, and the scale's text.</summary>
 internal readonly record struct SignalIndicatorColors(Color Low, Color Mid, Color Hot, Color Clip, Color Lamp, Color Text);
 

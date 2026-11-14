@@ -18,8 +18,18 @@
         <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
                   HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
       </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Indicator size" />
+        <ComboBox x:Name="IndicatorSizeBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Sizes}" SelectedItem="{Binding IndicatorSizeChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator size" />
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding HasLedShape}">
+        <TextBlock Classes="label" Text="LEDs" />
+        <ComboBox x:Name="LedShapeBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LedShapes}" SelectedItem="{Binding LedShapeChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator LED shape" />
+      </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, and whether a level follows the average loudness (with the peak held above it) or the peaks, in every Device View." />
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, whether a level follows the average loudness (with the peak held above it) or the peaks, and how much it shows, in every Device View. Medium and Large widen the space between devices to fit; at Large, click a lit clip light (or focus it and press Enter) to clear it." />
     </StackPanel>
   </StackPanel>
 </UserControl>

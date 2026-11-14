@@ -27,6 +27,38 @@ public sealed class SettingsTests : IDisposable
     private AudioViewModel Audio(AppUnderTest app, AudioPlayback audio) =>
         new(audio, new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json")), new ImmediateDispatcher(), () => []);
 
+    [Fact]
+    public Task TheDisplayPage_ChoosesTheIndicatorSizeAndLeds_AndEveryDeviceViewSeamFollows() => HeadlessApp.RunAsync(async () =>
+    {
+        var session = new Bluestone.Application.Sessions.ProjectSession();
+        session.Execute(Bluestone.Application.Editing.ProjectCommands.AddTrack(Bluestone.Domain.Sequencing.Track.Create("Lead", Bluestone.Domain.Sequencing.TrackRole.Instrument)));
+        await using var app = await AppUnderTest.OpenAsync(session);
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        app.ViewModel.DeviceView!.InsertAt(0, Bluestone.Signal.DeviceCatalog.BuiltIn.Definitions.Single(d => d.Name == "Transpose"));
+        app.Settle();
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+
+        var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var leds = AppUnderTest.ComboNamed(page, "Signal indicator LED shape");
+        Assert.False(leds.IsEffectivelyVisible, "Compact has no LED choice to make.");
+
+        app.Choose(AppUnderTest.ComboNamed(page, "Signal indicator size"), o => o is IndicatorSizeOption { Size: SignalIndicatorSize.Large });
+        Assert.True(leds.IsEffectivelyVisible);
+        app.Choose(leds, o => o is LedShapeOption { Shape: LedShape.Round });
+        Assert.True(File.Exists(app.SaveFrame("settings-display-large-round")));
+        Assert.Equal((SignalIndicatorSize.Large, LedShape.Round), (app.ViewModel.Display.IndicatorSize, app.ViewModel.Display.LedShape));
+
+        app.Window.Settings.Close();
+        app.Settle();
+        var seams = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Desktop.Controls.JunctionSeam>().Where(s => s.Signal is not null).ToList();
+        Assert.NotEmpty(seams);
+        Assert.All(seams, s => Assert.Equal(LedShape.Round, Assert.IsType<Desktop.Controls.SignalIndicator>(s.Indicator).LedShape));
+    });
+
     [Theory]
     [InlineData(1040)]
     [InlineData(1440)]

@@ -1017,7 +1017,8 @@
   <!-- The seam between devices (ADR 0037): the gap a panel apart, as tall as a panel. The seam draws the hairline the
        chain reads along, the note lamp at header height, and the level in the lower body. -->
   <Style Selector="Border.chainLink">
-    <Setter Property="Width" Value="{StaticResource DevicePanel.Gap}" />
+    <!-- At least the gap; a seam hosting a Medium or Large indicator widens it to fit. -->
+    <Setter Property="MinWidth" Value="{StaticResource DevicePanel.Gap}" />
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="Background" Value="Transparent" />
@@ -1103,6 +1104,16 @@
     <Setter Property="BarGap" Value="{StaticResource Signal.Large.DotBarGap}" />
     <Setter Property="SegmentHeight" Value="{StaticResource Signal.Large.DotSize}" />
     <Setter Property="SegmentGap" Value="{StaticResource Signal.Large.DotGap}" />
+  </Style>
+  <!-- Large in a junction seam: shorter, to fit a device panel's height (Junction.Large.*). -->
+  <Style Selector="controls|JunctionSeam > controls|SignalIndicator[Variant=Large]">
+    <Setter Property="LevelHeight" Value="{StaticResource Junction.Large.LevelHeight}" />
+    <Setter Property="LampHeight" Value="{StaticResource Junction.Large.LampHeight}" />
+  </Style>
+  <Style Selector="controls|JunctionSeam > controls|SignalIndicator[Variant=Large][LedShape=Round]">
+    <Setter Property="LevelHeight" Value="{StaticResource Junction.Large.DotLevelHeight}" />
+    <Setter Property="BarWidth" Value="{StaticResource Junction.Large.DotSize}" />
+    <Setter Property="SegmentHeight" Value="{StaticResource Junction.Large.DotSize}" />
   </Style>
   <!-- Keyboard focus: a crisp ring in the focus colour just outside the indicator, drawn by the control (no blur, no resize). -->
   <Style Selector="controls|SignalIndicator:focus-visible">
