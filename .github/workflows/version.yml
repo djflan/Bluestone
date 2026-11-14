@@ -3,7 +3,7 @@ name: Version
 # Tags every commit that lands on main with the next version, and builds and publishes a GitHub Release when asked.
 # Independent of CI: it does not wait for or gate on the CI checks, and adds none of its own.
 #
-# Release builds do not run the tests; dispatch the CI workflow on the final pull request branch before merging.
+# Release builds do not run the tests again; the required pull request checks already did.
 #
 # Tokens in the message of the commit that landed (for a merge commit that includes the PR title; case-insensitive):
 #   (none)                         patch: v0.3.7 -> v0.3.8
@@ -137,7 +137,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      # No tests here: run the CI workflow on the final pull request branch before merging. The publish builds what it needs
+      # No tests here: the commit already passed the required CI checks to reach main. The publish builds what it needs
       # (the Rust libraries too) and is self-contained: .NET, the Rust libraries, the profiles, and the plugin worker.
       - name: Publish
         run: dotnet publish src/dotnet/Bluestone.Desktop --configuration Release --runtime ${{ matrix.rid }} --self-contained --output publish/Bluestone
