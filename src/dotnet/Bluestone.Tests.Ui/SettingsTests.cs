@@ -44,10 +44,18 @@ public sealed class SettingsTests : IDisposable
 
         var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
         var leds = AppUnderTest.ComboNamed(page, "Signal indicator LED shape");
+        var compactPosition = AppUnderTest.ComboNamed(page, "Signal indicator position");
+        var largePosition = AppUnderTest.ComboNamed(page, "Medium and Large signal indicator position");
         Assert.False(leds.IsEffectivelyVisible, "Compact has no LED choice to make.");
+        Assert.True(compactPosition.IsEffectivelyVisible);
+        Assert.False(largePosition.IsEffectivelyVisible);
 
         app.Choose(AppUnderTest.ComboNamed(page, "Signal indicator size"), o => o is IndicatorSizeOption { Size: SignalIndicatorSize.Large });
         Assert.True(leds.IsEffectivelyVisible);
+        Assert.False(compactPosition.IsEffectivelyVisible, "Compact's half positions do not apply to Large.");
+        Assert.True(largePosition.IsEffectivelyVisible);
+        Assert.Equal(3, largePosition.ItemCount);
+        app.Choose(largePosition, o => o is IndicatorPositionOption { Position: JunctionIndicatorPosition.Top });
         app.Choose(leds, o => o is LedShapeOption { Shape: LedShape.Round });
         Assert.True(File.Exists(app.SaveFrame("settings-display-large-round")));
         Assert.Equal((SignalIndicatorSize.Large, LedShape.Round), (app.ViewModel.Display.IndicatorSize, app.ViewModel.Display.LedShape));
@@ -57,6 +65,7 @@ public sealed class SettingsTests : IDisposable
         var seams = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Desktop.Controls.JunctionSeam>().Where(s => s.Signal is not null).ToList();
         Assert.NotEmpty(seams);
         Assert.All(seams, s => Assert.Equal(LedShape.Round, Assert.IsType<Desktop.Controls.SignalIndicator>(s.Indicator).LedShape));
+        Assert.All(seams, s => Assert.Equal(JunctionIndicatorPosition.Top, s.IndicatorPosition));
     });
 
     [Theory]

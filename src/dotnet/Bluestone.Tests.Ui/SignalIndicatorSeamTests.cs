@@ -32,7 +32,7 @@ public sealed class SignalIndicatorSeamTests
         {
             foreach (var shape in Enum.GetValues<LedShape>())
             {
-                foreach (var position in Enum.GetValues<JunctionIndicatorPosition>())
+                foreach (var position in DisplayViewModel.LargePositions.Select(p => p.Position))
                 {
                     data.Add(size, shape, position);
                 }
@@ -74,6 +74,37 @@ public sealed class SignalIndicatorSeamTests
         finally
         {
             window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task MediumAndLarge_EveryOfferedPosition_PlacesTheIndicatorSomewhereDifferent() => HeadlessApp.RunAsync(() =>
+    {
+        foreach (var size in new[] { SignalIndicatorSize.Medium, SignalIndicatorSize.Large })
+        {
+            foreach (var shape in Enum.GetValues<LedShape>())
+            {
+                var (window, _, seam, _) = Show(size, shape, JunctionIndicatorPosition.Top);
+                try
+                {
+                    var tops = new List<double>();
+                    foreach (var position in DisplayViewModel.LargePositions.Select(p => p.Position))
+                    {
+                        seam.IndicatorPosition = position;
+                        window.UpdateLayout();
+                        tops.Add(Assert.IsType<SignalIndicator>(seam.Indicator).Bounds.Top);
+                    }
+
+                    // Top above Middle above Bottom: no offered choice is a duplicate of another.
+                    Assert.True(tops[0] < tops[1] && tops[1] < tops[2], $"{size} {shape}: tops {string.Join(", ", tops)} must strictly increase.");
+                }
+                finally
+                {
+                    window.Close();
+                }
+            }
         }
 
         return Task.CompletedTask;

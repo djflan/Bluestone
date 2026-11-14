@@ -18,6 +18,9 @@ public enum JunctionIndicatorPosition
 
     /// <summary>At the bottom of the device.</summary>
     Bottom,
+
+    /// <summary>Centred on the device's body: Medium and Large, which are too tall for the half positions to differ from Top and Bottom.</summary>
+    Middle,
 }
 
 /// <summary>What a junction's level shows.</summary>
@@ -60,6 +63,9 @@ public sealed record DisplaySettings
     public SignalIndicatorSize IndicatorSize { get; init; } = SignalIndicatorSize.Compact;
 
     public LedShape LedShape { get; init; } = LedShape.Bar;
+
+    /// <summary>Where Medium and Large indicators sit: Top, Middle, or Bottom. Compact uses <see cref="IndicatorPosition"/>.</summary>
+    public JunctionIndicatorPosition LargeIndicatorPosition { get; init; } = JunctionIndicatorPosition.Middle;
 }
 
 /// <summary>Reads and writes <see cref="DisplaySettings"/> as a small JSON file. A missing or unreadable file gives the defaults.</summary>
@@ -87,10 +93,11 @@ public sealed class DisplaySettingsStore(string path)
             // Each preference on its own: one unknown value does not reset the others.
             return new DisplaySettings
             {
-                IndicatorPosition = Enum.IsDefined(settings.IndicatorPosition) ? settings.IndicatorPosition : JunctionIndicatorPosition.LowerHalf,
+                IndicatorPosition = DisplayViewModel.Positions.Any(p => p.Position == settings.IndicatorPosition) ? settings.IndicatorPosition : JunctionIndicatorPosition.LowerHalf,
                 LevelStyle = Enum.IsDefined(settings.LevelStyle) ? settings.LevelStyle : JunctionLevelStyle.RmsAndPeak,
                 IndicatorSize = Enum.IsDefined(settings.IndicatorSize) ? settings.IndicatorSize : SignalIndicatorSize.Compact,
                 LedShape = Enum.IsDefined(settings.LedShape) ? settings.LedShape : LedShape.Bar,
+                LargeIndicatorPosition = DisplayViewModel.LargePositions.Any(p => p.Position == settings.LargeIndicatorPosition) ? settings.LargeIndicatorPosition : JunctionIndicatorPosition.Middle,
             };
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
@@ -171,6 +178,14 @@ public sealed partial class DisplayViewModel : ObservableObject
         new(JunctionIndicatorPosition.Bottom, "Bottom of the device"),
     ];
 
+    /// <summary>The positions Medium and Large can take: they fill too much of the device for a half to differ from its end.</summary>
+    public static IReadOnlyList<IndicatorPositionOption> LargePositions { get; } =
+    [
+        new(JunctionIndicatorPosition.Top, "Top of the device"),
+        new(JunctionIndicatorPosition.Middle, "Middle of the device"),
+        new(JunctionIndicatorPosition.Bottom, "Bottom of the device"),
+    ];
+
     public static IReadOnlyList<LevelStyleOption> LevelStyles { get; } =
     [
         new(JunctionLevelStyle.RmsAndPeak, "Average level, with the peak held"),
@@ -190,17 +205,32 @@ public sealed partial class DisplayViewModel : ObservableObject
         new(LedShape.Round, "Round"),
     ];
 
-    /// <summary>Where every Device View draws its junctions' levels and note lamps.</summary>
+    /// <summary>Where every Device View draws its Compact junctions' levels and note lamps.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IndicatorPositionChoice))]
+    [NotifyPropertyChangedFor(nameof(IndicatorPositionChoice), nameof(SeamIndicatorPosition))]
     public partial JunctionIndicatorPosition IndicatorPosition { get; set; } = JunctionIndicatorPosition.LowerHalf;
 
     /// <summary><see cref="IndicatorPosition"/> as a list choice, for the Settings page.</summary>
     public IndicatorPositionOption IndicatorPositionChoice
     {
-        get => Positions.First(p => p.Position == IndicatorPosition);
+        get => Positions.FirstOrDefault(p => p.Position == IndicatorPosition) ?? Positions[2];
         set => IndicatorPosition = value?.Position ?? JunctionIndicatorPosition.LowerHalf;
     }
+
+    /// <summary>Where every Device View draws its Medium and Large indicators: Top, Middle, or Bottom.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LargeIndicatorPositionChoice), nameof(SeamIndicatorPosition))]
+    public partial JunctionIndicatorPosition LargeIndicatorPosition { get; set; } = JunctionIndicatorPosition.Middle;
+
+    /// <summary><see cref="LargeIndicatorPosition"/> as a list choice, for the Settings page.</summary>
+    public IndicatorPositionOption LargeIndicatorPositionChoice
+    {
+        get => LargePositions.FirstOrDefault(p => p.Position == LargeIndicatorPosition) ?? LargePositions[1];
+        set => LargeIndicatorPosition = value?.Position ?? JunctionIndicatorPosition.Middle;
+    }
+
+    /// <summary>The position the seams use: Compact's own, or Medium and Large's.</summary>
+    public JunctionIndicatorPosition SeamIndicatorPosition => IndicatorSize == SignalIndicatorSize.Compact ? IndicatorPosition : LargeIndicatorPosition;
 
     /// <summary>What every Device View's junction levels show.</summary>
     [ObservableProperty]
@@ -216,7 +246,7 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     /// <summary>How much every Device View's junction indicators show.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IndicatorSizeChoice), nameof(HasLedShape))]
+    [NotifyPropertyChangedFor(nameof(IndicatorSizeChoice), nameof(HasLedShape), nameof(IsCompact), nameof(SeamIndicatorPosition))]
     public partial SignalIndicatorSize IndicatorSize { get; set; } = SignalIndicatorSize.Compact;
 
     /// <summary><see cref="IndicatorSize"/> as a list choice, for the Settings page.</summary>
@@ -241,6 +271,9 @@ public sealed partial class DisplayViewModel : ObservableObject
     /// <summary>Whether the LED shape applies: only Medium and Large have a choice.</summary>
     public bool HasLedShape => IndicatorSize != SignalIndicatorSize.Compact;
 
+    /// <summary>Whether Compact's four positions apply (otherwise Medium and Large's three do).</summary>
+    public bool IsCompact => IndicatorSize == SignalIndicatorSize.Compact;
+
     /// <summary>Reads the saved settings from <paramref name="store"/> and saves every later change there.</summary>
     public void Use(DisplaySettingsStore store)
     {
@@ -253,6 +286,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             LevelStyle = settings.LevelStyle;
             IndicatorSize = settings.IndicatorSize;
             LedShape = settings.LedShape;
+            LargeIndicatorPosition = settings.LargeIndicatorPosition;
         }
         finally
         {
@@ -268,13 +302,15 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     partial void OnLedShapeChanged(LedShape value) => Save();
 
+    partial void OnLargeIndicatorPositionChanged(JunctionIndicatorPosition value) => Save();
+
     private void Save()
     {
         if (!_loading && _store is { } store)
         {
             try
             {
-                store.Save(new DisplaySettings { IndicatorPosition = IndicatorPosition, LevelStyle = LevelStyle, IndicatorSize = IndicatorSize, LedShape = LedShape });
+                store.Save(new DisplaySettings { IndicatorPosition = IndicatorPosition, LevelStyle = LevelStyle, IndicatorSize = IndicatorSize, LedShape = LedShape, LargeIndicatorPosition = LargeIndicatorPosition });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

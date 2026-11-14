@@ -9,16 +9,6 @@
     <StackPanel Classes="settingsGroup">
       <TextBlock Classes="overline" Text="DEVICE VIEW" />
       <Grid Classes="settingRow" ColumnDefinitions="180,*">
-        <TextBlock Classes="label" Text="Signal indicators" />
-        <ComboBox x:Name="IndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Positions}" SelectedItem="{Binding IndicatorPositionChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
-      </Grid>
-      <Grid Classes="settingRow" ColumnDefinitions="180,*">
-        <TextBlock Classes="label" Text="Levels show" />
-        <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
-      </Grid>
-      <Grid Classes="settingRow" ColumnDefinitions="180,*">
         <TextBlock Classes="label" Text="Indicator size" />
         <ComboBox x:Name="IndicatorSizeBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Sizes}" SelectedItem="{Binding IndicatorSizeChoice}"
                   HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator size" />
@@ -28,8 +18,24 @@
         <ComboBox x:Name="LedShapeBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LedShapes}" SelectedItem="{Binding LedShapeChoice}"
                   HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator LED shape" />
       </Grid>
+      <!-- Compact has four positions; Medium and Large fill too much of the device for the halves to differ from its ends. -->
+      <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding IsCompact}">
+        <TextBlock Classes="label" Text="Position" />
+        <ComboBox x:Name="IndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Positions}" SelectedItem="{Binding IndicatorPositionChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding HasLedShape}">
+        <TextBlock Classes="label" Text="Position" />
+        <ComboBox x:Name="LargeIndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LargePositions}" SelectedItem="{Binding LargeIndicatorPositionChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Medium and Large signal indicator position" />
+      </Grid>
+      <Grid Classes="settingRow" ColumnDefinitions="180,*">
+        <TextBlock Classes="label" Text="Levels show" />
+        <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
+      </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose where they sit along the devices' height, whether a level follows the average loudness (with the peak held above it) or the peaks, and how much it shows, in every Device View. Medium and Large widen the space between devices to fit; at Large, click a lit clip light (or focus it and press Enter) to clear it." />
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose how much the indicators show, where they sit along the devices' height, and whether a level follows the average loudness (with the peak held above it) or the peaks, in every Device View. Medium and Large widen the space between devices to fit and sit at the top, middle, or bottom; at Large, click a lit clip light (or focus it and press Enter) to clear it." />
     </StackPanel>
   </StackPanel>
 </UserControl>

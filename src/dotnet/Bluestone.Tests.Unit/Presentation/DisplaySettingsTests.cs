@@ -92,4 +92,39 @@ public sealed class DisplaySettingsTests : IDisposable
         display.LedShapeChoice = DisplayViewModel.LedShapes.Single(l => l.Shape == LedShape.Round);
         Assert.Equal(new DisplaySettings { IndicatorSize = SignalIndicatorSize.Medium, LedShape = LedShape.Round }, new DisplaySettingsStore(File()).Load());
     }
+
+    [Fact]
+    public void MediumAndLarge_HaveTheirOwnTopMiddleOrBottom_AndCompactKeepsItsFour()
+    {
+        Assert.Equal([JunctionIndicatorPosition.Top, JunctionIndicatorPosition.Middle, JunctionIndicatorPosition.Bottom], DisplayViewModel.LargePositions.Select(p => p.Position));
+        Assert.DoesNotContain(DisplayViewModel.Positions, p => p.Position == JunctionIndicatorPosition.Middle);
+
+        var store = new DisplaySettingsStore(File());
+        var display = new DisplayViewModel();
+        display.Use(store);
+        display.IndicatorPosition = JunctionIndicatorPosition.UpperHalf;
+        Assert.Equal(JunctionIndicatorPosition.UpperHalf, display.SeamIndicatorPosition);
+        Assert.True(display.IsCompact);
+
+        // At Medium the seams take the Medium and Large position (Middle by default), and Compact's choice is kept for later.
+        var notified = new List<string?>();
+        display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
+        display.IndicatorSize = SignalIndicatorSize.Medium;
+        Assert.False(display.IsCompact);
+        Assert.Equal(JunctionIndicatorPosition.Middle, display.SeamIndicatorPosition);
+        Assert.Contains(nameof(DisplayViewModel.SeamIndicatorPosition), notified);
+
+        display.LargeIndicatorPositionChoice = DisplayViewModel.LargePositions.Single(p => p.Position == JunctionIndicatorPosition.Bottom);
+        Assert.Equal(JunctionIndicatorPosition.Bottom, display.SeamIndicatorPosition);
+        Assert.Equal(
+            new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.UpperHalf, IndicatorSize = SignalIndicatorSize.Medium, LargeIndicatorPosition = JunctionIndicatorPosition.Bottom },
+            store.Load());
+
+        display.IndicatorSize = SignalIndicatorSize.Compact;
+        Assert.Equal(JunctionIndicatorPosition.UpperHalf, display.SeamIndicatorPosition);
+
+        // A position that does not apply to its size reads as that size's default.
+        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"middle\", \"largeIndicatorPosition\": \"upperHalf\" }");
+        Assert.Equal(new DisplaySettings(), store.Load());
+    }
 }

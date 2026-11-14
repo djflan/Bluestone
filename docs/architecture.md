@@ -535,7 +535,8 @@ through `SignalIndicatorRenderer`, which the standalone `SignalIndicator` contro
 Medium and Large add a 0 dB tick, then a dB scale, a held-peak readout, and a clip light that stays on until cleared,
 with bar or round LEDs. Settings ▸ Display picks the size and LED shape for every seam: at Medium and Large the seam
 hosts a `SignalIndicator` on the junction's own `MeterLevels` and notes (so every size shows the same data), widens
-to fit it, and places it as Compact's group is placed, with a shorter Large level so it fits a panel's height. Only junctions a
+to fit it, and places it at the top, middle, or bottom of the panel (its own setting: Compact's upper and lower half
+positions would land where top and bottom do), with a shorter Large level so it fits a panel's height. Only junctions a
 visible Device View shows are metered (`IAudioPlayback.WatchJunctions`). A seam also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers

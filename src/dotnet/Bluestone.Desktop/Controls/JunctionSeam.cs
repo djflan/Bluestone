@@ -683,6 +683,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         {
             JunctionIndicatorPosition.Top => PanelBorder,
             JunctionIndicatorPosition.UpperHalf => bodyTop + (body / 4) - (group / 2),
+            JunctionIndicatorPosition.Middle => bodyTop + (body / 2) - (group / 2),
             JunctionIndicatorPosition.Bottom => Bounds.Height - PanelBorder - group,
             _ => bodyTop + (body * 3 / 4) - (group / 2),
         };
@@ -793,6 +794,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         {
             JunctionIndicatorPosition.Top => PanelBorder,
             JunctionIndicatorPosition.UpperHalf => HeaderHeight + (body / 4) - (size / 2),
+            JunctionIndicatorPosition.Middle => HeaderHeight + (body / 2) - (size / 2),
             JunctionIndicatorPosition.Bottom => height - PanelBorder - size,
             _ => HeaderHeight + (body * 3 / 4) - (size / 2),
         };
