@@ -57,7 +57,8 @@ Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugi
 Copilot users can run `/team [build|council|review|triage] <request>` to put a named team of specialist agents on a
 change: a builder, QA, a skeptic reviewer, UI craft, UX and accessibility, architecture, real-time timing, native
 platforms, a musician advocate, and docs. A director agent scopes the work, staffs the team, and picks each member's
-model. The workflow is in [.github/skills/team/](.github/skills/team/SKILL.md), and each member's charter is in
+model. How to use it is in [docs/agent-team.md](docs/agent-team.md); the workflow is in
+[.github/skills/team/](.github/skills/team/SKILL.md), and each member's charter is in
 [.github/agents/](.github/agents/). Its output is held to the same rules as any other contribution.
 
 ### Versions and releases
