@@ -99,11 +99,35 @@ public sealed class SignalIndicatorRendererTests
         var levels = Levels(rms: -20, peak: -12.4);
         Assert.Equal("After Polysynth · notes held · peak -12.4 dB", SignalIndicatorRenderer.Describe("After Polysynth", true, true, true, levels, null, false));
         Assert.Equal("Into the chain · no notes · silent · also sent to Strings", SignalIndicatorRenderer.Describe("Into the chain", true, false, true, new MeterLevels(), "Strings", false));
-        Assert.Equal("peak 1.0 dB, clipping · clipped — press Enter or click to clear", SignalIndicatorRenderer.Describe(null, false, false, true, Levels(rms: -3, peak: 1), null, true));
+        Assert.Equal("peak 1.0 dB, clipping · clip light on — press Enter or click to clear", SignalIndicatorRenderer.Describe(null, false, false, true, Levels(rms: -3, peak: 1), null, true));
         Assert.Equal("silent", SignalIndicatorRenderer.Describe(null, false, false, true, null, null, false));
         Assert.Equal("+1.2", SignalIndicatorRenderer.ReadoutText(12));
         Assert.Equal("-12.4", SignalIndicatorRenderer.ReadoutText(-124));
         Assert.Equal("—", SignalIndicatorRenderer.ReadoutText(SignalIndicatorRenderer.ReadoutValue(new MeterLevels())));
+    }
+
+    [Fact]
+    public void Readout_OverFullScale_ReadsAtFourAndAHalfToOneOnAPanel()
+    {
+        // WCAG's contrast for 9 px text: the readout's clip tint against the panel it sits on (the clip colour itself is 4.17:1).
+        var clip = Bluestone.Desktop.Theme.Palette.MeterClip;
+        Assert.True(Contrast(clip, Bluestone.Desktop.Theme.Palette.Panel) < 4.5);
+        var contrast = Contrast(SignalIndicatorRenderer.ReadoutOverColor(clip), Bluestone.Desktop.Theme.Palette.Panel);
+        Assert.True(contrast >= 4.5, $"{contrast:0.00}:1");
+
+        static double Contrast(Color a, Color b)
+        {
+            var (x, y) = (Luminance(a), Luminance(b));
+            return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
+        }
+
+        static double Luminance(Color c) => (0.2126 * Linear(c.R)) + (0.7152 * Linear(c.G)) + (0.0722 * Linear(c.B));
+
+        static double Linear(byte channel)
+        {
+            var v = channel / 255.0;
+            return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+        }
     }
 
     [Fact]
@@ -119,14 +143,25 @@ public sealed class SignalIndicatorRendererTests
             var peer = ControlAutomationPeer.CreatePeerForElement(indicator);
             Assert.Equal("Signal level", peer.GetName());
             Assert.Equal(AutomationControlType.Group, peer.GetAutomationControlType());
-            Assert.Contains("clipped — press Enter or click to clear", peer.GetHelpText(), StringComparison.Ordinal);
+            Assert.Contains("clip light on — press Enter or click to clear", peer.GetHelpText(), StringComparison.Ordinal);
             Assert.True(indicator.DisplayState.ClipLatched);
 
+            // From the keyboard, focus opens the tooltip, which says how to clear the light, and follows it when cleared.
             indicator.Focus(NavigationMethod.Tab);
+            Assert.True(ToolTip.GetIsOpen(indicator));
+            Assert.Contains("press Enter", Assert.IsType<string>(ToolTip.GetTip(indicator)), StringComparison.Ordinal);
             window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
             Assert.False(levels.Clipped);
             Assert.False(indicator.DisplayState.ClipLatched);
-            Assert.DoesNotContain("clipped", peer.GetHelpText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("clip light", peer.GetHelpText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("clip light", Assert.IsType<string>(ToolTip.GetTip(indicator)), StringComparison.Ordinal);
+
+            // Without audio there is no light to clear: no tab stop, until it carries audio again.
+            indicator.CarriesAudio = false;
+            Assert.False(indicator.Focusable);
+            Assert.False(ToolTip.GetIsOpen(indicator));
+            indicator.CarriesAudio = true;
+            Assert.True(indicator.Focusable);
         }
         finally
         {

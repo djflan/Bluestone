@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Bluestone.Desktop.Theme;
 using Bluestone.Presentation;
 
@@ -105,6 +106,10 @@ internal sealed class SignalIndicatorRenderer
     private const double NoteWidth = 12;
     private const double NoteHeight = 12;
     private const double IdleOpacity = 0.55;
+
+    // Room round a level's cached columns for the halo (a unit each side), and how far the readout's clip tint is lightened.
+    private const double LevelPad = 1;
+    private const double ReadoutOverLighten = 0.25;
     private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
     private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
     private static readonly double HotFraction = MeterLevels.Fraction(-6);
@@ -133,14 +138,15 @@ internal sealed class SignalIndicatorRenderer
     private RadialGradientBrush? _haloBrush;
     private LevelCache? _level;
     private SolidColorBrush? _textBrush;
-    private SolidColorBrush? _clipBrush;
+    private SolidColorBrush? _readoutBrush;
     private SolidColorBrush? _latchOn;
     private SolidColorBrush? _latchHalo;
     private SolidColorBrush? _latchOff;
     private (FontFamily Family, double Size, Color Color)? _font;
     private FormattedText[]? _labels;
-    private FormattedText? _readout;
-    private int _readoutValue = NoReadout;
+    private (double X, double Bottom, SignalLevelMetrics Metrics, Geometry Geometry)? _labelGeometry;
+    private Geometry? _readout;
+    private (int Tenths, double Center, double Top) _readoutKey = (NoReadout, double.NaN, double.NaN);
     private double _readoutWidth;
 
     /// <summary>The colours to draw with. Setting different ones drops every cached brush.</summary>
@@ -155,14 +161,15 @@ internal sealed class SignalIndicatorRenderer
                 _haloBrush = null;
                 _lampBrush = null;
                 _segments = null;
-                _level = null;
+                ReleaseLevel();
                 _textBrush = null;
-                _clipBrush = null;
                 _latchOn = null;
                 _latchHalo = null;
                 _latchOff = null;
                 _labels = null;
+                _labelGeometry = null;
                 _readout = null;
+                _readoutBrush = null;
             }
         }
     }
@@ -249,7 +256,7 @@ internal sealed class SignalIndicatorRenderer
 
         if (clipLatched)
         {
-            parts.Add("clipped — press Enter or click to clear");
+            parts.Add("clip light on — press Enter or click to clear");
         }
 
         return string.Join(" · ", parts);
@@ -363,17 +370,21 @@ internal sealed class SignalIndicatorRenderer
     }
 
     /// <summary>
-    /// A Medium or Large level, its top-left corner at <paramref name="origin"/>, drawn from <paramref name="state"/>: every
-    /// segment dim in one call, then the lit runs, the held segments, and the over segments as fills clipped to the segments.
+    /// A Medium or Large level, its top-left corner at <paramref name="origin"/>, drawn from <paramref name="state"/>. Its
+    /// dim, glowing, and lit columns are drawn once, at <paramref name="scale"/> pixels a unit, into cached bitmaps; each
+    /// frame draws the dim column whole, then slices of the others (the lit runs, the held segments, and the over segments),
+    /// each through a rectangle clip. Bitmaps and solid clips cost Avalonia nothing a frame, and the number of calls does
+    /// not depend on the segment count (a gradient fill would copy its stops every frame).
     /// </summary>
-    public void DrawLevel(DrawingContext context, Point origin, SignalLevelMetrics metrics, LedShape shape, in SignalDisplayState state)
+    public void DrawLevel(DrawingContext context, Point origin, SignalLevelMetrics metrics, LedShape shape, in SignalDisplayState state, double scale)
     {
-        var cache = Level(metrics, shape);
+        var cache = Level(metrics, shape, scale);
+        var whole = new Rect(-LevelPad, -LevelPad, metrics.Width + (2 * LevelPad), metrics.Height + (2 * LevelPad));
         using (context.PushTransform(Matrix.CreateTranslation(origin.X, origin.Y)))
         {
             using (context.PushOpacity(state.Silent ? IdleOpacity : 1))
             {
-                context.DrawGeometry(cache.Dim, null, cache.Segments);
+                context.DrawImage(cache.Dim, Pixels(cache.Dim), whole);
             }
 
             if (state.Silent && !state.Holds)
@@ -381,15 +392,8 @@ internal sealed class SignalIndicatorRenderer
                 return;
             }
 
-            using (context.PushGeometryClip(cache.Halos))
-            {
-                Runs(context, cache.HaloBrush, metrics, state, 1, 0.4);
-            }
-
-            using (context.PushGeometryClip(cache.Segments))
-            {
-                Runs(context, cache.Lit, metrics, state, 0, 0);
-            }
+            Runs(context, cache.Halo, whole, metrics, state, 1, 0.4);
+            Runs(context, cache.Lit, whole, metrics, state, 0, 0);
         }
     }
 
@@ -400,30 +404,53 @@ internal sealed class SignalIndicatorRenderer
         context.FillRectangle(_textBrush, new Rect(x, metrics.EdgeY(bottom, decibels) - 0.5, length, 1));
     }
 
-    /// <summary>The Large scale's labels (0, 6, 12, 24, 48), left-aligned at <paramref name="x"/>, each centred on its mark.</summary>
+    /// <summary>
+    /// The Large scale's labels (0, 6, 12, 24, 48), left-aligned at <paramref name="x"/>, each centred on its mark: their
+    /// outlines are built once (for the font, colours, and place) and filled with a cached brush, as text costs a frame.
+    /// </summary>
     public void DrawScaleLabels(DrawingContext context, double x, double bottom, SignalLevelMetrics metrics, FontFamily family, double size)
     {
         EnsureText(family, size);
-        for (var i = 0; i < ScaleMarks.Length; i++)
+        if (_labelGeometry is not { } cached || cached.X != x || cached.Bottom != bottom || cached.Metrics != metrics)
         {
-            var label = _labels![i];
-            context.DrawText(label, new Point(x, Math.Round(metrics.EdgeY(bottom, ScaleMarks[i]) - (label.Height / 2))));
+            var group = new GeometryGroup { FillRule = FillRule.NonZero };
+            for (var i = 0; i < ScaleMarks.Length; i++)
+            {
+                var label = _labels![i];
+                if (label.BuildGeometry(new Point(x, Math.Round(metrics.EdgeY(bottom, ScaleMarks[i]) - (label.Height / 2)))) is { } outline)
+                {
+                    group.Children.Add(outline);
+                }
+            }
+
+            cached = (x, bottom, metrics, group);
+            _labelGeometry = cached;
         }
+
+        context.DrawGeometry(_textBrush, null, cached.Geometry);
     }
 
-    /// <summary>The held-peak readout, centred on <paramref name="center"/>; its text is rebuilt only when its value changes.</summary>
+    /// <summary>
+    /// The held-peak readout, centred on <paramref name="center"/>. Its outline is rebuilt only when its value (or place)
+    /// changes. Over full scale it keeps its sign and takes a light tint of the clip colour, bright enough to read.
+    /// </summary>
     public void DrawReadout(DrawingContext context, double center, double top, int tenths, FontFamily family, double size)
     {
         EnsureText(family, size);
-        if (_readout is null || _readoutValue != tenths)
+        _readoutBrush ??= new SolidColorBrush(ReadoutOverColor(_colors.Clip));
+        var over = tenths is > 0 and not NoReadout;
+        if (_readout is null || _readoutKey != (tenths, center, top))
         {
-            _clipBrush ??= new SolidColorBrush(_colors.Clip);
-            _readout = new FormattedText(ReadoutText(tenths), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(family), size, tenths is > 0 and not NoReadout ? _clipBrush : _textBrush);
-            _readoutValue = tenths;
+            var text = new FormattedText(ReadoutText(tenths), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(family), size, _textBrush);
+            _readout = text.BuildGeometry(new Point(Math.Max(0, Math.Round(center - (text.Width / 2))), top)) ?? new GeometryGroup();
+            _readoutKey = (tenths, center, top);
         }
 
-        context.DrawText(_readout, new Point(Math.Max(0, Math.Round(center - (_readout.Width / 2))), top));
+        context.DrawGeometry(over ? _readoutBrush : _textBrush, null, _readout);
     }
+
+    /// <summary>The readout's colour over full scale: the clip colour lightened until it reads at 4.5:1 on a panel.</summary>
+    public static Color ReadoutOverColor(Color clip) => Palette.Lighten(clip, ReadoutOverLighten);
 
     /// <summary>The clip light: dim, or lit with a halo once a peak has passed full scale, until it is cleared.</summary>
     public void DrawClipLatch(DrawingContext context, Rect box, bool latched)
@@ -443,35 +470,47 @@ internal sealed class SignalIndicatorRenderer
         }
     }
 
-    // The lit fills for both columns, inflated by (dx, dy) for the halo: the run from the bottom, the held segment, and the
-    // top segment while the peak is over full scale. The clip pushed by the caller cuts them into segments.
-    private static void Runs(DrawingContext context, IBrush brush, SignalLevelMetrics metrics, in SignalDisplayState state, double dx, double dy)
+    // Slices of a cached column for both sides, inflated by (dx, dy) for the halo: the run from the bottom, the held segment,
+    // and the top segment while the peak is over full scale. Each is the whole column drawn through a rectangle clip.
+    private static void Runs(DrawingContext context, RenderTargetBitmap column, Rect whole, SignalLevelMetrics metrics, in SignalDisplayState state, double dx, double dy)
     {
         var bottom = metrics.Height;
-        Column(state.LitLeft, state.HeldLeft, state.OverLeft, 0);
-        Column(state.LitRight, state.HeldRight, state.OverRight, metrics.BarWidth + metrics.BarGap);
+        Column(context, state.LitLeft, state.HeldLeft, state.OverLeft, 0);
+        Column(context, state.LitRight, state.HeldRight, state.OverRight, metrics.BarWidth + metrics.BarGap);
 
-        void Column(int lit, int held, bool over, double x)
+        void Column(DrawingContext context, int lit, int held, bool over, double x)
         {
             var left = x - dx;
             var width = metrics.BarWidth + (2 * dx);
             if (lit > 0)
             {
                 var top = metrics.SegmentTop(bottom, lit - 1) - dy;
-                context.FillRectangle(brush, new Rect(left, top, width, bottom + dy - top));
+                Slice(new Rect(left, top, width, bottom + dy - top));
             }
 
             if (held >= 0)
             {
-                context.FillRectangle(brush, new Rect(left, metrics.SegmentTop(bottom, held) - dy, width, metrics.Segment + (2 * dy)));
+                Slice(new Rect(left, metrics.SegmentTop(bottom, held) - dy, width, metrics.Segment + (2 * dy)));
             }
 
             if (over)
             {
-                context.FillRectangle(brush, new Rect(left, metrics.SegmentTop(bottom, metrics.Count - 1) - dy, width, metrics.Segment + (2 * dy)));
+                Slice(new Rect(left, metrics.SegmentTop(bottom, metrics.Count - 1) - dy, width, metrics.Segment + (2 * dy)));
+            }
+
+            void Slice(Rect rect)
+            {
+                using (context.PushClip(rect))
+                {
+                    context.DrawImage(column, Pixels(column), whole);
+                }
             }
         }
     }
+
+    // A bitmap's whole area as a source rectangle: Avalonia's Skia backend takes source rectangles in pixels (the bitmap's
+    // Size is in units, half its pixels at 2x, and would draw only its top-left quarter).
+    private static Rect Pixels(RenderTargetBitmap bitmap) => new(0, 0, bitmap.PixelSize.Width, bitmap.PixelSize.Height);
 
     // A pin of the connector, at an angle round its centre (0 to the right, 90 straight down).
     private static EllipseGeometry Pin(double degrees)
@@ -511,9 +550,9 @@ internal sealed class SignalIndicatorRenderer
         };
     }
 
-    private LevelCache Level(SignalLevelMetrics metrics, LedShape shape)
+    private LevelCache Level(SignalLevelMetrics metrics, LedShape shape, double scale)
     {
-        if (_level is { } cached && cached.Metrics == metrics && cached.Shape == shape)
+        if (_level is { } cached && cached.Metrics == metrics && cached.Shape == shape && cached.Scale == scale)
         {
             return cached;
         }
@@ -540,8 +579,41 @@ internal sealed class SignalIndicatorRenderer
             }
         }
 
-        _level = new LevelCache(metrics, shape, segments, halos, Stepped(metrics, LitColor), Stepped(metrics, HaloColor), Stepped(metrics, DimColor));
+        ReleaseLevel();
+        _level = new LevelCache(
+            metrics,
+            shape,
+            scale,
+            Column(segments, Stepped(metrics, DimColor)),
+            Column(halos, Stepped(metrics, HaloColor)),
+            Column(segments, Stepped(metrics, LitColor)));
         return _level;
+
+        // The column's every segment, filled with the brush, in a bitmap with room for the halo round it.
+        RenderTargetBitmap Column(Geometry geometry, IBrush brush)
+        {
+            var bitmap = new RenderTargetBitmap(
+                new PixelSize((int)Math.Ceiling((metrics.Width + (2 * LevelPad)) * scale), (int)Math.Ceiling((metrics.Height + (2 * LevelPad)) * scale)),
+                new Vector(96 * scale, 96 * scale));
+            using (var context = bitmap.CreateDrawingContext())
+            using (context.PushTransform(Matrix.CreateTranslation(LevelPad, LevelPad)))
+            {
+                context.DrawGeometry(brush, null, geometry);
+            }
+
+            return bitmap;
+        }
+    }
+
+    private void ReleaseLevel()
+    {
+        if (_level is { } level)
+        {
+            level.Dim.Dispose();
+            level.Halo.Dispose();
+            level.Lit.Dispose();
+            _level = null;
+        }
     }
 
     private void EnsureText(FontFamily family, double size)
@@ -562,6 +634,7 @@ internal sealed class SignalIndicatorRenderer
         }
 
         _readoutWidth = Math.Ceiling(new FormattedText("-00.0", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, size, _textBrush).Width);
+        _labelGeometry = null;
         _readout = null;
     }
 
@@ -604,5 +677,5 @@ internal sealed class SignalIndicatorRenderer
         };
     }
 
-    private sealed record LevelCache(SignalLevelMetrics Metrics, LedShape Shape, Geometry Segments, Geometry Halos, IBrush Lit, IBrush HaloBrush, IBrush Dim);
+    private sealed record LevelCache(SignalLevelMetrics Metrics, LedShape Shape, double Scale, RenderTargetBitmap Dim, RenderTargetBitmap Halo, RenderTargetBitmap Lit);
 }

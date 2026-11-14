@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -14,6 +15,7 @@ namespace Bluestone.Tests.Ui;
 /// <summary>
 /// A gallery of the signal indicator family for review: Compact (the junction's own seam), Medium and Large with bar and
 /// round LEDs, side by side, in the states a musician sees (silent, moderate, hot, clipping, notes held, and the peak style),
+/// and Large with keyboard focus,
 /// with the app's theme. Saved at 2x (<c>frames/signal-indicator-gallery.png</c>) and at actual pixels
 /// (<c>frames/signal-indicator-gallery-1x.png</c>), and copied to <c>BLUESTONE_GALLERY_DIR</c> when that is set.
 /// </summary>
@@ -68,6 +70,9 @@ public sealed class SignalIndicatorGalleryTests
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         }
 
+        // One more row: Large with keyboard focus, clipping, so its focus ring shows around it.
+        grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
         TextBlock Label(string text, IBrush brush) => new()
         {
             Text = text,
@@ -105,6 +110,18 @@ public sealed class SignalIndicatorGalleryTests
             }
         }
 
+        var focusedLabel = Label("Focused (keyboard)", Brush("Text.Secondary"));
+        focusedLabel.HorizontalAlignment = HorizontalAlignment.Right;
+        Grid.SetRow(focusedLabel, States.Length + 1);
+        grid.Children.Add(focusedLabel);
+        var focused = Indicator(SignalIndicatorSize.Large, LedShape.Bar, States.Single(s => s.Name == "Clipping"));
+        focused.HorizontalAlignment = HorizontalAlignment.Center;
+        focused.VerticalAlignment = VerticalAlignment.Bottom;
+        Grid.SetRow(focused, States.Length + 1);
+        Grid.SetColumn(focused, Array.FindIndex(Columns, c => c.Name == "Large · Bar") + 1);
+        grid.Children.Add(focused);
+        indicators.Add(focused);
+
         var host = new Border { Background = Brush("Surface.Base"), Child = grid, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         var window = new Window { Width = 1200, Height = 2400, Content = host };
         window.Show();
@@ -121,6 +138,8 @@ public sealed class SignalIndicatorGalleryTests
                 UpdateSignal.Invoke(seam.Signal, [state.NotesHeld, Reading(state.Now), Now]);
             }
 
+            Assert.True(focused.Focus(NavigationMethod.Tab));
+            Assert.Contains(":focus-visible", focused.Classes);
             window.UpdateLayout();
             var frames = Path.Combine(AppContext.BaseDirectory, "frames");
             Directory.CreateDirectory(frames);

@@ -328,6 +328,10 @@ internal sealed class SignalIndicator : Control
         {
             levels.ResetClip();
             Refresh();
+            if (ToolTip.GetIsOpen(this))
+            {
+                ToolTip.SetTip(this, Describe());
+            }
         }
     }
 
@@ -374,7 +378,8 @@ internal sealed class SignalIndicator : Control
             return;
         }
 
-        _renderer.DrawLevel(context, new Point(barsLeft, barsTop), metrics, EffectiveShape, state);
+        // Cached columns at the screen's scale, and at least twice the size so a scaled render (a 2x capture) stays sharp.
+        _renderer.DrawLevel(context, new Point(barsLeft, barsTop), metrics, EffectiveShape, state, Math.Max(2, Math.Ceiling(TopLevel.GetTopLevel(this)?.RenderScaling ?? 1)));
         if (Variant == SignalIndicatorSize.Large)
         {
             _renderer.DrawClipLatch(context, new Rect(barsLeft, origin.Y + layout.LatchTop, metrics.Width, ClipLatchHeight), state.ClipLatched);
@@ -389,11 +394,16 @@ internal sealed class SignalIndicator : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == VariantProperty)
+        if (change.Property == VariantProperty || change.Property == CarriesAudioProperty)
         {
-            // Only Large has something to do (clearing its clip light), so only Large is a tab stop.
-            Focusable = Variant == SignalIndicatorSize.Large;
-            Cursor = Variant == SignalIndicatorSize.Large ? new Cursor(StandardCursorType.Hand) : null;
+            // Only a Large level has something to do (clearing its clip light), so only it is a tab stop.
+            var actionable = Variant == SignalIndicatorSize.Large && CarriesAudio;
+            Focusable = actionable;
+            Cursor = actionable ? new Cursor(StandardCursorType.Hand) : null;
+            if (!actionable)
+            {
+                ToolTip.SetIsOpen(this, false);
+            }
         }
         else if (change.Property == LevelsProperty)
         {
@@ -422,6 +432,24 @@ internal sealed class SignalIndicator : Control
     {
         Subscribe(null);
         base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+
+        // From the keyboard there is no hover, so the tooltip opens with focus: what it shows, and how to clear the light.
+        if (e.NavigationMethod is NavigationMethod.Tab or NavigationMethod.Directional)
+        {
+            ToolTip.SetTip(this, Describe());
+            ToolTip.SetIsOpen(this, true);
+        }
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        ToolTip.SetIsOpen(this, false);
     }
 
     protected override void OnPointerEntered(PointerEventArgs e)
