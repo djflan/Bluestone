@@ -52,6 +52,14 @@ Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugi
 7. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the Core MIDI tests, which are unreliable on hosted runners; if you change the Core MIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally. A pull request that changes only documentation (Markdown, `docs/`, `.github/skills/`, issue templates) skips the build and tests; the checks still pass.
 8. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
 
+### Agent team
+
+Copilot users can run `/team [build|council|review|triage] <request>` to put a named team of specialist agents on a
+change: a builder, QA, a skeptic reviewer, UI craft, UX and accessibility, architecture, real-time timing, native
+platforms, a musician advocate, and docs. A director agent scopes the work, staffs the team, and picks each member's
+model. The workflow is in [.github/skills/team/](.github/skills/team/SKILL.md), and each member's charter is in
+[.github/agents/](.github/agents/). Its output is held to the same rules as any other contribution.
+
 ### Versions and releases
 
 Every commit that lands on `main` is tagged with the next version (`vX.Y.Z`) by the [version workflow](.github/workflows/version.yml), and the app shows that version with its commit, for example `v0.4.0 a32f6d1`. The bump is patch unless the message of the commit that lands asks otherwise. Put a token in the **pull request title**: a merge commit includes it, and a squash merge uses it as the message. Tokens are case-insensitive.
