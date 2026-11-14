@@ -7,9 +7,12 @@ post to the pull request unless the user asks.
 
 1. Resolve the target: a PR number (`gh pr view <n> --json headRefOid,baseRefName,files,title,body`), a branch, or the
    current branch.
-2. Fetch both sides without touching the working tree: for a PR, `git fetch origin pull/<n>/head <base>` (this
-   works for fork PRs too); for a branch, `git fetch origin <branch> <base>`. Pin the head SHA (for a PR, its
-   `headRefOid`) and the merge base, `git merge-base origin/<base> <sha>`. Every reviewer reviews exactly that diff:
+2. Fetch both sides into explicit refs, without touching the working tree. For a PR (this works for fork PRs too):
+   `git fetch origin +refs/pull/<n>/head:refs/remotes/origin/pr/<n> +refs/heads/<base>:refs/remotes/origin/<base>`.
+   For a branch: `git fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>
+   +refs/heads/<base>:refs/remotes/origin/<base>`. Pin the head SHA from the fetched ref (`git rev-parse
+   origin/pr/<n>` or `origin/<branch>`; for a PR it must equal `headRefOid`) and the merge base,
+   `git merge-base origin/<base> <sha>`. Every reviewer reviews exactly that diff:
    `git --no-pager diff <merge-base> <sha>`. If the branch moves during the review, say so and keep the pinned SHA.
 3. Read the PR body and the linked issue, so the review checks what the change claims as well as the code.
 

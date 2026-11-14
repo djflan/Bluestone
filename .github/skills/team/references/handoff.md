@@ -20,8 +20,9 @@ Return: <the output format below that applies>
 
 When the client exposes the member as a custom agent, dispatch that agent type. Otherwise dispatch a
 `general-purpose` agent with the prompt above. Either way, pass the chosen model as the task tool's `model`. A
-read-only member must also be told: "Read-only: do not edit, create, or delete files, do not run shell commands that
-write (redirection, `sed -i`, `git checkout`, `git switch`), and do not commit."
+read-only member must also be told: "Read-only: do not edit, create, or delete tracked files, do not change the index
+or the checked-out branch (no `sed -i`, `git checkout`, `git switch`, `git stash`), and do not commit. Build and
+test output in ignored folders is fine."
 
 ## Finding format (reviews)
 
