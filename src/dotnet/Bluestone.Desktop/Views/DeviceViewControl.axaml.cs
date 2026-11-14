@@ -101,8 +101,9 @@ public partial class DeviceViewControl : UserControl
         }
 
         vm.Activate();
-        // A seam belongs to the gap, not the device after it: pressing it does not select that device.
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is not Control source || source is Controls.JunctionSeam)
+        // A seam belongs to the gap, not the device after it: pressing it (including a hosted indicator) does not select that device.
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is not Control source
+            || source is Controls.JunctionSeam || source.GetVisualAncestors().Any(ancestor => ancestor is Controls.JunctionSeam))
         {
             return;
         }

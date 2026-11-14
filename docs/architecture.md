@@ -530,11 +530,17 @@ Device View picks the chain and gap, or, over the middle of a device's panel, th
 project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
 
 Between panels, each junction is a `JunctionSeam` drawn from a `JunctionSignal` (ADR 0037): a segmented level and a
-MIDI icon for notes, updated each frame without allocating and redrawn only when they change. Only junctions a
+MIDI icon for notes, updated each frame without allocating and redrawn only when they change. The seam draws them
+through `SignalIndicatorRenderer`, which the standalone `SignalIndicator` control shares: Compact is the seam's look, and
+Medium and Large add a 0 dB tick, then a dB scale, a held-peak readout, and a clip light that stays on until cleared,
+with bar or round LEDs. Settings ▸ Display picks the size and LED shape for every seam: at Medium and Large the seam
+hosts a `SignalIndicator` on the junction's own `MeterLevels` and notes (so every size shows the same data), widens
+to fit it, and places it at the top, middle, or bottom of the panel (its own setting: Compact's upper and lower half
+positions would land where top and bottom do), with a shorter Large level so it fits a panel's height. Only junctions a
 visible Device View shows are metered (`IAudioPlayback.WatchJunctions`). A seam also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers
-only points the routing validator accepts. Where indicators sit and what levels show are application preferences
+only points the routing validator accepts. Where indicators sit, their size and LED shape, and what levels show are application preferences
 (`DisplayViewModel`, Settings ▸ Display), not project data.
 
 Time navigation is one pure model, `TimelineViewport` (zoom in pixels per quarter and scroll, anchored zoom, fit),

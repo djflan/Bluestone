@@ -176,6 +176,10 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 - The views added with the audio engine and plugins (Plugins view, mixer console, Audio Settings) were not looked at
   by eye: the app was launched as a smoke test with the screen locked. Headless UI tests cover the workflows and save
   frames.
+- The Medium and Large `SignalIndicator` variants appear in the Device View's seams when chosen in Settings ▸ Display;
+  they were seen only in headless frames (the gallery and `junction-size-*` Device View frames), with no HiDPI, GPU, or
+  screen-reader check. Compact, the default, is drawn by the seam as before and compared pixel for pixel against
+  committed baseline frames.
 
 ## 7. Unresolved implementation backlog
 

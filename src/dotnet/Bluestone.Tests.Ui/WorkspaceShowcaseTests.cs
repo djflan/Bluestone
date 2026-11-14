@@ -411,6 +411,58 @@ public sealed class WorkspaceShowcaseTests
         Assert.True(File.Exists(gallery));
     });
 
+    /// <summary>
+    /// Settings ▸ Display's indicator size and LED shape in a playing chain: every seam takes the setting, widens for Medium and
+    /// Large, and keeps its group in the panel (frames <c>junction-size-*.png</c>).
+    /// </summary>
+    [Fact]
+    public Task TheDeviceView_ShowsEveryIndicatorSizeAndLedShape() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var plugins = Plugins();
+        await using var app = await OpenSongAsync(s => new PluginDeviceHost(plugins, s, [Sine, Gain]));
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        app.ViewModel.Select(app.ViewModel.Tracks[0]);
+        app.Settle();
+        var view = app.ViewModel.DeviceView!;
+        view.InsertAt(0, BuiltIn("Arpeggiator"));
+        view.InsertAt(1, PluginDeviceHost.DefinitionOf(Sine));
+        view.InsertAt(2, PluginDeviceHost.DefinitionOf(Gain));
+        app.Settle();
+        await AppUnderTest.WaitUntilAsync(() => view.Devices.Count == 3 && view.Devices[1].Parameters.Count > 0, "the chain and the plugin's parameters");
+        var levels = new Dictionary<Guid, Bluestone.Audio.MeterReading>
+        {
+            [view.Devices[1].Output.Key] = new(0.62f, 0.55f, 0.32f, 0.28f),
+            [view.Devices[2].Output.Key] = new(1.1f, 0.93f, 0.5f, 0.46f),
+        };
+        app.ViewModel.JunctionLevelSource = key => levels.TryGetValue(key, out var reading) ? reading : null;
+        app.Playback.Live.Post(app.ViewModel.Tracks[0].Id, Midi.Wire.ChannelMessage.NoteOn(MidiChannel.FromIndex(0), new NoteNumber(60), new Velocity(100)), TimeSpan.Zero);
+        app.ViewModel.OnFrame();
+        levels[view.Devices[2].Output.Key] = new(0.93f, 0.88f, 0.5f, 0.46f);
+
+        foreach (var size in Presentation.DisplayViewModel.Sizes)
+        {
+            foreach (var shape in size.Size == Presentation.SignalIndicatorSize.Compact ? Presentation.DisplayViewModel.LedShapes.Take(1) : Presentation.DisplayViewModel.LedShapes)
+            {
+                app.ViewModel.Display.IndicatorSize = size.Size;
+                app.ViewModel.Display.LedShape = shape.Shape;
+                for (var frame = 0; frame < 10; frame++)
+                {
+                    app.ViewModel.OnFrame();
+                    await Task.Delay(20);
+                    app.Settle();
+                }
+
+                var seams = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Desktop.Controls.JunctionSeam>().ToList();
+                Assert.NotEmpty(seams);
+                Assert.All(seams, s => Assert.Equal(size.Size, s.IndicatorSize));
+                Assert.All(seams.Where(s => s.Signal is not null), s => Assert.Equal(size.Size != Presentation.SignalIndicatorSize.Compact, s.Indicator is not null));
+                Assert.All(seams.Select(s => s.Indicator).OfType<Desktop.Controls.SignalIndicator>(), i => Assert.Equal(shape.Shape, i.LedShape));
+                Assert.True(File.Exists(SaveDeviceView(app, $"junction-size-{size.Size}-{shape.Shape}".ToLowerInvariant())));
+            }
+        }
+    });
+
     // The docked Device View alone, at twice the size, for looking at the seams closely.
     private static string SaveDeviceView(AppUnderTest app, string name)
     {

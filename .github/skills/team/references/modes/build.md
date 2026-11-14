@@ -6,7 +6,10 @@ except for the hard stops in `SKILL.md`. It follows `.github/skills/focused-feat
 
 ## 1. Intake (Lucas)
 
-1. Restate the request as: the observable outcome, 2–5 acceptance checks, and what is out of scope.
+1. Restate the request as: the observable outcome, 2–5 acceptance checks, and what is out of scope. One acceptance
+   check says how a user reaches the new behavior in the running app (the setting, menu item, or control that turns
+   it on). It is never out of scope; when the old behavior must stay, it stays as the default (see Lucas's charter,
+   "Ship it reachable").
 2. Read only enough to find the owning code: repository instructions, the nearest owner, its caller, and its test.
    Use `references/roster.md` to staff the team.
 3. Pick a model for each member (`references/model-selection.md`).
@@ -53,7 +56,9 @@ test file she adds or changes. No test file goes to both. Run the steps below in
 stable tree; only read-only work (Caroline) may overlap another step.
 
 - Max (when the UI changed): launches the app, captures screenshots at compact and normal sizes, reviews them against
-  his quality bar, and polishes until they pass. Caroline then checks keyboard use and accessibility on the same
+  his quality bar, and polishes until they pass. He reaches the feature the way a user would, starting from the app,
+  and tries every option it offers; an option that looks the same as another, or a feature with no way to reach it,
+  is a finding. A gallery or test harness is extra evidence, not a substitute. Caroline then checks keyboard use and accessibility on the same
   build.
 - Kenji (when native code changed): `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`
   in `src/native/`, plus the Docker cross-target clippy for every touched crate on Windows or Linux.

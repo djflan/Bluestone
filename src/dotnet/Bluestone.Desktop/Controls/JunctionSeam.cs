@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Automation;
@@ -77,6 +76,12 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
 
     public static readonly StyledProperty<TimeSpan> LampReleaseProperty = AvaloniaProperty.Register<JunctionSeam, TimeSpan>(nameof(LampRelease), TimeSpan.FromMilliseconds(220));
 
+    public static readonly StyledProperty<SignalIndicatorSize> IndicatorSizeProperty = AvaloniaProperty.Register<JunctionSeam, SignalIndicatorSize>(nameof(IndicatorSize));
+
+    public static readonly StyledProperty<LedShape> LedShapeProperty = AvaloniaProperty.Register<JunctionSeam, LedShape>(nameof(LedShape));
+
+    public static readonly StyledProperty<double> IndicatorInsetProperty = AvaloniaProperty.Register<JunctionSeam, double>(nameof(IndicatorInset), 4);
+
     private static readonly IBrush Link = new SolidColorBrush(Palette.Lighten(Palette.Border, 0.08));
     private static readonly IBrush QuietLink = new SolidColorBrush(Palette.Border);
     private static readonly IBrush PlusFill = new SolidColorBrush(Palette.Raised);
@@ -86,35 +91,13 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private static readonly IBrush RoutedHole = new SolidColorBrush(Palette.Sunken);
     private const double PlusSize = 14;
     private const double RoutedSize = 7;
-    private const double LowFraction = 0.4;
-    private const double MidFraction = 0.62;
-    private const double NoteWidth = 12;
 
     // The device panels' border (Border.devicePanel): Top and Bottom line up with the panel just inside it, where its
     // accent stripe and its last row are.
     private const double PanelBorder = 1;
-    private const double NoteHeight = 12;
-    private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
-    private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
-    private static readonly double HotFraction = MeterLevels.Fraction(-6);
-    private static readonly double ZeroFraction = MeterLevels.Fraction(0);
 
-    // A MIDI connector in a 12 x 12 box: the ring with its key notch at the top, and the five pins in a horseshoe.
-    private static readonly Geometry NoteGlyph = new GeometryGroup
-    {
-        FillRule = FillRule.EvenOdd,
-        Children =
-        [
-            new EllipseGeometry(new Rect(0, 0, 12, 12)),
-            new EllipseGeometry(new Rect(1.25, 1.25, 9.5, 9.5)),
-            new RectangleGeometry(new Rect(5.1, 0, 1.8, 1.25)),
-            Pin(180),
-            Pin(135),
-            Pin(90),
-            Pin(45),
-            Pin(0),
-        ],
-    };
+    // The shortest piece of wire drawn beside a hosted indicator.
+    private const double MinWireStub = 6;
 
     private readonly EventHandler _updated;
     private readonly PropertyChangedEventHandler _changed;
@@ -122,34 +105,41 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private double _glow;
     private long _lastFrame;
     private (bool Active, double PeakL, double PeakR, double RmsL, double RmsR, double HoldL, double HoldR, double Glow) _drawn = (false, -1, -1, -1, -1, -1, -1, -1);
-    private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
-    private SolidColorBrush? _lampBrush;
-    private RadialGradientBrush? _haloBrush;
+    private readonly SignalIndicatorRenderer _renderer = new();
     private SolidColorBrush? _accentBrush;
     private IPen? _accentPen;
     private SolidColorBrush? _markerBrush;
     private Cursor? _hand;
     private bool _hovered;
     private Part _over;
+    private SignalIndicator? _indicator;
+    private Rect _indicatorBox;
 
     static JunctionSeam()
     {
         AffectsRender<JunctionSeam>(SignalProperty, IsQuietProperty, HeaderHeightProperty, LinkYProperty, LevelHeightProperty, IndicatorPositionProperty, FooterHeightProperty, LevelBarWidthProperty,
             LampPlacementProperty, LampHeightProperty, LampGapProperty, LampColorProperty, LevelLowColorProperty, LevelMidColorProperty, LevelHotColorProperty, LevelClipColorProperty,
             LevelSegmentHeightProperty, LevelSegmentGapProperty, LevelStyleProperty, InsertCommandProperty, AccentColorProperty);
+        AffectsMeasure<JunctionSeam>(IndicatorInsetProperty);
+        AffectsArrange<JunctionSeam>(IndicatorPositionProperty, HeaderHeightProperty, FooterHeightProperty);
         FocusableProperty.OverrideDefaultValue<JunctionSeam>(false);
     }
 
     public JunctionSeam()
     {
         _updated = (_, _) => OnFrame();
-        _changed = (_, e) =>
+        _changed = (sender, e) =>
         {
             if (e.PropertyName is nameof(JunctionSignal.Label) or nameof(JunctionSignal.CanCarryNotes) or nameof(JunctionSignal.CanCarryAudio)
                 or nameof(JunctionSignal.Routes) or nameof(JunctionSignal.IsInsertionPoint))
             {
                 UpdateName();
+                UpdateIndicator();
                 InvalidateVisual();
+            }
+            else if (e.PropertyName is nameof(JunctionSignal.NotesHeld) && _indicator is { } indicator && sender is JunctionSignal signal)
+            {
+                indicator.NotesHeld = signal.NotesHeld;
             }
         };
         ClipToBounds = false;
@@ -325,35 +315,36 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         set => SetValue(LampReleaseProperty, value);
     }
 
-    /// <summary>What the seam carries now, in words, for its tooltip and screen readers.</summary>
-    internal string Describe()
+    /// <summary>
+    /// How much the indicator shows (Settings ▸ Display). Compact is drawn by the seam itself, as it always has been; Medium
+    /// and Large are a <see cref="SignalIndicator"/> the seam hosts and places, and the seam widens to fit it.
+    /// </summary>
+    public SignalIndicatorSize IndicatorSize
     {
-        if (Signal is not { } signal)
-        {
-            return string.Empty;
-        }
-
-        var parts = new List<string> { signal.Label };
-        if (signal.CanCarryNotes)
-        {
-            parts.Add(signal.NotesHeld ? "notes held" : "no notes");
-        }
-
-        if (signal.CanCarryAudio)
-        {
-            var levels = signal.Levels;
-            var peak = Math.Max(levels.PeakLeft, levels.PeakRight);
-            parts.Add(!levels.IsActive || peak <= MeterLevels.FloorDecibels ? "silent"
-                : string.Create(CultureInfo.InvariantCulture, $"peak {peak:0.0} dB{(peak > 0 ? ", clipping" : string.Empty)}"));
-        }
-
-        if (signal.IsRouted)
-        {
-            parts.Add($"also sent to {signal.Routes}");
-        }
-
-        return string.Join(" · ", parts);
+        get => GetValue(IndicatorSizeProperty);
+        set => SetValue(IndicatorSizeProperty, value);
     }
+
+    /// <summary>The LEDs of a Medium or Large indicator (Settings ▸ Display).</summary>
+    public LedShape LedShape
+    {
+        get => GetValue(LedShapeProperty);
+        set => SetValue(LedShapeProperty, value);
+    }
+
+    /// <summary>The space either side of a Medium or Large indicator, inside the seam.</summary>
+    public double IndicatorInset
+    {
+        get => GetValue(IndicatorInsetProperty);
+        set => SetValue(IndicatorInsetProperty, value);
+    }
+
+    /// <summary>The Medium or Large indicator the seam hosts; none at Compact.</summary>
+    internal SignalIndicator? Indicator => _indicator;
+
+    /// <summary>What the seam carries now, in words, for its tooltip and screen readers.</summary>
+    internal string Describe() => Signal is not { } signal ? string.Empty
+        : SignalIndicatorRenderer.Describe(signal.Label, signal.CanCarryNotes, signal.NotesHeld, signal.CanCarryAudio, signal.Levels, signal.IsRouted ? signal.Routes : null, clipLatched: false);
 
     public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
 
@@ -369,13 +360,6 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             _markerBrush = null;
         }
 
-        if (change.Property == LampColorProperty || change.Property == LevelLowColorProperty || change.Property == LevelMidColorProperty || change.Property == LevelHotColorProperty || change.Property == LevelClipColorProperty)
-        {
-            _haloBrush = null;
-            _lampBrush = null;
-            _segments = null;
-        }
-
         if (change.Property == SignalProperty)
         {
             // Without a junction (the trailing wire of an empty chain) the seam is only drawing: not a tab stop, no menu.
@@ -384,6 +368,43 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             Subscribe(VisualRoot is not null ? Signal : null);
             UpdateName();
         }
+
+        if (change.Property == SignalProperty || change.Property == IndicatorSizeProperty || change.Property == LedShapeProperty
+            || change.Property == LevelStyleProperty || change.Property == LampPlacementProperty)
+        {
+            UpdateIndicator();
+        }
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        // Compact draws within whatever width the seam is given, as it always has; a hosted indicator sets the width it needs.
+        if (_indicator is not { } indicator)
+        {
+            return default;
+        }
+
+        indicator.Measure(Size.Infinity);
+        return new Size(indicator.DesiredSize.Width + (2 * Math.Max(0, IndicatorInset)), 0);
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        if (_indicator is { } indicator)
+        {
+            var size = indicator.DesiredSize;
+            var box = new Rect(new Point(Math.Round((finalSize.Width - size.Width) / 2), IndicatorTop(finalSize.Height, size.Height)), size);
+            indicator.Arrange(box);
+
+            // The wire's break and the + are drawn around the indicator, so they move with it.
+            if (box != _indicatorBox)
+            {
+                _indicatorBox = box;
+                InvalidateVisual();
+            }
+        }
+
+        return finalSize;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -391,6 +412,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         base.OnAttachedToVisualTree(e);
         Subscribe(Signal);
         UpdateName();
+        UpdateIndicator();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -458,6 +480,13 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+
+        // A Large indicator's own keys (clearing its clip light) are not the seam's insert.
+        if (_indicator is not null && ReferenceEquals(e.Source, _indicator))
+        {
+            return;
+        }
+
         if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
         {
             Run(InsertCommand);
@@ -506,7 +535,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     /// <summary>Where the + is (drawn only while hovered or focused) and where the routed mark is, in the seam's coordinates.</summary>
     internal (Rect Plus, Rect Routed) Targets => (PlusRect(Math.Round(Bounds.Width / 2)), RoutedRect(Math.Round(Bounds.Width / 2)));
 
-    internal bool ShowsPlus => InsertCommand is not null && (_hovered || IsKeyboardFocusWithin);
+    internal bool ShowsPlus => InsertCommand is not null && (_hovered || (IsKeyboardFocusWithin && _indicator is not { IsFocused: true }));
 
     // The span the level and its note take, top to bottom; empty when the seam shows neither.
     private (double Top, double Bottom) GroupSpan(double center)
@@ -514,6 +543,11 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         if (Signal is not { } signal || (!signal.CanCarryAudio && !signal.CanCarryNotes))
         {
             return (0, 0);
+        }
+
+        if (_indicator is { } indicator)
+        {
+            return (indicator.Bounds.Top, indicator.Bounds.Bottom);
         }
 
         var (top, bottom, _, _) = LevelFrame(center);
@@ -570,18 +604,39 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             context.DrawRectangle(_markerBrush, null, new Rect(center - 1.5, 0, 3, Bounds.Height), 1.5, 1.5);
         }
 
-        context.FillRectangle(IsQuiet ? QuietLink : Link, new Rect(0, LinkY, width, 1));
+        if (_indicator is { } indicator && indicator.Bounds.Top <= LinkY && indicator.Bounds.Bottom >= LinkY + 1)
+        {
+            // The wire runs into the indicator and out of it, not through its LEDs and scale; a stub too short to read as wire
+            // would only look like a stray tick, so the indicator stands in for the link there.
+            var box = indicator.Bounds;
+            var link = IsQuiet ? QuietLink : Link;
+            if (box.Left - 2 >= MinWireStub)
+            {
+                context.FillRectangle(link, new Rect(0, LinkY, box.Left - 2, 1));
+            }
+
+            if (width - box.Right - 2 >= MinWireStub)
+            {
+                context.FillRectangle(link, new Rect(box.Right + 2, LinkY, width - box.Right - 2, 1));
+            }
+        }
+        else
+        {
+            context.FillRectangle(IsQuiet ? QuietLink : Link, new Rect(0, LinkY, width, 1));
+        }
+
         if (Signal is not { } signal)
         {
             return;
         }
 
-        if (signal.CanCarryNotes)
+        _renderer.Colors = new SignalIndicatorColors(LevelLowColor, LevelMidColor, LevelHotColor, LevelClipColor, LampColor, default);
+        if (signal.CanCarryNotes && _indicator is null)
         {
             DrawLamp(context, center);
         }
 
-        if (signal.CanCarryAudio)
+        if (signal.CanCarryAudio && _indicator is null)
         {
             DrawLevel(context, center, signal.Levels);
         }
@@ -628,6 +683,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         {
             JunctionIndicatorPosition.Top => PanelBorder,
             JunctionIndicatorPosition.UpperHalf => bodyTop + (body / 4) - (group / 2),
+            JunctionIndicatorPosition.Middle => bodyTop + (body / 2) - (group / 2),
             JunctionIndicatorPosition.Bottom => Bounds.Height - PanelBorder - group,
             _ => bodyTop + (body * 3 / 4) - (group / 2),
         };
@@ -638,17 +694,17 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     // How many segments fit in LevelHeight, and the height they take: the top one is the level's top edge.
     private (int Count, double Height) LevelSpan()
     {
-        var segment = Math.Max(1, LevelSegmentHeight);
-        var gap = Math.Max(0, LevelSegmentGap);
-        var count = Math.Max(1, (int)Math.Floor((LevelHeight + gap) / (segment + gap)));
-        return (count, (count * segment) + ((count - 1) * gap));
+        var metrics = LevelMetrics;
+        return (metrics.Count, metrics.Height);
     }
+
+    // The level's segments: the bars a pixel apart, as the seam has always drawn them.
+    private SignalLevelMetrics LevelMetrics => new(LevelHeight, LevelBarWidth, 1, LevelSegmentHeight, LevelSegmentGap);
 
     private void DrawLamp(DrawingContext context, double center)
     {
         // A small MIDI connector: at header height, or coupled with the level, over or under its bars.
         var height = LampHeight;
-        var width = height * NoteWidth / NoteHeight;
         double top;
         if (LampPlacement == JunctionLampPlacement.Header)
         {
@@ -660,131 +716,13 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             top = LampPlacement == JunctionLampPlacement.AboveLevel ? levelTop - LampGap - height : levelBottom + LampGap;
         }
 
-        var box = new Rect(center - (width / 2), top, width, height);
-        var scale = height / NoteHeight;
-        var color = LampColor;
-        if (_glow > 0)
-        {
-            // Lit, it glows: a soft halo behind it, and the note itself fading back to unlit as the notes let go.
-            _haloBrush ??= new RadialGradientBrush
-            {
-                GradientStops = [new GradientStop(Color.FromArgb(120, color.R, color.G, color.B), 0), new GradientStop(Color.FromArgb(40, color.R, color.G, color.B), 0.45), new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1)],
-            };
-            using (context.PushOpacity(_glow))
-            {
-                context.DrawEllipse(_haloBrush, null, box.Center, height * 0.75, height * 0.75);
-            }
-
-            _lampBrush ??= new SolidColorBrush(color);
-            _lampBrush.Color = Palette.Mix(NoteOff, Palette.Lighten(color, 0.12), _glow);
-        }
-
-        using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(box.X, box.Y)))
-        {
-            context.DrawGeometry(_glow > 0 ? _lampBrush : NoteOffBrush, null, NoteGlyph);
-        }
+        _renderer.DrawLamp(context, SignalIndicatorRenderer.LampBox(center, top, height), _glow);
     }
 
     private void DrawLevel(DrawingContext context, double center, MeterLevels levels)
     {
-        var bar = LevelBarWidth;
-        var (top, bottom, left, _) = LevelFrame(center);
-        var segment = Math.Max(1, LevelSegmentHeight);
-        var gap = Math.Max(0, LevelSegmentGap);
-        var count = LevelSpan().Count;
-        var segments = Segments(count);
-        var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
-
-        // The average mode holds the peak for a moment (MeterLevels' hold), so it stays up through a quiet reading.
-        var holds = levels.IsActive && LevelStyle == JunctionLevelStyle.RmsAndPeak && Math.Max(levels.HoldLeft, levels.HoldRight) > MeterLevels.FloorDecibels;
-
-        // Like a hardware LED meter: every segment is there, unlit ones only a dim tint of their colour; idle, dimmer still.
-        using (context.PushOpacity(silent ? 0.55 : 1))
-        {
-            for (var i = 0; i < count; i++)
-            {
-                var y = SegmentTop(i);
-                context.DrawRectangle(segments.Dim[i], null, new Rect(left, y, bar, segment), 0.5, 0.5);
-                context.DrawRectangle(segments.Dim[i], null, new Rect(left + bar + 1, y, bar, segment), 0.5, 0.5);
-            }
-        }
-
-        if (silent && !holds)
-        {
-            return;
-        }
-
-        Side(levels.RmsLeft, levels.PeakLeft, levels.HoldLeft, left);
-        Side(levels.RmsRight, levels.PeakRight, levels.HoldRight, left + bar + 1);
-
-        double SegmentTop(int index) => bottom - ((index + 1) * segment) - (index * gap);
-
-        void Side(double rms, double peak, double hold, double x)
-        {
-            // Lit up to the RMS with the held peak as one segment above it (or lit to the peak), and the top segment while
-            // the peak is over full scale. An indicator shows what is happening now: unlike the mixer's clip light, the
-            // over does not latch.
-            var clipped = peak > 0;
-            var peakOnly = LevelStyle == JunctionLevelStyle.Peak;
-            var lit = silent ? 0 : (int)Math.Round(MeterLevels.Fraction(peakOnly ? peak : rms) * count);
-            var held = peakOnly || hold <= MeterLevels.FloorDecibels ? -1 : Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(hold) * count)) - 1;
-            for (var i = 0; i < count; i++)
-            {
-                if (i < lit || i == held || (clipped && i == count - 1))
-                {
-                    var cell = new Rect(x, SegmentTop(i), bar, segment);
-                    context.DrawRectangle(segments.Halo[i], null, cell.Inflate(new Thickness(1, 0.4)), 1, 1);
-                    context.DrawRectangle(segments.Lit[i], null, cell, 0.5, 0.5);
-                }
-            }
-        }
-    }
-
-    // A pin of the connector, at an angle round its centre (0 to the right, 90 straight down).
-    private static EllipseGeometry Pin(double degrees)
-    {
-        var radians = degrees * Math.PI / 180;
-        var center = new Point(6 + (3.1 * Math.Cos(radians)), 6.4 + (3.1 * Math.Sin(radians)) - 0.9);
-        return new EllipseGeometry(new Rect(center.X - 0.85, center.Y - 0.85, 1.7, 1.7));
-    }
-
-    // A colour for each segment from the bottom up: low, through mid and hot (about -6 dB), to clip at 0 dB and over.
-    private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim) Segments(int count)
-    {
-        if (_segments is { } cached && cached.Lit.Length == count)
-        {
-            return cached;
-        }
-
-        var lit = new SolidColorBrush[count];
-        var halo = new SolidColorBrush[count];
-        var dim = new SolidColorBrush[count];
-        for (var i = 0; i < count; i++)
-        {
-            var color = SegmentColor((i + 0.5) / count);
-            lit[i] = new SolidColorBrush(Palette.Lighten(color, 0.12));
-            halo[i] = new SolidColorBrush(Color.FromArgb(95, color.R, color.G, color.B));
-            dim[i] = new SolidColorBrush(Palette.Mix(Palette.MeterTrack, color, 0.3));
-        }
-
-        _segments = (lit, halo, dim);
-        return _segments.Value;
-    }
-
-    private Color SegmentColor(double fraction)
-    {
-        var low = LevelLowColor;
-        var mid = LevelMidColor;
-        var hot = LevelHotColor;
-        var clip = LevelClipColor;
-        return fraction switch
-        {
-            < LowFraction => low,
-            < MidFraction => Palette.Mix(low, mid, (fraction - LowFraction) / (MidFraction - LowFraction)),
-            _ when fraction < HotFraction => Palette.Mix(mid, hot, (fraction - MidFraction) / (HotFraction - MidFraction)),
-            _ when fraction < ZeroFraction => Palette.Mix(hot, clip, (fraction - HotFraction) / (ZeroFraction - HotFraction)),
-            _ => clip,
-        };
+        var (_, bottom, left, _) = LevelFrame(center);
+        _renderer.DrawCompactLevel(context, left, bottom, LevelMetrics, levels, LevelStyle);
     }
 
     // Each frame: the lamp follows the notes (on at once, off over LampRelease), and the seam redraws only if what it
@@ -802,9 +740,18 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
         var release = Math.Max(LampRelease.TotalSeconds, 0.001);
         _glow = signal.NotesHeld ? 1 : Math.Max(0, _glow - (elapsed / release));
         var levels = signal.Levels;
-        if (_drawn != (levels.IsActive, levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow))
+        var shown = (levels.IsActive, levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, _glow);
+        if (_drawn != shown)
         {
-            InvalidateVisual();
+            // A hosted indicator redraws itself; the seam only keeps its description current.
+            if (_indicator is null)
+            {
+                InvalidateVisual();
+            }
+            else
+            {
+                _drawn = shown;
+            }
 
             // Under the pointer, the description follows what is there now (only while hovered, so idle seams cost nothing).
             if (_hovered && _over == Part.None)
@@ -838,6 +785,65 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     }
 
     private void UpdateName() => AutomationProperties.SetName(this, Signal?.Label ?? "Signal");
+
+    // Where a hosted indicator's top goes: placed as Compact's group is, by IndicatorPosition, and kept inside the panel.
+    private double IndicatorTop(double height, double size)
+    {
+        var body = Math.Max(0, height - FooterHeight - HeaderHeight);
+        var top = IndicatorPosition switch
+        {
+            JunctionIndicatorPosition.Top => PanelBorder,
+            JunctionIndicatorPosition.UpperHalf => HeaderHeight + (body / 4) - (size / 2),
+            JunctionIndicatorPosition.Middle => HeaderHeight + (body / 2) - (size / 2),
+            JunctionIndicatorPosition.Bottom => height - PanelBorder - size,
+            _ => HeaderHeight + (body * 3 / 4) - (size / 2),
+        };
+        return Math.Round(Math.Clamp(top, PanelBorder, Math.Max(PanelBorder, height - PanelBorder - size)));
+    }
+
+    // At Medium and Large the seam hosts a SignalIndicator on the junction's own levels and notes, so every size draws the
+    // same data the same way; at Compact (or without a junction) it hosts nothing and draws as it always has.
+    private void UpdateIndicator()
+    {
+        var signal = Signal;
+        if (IndicatorSize == SignalIndicatorSize.Compact || signal is null)
+        {
+            if (_indicator is { } old)
+            {
+                VisualChildren.Remove(old);
+                LogicalChildren.Remove(old);
+                _indicator = null;
+                InvalidateMeasure();
+                InvalidateVisual();
+            }
+
+            return;
+        }
+
+        if (_indicator is null)
+        {
+            _indicator = new SignalIndicator();
+            LogicalChildren.Add(_indicator);
+            VisualChildren.Add(_indicator);
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+
+        var indicator = _indicator;
+        indicator.Variant = IndicatorSize;
+        indicator.LedShape = LedShape;
+        indicator.LevelStyle = LevelStyle;
+        indicator.LampPlacement = LampPlacement == JunctionLampPlacement.AboveLevel ? JunctionLampPlacement.AboveLevel : JunctionLampPlacement.BelowLevel;
+        indicator.Levels = signal.Levels;
+        indicator.CarriesNotes = signal.CanCarryNotes;
+        indicator.CarriesAudio = signal.CanCarryAudio;
+        indicator.NotesHeld = signal.NotesHeld;
+
+        // Only a Large indicator has something to click (its clip light); over a Medium one the seam keeps the pointer, so its
+        // description, its + and its menu work as they do over Compact.
+        indicator.IsHitTestVisible = IndicatorSize == SignalIndicatorSize.Large;
+        AutomationProperties.SetName(indicator, string.IsNullOrEmpty(signal.Label) ? "Signal level" : $"{signal.Label} level");
+    }
 
     // For screen readers: a button named after the junction ("After Arpeggiator"), whose help text says what is there now,
     // and whose invoke aims the Browser at its gap, as Enter and the + do.
