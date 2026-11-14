@@ -73,6 +73,8 @@ internal sealed class SignalIndicator : Control
 
     public static readonly StyledProperty<double> ReadoutGapProperty = AvaloniaProperty.Register<SignalIndicator, double>(nameof(ReadoutGap));
 
+    public static readonly StyledProperty<IBrush?> FocusRingBrushProperty = AvaloniaProperty.Register<SignalIndicator, IBrush?>(nameof(FocusRingBrush));
+
     public static readonly StyledProperty<FontFamily> FontFamilyProperty = TextElement.FontFamilyProperty.AddOwner<SignalIndicator>();
 
     public static readonly StyledProperty<double> FontSizeProperty = TextElement.FontSizeProperty.AddOwner<SignalIndicator>();
@@ -83,6 +85,12 @@ internal sealed class SignalIndicator : Control
     // What an indicator without levels shows: nothing playing.
     private static readonly MeterLevels Idle = new();
 
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+
+    // The focus ring sits this far outside what the indicator draws, with these rounded corners.
+    private const double FocusRingOffset = 2;
+    private const double FocusRingRadius = 3;
+
     private readonly SignalIndicatorRenderer _renderer = new();
     private readonly EventHandler _updated;
     private MeterLevels? _subscribed;
@@ -92,13 +100,15 @@ internal sealed class SignalIndicator : Control
     private long _readoutAt;
     private SignalDisplayState? _drawn;
     private bool _hovered;
+    private TipKey? _tip;
+    private Pen? _focusPen;
 
     static SignalIndicator()
     {
         AffectsMeasure<SignalIndicator>(VariantProperty, LampPlacementProperty, LedShapeProperty, LevelHeightProperty, BarWidthProperty, BarGapProperty, SegmentHeightProperty, SegmentGapProperty,
             LampHeightProperty, LampGapProperty, TickLengthProperty, ScaleGapProperty, ScaleWidthProperty, ClipLatchHeightProperty, ReadoutGapProperty, FontFamilyProperty, FontSizeProperty);
         AffectsRender<SignalIndicator>(LevelsProperty, CarriesNotesProperty, CarriesAudioProperty, LevelStyleProperty, LampColorProperty, LevelLowColorProperty, LevelMidColorProperty,
-            LevelHotColorProperty, LevelClipColorProperty, TextColorProperty);
+            LevelHotColorProperty, LevelClipColorProperty, TextColorProperty, FocusRingBrushProperty);
         FocusableProperty.OverrideDefaultValue<SignalIndicator>(false);
     }
 
@@ -289,6 +299,13 @@ internal sealed class SignalIndicator : Control
         set => SetValue(ReadoutGapProperty, value);
     }
 
+    /// <summary>The ring drawn round it while it has keyboard focus (set by the theme on :focus-visible); none without it.</summary>
+    public IBrush? FocusRingBrush
+    {
+        get => GetValue(FocusRingBrushProperty);
+        set => SetValue(FocusRingBrushProperty, value);
+    }
+
     public FontFamily FontFamily
     {
         get => GetValue(FontFamilyProperty);
@@ -311,7 +328,7 @@ internal sealed class SignalIndicator : Control
     {
         get
         {
-            var large = Variant == SignalIndicatorSize.Large;
+            var large = Variant == SignalIndicatorSize.Large && CarriesAudio;
             var levels = CarriesAudio ? Levels ?? Idle : null;
             return SignalIndicatorRenderer.State(levels, LevelMetrics.Count, LevelStyle, CarriesNotes ? _glow : 0, large && levels is { Clipped: true }, large ? _readout : 0);
         }
@@ -319,20 +336,22 @@ internal sealed class SignalIndicator : Control
 
     /// <summary>What it carries now, in words, for its tooltip and screen readers.</summary>
     internal string Describe() => SignalIndicatorRenderer.Describe(
-        null, CarriesNotes, NotesHeld, CarriesAudio, Levels, null, Variant == SignalIndicatorSize.Large && CarriesAudio && Levels is { Clipped: true });
+        null, CarriesNotes, NotesHeld, CarriesAudio, Levels, null, Actionable && Levels is { Clipped: true });
 
-    /// <summary>Turns off the clip light (Large): from a click, Enter, or Space.</summary>
-    internal void ClearClip()
+    /// <summary>Whether it has something to do: only a Large level has a clip light to clear.</summary>
+    internal bool Actionable => Variant == SignalIndicatorSize.Large && CarriesAudio;
+
+    /// <summary>Turns off the clip light (a Large level's): from a click, Enter, or Space. Whether there was one to turn off.</summary>
+    internal bool ClearClip()
     {
-        if (Levels is { Clipped: true } levels)
+        if (!Actionable || Levels is not { Clipped: true } levels)
         {
-            levels.ResetClip();
-            Refresh();
-            if (ToolTip.GetIsOpen(this))
-            {
-                ToolTip.SetTip(this, Describe());
-            }
+            return false;
         }
+
+        levels.ResetClip();
+        Refresh();
+        return true;
     }
 
     public override void Render(DrawingContext context)
@@ -352,12 +371,25 @@ internal sealed class SignalIndicator : Control
             _renderer.DrawLamp(context, SignalIndicatorRenderer.LampBox(origin.X + layout.Center, origin.Y + layout.LampTop, LampHeight), state.Glow);
         }
 
-        if (Variant != SignalIndicatorSize.Compact)
+        if (FocusRingBrush is { } ring)
+        {
+            // A crisp 1 px ring just outside what it draws, on the pixel grid; it does not change its size or blur the level.
+            if (_focusPen is null || !ReferenceEquals(_focusPen.Brush, ring))
+            {
+                _focusPen = new Pen(ring, 1);
+            }
+
+            var box = new Rect(origin, layout.Size).Inflate(FocusRingOffset + 0.5);
+            context.DrawRectangle(null, _focusPen, box, FocusRingRadius, FocusRingRadius);
+        }
+
+        // The scale belongs to the level: without audio there is neither.
+        if (Variant != SignalIndicatorSize.Compact && CarriesAudio)
         {
             _renderer.DrawTick(context, barsLeft + metrics.Width + ScaleGap, bottom, metrics, 0, TickLength);
         }
 
-        if (Variant == SignalIndicatorSize.Large)
+        if (Variant == SignalIndicatorSize.Large && CarriesAudio)
         {
             for (var i = 1; i < SignalIndicatorRenderer.ScaleMarks.Length; i++)
             {
@@ -397,18 +429,24 @@ internal sealed class SignalIndicator : Control
         if (change.Property == VariantProperty || change.Property == CarriesAudioProperty)
         {
             // Only a Large level has something to do (clearing its clip light), so only it is a tab stop.
-            var actionable = Variant == SignalIndicatorSize.Large && CarriesAudio;
-            Focusable = actionable;
-            Cursor = actionable ? new Cursor(StandardCursorType.Hand) : null;
+            var actionable = Actionable;
+            SetCurrentValue(FocusableProperty, actionable);
+            SetCurrentValue(CursorProperty, actionable ? HandCursor : null);
             if (!actionable)
             {
                 ToolTip.SetIsOpen(this, false);
+            }
+
+            // A Compact level, or no level at all, draws no cached columns: let them go (they are rebuilt if needed).
+            if (Variant == SignalIndicatorSize.Compact || !CarriesAudio)
+            {
+                _renderer.ReleaseLevel();
             }
         }
         else if (change.Property == LevelsProperty)
         {
             Subscribe(VisualRoot is not null ? Levels : null);
-            _readout = SignalIndicatorRenderer.ReadoutValue(Levels);
+            Resync();
         }
         else if (change.Property == NotesHeldProperty)
         {
@@ -426,11 +464,15 @@ internal sealed class SignalIndicator : Control
     {
         base.OnAttachedToVisualTree(e);
         Subscribe(Levels);
+        Resync();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         Subscribe(null);
+
+        // Out of a window it draws nothing, so its cached columns go; they are rebuilt when it is drawn again.
+        _renderer.ReleaseLevel();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -441,7 +483,7 @@ internal sealed class SignalIndicator : Control
         // From the keyboard there is no hover, so the tooltip opens with focus: what it shows, and how to clear the light.
         if (e.NavigationMethod is NavigationMethod.Tab or NavigationMethod.Directional)
         {
-            ToolTip.SetTip(this, Describe());
+            UpdateTip(force: true);
             ToolTip.SetIsOpen(this, true);
         }
     }
@@ -456,7 +498,7 @@ internal sealed class SignalIndicator : Control
     {
         base.OnPointerEntered(e);
         _hovered = true;
-        ToolTip.SetTip(this, Describe());
+        UpdateTip(force: true);
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -468,9 +510,8 @@ internal sealed class SignalIndicator : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (Variant == SignalIndicatorSize.Large && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && ClearClip())
         {
-            ClearClip();
             e.Handled = true;
         }
     }
@@ -478,9 +519,8 @@ internal sealed class SignalIndicator : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (Variant == SignalIndicatorSize.Large && e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
+        if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None && ClearClip())
         {
-            ClearClip();
             e.Handled = true;
         }
     }
@@ -565,16 +605,34 @@ internal sealed class SignalIndicator : Control
 
     private void Refresh()
     {
-        if (_drawn == DisplayState)
+        // Under the pointer or opened from the keyboard, the description follows what is there now. Only then, and only
+        // when its words would change, is it rebuilt, so an indicator nobody is reading costs nothing.
+        if (_hovered || ToolTip.GetIsOpen(this))
         {
-            return;
+            UpdateTip(force: false);
         }
 
-        InvalidateVisual();
-
-        // Under the pointer, the description follows what is there now (only while hovered, so idle indicators cost nothing).
-        if (_hovered)
+        if (_drawn != DisplayState)
         {
+            InvalidateVisual();
+        }
+    }
+
+    // What follows from the levels and the notes, taken afresh: the lamp (lit if notes are held, otherwise out, as there may
+    // be no more updates to let it go by), and the readout. On new levels, and on coming back into a window.
+    private void Resync()
+    {
+        _glow = NotesHeld ? 1 : 0;
+        _readout = SignalIndicatorRenderer.ReadoutValue(Levels);
+        Refresh();
+    }
+
+    private void UpdateTip(bool force)
+    {
+        var key = TipKey.Of(this);
+        if (force || _tip != key)
+        {
+            _tip = key;
             ToolTip.SetTip(this, Describe());
         }
     }
@@ -596,6 +654,18 @@ internal sealed class SignalIndicator : Control
         if (levels is not null)
         {
             levels.Updated += _updated;
+        }
+    }
+
+    // What the description's words depend on, to the tenth of a dB it shows, so it is rebuilt only when they change.
+    private readonly record struct TipKey(bool CarriesNotes, bool NotesHeld, bool CarriesAudio, bool Active, long PeakTenths, bool Over, bool Latched)
+    {
+        public static TipKey Of(SignalIndicator owner)
+        {
+            var levels = owner.Levels;
+            var peak = levels is null ? MeterLevels.FloorDecibels : Math.Max(levels.PeakLeft, levels.PeakRight);
+            var active = levels is { IsActive: true } && peak > MeterLevels.FloorDecibels;
+            return new TipKey(owner.CarriesNotes, owner.NotesHeld, owner.CarriesAudio, active, active ? (long)Math.Round(peak * 10, MidpointRounding.AwayFromZero) : 0, active && peak > 0, owner.Actionable && levels is { Clipped: true });
         }
     }
 

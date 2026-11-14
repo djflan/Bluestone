@@ -14,8 +14,10 @@ namespace Bluestone.Tests.Ui;
 /// <summary>
 /// A junction's signal indicators (its level and note lamp, drawn by <see cref="JunctionSeam"/>) rendered standalone, with the
 /// app's theme, in a fixed matrix of states and settings at 2x scale. Every frame is saved in the test output
-/// (<c>frames/signal-*.png</c>). Set <c>BLUESTONE_BASELINE_DIR</c> to compare each frame pixel for pixel with a stored baseline
-/// there, or also <c>BLUESTONE_BASELINE_WRITE=1</c> to write that baseline from the current rendering.
+/// (<c>frames/signal-*.png</c>) and compared pixel for pixel, with no tolerance, with the stored baseline in
+/// <c>Fixtures/SignalIndicatorBaseline</c>; a frame without a baseline fails. <c>BLUESTONE_BASELINE_DIR</c> compares with
+/// another baseline instead; with <c>BLUESTONE_BASELINE_WRITE=1</c> as well, the current rendering is written there (point it
+/// at the fixture folder in the source tree to regenerate the baseline).
 /// </summary>
 public sealed class SignalIndicatorTests
 {
@@ -44,12 +46,13 @@ public sealed class SignalIndicatorTests
     [Fact]
     public Task Seam_RendersEveryStateAsTheBaselineDoes() => HeadlessApp.RunAsync(() =>
     {
-        var baseline = Environment.GetEnvironmentVariable("BLUESTONE_BASELINE_DIR");
+        var given = Environment.GetEnvironmentVariable("BLUESTONE_BASELINE_DIR");
         var write = Environment.GetEnvironmentVariable("BLUESTONE_BASELINE_WRITE") == "1";
-        Assert.False(write && string.IsNullOrEmpty(baseline), "BLUESTONE_BASELINE_WRITE=1 needs BLUESTONE_BASELINE_DIR.");
+        Assert.False(write && string.IsNullOrEmpty(given), "BLUESTONE_BASELINE_WRITE=1 needs BLUESTONE_BASELINE_DIR.");
+        var baseline = string.IsNullOrEmpty(given) ? BaselineDirectory : given;
         if (write)
         {
-            Directory.CreateDirectory(baseline!);
+            Directory.CreateDirectory(baseline);
         }
 
         var frames = Path.Combine(AppContext.BaseDirectory, "frames");
@@ -70,11 +73,6 @@ public sealed class SignalIndicatorTests
                         var (size, pixels) = Decode(png);
                         Assert.True(pixels.Any(b => b != 0), $"{name}: nothing was rendered.");
                         rendered++;
-                        if (string.IsNullOrEmpty(baseline))
-                        {
-                            continue;
-                        }
-
                         var stored = Path.Combine(baseline, name);
                         if (write)
                         {
@@ -117,6 +115,9 @@ public sealed class SignalIndicatorTests
         Assert.True(mismatches.Count == 0, $"{mismatches.Count} frame(s) differ from the baseline in {baseline}:{Environment.NewLine}{string.Join(Environment.NewLine, mismatches)}");
         return Task.CompletedTask;
     });
+
+    /// <summary>The stored baseline, copied beside the tests from <c>Fixtures/SignalIndicatorBaseline</c>.</summary>
+    internal static string BaselineDirectory => Path.Combine(AppContext.BaseDirectory, "Fixtures", "SignalIndicatorBaseline");
 
     /// <summary>
     /// One seam as the Device View hosts it (in a <c>Border.chainLink</c>, so the theme sizes both), with room either side for

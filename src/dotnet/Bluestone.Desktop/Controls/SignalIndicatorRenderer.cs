@@ -213,8 +213,11 @@ internal sealed class SignalIndicatorRenderer
             return NoReadout;
         }
 
+        // Over full scale it reads at least "+0.1" (and is tinted), so the smallest over never reads "0.0".
         var hold = Math.Max(levels.HoldLeft, levels.HoldRight);
-        return hold <= MeterLevels.FloorDecibels ? NoReadout : (int)Math.Round(hold * 10);
+        return hold <= MeterLevels.FloorDecibels ? NoReadout
+            : hold > 0 ? Math.Max(1, (int)Math.Round(hold * 10))
+            : (int)Math.Round(hold * 10);
     }
 
     /// <summary>A readout's words: "-12.4", "+1.2" (over full scale, with its sign), "0.0", or "—".</summary>
@@ -373,8 +376,9 @@ internal sealed class SignalIndicatorRenderer
     /// A Medium or Large level, its top-left corner at <paramref name="origin"/>, drawn from <paramref name="state"/>. Its
     /// dim, glowing, and lit columns are drawn once, at <paramref name="scale"/> pixels a unit, into cached bitmaps; each
     /// frame draws the dim column whole, then slices of the others (the lit runs, the held segments, and the over segments),
-    /// each through a rectangle clip. Bitmaps and solid clips cost Avalonia nothing a frame, and the number of calls does
-    /// not depend on the segment count (a gradient fill would copy its stops every frame).
+    /// each through a rectangle clip. On the headless raster Skia backend, drawing a bitmap through a rectangle clip allocates
+    /// no managed bytes on the UI thread (a gradient fill copies its stops every frame), and the number of calls does not
+    /// depend on the segment count. What uploading the bitmaps costs a GPU backend has not been measured.
     /// </summary>
     public void DrawLevel(DrawingContext context, Point origin, SignalLevelMetrics metrics, LedShape shape, in SignalDisplayState state, double scale)
     {
@@ -384,7 +388,7 @@ internal sealed class SignalIndicatorRenderer
         {
             using (context.PushOpacity(state.Silent ? IdleOpacity : 1))
             {
-                context.DrawImage(cache.Dim, Pixels(cache.Dim), whole);
+                context.DrawImage(cache.Dim, cache.Source, whole);
             }
 
             if (state.Silent && !state.Holds)
@@ -392,8 +396,10 @@ internal sealed class SignalIndicatorRenderer
                 return;
             }
 
-            Runs(context, cache.Halo, whole, metrics, state, 1, 0.4);
-            Runs(context, cache.Lit, whole, metrics, state, 0, 0);
+            // The halo slices reach as far as the halos do: a unit round a dot, a unit sideways and 0.4 up and down for a bar.
+            var (haloX, haloY) = HaloInflation(shape);
+            Runs(context, cache.Halo, cache.Source, whole, metrics, state, haloX, haloY);
+            Runs(context, cache.Lit, cache.Source, whole, metrics, state, 0, 0);
         }
     }
 
@@ -470,9 +476,28 @@ internal sealed class SignalIndicatorRenderer
         }
     }
 
+    /// <summary>Whether the level's columns are cached (as bitmaps); <see cref="ReleaseLevel"/> lets them go.</summary>
+    internal bool HasLevelCache => _level is not null;
+
+    /// <summary>Disposes the cached columns; the next <see cref="DrawLevel"/> draws them again.</summary>
+    public void ReleaseLevel()
+    {
+        if (_level is { } level)
+        {
+            level.Dim.Dispose();
+            level.Halo.Dispose();
+            level.Lit.Dispose();
+            _level = null;
+        }
+    }
+
+    // How far a segment's halo reaches past it, sideways and up and down.
+    private static (double X, double Y) HaloInflation(LedShape shape) => shape == LedShape.Round ? (1, 1) : (1, 0.4);
+
     // Slices of a cached column for both sides, inflated by (dx, dy) for the halo: the run from the bottom, the held segment,
-    // and the top segment while the peak is over full scale. Each is the whole column drawn through a rectangle clip.
-    private static void Runs(DrawingContext context, RenderTargetBitmap column, Rect whole, SignalLevelMetrics metrics, in SignalDisplayState state, double dx, double dy)
+    // and the top segment while the peak is over full scale (unless the held segment is already that one, as a segment is
+    // drawn once: a halo drawn twice would be brighter). Each is the whole column drawn through a rectangle clip.
+    private static void Runs(DrawingContext context, RenderTargetBitmap column, Rect source, Rect whole, SignalLevelMetrics metrics, in SignalDisplayState state, double dx, double dy)
     {
         var bottom = metrics.Height;
         Column(context, state.LitLeft, state.HeldLeft, state.OverLeft, 0);
@@ -493,7 +518,7 @@ internal sealed class SignalIndicatorRenderer
                 Slice(new Rect(left, metrics.SegmentTop(bottom, held) - dy, width, metrics.Segment + (2 * dy)));
             }
 
-            if (over)
+            if (over && held != metrics.Count - 1)
             {
                 Slice(new Rect(left, metrics.SegmentTop(bottom, metrics.Count - 1) - dy, width, metrics.Segment + (2 * dy)));
             }
@@ -502,15 +527,11 @@ internal sealed class SignalIndicatorRenderer
             {
                 using (context.PushClip(rect))
                 {
-                    context.DrawImage(column, Pixels(column), whole);
+                    context.DrawImage(column, source, whole);
                 }
             }
         }
     }
-
-    // A bitmap's whole area as a source rectangle: Avalonia's Skia backend takes source rectangles in pixels (the bitmap's
-    // Size is in units, half its pixels at 2x, and would draw only its top-left quarter).
-    private static Rect Pixels(RenderTargetBitmap bitmap) => new(0, 0, bitmap.PixelSize.Width, bitmap.PixelSize.Height);
 
     // A pin of the connector, at an angle round its centre (0 to the right, 90 straight down).
     private static EllipseGeometry Pin(double degrees)
@@ -560,6 +581,7 @@ internal sealed class SignalIndicatorRenderer
         var segments = new GeometryGroup { FillRule = FillRule.NonZero };
         var halos = new GeometryGroup { FillRule = FillRule.NonZero };
         var bottom = metrics.Height;
+        var halo = HaloInflation(shape);
         for (var column = 0; column < 2; column++)
         {
             var x = column * (metrics.BarWidth + metrics.BarGap);
@@ -569,12 +591,12 @@ internal sealed class SignalIndicatorRenderer
                 if (shape == LedShape.Round)
                 {
                     segments.Children.Add(new EllipseGeometry(cell));
-                    halos.Children.Add(new EllipseGeometry(cell.Inflate(1)));
+                    halos.Children.Add(new EllipseGeometry(cell.Inflate(new Thickness(halo.X, halo.Y))));
                 }
                 else
                 {
                     segments.Children.Add(new RectangleGeometry(cell, 0.5, 0.5));
-                    halos.Children.Add(new RectangleGeometry(cell.Inflate(new Thickness(1, 0.4)), 1, 1));
+                    halos.Children.Add(new RectangleGeometry(cell.Inflate(new Thickness(halo.X, halo.Y)), 1, 1));
                 }
             }
         }
@@ -584,12 +606,15 @@ internal sealed class SignalIndicatorRenderer
             metrics,
             shape,
             scale,
+            new Rect(0, 0, (metrics.Width + (2 * LevelPad)) * scale, (metrics.Height + (2 * LevelPad)) * scale),
             Column(segments, Stepped(metrics, DimColor)),
             Column(halos, Stepped(metrics, HaloColor)),
             Column(segments, Stepped(metrics, LitColor)));
         return _level;
 
-        // The column's every segment, filled with the brush, in a bitmap with room for the halo round it.
+        // The column's every segment, filled with the brush, in a bitmap with room for the halo round it. It is drawn back
+        // through a source rectangle in pixels (Avalonia's Skia backend takes them so), the column's exact size at the
+        // scale, so a fractional size is not squashed into the bitmap's whole (rounded-up) pixels.
         RenderTargetBitmap Column(Geometry geometry, IBrush brush)
         {
             var bitmap = new RenderTargetBitmap(
@@ -602,17 +627,6 @@ internal sealed class SignalIndicatorRenderer
             }
 
             return bitmap;
-        }
-    }
-
-    private void ReleaseLevel()
-    {
-        if (_level is { } level)
-        {
-            level.Dim.Dispose();
-            level.Halo.Dispose();
-            level.Lit.Dispose();
-            _level = null;
         }
     }
 
@@ -677,5 +691,5 @@ internal sealed class SignalIndicatorRenderer
         };
     }
 
-    private sealed record LevelCache(SignalLevelMetrics Metrics, LedShape Shape, double Scale, RenderTargetBitmap Dim, RenderTargetBitmap Halo, RenderTargetBitmap Lit);
+    private sealed record LevelCache(SignalLevelMetrics Metrics, LedShape Shape, double Scale, Rect Source, RenderTargetBitmap Dim, RenderTargetBitmap Halo, RenderTargetBitmap Lit);
 }

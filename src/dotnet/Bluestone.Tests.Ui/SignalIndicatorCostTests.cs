@@ -530,12 +530,8 @@ public sealed class SignalIndicatorCostTests
         return allocated;
     }
 
-    // What was measured, in the test's output and on the console.
-    private static void Report(string message)
-    {
-        TestContext.Current.TestOutputHelper?.WriteLine(message);
-        Console.WriteLine($"[cost] {message}");
-    }
+    // What was measured, in the test's output.
+    private static void Report(string message) => TestContext.Current.TestOutputHelper?.WriteLine(message);
 
     private static void SetInternal(JunctionSignal signal, string property, object value) =>
         (typeof(JunctionSignal).GetProperty(property) ?? throw new InvalidOperationException($"JunctionSignal.{property} was not found.")).SetValue(signal, value);

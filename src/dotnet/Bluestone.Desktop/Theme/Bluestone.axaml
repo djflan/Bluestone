@@ -1063,6 +1063,8 @@
     <Setter Property="TextColor" Value="{StaticResource Text.SecondaryColor}" />
     <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
     <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
+    <!-- It draws its own focus ring (FocusRingBrush, below), so not the default adorner on its bounds as well. -->
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
   </Style>
   <Style Selector="controls|SignalIndicator[Variant=Medium]">
     <Setter Property="LevelHeight" Value="{StaticResource Signal.Medium.LevelHeight}" />
@@ -1102,10 +1104,9 @@
     <Setter Property="SegmentHeight" Value="{StaticResource Signal.Large.DotSize}" />
     <Setter Property="SegmentGap" Value="{StaticResource Signal.Large.DotGap}" />
   </Style>
+  <!-- Keyboard focus: a crisp ring in the focus colour just outside the indicator, drawn by the control (no blur, no resize). -->
   <Style Selector="controls|SignalIndicator:focus-visible">
-    <Setter Property="Effect">
-      <DropShadowEffect Color="{StaticResource State.FocusColor}" BlurRadius="6" OffsetX="0" OffsetY="0" Opacity="0.9" />
-    </Setter>
+    <Setter Property="FocusRingBrush" Value="{StaticResource State.Focus}" />
   </Style>
   <Style Selector="Border.insertionMarker">
     <Setter Property="Width" Value="3" />
