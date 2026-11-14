@@ -1076,6 +1076,7 @@
     <Setter Property="ScaleGap" Value="{StaticResource Signal.Medium.ScaleGap}" />
   </Style>
   <Style Selector="controls|SignalIndicator[Variant=Medium][LedShape=Round]">
+    <Setter Property="LevelHeight" Value="{StaticResource Signal.Medium.DotLevelHeight}" />
     <Setter Property="BarWidth" Value="{StaticResource Signal.Medium.DotSize}" />
     <Setter Property="BarGap" Value="{StaticResource Signal.Medium.DotBarGap}" />
     <Setter Property="SegmentHeight" Value="{StaticResource Signal.Medium.DotSize}" />

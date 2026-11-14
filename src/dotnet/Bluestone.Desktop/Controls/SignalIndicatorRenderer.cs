@@ -141,6 +141,7 @@ internal sealed class SignalIndicatorRenderer
     private FormattedText[]? _labels;
     private FormattedText? _readout;
     private int _readoutValue = NoReadout;
+    private double _readoutWidth;
 
     /// <summary>The colours to draw with. Setting different ones drops every cached brush.</summary>
     public SignalIndicatorColors Colors
@@ -259,6 +260,13 @@ internal sealed class SignalIndicatorRenderer
     {
         EnsureText(family, size);
         return Math.Ceiling(_labels![0].Height);
+    }
+
+    /// <summary>The width the widest readout ("-00.0") takes, so layout can keep it centred over the level.</summary>
+    public double ReadoutWidth(FontFamily family, double size)
+    {
+        EnsureText(family, size);
+        return _readoutWidth;
     }
 
     /// <summary>The MIDI lamp in <paramref name="box"/>: unlit, or glowing by <paramref name="glow"/> (0 to 1).</summary>
@@ -430,7 +438,7 @@ internal sealed class SignalIndicatorRenderer
         }
         else
         {
-            _latchOff ??= new SolidColorBrush(Palette.Mix(Palette.MeterTrack, clip, 0.3));
+            _latchOff ??= new SolidColorBrush(Palette.Mix(Palette.MeterTrack, clip, 0.18));
             context.DrawRectangle(_latchOff, null, box, 1, 1);
         }
     }
@@ -553,6 +561,7 @@ internal sealed class SignalIndicatorRenderer
             _labels[i] = new FormattedText(Math.Abs(ScaleMarks[i]).ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, size, _textBrush);
         }
 
+        _readoutWidth = Math.Ceiling(new FormattedText("-00.0", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, size, _textBrush).Width);
         _readout = null;
     }
 

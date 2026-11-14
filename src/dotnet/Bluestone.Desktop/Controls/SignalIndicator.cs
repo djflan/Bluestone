@@ -378,7 +378,7 @@ internal sealed class SignalIndicator : Control
         if (Variant == SignalIndicatorSize.Large)
         {
             _renderer.DrawClipLatch(context, new Rect(barsLeft, origin.Y + layout.LatchTop, metrics.Width, ClipLatchHeight), state.ClipLatched);
-            _renderer.DrawReadout(context, origin.X + (layout.Size.Width / 2), origin.Y + layout.ReadoutTop, state.Readout, FontFamily, FontSize);
+            _renderer.DrawReadout(context, origin.X + layout.Center, origin.Y + layout.ReadoutTop, state.Readout, FontFamily, FontSize);
         }
     }
 
@@ -457,23 +457,32 @@ internal sealed class SignalIndicator : Control
         }
     }
 
-    // Where everything sits, from the top-left of the indicator's natural size: the lamp, centred over the level (or under
-    // it); at Large, the readout, then the clip light, over the level; at Medium and Large, the scale to the right.
+    // Where everything sits, from the top-left of the indicator's natural size. The lamp, the level, and at Large the clip
+    // light and the readout share one centre line; the level's slot is as wide as the widest of them, widened by whole
+    // pixels on both sides so the level stays on the pixel grid. At Medium and Large the scale hangs off the level's right.
     private Layout Arrange()
     {
         var metrics = LevelMetrics;
         var large = Variant == SignalIndicatorSize.Large;
         var lampHeight = Math.Max(0, LampHeight);
-        var left = Math.Ceiling(Math.Max(metrics.Width, lampHeight));
-        var width = left;
-        if (Variant != SignalIndicatorSize.Compact)
-        {
-            width += ScaleGap + TickLength;
-        }
-
+        var widest = Math.Max(metrics.Width, lampHeight);
         if (large)
         {
-            width += ScaleGap + ScaleWidth;
+            widest = Math.Max(widest, _renderer.ReadoutWidth(FontFamily, FontSize));
+        }
+
+        var slot = metrics.Width + (2 * Math.Ceiling((widest - metrics.Width) / 2));
+        var barsLeft = (slot - metrics.Width) / 2;
+        var width = slot;
+        if (Variant != SignalIndicatorSize.Compact)
+        {
+            var scale = barsLeft + metrics.Width + ScaleGap + TickLength;
+            if (large)
+            {
+                scale += ScaleGap + ScaleWidth;
+            }
+
+            width = Math.Max(width, scale);
         }
 
         var above = LampPlacement != JunctionLampPlacement.BelowLevel;
@@ -504,7 +513,7 @@ internal sealed class SignalIndicator : Control
             y = lampTop + lampHeight;
         }
 
-        return new Layout(new Size(Math.Ceiling(width), Math.Ceiling(y)), (left - metrics.Width) / 2, barsTop, left / 2, lampTop, latchTop, readoutTop);
+        return new Layout(new Size(Math.Ceiling(width), Math.Ceiling(y)), barsLeft, barsTop, slot / 2, lampTop, latchTop, readoutTop);
     }
 
     // Each update: the lamp follows the notes (on at once, off over LampRelease), the readout follows the held peak (at
