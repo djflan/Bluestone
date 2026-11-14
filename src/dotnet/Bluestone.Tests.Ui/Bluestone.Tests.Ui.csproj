@@ -15,6 +15,10 @@
     <ProjectReference Include="../Bluestone.PluginWorker/Bluestone.PluginWorker.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Stored renderings the tests compare against, beside the tests. -->
+    <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" LinkBase="Fixtures" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

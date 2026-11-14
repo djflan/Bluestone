@@ -1046,6 +1046,68 @@
       <DropShadowEffect Color="{StaticResource State.FocusColor}" BlurRadius="6" OffsetX="0" OffsetY="0" Opacity="0.9" />
     </Setter>
   </Style>
+  <!-- A signal indicator on its own: Compact as the junction draws it, Medium and Large from the Signal.* sizes. -->
+  <Style Selector="controls|SignalIndicator">
+    <Setter Property="LevelHeight" Value="{StaticResource Junction.LevelHeight}" />
+    <Setter Property="BarWidth" Value="{StaticResource Junction.LevelBarWidth}" />
+    <Setter Property="SegmentHeight" Value="{StaticResource Junction.LevelSegmentHeight}" />
+    <Setter Property="SegmentGap" Value="{StaticResource Junction.LevelSegmentGap}" />
+    <Setter Property="LampHeight" Value="{StaticResource Junction.LampHeight}" />
+    <Setter Property="LampGap" Value="{StaticResource Junction.LampGap}" />
+    <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
+    <Setter Property="LampColor" Value="{StaticResource Junction.LampColor}" />
+    <Setter Property="LevelLowColor" Value="{StaticResource Meter.LowColor}" />
+    <Setter Property="LevelMidColor" Value="{StaticResource Meter.MidColor}" />
+    <Setter Property="LevelHotColor" Value="{StaticResource Meter.HotColor}" />
+    <Setter Property="LevelClipColor" Value="{StaticResource Meter.ClipColor}" />
+    <Setter Property="TextColor" Value="{StaticResource Text.SecondaryColor}" />
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
+    <!-- It draws its own focus ring (FocusRingBrush, below), so not the default adorner on its bounds as well. -->
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+  <Style Selector="controls|SignalIndicator[Variant=Medium]">
+    <Setter Property="LevelHeight" Value="{StaticResource Signal.Medium.LevelHeight}" />
+    <Setter Property="BarWidth" Value="{StaticResource Signal.Medium.BarWidth}" />
+    <Setter Property="BarGap" Value="{StaticResource Signal.Medium.BarGap}" />
+    <Setter Property="SegmentHeight" Value="{StaticResource Signal.Medium.SegmentHeight}" />
+    <Setter Property="SegmentGap" Value="{StaticResource Signal.Medium.SegmentGap}" />
+    <Setter Property="LampHeight" Value="{StaticResource Signal.Medium.LampHeight}" />
+    <Setter Property="LampGap" Value="{StaticResource Signal.Medium.LampGap}" />
+    <Setter Property="TickLength" Value="{StaticResource Signal.Medium.TickLength}" />
+    <Setter Property="ScaleGap" Value="{StaticResource Signal.Medium.ScaleGap}" />
+  </Style>
+  <Style Selector="controls|SignalIndicator[Variant=Medium][LedShape=Round]">
+    <Setter Property="LevelHeight" Value="{StaticResource Signal.Medium.DotLevelHeight}" />
+    <Setter Property="BarWidth" Value="{StaticResource Signal.Medium.DotSize}" />
+    <Setter Property="BarGap" Value="{StaticResource Signal.Medium.DotBarGap}" />
+    <Setter Property="SegmentHeight" Value="{StaticResource Signal.Medium.DotSize}" />
+    <Setter Property="SegmentGap" Value="{StaticResource Signal.Medium.DotGap}" />
+  </Style>
+  <Style Selector="controls|SignalIndicator[Variant=Large]">
+    <Setter Property="LevelHeight" Value="{StaticResource Signal.Large.LevelHeight}" />
+    <Setter Property="BarWidth" Value="{StaticResource Signal.Large.BarWidth}" />
+    <Setter Property="BarGap" Value="{StaticResource Signal.Large.BarGap}" />
+    <Setter Property="SegmentHeight" Value="{StaticResource Signal.Large.SegmentHeight}" />
+    <Setter Property="SegmentGap" Value="{StaticResource Signal.Large.SegmentGap}" />
+    <Setter Property="LampHeight" Value="{StaticResource Signal.Large.LampHeight}" />
+    <Setter Property="LampGap" Value="{StaticResource Signal.Large.LampGap}" />
+    <Setter Property="TickLength" Value="{StaticResource Signal.Large.TickLength}" />
+    <Setter Property="ScaleGap" Value="{StaticResource Signal.Large.ScaleGap}" />
+    <Setter Property="ScaleWidth" Value="{StaticResource Signal.Large.ScaleWidth}" />
+    <Setter Property="ClipLatchHeight" Value="{StaticResource Signal.Large.ClipLatchHeight}" />
+    <Setter Property="ReadoutGap" Value="{StaticResource Signal.Large.ReadoutGap}" />
+  </Style>
+  <Style Selector="controls|SignalIndicator[Variant=Large][LedShape=Round]">
+    <Setter Property="BarWidth" Value="{StaticResource Signal.Large.DotSize}" />
+    <Setter Property="BarGap" Value="{StaticResource Signal.Large.DotBarGap}" />
+    <Setter Property="SegmentHeight" Value="{StaticResource Signal.Large.DotSize}" />
+    <Setter Property="SegmentGap" Value="{StaticResource Signal.Large.DotGap}" />
+  </Style>
+  <!-- Keyboard focus: a crisp ring in the focus colour just outside the indicator, drawn by the control (no blur, no resize). -->
+  <Style Selector="controls|SignalIndicator:focus-visible">
+    <Setter Property="FocusRingBrush" Value="{StaticResource State.Focus}" />
+  </Style>
   <Style Selector="Border.insertionMarker">
     <Setter Property="Width" Value="3" />
     <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />

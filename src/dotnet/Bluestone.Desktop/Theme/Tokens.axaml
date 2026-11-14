@@ -275,6 +275,40 @@
   <x:Double x:Key="Junction.LevelSegmentGap">1</x:Double>
   <x:Double x:Key="Junction.LampHeight">11</x:Double>
   <x:Double x:Key="Junction.LampGap">7</x:Double>
+  <!--
+    The standalone signal indicator (SignalIndicator) at Medium and Large; Compact uses the Junction.* sizes above. Segment
+    edges land on whole dB from -60 to +6, so the 0 dB colour change and the scale's ticks fall in the gaps: Medium fits 33
+    segments of 2 dB in its level height, Large 66 of 1 dB. Round LEDs use their own whole-pixel pitch so they read as even
+    dots at 1x: Medium 22 dots of 3 dB (4 px, so a little taller than its bars), Large 33 of 2 dB (5 px, as tall as its bars).
+  -->
+  <x:Double x:Key="Signal.Medium.LevelHeight">98</x:Double>
+  <x:Double x:Key="Signal.Medium.BarWidth">6</x:Double>
+  <x:Double x:Key="Signal.Medium.BarGap">1</x:Double>
+  <x:Double x:Key="Signal.Medium.SegmentHeight">2</x:Double>
+  <x:Double x:Key="Signal.Medium.SegmentGap">1</x:Double>
+  <x:Double x:Key="Signal.Medium.DotSize">4</x:Double>
+  <x:Double x:Key="Signal.Medium.DotGap">1</x:Double>
+  <x:Double x:Key="Signal.Medium.DotBarGap">2</x:Double>
+  <x:Double x:Key="Signal.Medium.DotLevelHeight">109</x:Double>
+  <x:Double x:Key="Signal.Medium.LampHeight">12</x:Double>
+  <x:Double x:Key="Signal.Medium.LampGap">8</x:Double>
+  <x:Double x:Key="Signal.Medium.TickLength">3</x:Double>
+  <x:Double x:Key="Signal.Medium.ScaleGap">2</x:Double>
+  <x:Double x:Key="Signal.Large.LevelHeight">197</x:Double>
+  <x:Double x:Key="Signal.Large.BarWidth">10</x:Double>
+  <x:Double x:Key="Signal.Large.BarGap">2</x:Double>
+  <x:Double x:Key="Signal.Large.SegmentHeight">2</x:Double>
+  <x:Double x:Key="Signal.Large.SegmentGap">1</x:Double>
+  <x:Double x:Key="Signal.Large.DotSize">5</x:Double>
+  <x:Double x:Key="Signal.Large.DotGap">1</x:Double>
+  <x:Double x:Key="Signal.Large.DotBarGap">2</x:Double>
+  <x:Double x:Key="Signal.Large.LampHeight">16</x:Double>
+  <x:Double x:Key="Signal.Large.LampGap">8</x:Double>
+  <x:Double x:Key="Signal.Large.TickLength">3</x:Double>
+  <x:Double x:Key="Signal.Large.ScaleGap">3</x:Double>
+  <x:Double x:Key="Signal.Large.ScaleWidth">12</x:Double>
+  <x:Double x:Key="Signal.Large.ClipLatchHeight">4</x:Double>
+  <x:Double x:Key="Signal.Large.ReadoutGap">4</x:Double>
   <BoxShadows x:Key="Shadow.Focus">0 0 6 0 #806AA2E4</BoxShadows>
 
   <!-- Icons. -->
