@@ -14,8 +14,9 @@ namespace Bluestone.Tests.Ui;
 /// <summary>
 /// A junction's signal indicators (its level and note lamp, drawn by <see cref="JunctionSeam"/>) rendered standalone, with the
 /// app's theme, in a fixed matrix of states and settings at 2x scale. Every frame is saved in the test output
-/// (<c>frames/signal-*.png</c>) and compared pixel for pixel, with no tolerance, with the stored baseline in
-/// <c>Fixtures/SignalIndicatorBaseline</c>; a frame without a baseline fails. <c>BLUESTONE_BASELINE_DIR</c> compares with
+/// (<c>frames/signal-*.png</c>) and compared pixel for pixel with the stored baseline in
+/// <c>Fixtures/SignalIndicatorBaseline</c>; a frame without a baseline fails. The baseline was rendered on macOS on Apple
+/// silicon; on x64, where Skia rounds some blended pixels one step differently, each channel may differ by 1. <c>BLUESTONE_BASELINE_DIR</c> compares with
 /// another baseline instead; with <c>BLUESTONE_BASELINE_WRITE=1</c> as well, the current rendering is written there (point it
 /// at the fixture folder in the source tree to regenerate the baseline).
 /// </summary>
@@ -55,6 +56,10 @@ public sealed class SignalIndicatorTests
             Directory.CreateDirectory(baseline);
         }
 
+        // The stored baseline was rendered on macOS on Apple silicon. Skia on x64 (Linux and Windows) rounds some blended pixels
+        // one step differently (measured: at most 1 in any channel), so there a pixel may differ by that much and no more. A
+        // baseline given in BLUESTONE_BASELINE_DIR is the caller's own, so it is always compared exactly.
+        var tolerance = !string.IsNullOrEmpty(given) || (OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64) ? 0 : 1;
         var frames = Path.Combine(AppContext.BaseDirectory, "frames");
         Directory.CreateDirectory(frames);
         var mismatches = new List<string>();
@@ -94,17 +99,25 @@ public sealed class SignalIndicatorTests
                         }
 
                         var differing = 0;
+                        var largest = 0;
                         for (var i = 0; i < pixels.Length; i += 4)
                         {
-                            if (!pixels.AsSpan(i, 4).SequenceEqual(storedPixels.AsSpan(i, 4)))
+                            var difference = 0;
+                            for (var c = 0; c < 4; c++)
+                            {
+                                difference = Math.Max(difference, Math.Abs(pixels[i + c] - storedPixels[i + c]));
+                            }
+
+                            if (difference > tolerance)
                             {
                                 differing++;
+                                largest = Math.Max(largest, difference);
                             }
                         }
 
                         if (differing > 0)
                         {
-                            mismatches.Add($"{name}: {differing} of {size.Width * size.Height} pixels differ");
+                            mismatches.Add($"{name}: {differing} of {size.Width * size.Height} pixels differ by more than {tolerance} (largest channel difference {largest})");
                         }
                     }
                 }
