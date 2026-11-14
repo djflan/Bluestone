@@ -1,7 +1,15 @@
 # 0023. One signal routing model: connections, external instruments, and mixer channels
 
-- Status: Accepted; supersedes 0008
+- Status: Accepted; supersedes 0008; mixer-channel ownership and conventional audio routing
+  superseded by ADR 0050
 - Date: 2026-10-10
+
+> [!NOTE]
+> **Accepted replacement annotation (ADR 0050, 2026-11-14):** For format 6, ADR 0050 supersedes this ADR's
+> mixer-channel ownership, audio destinations, and mixer-channel routing-validation decisions. The historical
+> rationale and decision text below are retained, but those mixer-channel semantics are not implementation
+> guidance. ADR 0050 retains the single `SignalConnection` graph and does not change this ADR's event routing,
+> external instruments, profile/endpoint resolution, channel mapping, or playback decisions.
 
 ## Context
 
@@ -30,8 +38,16 @@ are independent and resolved at run time, must be kept.
   channel, forces one, remaps some, and/or passes only some (filtering first). Clips are never changed
   to retarget a part. The channel is a MIDI 1.0 channel on a logical port; MIDI 2.0 groups belong to the
   port, so this model does not widen for them.
+> [!NOTE]
+> **Accepted replacement annotation (ADR 0050):** The following mixer-channel decision is superseded for format 6.
+> It remains below as historical context; ADR 0050 is the implementation authority for audio ownership, outputs,
+> sends, Master, and validation involving mixer routes.
 - **Mixer channels are their own list**, independent of tracks; audio connections end at a channel or
   the master. Hardware tracks need no mixer channel.
+> [!NOTE]
+> **Accepted replacement annotation (ADR 0050):** The mixer-channel-specific audio edge validation and
+> cycle-owner wording in the following historical bullet is superseded for format 6. General junction,
+> device-input, event-route, and feedback validation remains in force under the unaffected portions of this ADR.
 - **Validation** (`SignalRoutingValidator`) checks existence, the role of each end, whether the signal
   can be present at the source (an event tap after an instrument that consumed everything carries
   nothing), whether the destination accepts it (a device input's port must exist and take this kind; a
