@@ -173,7 +173,8 @@ Bluestone/
 │   ├── plugin-hosting.md       Plugin processes, recovery, formats, and limits
 │   ├── project-format.md       Project persistence and migrations
 │   ├── midi-files.md           Standard MIDI File behavior
-│   └── profiles.md             Hardware profile format
+│   ├── profiles.md             Hardware profile format
+│   └── agent-team.md           Using the /team Copilot agent team
 └── src/
     ├── dotnet/                 Application, domain, UI, adapters, and tests
     └── native/                 Rust audio, plugin host, and test-plugin crates
@@ -183,7 +184,7 @@ Engineering decisions belong in an ADR. Current implementation traps, frozen reg
 
 ## Contributing
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [product vision](docs/product-vision.md), and the relevant Release 1.0 slice. New work should preserve timing and project correctness, fit the shared interaction and visual system, and state clearly which behavior was simulated and which was verified on real hardware.
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [product vision](docs/product-vision.md), and the relevant Release 1.0 slice. New work should preserve timing and project correctness, fit the shared interaction and visual system, and state clearly which behavior was simulated and which was verified on real hardware. Copilot users can put a specialist agent team on a change with `/team`; see [Agent team](docs/agent-team.md).
 
 ## Third-party names and trademarks
 

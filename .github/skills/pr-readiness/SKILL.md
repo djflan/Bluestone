@@ -21,7 +21,8 @@ PR. Report the outcome in the PR's Verification section.
 ### 1. Diff review
 
 1. Read the whole diff against the merge base (`git --no-pager diff origin/main...HEAD`), not just the last commit.
-2. Run the `code-review` agent on the branch diff and fix every real finding. If it raises a class of problem (a
+2. Run the `code-review` agent on the branch diff and fix every real finding. (Under `/team`, Grace's two-model review
+   is this review; see `.github/skills/team/references/modes/build.md`.) If it raises a class of problem (a
    race, an unhandled state), go to step 3 for the whole class.
 3. Look for leftovers: temporary CI changes, debug output, environment switches added for experiments, TODOs, files
    that should be gitignored.
