@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Automation;
@@ -86,35 +85,10 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private static readonly IBrush RoutedHole = new SolidColorBrush(Palette.Sunken);
     private const double PlusSize = 14;
     private const double RoutedSize = 7;
-    private const double LowFraction = 0.4;
-    private const double MidFraction = 0.62;
-    private const double NoteWidth = 12;
 
     // The device panels' border (Border.devicePanel): Top and Bottom line up with the panel just inside it, where its
     // accent stripe and its last row are.
     private const double PanelBorder = 1;
-    private const double NoteHeight = 12;
-    private static readonly Color NoteOff = Palette.Lighten(Palette.Border, 0.06);
-    private static readonly IBrush NoteOffBrush = new SolidColorBrush(NoteOff);
-    private static readonly double HotFraction = MeterLevels.Fraction(-6);
-    private static readonly double ZeroFraction = MeterLevels.Fraction(0);
-
-    // A MIDI connector in a 12 x 12 box: the ring with its key notch at the top, and the five pins in a horseshoe.
-    private static readonly Geometry NoteGlyph = new GeometryGroup
-    {
-        FillRule = FillRule.EvenOdd,
-        Children =
-        [
-            new EllipseGeometry(new Rect(0, 0, 12, 12)),
-            new EllipseGeometry(new Rect(1.25, 1.25, 9.5, 9.5)),
-            new RectangleGeometry(new Rect(5.1, 0, 1.8, 1.25)),
-            Pin(180),
-            Pin(135),
-            Pin(90),
-            Pin(45),
-            Pin(0),
-        ],
-    };
 
     private readonly EventHandler _updated;
     private readonly PropertyChangedEventHandler _changed;
@@ -122,9 +96,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     private double _glow;
     private long _lastFrame;
     private (bool Active, double PeakL, double PeakR, double RmsL, double RmsR, double HoldL, double HoldR, double Glow) _drawn = (false, -1, -1, -1, -1, -1, -1, -1);
-    private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim)? _segments;
-    private SolidColorBrush? _lampBrush;
-    private RadialGradientBrush? _haloBrush;
+    private readonly SignalIndicatorRenderer _renderer = new();
     private SolidColorBrush? _accentBrush;
     private IPen? _accentPen;
     private SolidColorBrush? _markerBrush;
@@ -326,34 +298,8 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     }
 
     /// <summary>What the seam carries now, in words, for its tooltip and screen readers.</summary>
-    internal string Describe()
-    {
-        if (Signal is not { } signal)
-        {
-            return string.Empty;
-        }
-
-        var parts = new List<string> { signal.Label };
-        if (signal.CanCarryNotes)
-        {
-            parts.Add(signal.NotesHeld ? "notes held" : "no notes");
-        }
-
-        if (signal.CanCarryAudio)
-        {
-            var levels = signal.Levels;
-            var peak = Math.Max(levels.PeakLeft, levels.PeakRight);
-            parts.Add(!levels.IsActive || peak <= MeterLevels.FloorDecibels ? "silent"
-                : string.Create(CultureInfo.InvariantCulture, $"peak {peak:0.0} dB{(peak > 0 ? ", clipping" : string.Empty)}"));
-        }
-
-        if (signal.IsRouted)
-        {
-            parts.Add($"also sent to {signal.Routes}");
-        }
-
-        return string.Join(" · ", parts);
-    }
+    internal string Describe() => Signal is not { } signal ? string.Empty
+        : SignalIndicatorRenderer.Describe(signal.Label, signal.CanCarryNotes, signal.NotesHeld, signal.CanCarryAudio, signal.Levels, signal.IsRouted ? signal.Routes : null, clipLatched: false);
 
     public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
 
@@ -367,13 +313,6 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             _accentBrush = null;
             _accentPen = null;
             _markerBrush = null;
-        }
-
-        if (change.Property == LampColorProperty || change.Property == LevelLowColorProperty || change.Property == LevelMidColorProperty || change.Property == LevelHotColorProperty || change.Property == LevelClipColorProperty)
-        {
-            _haloBrush = null;
-            _lampBrush = null;
-            _segments = null;
         }
 
         if (change.Property == SignalProperty)
@@ -576,6 +515,7 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             return;
         }
 
+        _renderer.Colors = new SignalIndicatorColors(LevelLowColor, LevelMidColor, LevelHotColor, LevelClipColor, LampColor, default);
         if (signal.CanCarryNotes)
         {
             DrawLamp(context, center);
@@ -638,17 +578,17 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
     // How many segments fit in LevelHeight, and the height they take: the top one is the level's top edge.
     private (int Count, double Height) LevelSpan()
     {
-        var segment = Math.Max(1, LevelSegmentHeight);
-        var gap = Math.Max(0, LevelSegmentGap);
-        var count = Math.Max(1, (int)Math.Floor((LevelHeight + gap) / (segment + gap)));
-        return (count, (count * segment) + ((count - 1) * gap));
+        var metrics = LevelMetrics;
+        return (metrics.Count, metrics.Height);
     }
+
+    // The level's segments: the bars a pixel apart, as the seam has always drawn them.
+    private SignalLevelMetrics LevelMetrics => new(LevelHeight, LevelBarWidth, 1, LevelSegmentHeight, LevelSegmentGap);
 
     private void DrawLamp(DrawingContext context, double center)
     {
         // A small MIDI connector: at header height, or coupled with the level, over or under its bars.
         var height = LampHeight;
-        var width = height * NoteWidth / NoteHeight;
         double top;
         if (LampPlacement == JunctionLampPlacement.Header)
         {
@@ -660,131 +600,13 @@ internal sealed class JunctionSeam : Control, ICustomHitTest
             top = LampPlacement == JunctionLampPlacement.AboveLevel ? levelTop - LampGap - height : levelBottom + LampGap;
         }
 
-        var box = new Rect(center - (width / 2), top, width, height);
-        var scale = height / NoteHeight;
-        var color = LampColor;
-        if (_glow > 0)
-        {
-            // Lit, it glows: a soft halo behind it, and the note itself fading back to unlit as the notes let go.
-            _haloBrush ??= new RadialGradientBrush
-            {
-                GradientStops = [new GradientStop(Color.FromArgb(120, color.R, color.G, color.B), 0), new GradientStop(Color.FromArgb(40, color.R, color.G, color.B), 0.45), new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1)],
-            };
-            using (context.PushOpacity(_glow))
-            {
-                context.DrawEllipse(_haloBrush, null, box.Center, height * 0.75, height * 0.75);
-            }
-
-            _lampBrush ??= new SolidColorBrush(color);
-            _lampBrush.Color = Palette.Mix(NoteOff, Palette.Lighten(color, 0.12), _glow);
-        }
-
-        using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(box.X, box.Y)))
-        {
-            context.DrawGeometry(_glow > 0 ? _lampBrush : NoteOffBrush, null, NoteGlyph);
-        }
+        _renderer.DrawLamp(context, SignalIndicatorRenderer.LampBox(center, top, height), _glow);
     }
 
     private void DrawLevel(DrawingContext context, double center, MeterLevels levels)
     {
-        var bar = LevelBarWidth;
-        var (top, bottom, left, _) = LevelFrame(center);
-        var segment = Math.Max(1, LevelSegmentHeight);
-        var gap = Math.Max(0, LevelSegmentGap);
-        var count = LevelSpan().Count;
-        var segments = Segments(count);
-        var silent = !levels.IsActive || Math.Max(levels.PeakLeft, levels.PeakRight) <= MeterLevels.FloorDecibels;
-
-        // The average mode holds the peak for a moment (MeterLevels' hold), so it stays up through a quiet reading.
-        var holds = levels.IsActive && LevelStyle == JunctionLevelStyle.RmsAndPeak && Math.Max(levels.HoldLeft, levels.HoldRight) > MeterLevels.FloorDecibels;
-
-        // Like a hardware LED meter: every segment is there, unlit ones only a dim tint of their colour; idle, dimmer still.
-        using (context.PushOpacity(silent ? 0.55 : 1))
-        {
-            for (var i = 0; i < count; i++)
-            {
-                var y = SegmentTop(i);
-                context.DrawRectangle(segments.Dim[i], null, new Rect(left, y, bar, segment), 0.5, 0.5);
-                context.DrawRectangle(segments.Dim[i], null, new Rect(left + bar + 1, y, bar, segment), 0.5, 0.5);
-            }
-        }
-
-        if (silent && !holds)
-        {
-            return;
-        }
-
-        Side(levels.RmsLeft, levels.PeakLeft, levels.HoldLeft, left);
-        Side(levels.RmsRight, levels.PeakRight, levels.HoldRight, left + bar + 1);
-
-        double SegmentTop(int index) => bottom - ((index + 1) * segment) - (index * gap);
-
-        void Side(double rms, double peak, double hold, double x)
-        {
-            // Lit up to the RMS with the held peak as one segment above it (or lit to the peak), and the top segment while
-            // the peak is over full scale. An indicator shows what is happening now: unlike the mixer's clip light, the
-            // over does not latch.
-            var clipped = peak > 0;
-            var peakOnly = LevelStyle == JunctionLevelStyle.Peak;
-            var lit = silent ? 0 : (int)Math.Round(MeterLevels.Fraction(peakOnly ? peak : rms) * count);
-            var held = peakOnly || hold <= MeterLevels.FloorDecibels ? -1 : Math.Min(count, (int)Math.Ceiling(MeterLevels.Fraction(hold) * count)) - 1;
-            for (var i = 0; i < count; i++)
-            {
-                if (i < lit || i == held || (clipped && i == count - 1))
-                {
-                    var cell = new Rect(x, SegmentTop(i), bar, segment);
-                    context.DrawRectangle(segments.Halo[i], null, cell.Inflate(new Thickness(1, 0.4)), 1, 1);
-                    context.DrawRectangle(segments.Lit[i], null, cell, 0.5, 0.5);
-                }
-            }
-        }
-    }
-
-    // A pin of the connector, at an angle round its centre (0 to the right, 90 straight down).
-    private static EllipseGeometry Pin(double degrees)
-    {
-        var radians = degrees * Math.PI / 180;
-        var center = new Point(6 + (3.1 * Math.Cos(radians)), 6.4 + (3.1 * Math.Sin(radians)) - 0.9);
-        return new EllipseGeometry(new Rect(center.X - 0.85, center.Y - 0.85, 1.7, 1.7));
-    }
-
-    // A colour for each segment from the bottom up: low, through mid and hot (about -6 dB), to clip at 0 dB and over.
-    private (SolidColorBrush[] Lit, SolidColorBrush[] Halo, SolidColorBrush[] Dim) Segments(int count)
-    {
-        if (_segments is { } cached && cached.Lit.Length == count)
-        {
-            return cached;
-        }
-
-        var lit = new SolidColorBrush[count];
-        var halo = new SolidColorBrush[count];
-        var dim = new SolidColorBrush[count];
-        for (var i = 0; i < count; i++)
-        {
-            var color = SegmentColor((i + 0.5) / count);
-            lit[i] = new SolidColorBrush(Palette.Lighten(color, 0.12));
-            halo[i] = new SolidColorBrush(Color.FromArgb(95, color.R, color.G, color.B));
-            dim[i] = new SolidColorBrush(Palette.Mix(Palette.MeterTrack, color, 0.3));
-        }
-
-        _segments = (lit, halo, dim);
-        return _segments.Value;
-    }
-
-    private Color SegmentColor(double fraction)
-    {
-        var low = LevelLowColor;
-        var mid = LevelMidColor;
-        var hot = LevelHotColor;
-        var clip = LevelClipColor;
-        return fraction switch
-        {
-            < LowFraction => low,
-            < MidFraction => Palette.Mix(low, mid, (fraction - LowFraction) / (MidFraction - LowFraction)),
-            _ when fraction < HotFraction => Palette.Mix(mid, hot, (fraction - MidFraction) / (HotFraction - MidFraction)),
-            _ when fraction < ZeroFraction => Palette.Mix(hot, clip, (fraction - HotFraction) / (ZeroFraction - HotFraction)),
-            _ => clip,
-        };
+        var (_, bottom, left, _) = LevelFrame(center);
+        _renderer.DrawCompactLevel(context, left, bottom, LevelMetrics, levels, LevelStyle);
     }
 
     // Each frame: the lamp follows the notes (on at once, off over LampRelease), and the seam redraws only if what it
