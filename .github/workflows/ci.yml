@@ -3,6 +3,10 @@ name: CI
 # Run the full cross-platform checks only when requested. Before merging, use Actions > CI > Run workflow and select the
 # pull request branch. This avoids spending three hosted runners on every push while keeping the final merge check available.
 on:
+  # Fork-only refs cannot be selected by workflow_dispatch in the upstream repository. Keep their required checks automatic;
+  # in-repository PRs get the same required jobs only from an explicit manual run.
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -18,7 +22,8 @@ env:
 
 jobs:
   build:
-    name: Build and test (${{ matrix.os }})
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && format('Manual CI required ({0})', matrix.os) || format('Build and test ({0})', matrix.os) }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:
