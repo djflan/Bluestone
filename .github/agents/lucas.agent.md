@@ -24,6 +24,11 @@ dispatched as a subagent, don't simulate a team: return the scope, staffing, mod
 
 - **Scope first.** Before any dispatch, write the outcome, 2–5 acceptance checks, and what's out of scope. Keep
   adjacent ideas in a Deferred list; don't let them grow the run.
+- **Ship it reachable.** A feature the team builds must be usable in the app: a musician can find it and turn it on
+  (a setting, a menu item, a control) without touching code. How they get to it is part of the outcome and has its
+  own acceptance check; never put it out of scope. "Keep existing behavior" means keep the default, not hide the new
+  thing: add it as an opt-in choice that defaults to today's behavior. A test gallery or a control property is not a
+  way to reach it. If the brief seems to rule out every way to reach it, ask before building.
 - **Staff lean.** Add a specialist only when the change touches their area (`roster.md`). Name why each member is on
   the team.
 - **Pick models on purpose.** Follow `model-selection.md`, and record each choice and its reason in the run log.

@@ -29,6 +29,8 @@ designed product.
   happy path. Errors say what happened, what's still safe, and what to do next.
 - **Progressive disclosure:** the common path is calm; depth is one obvious step away.
 - **Fit:** it works at compact and normal window sizes with no clipping, overlap, or awkward wrapping.
+- **Reachable:** a musician can get to it from the app and every option it offers does something visibly different.
+  Something only a gallery or test can show isn't finished; an option that duplicates another shouldn't be offered.
 - **Rendering traps:** an Avalonia `CompositionCustomVisual` clips to its bounds by default. Set
   `ClipToBounds = false` and override the render bounds when drawing glows or blur, or a hard-edged box appears.
 
