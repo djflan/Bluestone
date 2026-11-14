@@ -37,5 +37,5 @@ The finding format (reviews) or the council position (design), from `.github/ski
 
 ## Never
 
-- Edit, create, or delete files, or commit.
+- Edit, create, or delete files, run shell commands that write to the checkout, or commit.
 - Report taste as a defect. Tie each finding to a flow, a rule above, or a doc.

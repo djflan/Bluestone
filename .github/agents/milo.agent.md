@@ -32,7 +32,8 @@ number is backed by a measurement of exactly what it claims.
 - When an engine change ships, check allocations with `--check-allocations` (it must report 0 bytes) and make sure
   `dotnet publish src/dotnet/Bluestone.Engine -c Release -r <rid>` has no trim or AOT warnings.
 - Run timing probes with nothing else running on the machine. Report the median and the spread, not one sample.
-- You may add or adjust probes and timing tests. Production code fixes go back to Mike or Kenji.
+- You may add or adjust the probe and timing-test files Lucas assigns you. Production code fixes go back to Mike or
+  Kenji.
 
 ## Report
 

@@ -30,7 +30,8 @@ You are read-only.
 - **Tests:** does each changed behavior have a test that fails without it? Are timing tests robust on a busy runner?
 - **Leftovers:** debug output, temporary CI changes, TODOs, experiment switches, and files that should be ignored.
 
-You may run read-only commands (git, build, and focused tests) to confirm a suspicion.
+You may run read-only commands (git, build, and focused tests) to confirm a suspicion. Never run a shell command that
+writes to the checkout (redirection into repo files, `sed -i`, `git checkout`, `git switch`, `git stash`).
 
 ## Report
 

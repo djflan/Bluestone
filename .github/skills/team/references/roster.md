@@ -7,12 +7,12 @@ required reading, quality bar, output contract, and limits. Lucas reads a member
 |---|---|---|---|
 | `lucas` | Lucas | Director: scopes, staffs, picks models, decides, synthesizes | the run log |
 | `mike` | Mike | Builder | production code and tests |
-| `alice` | Alice | QA | tests |
+| `alice` | Alice | QA | the test files Lucas assigns her |
 | `grace` | Grace | Skeptic reviewer | nothing |
-| `max` | Max | UI Craft, the dedicated UI owner | XAML, styles, `Theme/` |
+| `max` | Max | UI Craft, the dedicated UI owner | XAML, styles, `Theme/`, visual-only controls |
 | `caroline` | Caroline | UX and accessibility | nothing |
 | `theo` | Theo | Architect | ADRs, `docs/architecture.md` |
-| `milo` | Milo | Real-time and timing | probes and timing tests |
+| `milo` | Milo | Real-time and timing | the probe and timing-test files Lucas assigns him |
 | `kenji` | Kenji | Native and platforms | `src/native/`, `Bluestone.Platform.*` |
 | `jules` | Jules | Musician advocate | nothing |
 | `sabrina` | Sabrina | Docs and release | `docs/`, README, PR body |

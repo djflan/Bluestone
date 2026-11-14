@@ -8,7 +8,7 @@ A subagent sees only what Lucas sends it. Every dispatch uses this template and 
 You are <Member>, <role> on the Bluestone /team. Your charter is .github/agents/<file>.agent.md. Read it first and
 follow it.
 
-Run: <run log path>  Mode: <mode>  Phase: <phase>
+Run log: <absolute path of the run log>  Mode: <mode>  Phase: <phase>  Model: <model chosen for this dispatch>
 Goal: <one sentence, observable outcome>
 Context: <what has been decided so far; links to files, ADRs, issues; the pinned SHA for reviews>
 Scope: <what to look at or change>
@@ -19,8 +19,9 @@ Return: <the output format below that applies>
 ```
 
 When the client exposes the member as a custom agent, dispatch that agent type. Otherwise dispatch a
-`general-purpose` agent with the prompt above. A read-only member must also be told: "Read-only: do not edit, create,
-or delete files, and do not commit."
+`general-purpose` agent with the prompt above. Either way, pass the chosen model as the task tool's `model`. A
+read-only member must also be told: "Read-only: do not edit, create, or delete files, do not run shell commands that
+write (redirection, `sed -i`, `git checkout`, `git switch`), and do not commit."
 
 ## Finding format (reviews)
 

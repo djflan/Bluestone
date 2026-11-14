@@ -1,8 +1,9 @@
 # Mode: triage
 
-Turn a bug report, issue, or vague request into a scoped plan that `/team build` can run. No production code changes.
-A reproduction test may be written on a scratch branch only when that is the cheapest way to confirm the bug; delete
-the branch afterward unless the user wants it.
+Turn a bug report, issue, or vague request into a scoped plan that `/team build` can run. No changes to the working
+tree. When a reproduction test is the cheapest way to confirm the bug, write it in a temporary worktree
+(`git worktree add <tmp dir> origin/main`). Report the test's code and result in the plan, then remove the worktree
+with `git worktree remove --force <tmp dir>`.
 
 ## 1. Read the report (Lucas)
 

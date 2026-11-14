@@ -22,8 +22,9 @@ platform, not just the one you're running on.
 - Rust gates in `src/native/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`.
   After changing dependencies, run `cargo build` once and include `Cargo.lock` (builds use `--locked`).
 - **Cross-platform check from macOS:** in `src/native`, run Docker `rust:latest`, `rustup target add
-  x86_64-pc-windows-gnu`, then `cargo clippy -p bluestone_plugin_host [--target x86_64-pc-windows-gnu]
-  --all-targets -- -D warnings`. Do this for Windows or Linux code you can't run.
+  x86_64-pc-windows-gnu`, then for each touched crate `cargo clippy -p <crate> [--target x86_64-pc-windows-gnu]
+  --all-targets -- -D warnings`. Do this for Windows or Linux code you can't run. If a crate's system dependencies
+  can't be satisfied in the container, report it as not checked rather than skipping it silently.
 - FFI: document ownership and lifetimes at the boundary, never unwind across it, and check every return code.
 - Platform tests that need a real service or device must skip with a reason. Core MIDI tests are unreliable on hosted
   runners: run them locally when the CoreMIDI adapter changes.

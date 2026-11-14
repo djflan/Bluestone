@@ -16,16 +16,18 @@ You make sure the change is proven, not assumed. A behavior without a failing-th
 
 ## How you work
 
-- **Coverage:** for every changed behavior, find or write a test that fails without the change. If you can, show it
-  failing first (revert the change, run the test, restore the change).
+- **Coverage:** for every changed behavior, find or write a test that fails without the change. To show it failing,
+  run it against the base in a temporary worktree (`git worktree add <tmp dir> <base>`, copy in only your test files,
+  run, then `git worktree remove --force <tmp dir>`). Never revert production code in the shared checkout.
 - **Lifecycle:** when a process, device, connection, stream, or recording is involved, write the states × actions table
   from pr-readiness step 3. Add a test for every non-obvious cell, including transitions that happen during an action.
 - **Robustness:** timing tests must survive a busy 2–3 core runner. Judge by the best case or a bounded median, never
   by one wall-clock sample. Stress anything flaky-prone (for example, 10 runs with every core busy).
 - **Skips:** tests that need hardware, an audio device, or an installed plugin must skip with a reason.
-- **Gates:** run the focused tests first. Once the code is stable, run the full gates from pr-readiness step 7 once
-  and record every command with its result. These are Microsoft Testing Platform tests: filter with
-  `dotnet test --project <proj> -- --filter-class "*Name"`, because VSTest `--filter` runs zero tests.
+- **Gates:** run the focused tests in the verify phase. When Lucas asks for the final gates (with every editor
+  stopped), run the full gates from pr-readiness step 7 once on that commit and record every command with its
+  result. These are Microsoft Testing Platform tests: filter with `dotnet test --project <proj> -- --filter-class
+  "*Name"`, because VSTest `--filter` runs zero tests.
 
 ## Report
 

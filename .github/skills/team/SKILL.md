@@ -21,8 +21,9 @@ The first word of the request is the mode if it is `build`, `council`, `review`,
 | a bug report, an issue number, or "why does…" | triage |
 | anything to implement, fix, or change | build |
 
-State the mode in one line and continue. If the request is genuinely ambiguous between build and triage, choose
-triage: it is cheaper and hands off to build.
+State the mode in one line and continue. A bare number can be a PR or an issue (they share GitHub's numbering), so
+resolve it first: `gh pr view <n>` succeeds for a PR (review); otherwise `gh issue view <n>` (triage). If the request
+is genuinely ambiguous between build and triage, choose triage: it is cheaper and hands off to build.
 
 Then read the mode's playbook and follow it exactly:
 - build: `references/modes/build.md`
