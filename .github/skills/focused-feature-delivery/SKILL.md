@@ -56,11 +56,11 @@ Do not rerun the full suite after every small edit. When a focused check fails, 
 
 ## 6. Bound CI Monitoring
 
-- CI runs only on demand. Start it once, after the review rounds are finished: `gh workflow run ci.yml --ref <branch>`. A later push needs one more run before merge.
+- CI runs only on demand. Start it once, after the review rounds are finished: `gh workflow run ci.yml --ref <branch>`. A later push needs one more run before merge. The ruleset does not require these checks (dispatched runs are not attached to the PR), so confirm the run on the head commit is green before merging.
 - After starting it, inspect the workflow run once and identify its run ID and required jobs.
 - Poll only after a meaningful interval or a notification. Do not repeatedly query an unchanged pending state.
 - Act immediately on a failed job: read its log, identify the failing command, fix the cause, push one follow-up commit, and run CI once more.
-- Never bypass required checks unless the user explicitly authorizes a specific waiver. Distinguish queued, running, failed, canceled, and waived jobs accurately.
+- Never merge with a failing or missing CI run unless the user explicitly authorizes a specific waiver. Distinguish queued, running, failed, canceled, and waived jobs accurately.
 - Stop once the agreed checks are green, review threads are handled, and the requested merge/release action is complete.
 
 ## Progress Updates
