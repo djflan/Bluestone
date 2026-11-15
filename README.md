@@ -20,7 +20,13 @@ Bluestone combines deep, flexible signal flow with clear, approachable workflows
 
 New builds on the [Releases](https://github.com/djflan/Bluestone/releases) page include categorized notes and the complete pull-request and commit history since the previous published release.
 
-![Bluestone's workspace while playing: the inspector beside the arrangement, and a Device View whose chain (Arpeggiator, Transpose, Bluestone's reference instrument and gain) shows its signal between every device, glowing MIDI icons where notes are held and levels where audio flows](docs/images/bluestone-workspace.png)
+![Bluestone's workspace with the professional mixer docked below the arrangement](docs/images/professional-mixer/final-docked-default.png)
+
+The approved C2 mixer design direction and compact layout:
+
+| Normal | Compact |
+|---|---|
+| ![C2 mixer design, normal layout](docs/images/professional-mixer/C2-normal.png) | ![C2 mixer design, compact layout](docs/images/professional-mixer/C2-compact.png) |
 
 ## The idea
 
