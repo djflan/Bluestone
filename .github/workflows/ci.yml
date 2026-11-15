@@ -2,9 +2,9 @@ name: CI
 
 # On demand only: pushes and pull requests do not start it. Run it once a pull request's review rounds are done:
 #   gh workflow run ci.yml --ref <branch>
-# The run reports the required "Build and test" checks on the branch's head commit, which is what the pull request's
-# merge gate reads; a later push needs another run. main is protected and takes changes only through pull requests
-# that passed these checks, so the merged commit is not tested again. Run it on main by hand to check main. A branch
+# A dispatched run is not attached to the pull request, so its checks are not required by main's ruleset: whoever
+# merges confirms the run on the branch's head commit is green (a later push needs another run). main takes changes
+# only through pull requests, so the merged commit is not tested again. Run it on main by hand to check main. A branch
 # whose changes from main are documentation only skips the build and tests (see the changes job).
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ env:
 
 jobs:
   # Decides whether the change can affect the build or tests. A branch that, compared with main, only touches
-  # documentation (files nothing builds or reads) skips the work below; the required checks still report, as passed.
+  # documentation (files nothing builds or reads) skips the work below; the Build and test checks still report, as passed.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
