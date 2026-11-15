@@ -226,24 +226,6 @@ public sealed class MixerMeterUnitConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-/// <summary>
-/// For a count shown in a fixed number of slots (the parameter): "+N" for the items beyond them, or "+" when they all
-/// fit, so one small button both adds and reveals the rest.
-/// </summary>
-public sealed class MixerOverflowConverter : IValueConverter
-{
-    public static readonly MixerOverflowConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        var slots = parameter is string text && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) ? s : 0;
-        var count = value is int c ? c : 0;
-        return count > slots ? string.Create(CultureInfo.InvariantCulture, $"+{count - slots}") : "+";
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
-}
-
 /// <summary>True when a number is greater than the parameter, e.g. a name long enough to need the smaller, wrapping style.</summary>
 public sealed class GreaterThanConverter : IValueConverter
 {

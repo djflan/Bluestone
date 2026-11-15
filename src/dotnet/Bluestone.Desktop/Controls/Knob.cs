@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
@@ -14,7 +15,9 @@ namespace Bluestone.Desktop.Controls;
 /// A compact rotary parameter control for device panels. Drag vertically to change it (Shift for fine), scroll, or use the
 /// arrow keys; double-click returns it to its default. A stepped parameter (<see cref="Step"/> above zero) moves one step per
 /// key press or wheel notch and lands only on its steps when dragged; a continuous one moves 2% of its range (0.2% with Shift). Dragging writes the value live, so the change is heard as it is
-/// made; the project's history coalesces consecutive edits of one parameter into a single undo step.
+/// made; the project's history coalesces consecutive edits of one parameter into a single undo step. A reset (double-click,
+/// Delete, Backspace) runs <see cref="ResetCommand"/> when bound, so it is an undo step of its own. Keys with Ctrl, Alt, or
+/// Meta, and a horizontal or Shift wheel, pass through to the window and any scroller around the knob.
 /// </summary>
 public sealed class Knob : Control
 {
@@ -37,6 +40,9 @@ public sealed class Knob : Control
     /// What a screen reader says the value is, with its unit (for example "-21.0 dB"); when unset, the plain number.
     /// </summary>
     public static readonly StyledProperty<string?> ValueTextProperty = AvaloniaProperty.Register<Knob, string?>(nameof(ValueText));
+
+    /// <summary>What a reset runs; when unset, the value returns to <see cref="DefaultValue"/>.</summary>
+    public static readonly StyledProperty<ICommand?> ResetCommandProperty = AvaloniaProperty.Register<Knob, ICommand?>(nameof(ResetCommand));
 
     private const double SweepDegrees = 270;
     private const double StartDegrees = 135;
@@ -95,6 +101,12 @@ public sealed class Knob : Control
         set => SetValue(ValueTextProperty, value);
     }
 
+    public ICommand? ResetCommand
+    {
+        get => GetValue(ResetCommandProperty);
+        set => SetValue(ResetCommandProperty, value);
+    }
+
     private double Range => Math.Max(Maximum - Minimum, double.Epsilon);
 
     private string SpokenValue => ValueText ?? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Value:0.###}");
@@ -117,6 +129,23 @@ public sealed class Knob : Control
         {
             Nudge(Math.Sign(direction) * (fine ? 0.002 : 0.02));
         }
+    }
+
+    /// <summary>Returns to the default through <see cref="ResetCommand"/> when one is bound, else through the value.</summary>
+    public void Reset()
+    {
+        _preview = null;
+        if (ResetCommand is { } command)
+        {
+            if (command.CanExecute(null))
+            {
+                command.Execute(null);
+            }
+
+            return;
+        }
+
+        Value = Math.Clamp(DefaultValue, Minimum, Maximum);
     }
 
     /// <summary>Clamps a value to the range and, for a stepped parameter, rounds it to the nearest step.</summary>
@@ -173,8 +202,7 @@ public sealed class Knob : Control
         Focus();
         if (e.ClickCount == 2)
         {
-            _preview = null;
-            Value = Math.Clamp(DefaultValue, Minimum, Maximum);
+            Reset();
             e.Handled = true;
             return;
         }
@@ -205,6 +233,11 @@ public sealed class Knob : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (e.InitialPressMouseButton != MouseButton.Left)
+        {
+            return;
+        }
+
         Commit();
         e.Pointer.Capture(null);
     }
@@ -218,16 +251,24 @@ public sealed class Knob : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        if (e.Delta.Y != 0)
+        // A horizontal or Shift wheel scrolls whatever holds the knob instead.
+        if (Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y) || e.KeyModifiers.HasFlag(KeyModifiers.Shift) || e.Delta.Y == 0)
         {
-            NudgeBy(Math.Sign(e.Delta.Y), e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-            e.Handled = true;
+            return;
         }
+
+        NudgeBy(Math.Sign(e.Delta.Y), fine: false);
+        e.Handled = true;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if ((e.KeyModifiers & ~KeyModifiers.Shift) != KeyModifiers.None)
+        {
+            return;
+        }
+
         var fine = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         switch (e.Key)
         {
@@ -248,7 +289,7 @@ public sealed class Knob : Control
                 e.Handled = true;
                 break;
             case Key.Back or Key.Delete:
-                Value = Math.Clamp(DefaultValue, Minimum, Maximum);
+                Reset();
                 e.Handled = true;
                 break;
         }
@@ -299,7 +340,7 @@ public sealed class Knob : Control
     {
         private new Knob Owner => (Knob)base.Owner;
 
-        public bool IsReadOnly => !Owner.IsEnabled;
+        public bool IsReadOnly => !Owner.IsEffectivelyEnabled;
 
         public double Minimum => Owner.Minimum;
 
@@ -311,7 +352,15 @@ public sealed class Knob : Control
 
         public double SmallChange => Owner.Step > 0 ? Owner.Step : Owner.Range * 0.02;
 
-        public void SetValue(double value) => Owner.Value = Owner.Snap(value);
+        public void SetValue(double value)
+        {
+            if (!Owner.IsEffectivelyEnabled)
+            {
+                throw new ElementNotEnabledException();
+            }
+
+            Owner.Value = Owner.Snap(value);
+        }
 
         public void RaiseValueChanged(object? oldValue, object? newValue) =>
             RaisePropertyChangedEvent(RangeValuePatternIdentifiers.ValueProperty, oldValue, newValue);

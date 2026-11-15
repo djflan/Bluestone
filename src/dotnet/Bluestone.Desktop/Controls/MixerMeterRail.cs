@@ -11,7 +11,9 @@ namespace Bluestone.Desktop.Controls;
 /// A mixer strip's one meter: a single column of LED segments drawn by <see cref="SignalIndicatorRenderer"/>, so it has the
 /// same gradient and segment rhythm as every other signal indicator in Bluestone. The column fills to the display mode's
 /// value on that mode's scale (<see cref="MixerRail.Range"/>), and a hairline marks the held peak where the mode is a dBFS
-/// one (Peak + RMS and the K-system). Nothing is lit while the reading is unavailable or still warming up.
+/// one (Peak + RMS and the K-system). Nothing is lit while the reading is unavailable or still warming up. Above the column,
+/// in the rail's top inset, sits the same clip light as a Large signal indicator: dim until a peak passes 0 dBFS, then lit
+/// until it is reset (the view lays a reset button over the meter while it is lit).
 /// </summary>
 public sealed class MixerMeterRail : Control
 {
@@ -25,6 +27,9 @@ public sealed class MixerMeterRail : Control
 
     public static readonly StyledProperty<bool> IsReadyProperty = AvaloniaProperty.Register<MixerMeterRail, bool>(nameof(IsReady));
 
+    /// <summary>Whether a peak has passed 0 dBFS since the last reset: lights the clip light.</summary>
+    public static readonly StyledProperty<bool> IsClippedProperty = AvaloniaProperty.Register<MixerMeterRail, bool>(nameof(IsClipped));
+
     /// <summary>The width of the LED column.</summary>
     public static readonly StyledProperty<double> RailWidthProperty = AvaloniaProperty.Register<MixerMeterRail, double>(nameof(RailWidth), 14);
 
@@ -34,7 +39,7 @@ public sealed class MixerMeterRail : Control
 
     static MixerMeterRail()
     {
-        AffectsRender<MixerMeterRail>(ModeProperty, ValueProperty, PeakHoldProperty, IsReadyProperty, RailWidthProperty);
+        AffectsRender<MixerMeterRail>(ModeProperty, ValueProperty, PeakHoldProperty, IsReadyProperty, IsClippedProperty, RailWidthProperty);
         AffectsMeasure<MixerMeterRail>(RailWidthProperty);
     }
 
@@ -63,6 +68,12 @@ public sealed class MixerMeterRail : Control
     {
         get => GetValue(IsReadyProperty);
         set => SetValue(IsReadyProperty, value);
+    }
+
+    public bool IsClipped
+    {
+        get => GetValue(IsClippedProperty);
+        set => SetValue(IsClippedProperty, value);
     }
 
     public double RailWidth
@@ -122,6 +133,9 @@ public sealed class MixerMeterRail : Control
                 context.DrawRectangle(HoldBrush, null, new Rect(left, y, RailWidth, 1));
             }
         }
+
+        // The clip light fills the top inset above the column, leaving a gap the height of the halo before the segments.
+        _renderer.DrawClipLatch(context, new Rect(left, 0, RailWidth, Math.Max(2, top - 3)), IsClipped);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

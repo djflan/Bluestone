@@ -41,8 +41,14 @@ public sealed class MixerGainBar : MixerValueControl
 
     protected override string ValueText => Value <= Minimum ? "−∞ dB" : Invariant($"{Value:+0.0;-0.0;0.0} dB");
 
-    /// <summary>A gain below the bar's floor starts a gesture from the floor, so the first movement is visible.</summary>
-    protected override double Start => Math.Max(base.Start, Math.Min(MixerRail.GainFloor, Maximum));
+    /// <summary>
+    /// A drag from a gain below the bar's floor starts at the floor, so the first movement is visible. Keys and the wheel
+    /// step from the real value, so a step never jumps.
+    /// </summary>
+    protected override double DragOrigin => Math.Max(Start, Math.Min(MixerRail.GainFloor, Maximum));
+
+    /// <summary>End goes to the top of the drawn bar (+6 dB), not the strip's full boost; higher gain is a drag or arrow keys away.</summary>
+    protected override double KeyMaximum => Math.Max(Minimum, Math.Min(Maximum, MixerRail.GainCeiling));
 
     protected override double DragDelta(Vector delta)
     {

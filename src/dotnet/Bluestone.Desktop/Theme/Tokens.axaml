@@ -97,6 +97,7 @@
   <SolidColorBrush x:Key="Text.Muted" Color="{StaticResource Text.MutedColor}" />
   <SolidColorBrush x:Key="Text.Disabled" Color="{StaticResource Text.DisabledColor}" />
   <SolidColorBrush x:Key="Text.OnAccent" Color="{StaticResource Text.OnAccentColor}" />
+  <SolidColorBrush x:Key="Meter.Clip" Color="{StaticResource Meter.ClipColor}" />
   <SolidColorBrush x:Key="MixerMeter.Track" Color="{StaticResource MixerMeter.TrackColor}" />
   <SolidColorBrush x:Key="MixerMeter.Fill" Color="{StaticResource MixerMeter.FillColor}" />
   <SolidColorBrush x:Key="MixerMeter.Hot" Color="{StaticResource MixerMeter.HotColor}" />

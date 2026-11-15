@@ -446,6 +446,90 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RemovingAnInsertAbove_KeepsEachRemainingRowOnItsOwnDevice()
+    {
+        await SeedWithInsertsAsync("A", "B", "C");
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        var (b, c) = (row.Inserts[1], row.Inserts[2]);
+        var (bDevice, cDevice) = (b.DeviceId, c.DeviceId);
+
+        _session.Execute(DeviceCommands.RemoveDevice(row.Inserts[0].DeviceId, _vm.Devices.Lookup));
+        await Settle();
+
+        Assert.Equal([b, c], row.Inserts);
+        Assert.Equal([b, c], row.VisibleInserts);
+        Assert.Equal((bDevice, cDevice), (b.DeviceId, c.DeviceId));
+    }
+
+    [Theory]
+    [InlineData(MixerMeterMode.PeakRms)]
+    [InlineData(MixerMeterMode.Vu)]
+    [InlineData(MixerMeterMode.K14)]
+    [InlineData(MixerMeterMode.LufsS)]
+    public async Task TheClipLight_LatchesOverZeroDbfs_UntilReset_InEveryMeterMode(MixerMeterMode mode)
+    {
+        await SeedAsync(Track.Create("Audio", TrackRole.Audio));
+        var timestamp = Stopwatch.GetTimestamp();
+        foreach (var strip in new MixerMeterStripViewModel[] { Assert.Single(_vm.MixerConsole.Tracks), _vm.MixerConsole.Master })
+        {
+            var clips = 0;
+            strip.PropertyChanged += (_, e) => clips += e.PropertyName == nameof(MixerMeterStripViewModel.IsClipped) ? 1 : 0;
+
+            strip.UpdateMeter(new MixerMeterReading(new MeterReading(1.2f, 0.5f, 0.5f, 0.3f), mode, -6, -9, true), mode, timestamp);
+            strip.UpdateMeter(new MixerMeterReading(new MeterReading(0.1f, 0.1f, 0.05f, 0.05f), mode, -30, -30, true), mode, timestamp + 1);
+            strip.UpdateMeter(null, mode, timestamp + 2);
+
+            Assert.True(strip.IsClipped);
+            Assert.Equal(1, clips);
+            strip.ResetClipCommand.Execute(null);
+            Assert.False(strip.IsClipped);
+            strip.UpdateMeter(new MixerMeterReading(new MeterReading(0.9f, 0.9f, 0.5f, 0.5f), mode, -1, -1, true), mode, timestamp + 3);
+            Assert.False(strip.IsClipped);
+        }
+    }
+
+    [Fact]
+    public async Task ResetAfterADrag_IsItsOwnUndoStep_ForTrackMasterAndSend()
+    {
+        var audio = Track.Create("Vocal", TrackRole.Audio);
+        var effect = Track.Create("Reverb", TrackRole.Effect);
+        await SeedAsync(audio, effect);
+        var row = _vm.MixerConsole.Tracks.Single(strip => strip.Id == audio.Id);
+        row.NewSendTarget = Assert.Single(row.SendTargets);
+        row.AddSendCommand.Execute(null);
+        await Settle();
+        var send = Assert.Single(row.Sends);
+        var master = _vm.MixerConsole.Master;
+
+        row.Gain = -8;
+        row.ResetGainCommand.Execute(null);
+        row.Pan = 0.4;
+        row.ResetPanCommand.Execute(null);
+        master.Gain = -5;
+        master.ResetGainCommand.Execute(null);
+        master.Pan = -0.3;
+        master.ResetPanCommand.Execute(null);
+        send.Level = -12;
+        send.ResetLevelCommand.Execute(null);
+        await Settle();
+
+        Assert.Equal((0.0, 0.0, 0.0, 0.0, 0.0), (row.Gain, row.Pan, master.Gain, master.Pan, send.Level));
+        var expected = new (Func<double> Value, double Adjusted)[]
+        {
+            (() => send.Level, -12), (() => master.Pan, -0.3), (() => master.Gain, -5), (() => row.Pan, 0.4), (() => row.Gain, -8),
+        };
+        foreach (var (value, adjusted) in expected)
+        {
+            _vm.UndoCommand.Execute(null);
+            await Settle();
+            Assert.Equal(adjusted, value(), 6);
+            _vm.UndoCommand.Execute(null);
+            await Settle();
+            Assert.Equal(0, value(), 6);
+        }
+    }
+
+    [Fact]
     public async Task OpeningAnInsert_SelectsItsTrackAndRevealsTheChainAtThatDevice()
     {
         var other = Track.Create("Other", TrackRole.Audio);

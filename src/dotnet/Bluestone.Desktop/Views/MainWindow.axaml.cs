@@ -711,8 +711,7 @@ public partial class MainWindow : Window
     private bool IsInsertNameFocused() =>
         FocusManager?.GetFocusedElement() is Visual focused
         && (focused as Button ?? focused.FindAncestorOfType<Button>()) is { DataContext: MixerInsertViewModel } button
-        && button.Classes.Contains("insertName")
-        && button.FindAncestorOfType<MixerConsoleView>() is not null;
+        && button.Classes.Contains("insertName");
 
     /// <summary>Select All: the text in a focused field, the notes in a focused editor, otherwise every track.</summary>
     internal void SelectAll()

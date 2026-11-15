@@ -94,6 +94,16 @@ public sealed class MixerConsoleShowcaseTests
             Assert.Single(view.GetLogicalDescendants().OfType<Border>(), border =>
                 AutomationProperties.GetName(border)?.StartsWith("Keys,", StringComparison.Ordinal) == true);
 
+            // Send knobs take their strip's colour, not the default accent.
+            var knobs = view.GetLogicalDescendants().OfType<Knob>().Where(knob => knob.IsEffectivelyVisible).ToArray();
+            Assert.NotEmpty(knobs);
+            Assert.All(knobs, knob => Assert.NotEqual(Bluestone.Desktop.Theme.Palette.Accent, knob.Accent));
+
+            // The clipped strips (the first refresh pushed them past 0 dBFS) light their clip and offer the reset.
+            Assert.True(lead.IsClipped);
+            var clips = view.GetLogicalDescendants().OfType<Button>().Where(button => button.Classes.Contains("mixerClip") && button.IsEffectivelyVisible).ToArray();
+            Assert.Contains(clips, button => AutomationProperties.GetName(button) == "Clipped – click to reset");
+
             var path = app.SaveFrame($"mixer-{name}", window);
             if (Environment.GetEnvironmentVariable("BLUESTONE_MIXER_FINAL_DIR") is { Length: > 0 } destination)
             {

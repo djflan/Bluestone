@@ -11,11 +11,13 @@ using Avalonia.Media.Imaging;
 using Bluestone.Application.Editing;
 using Bluestone.Audio;
 using Bluestone.Desktop.Controls;
+using Bluestone.Desktop.Theme;
 using Bluestone.Desktop.Views;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
+using Bluestone.Playback;
 using Bluestone.Presentation;
 using ToggleButton = Avalonia.Controls.Primitives.ToggleButton;
 using TrackModel = Bluestone.Domain.Sequencing.Track;
@@ -219,7 +221,7 @@ public sealed class MixerConsoleTests
     });
 
     [Fact]
-    public Task MixerMeterFaces_ShowHeldPeakMarkersOnBarAndRoundScales() => HeadlessApp.RunAsync(async () =>
+    public Task MeterRails_HoldThePeakMarkerAsTheLevelFallsToTheFloor() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
         var (audio, _, _) = await SeedAsync(app);
@@ -430,7 +432,7 @@ public sealed class MixerConsoleTests
     });
 
     [Fact]
-    public Task GainBarAndPanRamp_HomeAndEnd_GoToTheMinimumAndMaximum() => HeadlessApp.RunAsync(async () =>
+    public Task GainBarHomeAndEnd_GoToTheMinimumAndTheBarCeiling_PanRampToHardLeftAndRight() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
         var (audio, _, _) = await SeedAsync(app);
@@ -439,13 +441,22 @@ public sealed class MixerConsoleTests
         var strip = StripOf(mixer, audio.Name);
         var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
         var ramp = Visible<MixerPanRamp>(strip, $"{audio.Name} pan");
+        Assert.True(AudioStrip.MaxGainDecibels > MixerRail.GainCeiling, "The strip allows more boost than the bar draws.");
 
         bar.Focus(NavigationMethod.Tab);
         app.Settle();
         app.Press(Key.Home);
         Assert.Equal(AudioStrip.MinGainDecibels, GainOf(app, audio.Id));
+        // End goes to the top of the drawn bar (+6 dB), not the strip's full boost.
         app.Press(Key.End);
-        Assert.Equal(AudioStrip.MaxGainDecibels, GainOf(app, audio.Id));
+        Assert.Equal(MixerRail.GainCeiling, GainOf(app, audio.Id));
+        Assert.Equal("+6.0 dB", app.ViewModel.MixerConsole.Tracks.Single(row => row.Id == audio.Id).GainText);
+
+        // Higher boost is still an arrow key away, and End from above the ceiling comes back down to it.
+        app.Press(Key.Up);
+        Assert.Equal(MixerRail.GainCeiling + 1, GainOf(app, audio.Id));
+        app.Press(Key.End);
+        Assert.Equal(MixerRail.GainCeiling, GainOf(app, audio.Id));
 
         ramp.Focus(NavigationMethod.Tab);
         app.Settle();
@@ -979,10 +990,260 @@ public sealed class MixerConsoleTests
         app.Press(Key.Space);
         Assert.True(IsBypassed(app, devices[0].Id),
             $"Space on a focused insert name should bypass it (focused: {name.IsFocused}, pane: {app.ViewModel.LowerPane}).");
+        Assert.False(TransportStarted(app), "Space on an insert name must not also start playback.");
+        Assert.False(app.ViewModel.IsPlaying);
 
         Assert.True(name.IsFocused);
         Assert.Equal(tracks, app.ViewModel.Tracks.Select(track => track.Name));
+
+        // The check above can see playback: Space on another mixer button (not an insert name) still plays.
+        var master = Visible<Button>(mixer, "Select Master");
+        master.Focus(NavigationMethod.Tab);
+        app.Settle();
+        Assert.True(master.IsFocused);
+        app.Press(Key.Space);
+        Assert.True(TransportStarted(app), "Space on a non-insert button should still start playback.");
+        Assert.True(IsBypassed(app, devices[0].Id));
     });
+
+    [Fact]
+    public Task OverflowInsertName_SpaceInTheDeviceList_TogglesPower_NotPlayback() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (_, midi, _) = await SeedAsync(app);
+        var devices = await AddDevicesAsync(app, midi.Id,
+            BuiltInDevices.Transpose, BuiltInDevices.EventFilter, BuiltInDevices.Arpeggiator, BuiltInDevices.Transpose, BuiltInDevices.EventFilter);
+        var mixer = ShowTallDockedMixer(app);
+        var list = OpenFlyout(app, Visible<Button>(StripOf(mixer, midi.Name), "Show every device on this track"));
+        var fourth = Assert.Single(list.GetLogicalDescendants().OfType<Button>(), button =>
+            button.IsEffectivelyVisible && button.Classes.Contains("insertName") && ReferenceEquals(button.DataContext,
+                app.ViewModel.MixerConsole.Tracks.Single(row => row.Id == midi.Id).Inserts[3]));
+        var power = Assert.Single(list.GetLogicalDescendants().OfType<ToggleButton>(), toggle =>
+            toggle.IsEffectivelyVisible && ReferenceEquals(toggle.DataContext, fourth.DataContext));
+        var steps = app.Session.History.UndoCount;
+        var pane = app.ViewModel.LowerPane;
+
+        fourth.Focus(NavigationMethod.Tab);
+        app.Settle();
+        Assert.True(fourth.IsFocused);
+        var top = TopLevel.GetTopLevel(fourth)!;
+        top.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
+        top.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
+        app.Settle();
+
+        Assert.True(IsBypassed(app, devices[3].Id), "Space on the fourth insert's name in the list should bypass it.");
+        Assert.All(devices.Where((_, index) => index != 3), device => Assert.False(IsBypassed(app, device.Id)));
+        Assert.False(power.IsChecked);
+        Assert.False(TransportStarted(app), "Space on an insert name in the list must not start playback.");
+        Assert.Equal(pane, app.ViewModel.LowerPane);
+        Assert.Equal(steps + 1, app.Session.History.UndoCount);
+
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.False(IsBypassed(app, devices[3].Id));
+    });
+
+    [Fact]
+    public Task SendKnobOnTheStrip_IsDrawnInItsTrackColour() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, effect) = await SeedAsync(app);
+        Assert.True(app.Session.Execute(RoutingCommands.AddAudioSend(audio.Id, effect.Id, -12, false, BuiltInDevices.Find)));
+        app.Settle();
+        var mixer = ShowTallDockedMixer(app);
+        var row = app.ViewModel.MixerConsole.Tracks.Single(candidate => candidate.Id == audio.Id);
+        var knob = Visible<Knob>(StripOf(mixer, audio.Name), $"Send to {effect.Name} level");
+
+        Assert.Equal(Palette.Track(row.ColorIndex), knob.Accent);
+        Assert.NotEqual(Palette.Accent, knob.Accent);
+    });
+
+    [Fact]
+    public Task GainBarWheel_VerticalAdjusts_ShiftOrHorizontalPassesThroughToTheStripRow() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        await SetStripAsync(app, audio.Id, -10, 0);
+        var mixer = ShowDockedMixer(app);
+        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var at = app.InWindow(bar, new Point(bar.Bounds.Width / 2, bar.Bounds.Height / 2));
+        bool? handled = null;
+        Assert.IsAssignableFrom<Control>(bar.Parent).AddHandler(InputElement.PointerWheelChangedEvent,
+            (_, e) => handled = e.Handled, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+
+        app.Window.MouseWheel(at, new Vector(0, 1));
+        app.Settle();
+        Assert.Equal(-9, GainOf(app, audio.Id));
+        Assert.True(handled);
+
+        handled = null;
+        app.Window.MouseWheel(at, new Vector(0, 1), RawInputModifiers.Shift);
+        app.Settle();
+        Assert.Equal(-9, GainOf(app, audio.Id));
+        Assert.False(handled, "A Shift wheel should reach the strip row's scroller.");
+
+        handled = null;
+        app.Window.MouseWheel(at, new Vector(2, 0.5));
+        app.Settle();
+        Assert.Equal(-9, GainOf(app, audio.Id));
+        Assert.False(handled, "A mostly horizontal wheel should reach the strip row's scroller.");
+    });
+
+    [Fact]
+    public Task GainBarReset_AfterAnAdjustment_IsItsOwnUndoStep() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        await SetStripAsync(app, audio.Id, -10, 0);
+        var mixer = ShowDockedMixer(app);
+        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+
+        // Keys, then Delete at once (inside the history's merge window): Undo brings back the adjusted value.
+        bar.Focus(NavigationMethod.Tab);
+        app.Settle();
+        app.Press(Key.Up);
+        app.Press(Key.Up);
+        Assert.Equal(-8, GainOf(app, audio.Id));
+        app.Press(Key.Delete);
+        Assert.Equal(0, GainOf(app, audio.Id));
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(-8, GainOf(app, audio.Id));
+        Assert.Equal(-8, bar.Value);
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(-10, GainOf(app, audio.Id));
+
+        // A drag, then Delete.
+        var centre = new Point(bar.Bounds.Width / 2, bar.Bounds.Height / 2);
+        app.Drag(bar, centre, centre - new Point(0, bar.Bounds.Height / 6));
+        var dragged = GainOf(app, audio.Id);
+        Assert.True(dragged > -10, $"Dragging up should raise the gain, was {dragged}.");
+        bar.Focus(NavigationMethod.Tab);
+        app.Settle();
+        app.Press(Key.Back);
+        Assert.Equal(0, GainOf(app, audio.Id));
+        app.ViewModel.UndoCommand.Execute(null);
+        app.Settle();
+        Assert.Equal(dragged, GainOf(app, audio.Id));
+    });
+
+    [Fact]
+    public Task GainBarKeys_BelowTheBarFloor_StepFromTheRealValue() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        await SetStripAsync(app, audio.Id, -80, 0);
+        var mixer = ShowDockedMixer(app);
+        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        Assert.True(-80 < MixerRail.GainFloor);
+
+        bar.Focus(NavigationMethod.Tab);
+        app.Settle();
+        app.Press(Key.Up);
+        Assert.Equal(-79, GainOf(app, audio.Id));
+        app.Press(Key.Down, RawInputModifiers.Shift);
+        Assert.Equal(-79.1, GainOf(app, audio.Id), 6);
+    });
+
+    [Fact]
+    public Task GainBar_CtrlArrowChord_LeavesTheGainAlone() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        await SetStripAsync(app, audio.Id, -10, 0);
+        var mixer = ShowDockedMixer(app);
+        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var steps = app.Session.History.UndoCount;
+
+        bar.Focus(NavigationMethod.Tab);
+        app.Settle();
+        app.Press(Key.Up, RawInputModifiers.Control);
+        app.Press(Key.Down, RawInputModifiers.Control);
+        app.Press(Key.PageUp, RawInputModifiers.Control);
+        app.Press(Key.Up, RawInputModifiers.Alt);
+        Assert.Equal(-10, GainOf(app, audio.Id));
+        Assert.Equal(steps, app.Session.History.UndoCount);
+
+        // Without the chord the bar still takes the key.
+        bar.Focus(NavigationMethod.Tab);
+        app.Settle();
+        app.Press(Key.Up);
+        Assert.Equal(-9, GainOf(app, audio.Id));
+    });
+
+    [Fact]
+    public Task GainBarAutomation_OnADisabledStrip_IsReadOnlyAndRefusesAValue() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        await SetStripAsync(app, audio.Id, -10, 0);
+        var mixer = ShowDockedMixer(app);
+        var strip = StripOf(mixer, audio.Name);
+        var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
+        var range = Assert.IsAssignableFrom<IRangeValueProvider>(ControlAutomationPeer.CreatePeerForElement(bar));
+        Assert.False(range.IsReadOnly);
+
+        // Disabled through its strip, not on itself: the bar is effectively disabled.
+        strip.IsEnabled = false;
+        app.Settle();
+        Assert.True(bar.IsEnabled);
+        Assert.False(bar.IsEffectivelyEnabled);
+        Assert.True(range.IsReadOnly);
+        Assert.Throws<ElementNotEnabledException>(() => range.SetValue(-3));
+        app.Settle();
+        Assert.Equal(-10, GainOf(app, audio.Id));
+        Assert.Equal(-10, bar.Value);
+
+        strip.IsEnabled = true;
+        app.Settle();
+        range.SetValue(-3);
+        app.Settle();
+        Assert.Equal(-3, GainOf(app, audio.Id));
+    });
+
+    [Fact]
+    public Task ClipLight_LatchesOverZeroDbfs_AndClickingTheMeterResetsIt() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        var mixer = ShowDockedMixer(app);
+        var strip = StripOf(mixer, audio.Name);
+        var row = app.ViewModel.MixerConsole.Tracks.Single(candidate => candidate.Id == audio.Id);
+        var rail = Assert.Single(strip.GetLogicalDescendants().OfType<MixerMeterRail>(), candidate => candidate.IsEffectivelyVisible);
+        var reading = new MeterReading(0.5f, 0.5f, 0.3f, 0.3f);
+        app.ViewModel.MixerConsole.MeterSource = _ => reading;
+        var timestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        app.ViewModel.MixerConsole.RefreshMeters(timestamp);
+        app.Settle();
+        Assert.Empty(AllVisible<Button>(strip, "Clipped – click to reset"));
+        Assert.False(rail.IsClipped);
+
+        // One peak over 0 dBFS lights it, and it stays lit after the level falls.
+        reading = new MeterReading(1.2f, 0.5f, 0.6f, 0.3f);
+        app.ViewModel.MixerConsole.RefreshMeters(timestamp + 1);
+        reading = new MeterReading(0.1f, 0.1f, 0.05f, 0.05f);
+        app.ViewModel.MixerConsole.RefreshMeters(timestamp + 2);
+        app.Settle();
+        Assert.True(row.IsClipped);
+        Assert.True(rail.IsClipped);
+        var clip = Visible<Button>(strip, "Clipped – click to reset");
+
+        app.Click(clip);
+        Assert.False(row.IsClipped);
+        Assert.False(rail.IsClipped);
+        Assert.Empty(AllVisible<Button>(strip, "Clipped – click to reset"));
+
+        app.ViewModel.MixerConsole.RefreshMeters(timestamp + 3);
+        app.Settle();
+        Assert.Empty(AllVisible<Button>(strip, "Clipped – click to reset"));
+    });
+    /// <summary>Whether the transport is playing; the window under test has no playback thread, so this pumps the engine.</summary>
+    private static bool TransportStarted(AppUnderTest app)
+    {
+        app.Playback.Engine.Pump();
+        return app.Playback.Engine.State == TransportState.Playing;
+    }
 
     [Fact]
     public Task DefaultDockedMixer_KeepsItsInsertStackAndSends() => HeadlessApp.RunAsync(async () =>

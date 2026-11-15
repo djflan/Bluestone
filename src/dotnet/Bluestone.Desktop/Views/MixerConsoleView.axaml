@@ -57,7 +57,7 @@
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="{StaticResource Space.S}">
           <controls:Knob Width="{StaticResource Mixer.SendKnobSize}" Height="{StaticResource Mixer.SendKnobSize}"
                          Value="{Binding Level}" Minimum="{Binding MinimumLevel}" Maximum="{Binding MaximumLevel}"
-                         ValueText="{Binding LevelText}"
+                         ValueText="{Binding LevelText}" ResetCommand="{Binding ResetLevelCommand}"
                          AutomationProperties.Name="{Binding LevelAutomationName}" ToolTip.Tip="{Binding LevelText}" />
           <TextBlock Grid.Column="1" Text="{Binding LevelText}" Classes="mixerValue" />
           <CheckBox Grid.Column="2" Content="Pre" IsChecked="{Binding IsPreFader}" AutomationProperties.Name="Pre-fader send"
@@ -234,7 +234,8 @@
                           </Grid>
                           <Panel Grid.Row="2" IsVisible="{Binding HasAudioStrip}">
                             <TextBlock Text="No sends" Classes="micro" VerticalAlignment="Center" IsVisible="{Binding !Sends.Count}" />
-                            <ItemsControl ItemsSource="{Binding VisibleSends}" ClipToBounds="True" VerticalAlignment="Center">
+                            <ItemsControl ItemsSource="{Binding VisibleSends}" ClipToBounds="True" VerticalAlignment="Center"
+                                          Tag="{Binding ColorIndex, Converter={x:Static theme:TrackColorConverter.Instance}}">
                               <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                   <UniformGrid Rows="1" Columns="2" />
@@ -252,7 +253,7 @@
                                     <controls:Knob Width="{StaticResource Mixer.SendKnobSize}" Height="{StaticResource Mixer.SendKnobSize}" VerticalAlignment="Center"
                                                    Value="{Binding Level}" Minimum="{Binding MinimumLevel}" Maximum="{Binding MaximumLevel}"
                                                    ValueText="{Binding LevelText}"
-                                                   Accent="{Binding $parent[ItemsControl;1].((vm:MixerTrackStripViewModel)DataContext).ColorIndex, Converter={x:Static theme:TrackColorConverter.Instance}}"
+                                                   Accent="{Binding $parent[ItemsControl].Tag}" ResetCommand="{Binding ResetLevelCommand}"
                                                    AutomationProperties.Name="{Binding LevelAutomationName}" />
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                       <TextBlock Text="{Binding TargetName}" Classes="micro" TextTrimming="CharacterEllipsis" />
@@ -331,7 +332,7 @@
                         <!-- Audio body: pan, buttons, readouts, then gain bar · scale · meter. -->
                         <Grid Classes="mixerBody" RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding HasAudioStrip}">
                           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
-                            <controls:MixerPanRamp Classes="mixerPan" Value="{Binding Pan}" ColorIndex="{Binding ColorIndex}"
+                            <controls:MixerPanRamp Classes="mixerPan" Value="{Binding Pan}" ColorIndex="{Binding ColorIndex}" ResetCommand="{Binding ResetPanCommand}"
                                                    AutomationProperties.Name="{Binding PanAutomationName}"
                                                    ToolTip.Tip="Pan. Drag or use the arrow keys; double-click or Delete to centre." />
                             <TextBlock Grid.Column="1" Text="{Binding PanText}" Classes="mixerValue" Width="{StaticResource Mixer.ValueWidth}" TextAlignment="Right" />
@@ -361,7 +362,7 @@
                               <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                                 <TextBlock Text="PEAK dBFS" Classes="micro mixerCaption" HorizontalAlignment="Right" />
                                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Right">
-                                  <TextBlock Text="{Binding PeakText}" Classes="mixerValue" AutomationProperties.Name="Track peak in dBFS" />
+                                  <TextBlock Text="{Binding PeakText}" Classes="mixerValue" Classes.clipped="{Binding IsClipped}" AutomationProperties.Name="Track peak in dBFS" />
                                   <TextBlock Text="dBFS" Classes="micro mixerUnit" />
                                 </StackPanel>
                               </StackPanel>
@@ -369,15 +370,19 @@
                           </Border>
                           <Border Grid.Row="3" Classes="mixerSunken mixerRails" Padding="{StaticResource Inset.MixerReadout}">
                             <Grid ColumnDefinitions="*,Auto,*">
-                              <controls:MixerGainBar Value="{Binding Gain}" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}"
+                              <controls:MixerGainBar Value="{Binding Gain}" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" ResetCommand="{Binding ResetGainCommand}"
                                                      BarWidth="{StaticResource Mixer.GainBarWidth}"
                                                      AutomationProperties.Name="{Binding GainAutomationName}"
-                                                     ToolTip.Tip="Gain. Drag or use the arrow keys; Home/End for the minimum/maximum; double-click or Delete for 0 dB." />
+                                                     ToolTip.Tip="Gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
                               <controls:MixerDbScale Grid.Column="1" Width="{StaticResource Mixer.ScaleWidth}" Mode="{Binding MeterMode}" />
                               <controls:MixerMeterRail Grid.Column="2" HorizontalAlignment="Center" Mode="{Binding MeterMode}" Value="{Binding MeterValue}"
-                                                       PeakHold="{Binding MeterPeakHold}" IsReady="{Binding IsMeterReady}" RailWidth="{StaticResource Mixer.MeterRailWidth}"
+                                                       PeakHold="{Binding MeterPeakHold}" IsReady="{Binding IsMeterReady}" IsClipped="{Binding IsClipped}" RailWidth="{StaticResource Mixer.MeterRailWidth}"
                                                        AutomationProperties.Name="Track level meter"
-                                                       ToolTip.Tip="{Binding PeakText, StringFormat='Peak {0} dBFS (louder of left and right)'}" />
+                                                       ToolTip.Tip="Level in the chosen meter mode; the readout above holds the peak in dBFS (louder of left and right). The light on top shows a clip." />
+                              <!-- While the clip light is on, the whole meter column resets it. -->
+                              <Button Grid.Column="2" Classes="mixerClip" IsVisible="{Binding IsClipped}" Command="{Binding ResetClipCommand}"
+                                      AutomationProperties.Name="Clipped – click to reset" AutomationProperties.HelpText="A peak passed 0 dBFS on this strip"
+                                      ToolTip.Tip="Clipped: a peak passed 0 dBFS. Click, Enter, or Space to reset." />
                               <!-- Why the meter shows no level, over the meter column only and never in the way of a click. -->
                               <LayoutTransformControl Grid.Column="2" Classes="mixerStatus" IsVisible="{Binding !IsMeterReady}" IsHitTestVisible="False">
                                 <LayoutTransformControl.LayoutTransform>
@@ -514,7 +519,7 @@
 
             <Grid Grid.Row="3" Classes="mixerBody" RowDefinitions="Auto,Auto,Auto,*">
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
-                <controls:MixerPanRamp Classes="mixerPan" Value="{Binding Master.Pan}"
+                <controls:MixerPanRamp Classes="mixerPan" Value="{Binding Master.Pan}" ResetCommand="{Binding Master.ResetPanCommand}"
                                        AutomationProperties.Name="{Binding Master.PanAutomationName}"
                                        ToolTip.Tip="Master pan. Drag or use the arrow keys; double-click or Delete to centre." />
                 <TextBlock Grid.Column="1" Text="{Binding Master.PanText}" Classes="mixerValue" Width="{StaticResource Mixer.ValueWidth}" TextAlignment="Right" />
@@ -538,7 +543,7 @@
                   <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                     <TextBlock Text="PEAK dBFS" Classes="micro mixerCaption" HorizontalAlignment="Right" />
                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Right">
-                      <TextBlock Text="{Binding Master.PeakText}" Classes="mixerValue" AutomationProperties.Name="Master peak in dBFS" />
+                      <TextBlock Text="{Binding Master.PeakText}" Classes="mixerValue" Classes.clipped="{Binding Master.IsClipped}" AutomationProperties.Name="Master peak in dBFS" />
                       <TextBlock Text="dBFS" Classes="micro mixerUnit" />
                     </StackPanel>
                   </StackPanel>
@@ -546,15 +551,18 @@
               </Border>
               <Border Grid.Row="3" Classes="mixerSunken mixerRails" Padding="{StaticResource Inset.MixerReadout}">
                 <Grid ColumnDefinitions="*,Auto,*">
-                  <controls:MixerGainBar Value="{Binding Master.Gain}" Minimum="{Binding Master.MinimumGain}" Maximum="{Binding Master.MaximumGain}"
+                  <controls:MixerGainBar Value="{Binding Master.Gain}" Minimum="{Binding Master.MinimumGain}" Maximum="{Binding Master.MaximumGain}" ResetCommand="{Binding Master.ResetGainCommand}"
                                          BarWidth="{StaticResource Mixer.GainBarWidth}"
                                          AutomationProperties.Name="{Binding Master.GainAutomationName}"
-                                         ToolTip.Tip="Master gain. Drag or use the arrow keys; Home/End for the minimum/maximum; double-click or Delete for 0 dB." />
+                                         ToolTip.Tip="Master gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
                   <controls:MixerDbScale Grid.Column="1" Width="{StaticResource Mixer.ScaleWidth}" Mode="{Binding Master.MeterMode}" />
                   <controls:MixerMeterRail Grid.Column="2" HorizontalAlignment="Center" Mode="{Binding Master.MeterMode}" Value="{Binding Master.MeterValue}"
-                                           PeakHold="{Binding Master.MeterPeakHold}" IsReady="{Binding Master.IsMeterReady}" RailWidth="{StaticResource Mixer.MeterRailWidth}"
+                                           PeakHold="{Binding Master.MeterPeakHold}" IsReady="{Binding Master.IsMeterReady}" IsClipped="{Binding Master.IsClipped}" RailWidth="{StaticResource Mixer.MeterRailWidth}"
                                            AutomationProperties.Name="Master level meter"
-                                           ToolTip.Tip="{Binding Master.PeakText, StringFormat='Peak {0} dBFS (louder of left and right)'}" />
+                                           ToolTip.Tip="Level in the chosen meter mode; the readout above holds the peak in dBFS (louder of left and right). The light on top shows a clip." />
+                  <Button Grid.Column="2" Classes="mixerClip" IsVisible="{Binding Master.IsClipped}" Command="{Binding Master.ResetClipCommand}"
+                          AutomationProperties.Name="Master clipped – click to reset" AutomationProperties.HelpText="A peak passed 0 dBFS on the Master output"
+                          ToolTip.Tip="Clipped: a peak passed 0 dBFS. Click, Enter, or Space to reset." />
                   <!-- The console's one spoken meter status: every strip warms up and fails together, so Master speaks for them. -->
                   <LayoutTransformControl Grid.Column="2" Classes="mixerStatus" IsVisible="{Binding !Master.IsMeterReady}" IsHitTestVisible="False">
                     <LayoutTransformControl.LayoutTransform>

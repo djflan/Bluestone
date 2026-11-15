@@ -261,6 +261,9 @@ public sealed partial class MixerConsoleViewModel : ObservableObject
 
     internal bool Execute(IProjectCommand command) => _owner.Execute(command);
 
+    /// <summary>Executes a reset as its own undo step: it never merges into the drag or wheel edit just before it.</summary>
+    internal bool ExecuteAlone(IProjectCommand command) => _owner.Execute(new ProjectCommand(command.Label, command.Apply));
+
     internal void Post(Action action) => _owner.Post(action);
 
     internal bool IsArmedTrack(TrackId id) => _owner.ArmedTrack?.Id == id;
@@ -394,19 +397,35 @@ public abstract partial class MixerMeterStripViewModel : ObservableObject
     {
         var devices = chain?.Devices ?? [];
         var countChanged = Inserts.Count != devices.Length;
-        while (Inserts.Count > devices.Length)
-        {
-            Inserts.RemoveAt(Inserts.Count - 1);
-        }
 
+        // Rows follow their device, so a focused or bound row keeps its device when others are added, removed, or moved.
         for (var i = 0; i < devices.Length; i++)
         {
-            if (i == Inserts.Count)
+            var existing = -1;
+            for (var j = i; j < Inserts.Count; j++)
             {
-                Inserts.Add(new MixerInsertViewModel(console, this));
+                if (Inserts[j].DeviceId == devices[i].Id)
+                {
+                    existing = j;
+                    break;
+                }
+            }
+
+            if (existing < 0)
+            {
+                Inserts.Insert(i, new MixerInsertViewModel(console, this));
+            }
+            else if (existing != i)
+            {
+                Inserts.Move(existing, i);
             }
 
             Inserts[i].Sync(devices[i]);
+        }
+
+        while (Inserts.Count > devices.Length)
+        {
+            Inserts.RemoveAt(Inserts.Count - 1);
         }
 
         OverflowInsertCount = Inserts.Count - SyncWindow(Inserts, VisibleInserts, MixerConsoleViewModel.VisibleInsertRows);
@@ -459,6 +478,18 @@ public abstract partial class MixerMeterStripViewModel : ObservableObject
                 ? Math.Max(Meter.RmsLeft, Meter.RmsRight)
                 : LouderOf(MeterLeftValue, MeterRightValue);
         PeakText = PeakTextOf(HasMeterReading, MeterPeakHold);
+        IsClipped = Meter.Clipped;
+    }
+
+    /// <summary>A peak passed 0 dBFS since the last <see cref="ResetClipCommand"/>, in every meter mode.</summary>
+    [ObservableProperty]
+    public partial bool IsClipped { get; private set; }
+
+    [RelayCommand]
+    private void ResetClip()
+    {
+        Meter.ResetClip();
+        IsClipped = Meter.Clipped;
     }
 }
 
@@ -821,6 +852,26 @@ public sealed partial class MixerTrackStripViewModel : MixerMeterStripViewModel
 
     internal override void OpenInsert(DeviceId device) => _owner.OpenTrackChain(Id, device);
 
+    /// <summary>Returns the fader to unity as its own undo step.</summary>
+    [RelayCommand]
+    private void ResetGain()
+    {
+        if (HasAudioStrip)
+        {
+            _owner.ExecuteAlone(AudioStripCommands.SetTrackGain(Id, 0));
+        }
+    }
+
+    /// <summary>Centres the pan as its own undo step.</summary>
+    [RelayCommand]
+    private void ResetPan()
+    {
+        if (HasAudioStrip)
+        {
+            _owner.ExecuteAlone(AudioStripCommands.SetTrackPan(Id, 0));
+        }
+    }
+
     [RelayCommand]
     private void Select() => _owner.SelectTrack(Id);
 
@@ -845,6 +896,9 @@ public sealed partial class MixerTrackStripViewModel : MixerMeterStripViewModel
 
     internal void UpdateSend(SignalConnection send, TrackId target, double level, bool preFader, string? mergeKey) =>
         _owner.Execute(RoutingCommands.UpdateAudioSend(send.Id, target, level, preFader, _owner.Definitions, mergeKey));
+
+    internal void ResetSendLevel(SignalConnection send, TrackId target) =>
+        _owner.ExecuteAlone(RoutingCommands.UpdateAudioSend(send.Id, target, 0, send.SendPreFader, _owner.Definitions));
 
     internal void RemoveSend(ConnectionId send) => _owner.Execute(RoutingCommands.RemoveAudioSend(send));
 
@@ -947,6 +1001,16 @@ public sealed partial class MixerSendViewModel : ObservableObject
     [RelayCommand]
     private void Remove() => _source.RemoveSend(_connection.Id);
 
+    /// <summary>Returns the send to 0 dB as its own undo step.</summary>
+    [RelayCommand]
+    private void ResetLevel()
+    {
+        if (Target is { } target)
+        {
+            _source.ResetSendLevel(_connection, target.Track);
+        }
+    }
+
     private void Update(string mergeKey)
     {
         if (!_syncing && Target is { } target)
@@ -1017,6 +1081,14 @@ public sealed partial class MixerMasterStripViewModel : MixerMeterStripViewModel
 
     // The Device View has no Master reveal yet, so opening a Master insert selects the Master (its inspector scope).
     internal override void OpenInsert(DeviceId device) => _owner.SelectMaster();
+
+    /// <summary>Returns the Master fader to unity as its own undo step.</summary>
+    [RelayCommand]
+    private void ResetGain() => _owner.ExecuteAlone(AudioStripCommands.SetMasterGain(0));
+
+    /// <summary>Centres the Master pan as its own undo step.</summary>
+    [RelayCommand]
+    private void ResetPan() => _owner.ExecuteAlone(AudioStripCommands.SetMasterPan(0));
 
     internal void Sync(Project project)
     {

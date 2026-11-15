@@ -1,8 +1,6 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.VisualTree;
 using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Views;
@@ -19,11 +17,16 @@ public partial class MixerConsoleView : UserControl
     private const string TightClass = "tight";
     private const string ShortClass = "short";
 
+    static MixerConsoleView()
+    {
+        // A class handler, not one on the view: the chain and Master flyouts render their rows in a popup outside the view.
+        Button.KeyDownEvent.AddClassHandler<Button>(ToggleInsertPower, RoutingStrategies.Tunnel);
+    }
+
     public MixerConsoleView()
     {
         InitializeComponent();
         StripsArea.SizeChanged += (_, e) => UpdateHeightClasses(e.NewSize.Height);
-        AddHandler(KeyDownEvent, ToggleInsertPower, RoutingStrategies.Tunnel);
     }
 
     private void UpdateHeightClasses(double height)
@@ -38,16 +41,16 @@ public partial class MixerConsoleView : UserControl
 
     /// <summary>
     /// An insert row has one Tab stop, its name: Enter opens the device and Space turns it on or off, so a keyboard user
-    /// reaches bypass without a second stop per row. Handled here so the name button does not also click.
+    /// reaches bypass without a second stop per row. Handled on the way down so the name button does not also click; this
+    /// holds wherever the row is, in a strip or in a flyout.
     /// </summary>
-    private void ToggleInsertPower(object? sender, KeyEventArgs e)
+    private static void ToggleInsertPower(Button button, KeyEventArgs e)
     {
-        if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None || e.Source is not Visual source)
+        if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None || !ReferenceEquals(e.Source, button))
         {
             return;
         }
 
-        var button = source as Button ?? source.FindAncestorOfType<Button>();
         if (button is { DataContext: MixerInsertViewModel insert } && button.Classes.Contains("insertName"))
         {
             insert.IsEnabled = !insert.IsEnabled;
