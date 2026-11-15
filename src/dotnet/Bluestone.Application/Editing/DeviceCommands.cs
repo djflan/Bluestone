@@ -124,7 +124,11 @@ public static class DeviceCommands
             var project = p.WithChain(chain) with { Connections = [.. Retarget(p.Connections)], ParkedConnections = [.. Retarget(p.ParkedConnections)] };
             if (replacement.Definition.Id == found.Device.Definition.Id)
             {
-                project = project with { Sequence = RetargetLanes(project.Sequence, device, replacement.Id) };
+                project = project with
+                {
+                    Sequence = RetargetLanes(project.Sequence, device, replacement.Id),
+                    MasterAutomation = [.. project.MasterAutomation.Select(l => RetargetLane(l, device, replacement.Id))],
+                };
             }
 
             return chain.Owner.Kind == ChainOwnerKind.Track ? HeardIfAudible(project, chain.Owner.Track, [replacement], definitions) : project;
@@ -137,13 +141,15 @@ public static class DeviceCommands
         {
             if (track.Automation.Any(l => l.Target.IsDevice && l.Target.Device == from))
             {
-                sequence = sequence.WithTrack(track.WithAutomation(track.Automation.Select(l =>
-                    l.Target.IsDevice && l.Target.Device == from ? new AutomationLane(l.Id, AutomationTarget.ForDevice(to, l.Target.DeviceParameter), l.Points) : l)));
+                sequence = sequence.WithTrack(track.WithAutomation(track.Automation.Select(l => RetargetLane(l, from, to))));
             }
         }
 
         return sequence;
     }
+
+    private static AutomationLane RetargetLane(AutomationLane lane, DeviceId from, DeviceId to) =>
+        lane.Target.IsDevice && lane.Target.Device == from ? new AutomationLane(lane.Id, AutomationTarget.ForDevice(to, lane.Target.DeviceParameter), lane.Points) : lane;
 
     /// <summary>Moves a device within its chain. Its identity, parameters, automation, and taps are unchanged.</summary>
     public static IProjectCommand MoveDevice(DeviceId device, int newIndex, DeviceDefinitionLookup definitions) =>

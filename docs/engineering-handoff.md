@@ -219,4 +219,7 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
    warming-up status (only Master announces it); a taller meter at the default docked height (about 44 px today);
    undo merging for continuous gestures that does not rely on a 1 s time window; the bx_console AMEK 9099 parameter
    mapping (needs verified parameter IDs and a normalized-to-dB conversion); and tests for the send knob's wheel,
-   modifier-chord and disabled-automation handling and the Master clip-reset button.
+   modifier-chord and disabled-automation handling and the Master clip-reset button. Also deferred and not yet
+   verified: Copilot review of PR #95 flagged that device-parameter automation may not be chased to its value at the
+   new position on play, seek, or loop wrap. Master-chain lanes use the same `ParameterChange` schedule as track
+   device lanes, so any fix belongs to that shared path.

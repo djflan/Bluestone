@@ -145,6 +145,22 @@ public sealed class ReplaceDeviceTests
     }
 
     [Fact]
+    public void MasterAutomationOfAReplacedMasterDevice_FollowsTheSameKindOfDevice()
+    {
+        var delay = TestDevices.Instance(TestDevices.Delay);
+        var lane = new AutomationLane(AutomationLaneId.New(), AutomationTarget.ForDevice(delay.Id, new ParameterId(1)), [new AutomationPoint(Tick.Zero, ControlValue.Max)]);
+        var history = new EditHistory(Project.CreateNew().WithChain(DeviceChain.Create(ChainOwner.Master) with { Devices = [delay] }) with { MasterAutomation = [lane] });
+
+        var sameKind = TestDevices.Instance(TestDevices.Delay);
+        history.Execute(DeviceCommands.ReplaceDevice(delay.Id, sameKind, TestDevices.Lookup));
+
+        var retargeted = Assert.Single(history.Current.MasterAutomation);
+        Assert.Equal(lane.Id, retargeted.Id);
+        Assert.Equal(sameKind.Id, retargeted.Target.Device);
+        Assert.Equal(lane.Points, retargeted.Points);
+    }
+
+    [Fact]
     public void AParkedRouteIntoADevicesInput_FollowsItsReplacement_AndComesBackWhenTheTrackLeavesItsGroup()
     {
         var keyed = Track.Create("keyed", TrackRole.Hybrid);
