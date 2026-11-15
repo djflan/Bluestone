@@ -212,3 +212,11 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
    base versus modulated parameter values and control-rate modulators; optional auto-collapse of panels; samples
    and presets in the Browser once there is an index; drag from the Browser onto a track or the arranger;
    keyboard reordering of devices; and verifying detached windows and monitor recovery on real multi-monitor setups.
+7. **Professional mixer (ADR 0050, PR #95), deferred or not built:** per-strip width and spectrum analysis views
+   (they need analysis DSP; collapsed must mean no analysis runs and no reserved space); an input-monitor button
+   (the model has no monitor state); a Master chain view opened from the Master inserts (today they only select
+   Master); Ctrl+Left/Right jumps between strips; arming MIDI-only tracks from the mixer; a console-level LUFS-S
+   warming-up status (only Master announces it); a taller meter at the default docked height (about 44 px today);
+   undo merging for continuous gestures that does not rely on a 1 s time window; the bx_console AMEK 9099 parameter
+   mapping (needs verified parameter IDs and a normalized-to-dB conversion); and tests for the send knob's wheel,
+   modifier-chord and disabled-automation handling and the Master clip-reset button.
