@@ -197,6 +197,35 @@ public sealed class GroupsViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DeletingAGroup_LeavesAnUnrestorableMemberRouteParked_AndWarns()
+    {
+        var group = await GroupBassAndKeysAsync();
+        var bass = Row("Bass");
+        var memberIds = new HashSet<TrackId> { bass.Id, Row("Keys").Id };
+        var parkedOutputs = _session.Project.ParkedConnections
+            .Where(c => c.Source.Kind == SignalNodeKind.Track && memberIds.Contains(c.Source.AsTrack()))
+            .ToList();
+        _session.Execute(new ProjectCommand("Remove the Synth", project => project with
+        {
+            Instruments = [],
+            Connections = project.Connections.RemoveAll(c => c.Destination.Kind == SignalNodeKind.ExternalInstrument),
+        }));
+        _vm.Select(group);
+
+        await _vm.DeleteTracksCommand.ExecuteAsync(null);
+        await Settle();
+
+        Assert.Null(_session.Project.Sequence.FindTrack(group.Id));
+        Assert.Null(_session.Project.Sequence.FindTrack(bass.Id)!.Group);
+        Assert.All(parkedOutputs, parked => Assert.Contains(_session.Project.ParkedConnections, c => c.Id == parked.Id));
+        var warning = Assert.Single(_vm.Messages, m => m.Source == "Delete Group");
+        Assert.Equal(MessageSeverity.Warning, warning.Severity);
+        Assert.Contains("Deleting the group succeeded", warning.Text, StringComparison.Ordinal);
+        Assert.Contains($"{parkedOutputs.Count} parked routes", warning.Text, StringComparison.Ordinal);
+        Assert.Contains("remain inactive", warning.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UseOutputForAllTracks_LeavesMembersGoingThroughTheirGroup()
     {
         var group = await GroupBassAndKeysAsync();

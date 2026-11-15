@@ -124,7 +124,7 @@ public sealed record Project
         init => _masterStrip = value ?? throw new ArgumentNullException(nameof(value));
     }
 
-    /// <summary>Project-level automation for the Master fader and pan.</summary>
+    /// <summary>Project-level automation for the Master fader, pan, and devices in its chain.</summary>
     public ImmutableArray<AutomationLane> MasterAutomation
     {
         get => _masterAutomation;
@@ -310,9 +310,9 @@ public sealed record Project
                 throw new ArgumentException($"Automation lane {lane.Id} appears more than once.", nameof(lanes));
             }
 
-            if (!lane.Target.IsMaster)
+            if (!lane.Target.IsMaster && !lane.Target.IsDevice)
             {
-                throw new ArgumentException("Only Master fader and pan automation can be stored on the project.", nameof(lanes));
+                throw new ArgumentException("Only Master fader, pan, and device automation can be stored on the project.", nameof(lanes));
             }
 
             if (!seenTargets.Add(lane.Target))

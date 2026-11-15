@@ -90,28 +90,8 @@ public sealed partial class GroupsViewModel : ObservableObject
             return;
         }
 
-        // Removing the group is still a successful edit when a parked route no longer validates. The command keeps that
-        // route parked; surface the partial outcome instead of throwing, which would roll back the whole group change.
-        var remaining = _owner.Project.ParkedConnections
-            .Where(connection => routesBeingRestored.Contains(connection.Id))
-            .ToList();
-        if (remaining.Count > 0)
-        {
-            var routes = string.Join(", ", remaining
-                .Select(connection => $"{SignalRoutingValidator.Describe(_owner.Project, connection.Source)} → {SignalRoutingValidator.Describe(_owner.Project, connection.Destination)}")
-                .Distinct()
-                .Take(3));
-            var more = remaining.Select(connection => $"{SignalRoutingValidator.Describe(_owner.Project, connection.Source)} → {SignalRoutingValidator.Describe(_owner.Project, connection.Destination)}")
-                .Distinct()
-                .Skip(3)
-                .Any();
-            var count = remaining.Count;
-            var details = routes.Length == 0 ? string.Empty : $" ({routes}{(more ? ", …" : string.Empty)})";
-            _owner.AddMessage(
-                MessageSeverity.Warning,
-                "Remove From Group",
-                $"Ungrouping succeeded, but {count} parked route{(count == 1 ? string.Empty : "s")} could not be restored and remain inactive{details}. No replacement route was created; resolve the destination conflict before reconnecting.");
-        }
+        // Removing the group remains successful when a parked route no longer validates; report the partial outcome.
+        _owner.WarnForParkedRoutes(routesBeingRestored, "Remove From Group", "Ungrouping");
     }
 
     internal void Fold(TrackViewModel group, bool folded)

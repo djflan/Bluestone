@@ -1,3 +1,4 @@
+using Bluestone.Domain.Devices;
 using Bluestone.Domain.Sequencing;
 
 namespace Bluestone.Application.Editing;
@@ -16,12 +17,18 @@ public static class AutomationCommands
     public static IProjectCommand SetPoints(TrackId track, AutomationLaneId lane, string label, IReadOnlyCollection<AutomationPoint> points) =>
         ProjectCommands.EditTrack(label, track, t => t.FindLane(lane) is { } found && !found.Points.SequenceEqual(points) ? t.WithLane(found.WithPoints(points)) : t);
 
-    /// <summary>Adds a project Master fader or pan lane, unless that parameter already has a lane.</summary>
+    /// <summary>Adds a project Master fader, pan, or Master-chain device lane, unless that parameter already has a lane.</summary>
     public static IProjectCommand AddMasterLane(AutomationLane lane) =>
         new ProjectCommand("Add Master Automation Lane", project =>
-            !lane.Target.IsMaster || project.MasterAutomation.Any(existing => existing.Target == lane.Target)
-                ? project
-                : project with { MasterAutomation = project.MasterAutomation.Add(lane) });
+        {
+            var targetsMasterDevice = lane.Target.IsDevice
+                && project.FindDevice(lane.Target.Device) is { } found
+                && found.Chain.Owner.Kind == ChainOwnerKind.Master;
+            return (!lane.Target.IsMaster && !targetsMasterDevice)
+                || project.MasterAutomation.Any(existing => existing.Target == lane.Target)
+                    ? project
+                    : project with { MasterAutomation = project.MasterAutomation.Add(lane) };
+        });
 
     public static IProjectCommand RemoveMasterLane(AutomationLaneId lane) =>
         new ProjectCommand("Delete Master Automation Lane", project =>

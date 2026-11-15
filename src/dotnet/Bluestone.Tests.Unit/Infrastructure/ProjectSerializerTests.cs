@@ -1,7 +1,10 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using Bluestone.Domain.Devices;
+using Bluestone.Domain.Midi;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Sequencing;
+using Bluestone.Domain.Time;
 using Bluestone.Infrastructure.Projects;
 using CsCheck;
 
@@ -23,6 +26,24 @@ public sealed class ProjectSerializerTests
         var restored = Serializer.Deserialize(Serializer.Serialize(new ProjectDocument(project))).Project;
 
         Assert.Equal(ProjectSamples.Describe(project), ProjectSamples.Describe(restored));
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesMasterDeviceAutomationForAnUnavailableDeviceDefinition()
+    {
+        var device = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("vst3:unavailable"), "Unavailable", "1"));
+        var target = AutomationTarget.ForDevice(device.Id, new ParameterId(17));
+        var lane = new AutomationLane(AutomationLaneId.New(), target, [new AutomationPoint(Tick.Zero, ControlValue.FromFraction(0.42))]);
+        var master = DeviceChain.Create(ChainOwner.Master) with { Devices = [device] };
+        var project = Project.CreateNew() with { MasterAutomation = [lane] };
+        project = project.WithChain(master);
+
+        var restored = Serializer.Deserialize(Serializer.Serialize(new ProjectDocument(project))).Project;
+
+        var restoredLane = Assert.Single(restored.MasterAutomation);
+        Assert.Equal(lane.Id, restoredLane.Id);
+        Assert.Equal(target, restoredLane.Target);
+        Assert.Equal(lane.Points, restoredLane.Points);
     }
 
     [Fact]

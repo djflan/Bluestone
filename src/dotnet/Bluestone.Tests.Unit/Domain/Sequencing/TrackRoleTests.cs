@@ -232,9 +232,52 @@ public sealed class TrackRoleTests
         var plan = TrackRoleConversion.ForRoleChange(project, piano.Id, TrackRole.Audio, TestDevices.Lookup);
 
         Assert.Equal(RoleChangeOutcome.NeedsConfirmation, plan.Outcome);
+        Assert.True(plan.AddsAudioPath);
         var result = plan.Apply(project);
-        Assert.Equal(TrackRole.Audio, result.Sequence.FindTrack(piano.Id)!.Role);
+        var changed = result.Sequence.FindTrack(piano.Id)!;
+        Assert.Equal(TrackRole.Audio, changed.Role);
+        Assert.NotNull(changed.AudioStrip);
+        Assert.Single(result.Connections, c =>
+            c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(piano.Id));
+        Assert.Empty(SignalRoutingValidator.Errors(result.Validate()));
         Assert.Equal(project.ChainOf(piano.Id), result.ChainOf(piano.Id));
+    }
+
+    [Theory]
+    [InlineData(TrackRole.Audio)]
+    [InlineData(TrackRole.Effect)]
+    [InlineData(TrackRole.Group)]
+    public void ChangingAnUnroutedMidiOnlyTrackToAnAudioCapableRole_AddsAValidOutput(TrackRole role)
+    {
+        var midiOnly = Track.Create("MIDI");
+        var project = Empty().With(midiOnly);
+
+        var plan = TrackRoleConversion.ForRoleChange(project, midiOnly.Id, role, TestDevices.Lookup);
+        var changed = plan.Apply(project);
+
+        Assert.True(plan.AddsAudioPath);
+        Assert.NotNull(changed.Sequence.FindTrack(midiOnly.Id)!.AudioStrip);
+        var output = Assert.Single(changed.Connections.Where(c =>
+            c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(midiOnly.Id)));
+        Assert.Equal(SignalNode.Master, output.Destination);
+        Assert.Empty(SignalRoutingValidator.Errors(changed.Validate()));
+    }
+
+    [Fact]
+    public void ChangingARoleWithAParkedOutput_PreservesItAndAddsAnActiveOutput()
+    {
+        var midiOnly = Track.Create("MIDI");
+        var parkedOutput = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(midiOnly.Id), SignalNode.Master);
+        var project = Empty().With(midiOnly) with { ParkedConnections = [parkedOutput] };
+
+        var plan = TrackRoleConversion.ForRoleChange(project, midiOnly.Id, TrackRole.Effect, TestDevices.Lookup);
+        var changed = plan.Apply(project);
+
+        Assert.True(plan.AddsAudioPath);
+        Assert.Equal([parkedOutput], changed.ParkedConnections);
+        var output = Assert.Single(changed.Connections.Where(c =>
+            c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(midiOnly.Id)));
+        Assert.Equal(SignalNode.Master, output.Destination);
     }
 
     [Fact]

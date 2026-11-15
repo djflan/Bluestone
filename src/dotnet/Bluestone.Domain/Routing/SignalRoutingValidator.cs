@@ -43,6 +43,9 @@ public enum RoutingIssueCode
     /// <summary>A lane's device is not in the project. The lane is kept.</summary>
     AutomationDeviceMissing,
 
+    /// <summary>A Master automation lane targets a device outside the Master chain. The lane is kept.</summary>
+    AutomationDeviceWrongOwner,
+
     /// <summary>A lane's parameter is not one its device defines. The lane is kept.</summary>
     AutomationParameterUnknown,
 
@@ -519,6 +522,22 @@ public static class SignalRoutingValidator
                 {
                     issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationInstrumentMissing, $"An automation lane on {track.Name} targets port {lane.Target.Port} of {instrument.Name}, which it does not have. The lane is kept."));
                 }
+            }
+        }
+
+        foreach (var lane in project.MasterAutomation.Where(l => l.Target.IsDevice))
+        {
+            if (project.FindDevice(lane.Target.Device) is not { } found)
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationDeviceMissing, "A Master automation lane targets a device that is not in the project. The lane is kept."));
+            }
+            else if (found.Chain.Owner.Kind != ChainOwnerKind.Master)
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationDeviceWrongOwner, $"A Master automation lane targets {found.Device.DisplayName}, which is not in the Master chain. The lane is kept."));
+            }
+            else if (definitions(found.Device.Definition.Id) is { } definition && definition.FindParameter(lane.Target.DeviceParameter) is null)
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationParameterUnknown, $"A Master automation lane targets parameter {lane.Target.DeviceParameter} of {found.Device.DisplayName}, which it does not define. The lane is kept."));
             }
         }
     }

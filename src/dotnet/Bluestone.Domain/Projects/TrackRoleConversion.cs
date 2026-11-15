@@ -45,7 +45,7 @@ public sealed record RoleChangePlan
     /// <summary>Plain language for the user: why, and what changes. Empty for <see cref="RoleChangeOutcome.NoChange"/>.</summary>
     public string Message { get; init; } = string.Empty;
 
-    /// <summary>The conversion also adds a track strip and an Output route from the track to Master.</summary>
+    /// <summary>The conversion adds an ordinary audio Output route when no active or parked one already exists.</summary>
     public bool AddsAudioPath { get; init; }
 
     /// <summary>Applies the plan.</summary>
@@ -190,15 +190,19 @@ public static class TrackRoleConversion
             return Plan(RoleChangeOutcome.Refused, "This track holds note clips, which an audio track cannot. Make it a hybrid track, or move the notes away first.");
         }
 
+        var hasAudioOutput = project.Connections.Any(c =>
+            c.Kind == SignalKind.Audio
+            && c.AudioPurpose == AudioRoutePurpose.Output
+            && c.Source == SignalNode.Track(track));
+        var needsAudioOutput = requested is TrackRole.Audio or TrackRole.Hybrid or TrackRole.Effect or TrackRole.Group
+            && !hasAudioOutput;
+
         if (requested == TrackRole.Audio && HasEventProcessing(project, found, definitions))
         {
-            return Plan(RoleChangeOutcome.NeedsConfirmation, "This track has an instrument or MIDI effects, which an audio track does not use. They stay in its devices but will receive no notes. Change it anyway?");
+            var routeNotice = needsAudioOutput ? " An audio output route will be added." : string.Empty;
+            return Plan(RoleChangeOutcome.NeedsConfirmation, $"This track has an instrument or MIDI effects, which an audio track does not use. They stay in its devices but will receive no notes. Change it anyway?{routeNotice}", audioPath: needsAudioOutput);
         }
 
-        var needsAudioOutput = requested == TrackRole.Hybrid
-            && !project.Connections.Any(c => c.Kind == SignalKind.Audio
-                && c.AudioPurpose == AudioRoutePurpose.Output
-                && c.Source == SignalNode.Track(track));
         return Plan(RoleChangeOutcome.Automatic, audioPath: needsAudioOutput);
     }
 

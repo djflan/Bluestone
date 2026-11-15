@@ -1,5 +1,6 @@
 using Bluestone.Application.Editing;
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Midi;
 using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
@@ -12,6 +13,35 @@ namespace Bluestone.Tests.Unit.Application;
 public sealed class AudioStripAndRoutingCommandsTests
 {
     private static readonly DeviceDefinitionLookup Definitions = DeviceCatalog.BuiltIn.Lookup;
+
+    [Fact]
+    public void MasterDeviceAutomation_CanOnlyBeAddedForDevicesInTheMasterChain()
+    {
+        var masterDevice = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("vst3:master"), "Master FX", "1"));
+        var trackDevice = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("vst3:track"), "Track FX", "1"));
+        var masterChain = DeviceChain.Create(ChainOwner.Master) with { Devices = [masterDevice] };
+        var track = Track.Create("Track");
+        var trackChain = DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [trackDevice] };
+        var project = Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track),
+            Chains = [masterChain, trackChain],
+        };
+        var lane = new AutomationLane(
+            AutomationLaneId.New(),
+            AutomationTarget.ForDevice(masterDevice.Id, new ParameterId(7)),
+            [new AutomationPoint(Tick.Zero, ControlValue.Center)]);
+        var invalidLane = new AutomationLane(
+            AutomationLaneId.New(),
+            AutomationTarget.ForDevice(trackDevice.Id, new ParameterId(7)),
+            [new AutomationPoint(Tick.Zero, ControlValue.Center)]);
+        var history = new EditHistory(project);
+
+        history.Execute(AutomationCommands.AddMasterLane(lane));
+        history.Execute(AutomationCommands.AddMasterLane(invalidLane));
+
+        Assert.Equal([lane], history.Current.MasterAutomation);
+    }
 
     [Fact]
     public void TrackAudioMuteAndSolo_AreIndependentOfContentMuteAndSolo()

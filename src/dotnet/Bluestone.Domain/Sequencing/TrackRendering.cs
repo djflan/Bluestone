@@ -42,7 +42,7 @@ public static class TrackRendering
         var targets = new HashSet<AutomationTarget>();
         var lanes = new List<AutomationLane>();
         var dropped = 0;
-        var changes = RenderParameters(track, ppqn);
+        var changes = RenderDeviceParameters(track.Automation, ppqn);
         foreach (var lane in track.Automation.Where(l => l.Target.IsMidi && !l.Points.IsEmpty))
         {
             if (targets.Add(Effective(lane.Target, channelOverride)))
@@ -92,16 +92,16 @@ public static class TrackRendering
         return new RenderedTrack(events.MoveToImmutable(), suppressed, dropped) { ParameterChanges = changes };
     }
 
-    /// <summary>The device automation lanes of <paramref name="track"/>, sampled the way MIDI lanes are, at full parameter resolution.</summary>
-    private static ImmutableArray<ParameterChange> RenderParameters(Track track, Ppqn ppqn)
+    /// <summary>Samples device-parameter lanes at full resolution, independent of which owner stores them.</summary>
+    public static ImmutableArray<ParameterChange> RenderDeviceParameters(IEnumerable<AutomationLane> lanes, Ppqn ppqn)
     {
+        ArgumentNullException.ThrowIfNull(lanes);
         var interval = AutomationRenderer.DefaultInterval(ppqn);
-        var changes = track.Automation
+        return lanes
             .Where(l => l.Target.IsDevice && !l.Points.IsEmpty)
             .SelectMany(lane => AutomationRenderer.Sample(lane, interval).Select(s => new ParameterChange(s.Position, lane.Target.Device, lane.Target.DeviceParameter, s.Value)))
             .OrderBy(c => c.Position)
             .ToImmutableArray();
-        return changes;
     }
 
     /// <summary>
