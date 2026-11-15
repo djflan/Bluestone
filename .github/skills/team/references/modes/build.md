@@ -1,8 +1,9 @@
 # Mode: build
 
-Deliver a feature or fix end to end, ending at an open pull request. This mode runs on its own: no approval pauses
-except for the hard stops in `SKILL.md`. It follows `.github/skills/focused-feature-delivery/SKILL.md` and ends with
-`.github/skills/pr-readiness/SKILL.md`.
+Deliver a feature or fix end to end, ending at an open pull request. This mode runs autonomously between the hard
+stops in `SKILL.md`, including required user UI approvals: the chosen direction before production implementation
+and FINAL screenshots before opening or updating a user-facing UI PR. It follows
+`.github/skills/focused-feature-delivery/SKILL.md` and ends with `.github/skills/pr-readiness/SKILL.md`.
 
 ## 1. Intake (Lucas)
 
@@ -10,6 +11,9 @@ except for the hard stops in `SKILL.md`. It follows `.github/skills/focused-feat
    check says how a user reaches the new behavior in the running app (the setting, menu item, or control that turns
    it on). It is never out of scope; when the old behavior must stay, it stays as the default (see Lucas's charter,
    "Ship it reachable").
+   For UI work, quote the user's reference and hint language VERBATIM as acceptance checks (for example,
+   "like Studio One", "reuse X"), not loose inspiration. Record the supplied references; only when none were supplied
+   may the user explicitly agree a comparison baseline.
 2. Read only enough to find the owning code: repository instructions, the nearest owner, its caller, and its test.
    Use `references/roster.md` to staff the team.
 3. Pick a model for each member (`references/model-selection.md`).
@@ -23,14 +27,19 @@ except for the hard stops in `SKILL.md`. It follows `.github/skills/focused-feat
 
 ## 2. Design (only for cross-layer, new-workflow, or UI work)
 
-Dispatch in parallel, read-only, with a short brief and a request for a council position (`references/handoff.md`):
+Dispatch in parallel with a short brief and a request for a council position (`references/handoff.md`). Members are
+read-only except Max's explicitly assigned design-only scratch scenes for rendering options; no production
+implementation happens in this phase:
 - Theo for structure and the ADR impact;
-- Max for the visual approach, plus a sketch of the layout, hierarchy, and states;
+- Max for 2-4 RENDERED directions for every new or reworked user-facing view, with layout, hierarchy, and states;
 - Caroline for the flow, keyboard path, and accessibility;
 - Jules for whether a musician would get this, and the defaults.
 
-Lucas decides, writes the decision in the run log, and moves on. If the decision changes a consequential design, Theo
-drafts or updates the ADR in phase 3.
+Lucas decides non-UI technical questions and records the decisions. For UI, Max shows each rendered direction beside
+the user's supplied references (or the explicitly agreed baseline when none were supplied), with per-element
+critique. Stop for the USER PICK before production implementation. Lucas may recommend, but never chooses on the
+user's behalf. Record the chosen direction, reference comparison, and explicit user approval for the PR as well as
+the run log. If the decision changes a consequential design, Theo drafts or updates the ADR in phase 3.
 
 ## 3. Build
 
@@ -39,6 +48,9 @@ Split the work by file ownership (`references/roster.md`) so that no file has tw
 - Kenji: `src/native/`, `Bluestone.Platform.*`.
 - Max: `.axaml`, `Theme/`, styles, visual-only controls.
 - Theo: the ADR, when one is needed.
+
+During a UI phase Max takes NO view-model, API, or bug work. Return non-UI blockers to Lucas/Mike or the owning
+specialist; never divert the UI owner to unblock non-UI work.
 
 All editors share one checkout, so a build or test run sees everyone's in-progress edits. Run slices **in sequence**
 by default. Run two editors in parallel only when their slices are in different projects and neither consumes the
@@ -56,7 +68,10 @@ test file she adds or changes. No test file goes to both. Run the steps below in
 stable tree; only read-only work (Caroline) may overlap another step.
 
 - Max (when the UI changed): launches the app, captures screenshots at compact and normal sizes, reviews them against
-  his quality bar, and polishes until they pass. He reaches the feature the way a user would, starting from the app,
+  the approved direction and his quality bar beside the supplied references, with per-element critique, and polishes
+  until they pass. An explicitly agreed baseline is allowed only when no references were supplied. Use realistic,
+  populated content, long names, varied states, and signal playing where applicable, as required by Max's charter.
+  He reaches the feature the way a user would, starting from the app,
   and tries every option it offers; an option that looks the same as another, or a feature with no way to reach it,
   is a finding. A gallery or test harness is extra evidence, not a substitute. Caroline then checks keyboard use and accessibility on the same
   build.
@@ -70,6 +85,11 @@ stable tree; only read-only work (Caroline) may overlap another step.
 A failing check goes straight back to the owner of that slice. Fix it, then rerun that check before widening again.
 The full repository gates are not run here; they run once, on the final tree, in phase 6.
 
+For UI changes, after the checks and fixes, Max captures the FINAL compact and normal screenshots and shows them beside
+the same references, with per-element critique. Stop for explicit user approval. Rendering and internal reviews are not
+approval. Record the final screenshot set, comparisons, and user's approval for the PR. If later edits change the
+UI, Max recaptures it and the user approves again before opening or updating the PR.
+
 ## 5. Review
 
 1. Commit, then pin the snapshot: `git rev-parse HEAD`, and the diff `git --no-pager diff origin/main...HEAD`.
@@ -78,10 +98,13 @@ The full repository gates are not run here; they run once, on the final tree, in
 3. Dispatch, in parallel and read-only, on the pinned SHA:
    - Grace twice, once on a Claude model and once on a GPT model (`references/model-selection.md`);
    - every specialist who worked on or owns a touched area, reviewing only their area.
+   For UI work, include the approved rendered direction, reference-compared screenshots, and both user approval
+   records in the review brief. Missing comparison screenshots or approvals are BLOCKING gate failures.
 4. Lucas validates each finding against the code. Drop findings that are wrong, duplicated, or out of scope, and record
    why. Group the rest by root cause.
 5. The owners fix all critical and high findings, and medium findings that are cheap or user-visible, then rerun the
-   focused checks those fixes affect. Record the rest as known limitations.
+   focused checks those fixes affect. Record the rest as known limitations; blocking UI gates cannot be waived as
+   known limitations.
 6. **At most 2 fix rounds.** Run a second review round only if the fixes were substantial or created a new class of
    risk. One exception, from `pr-readiness` ("Ready means"): if its states × actions or claims steps turned up more
    than a couple of problems, one more pass of steps 1–6 is allowed after fixing them.
@@ -100,9 +123,14 @@ Order matters: every edit happens before the final gates, and the PR reports the
 3. **Final gates:** with every editor stopped, Alice runs `pr-readiness` step 7 once on the final commit and records
    each command with its result. If anything changes after this, rerun the gates that change affects.
 4. Sabrina writes the PR body from `.github/pull_request_template.md`, using the final gate results. It lists each
-   command with its result and what was physically verified versus simulated.
+   command with its result and what was physically verified versus simulated. Keep the template headings and
+   checklist intact. For user-facing UI, ATTACH the APPROVED rendered direction and FINAL compact and normal
+   screenshots beside the supplied references (or the explicitly agreed baseline when none were supplied), with
+   per-element comparisons and both explicit user approval records. These must survive in the PR, not only the run
+   log. If they no longer match the current UI, return to Max and the user for refreshed screenshots and approval.
 5. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
-   `gh pr edit`. Add a version token to the title only if the user asked.
+   `gh pr edit`. No user-facing UI PR is opened or updated until BOTH user approvals are recorded. Add a version
+   token to the title only if the user asked.
 6. Check CI once. If a job fails, read its log, fix it in one follow-up commit, and push. Do not poll an unchanged
    pending state; report that it is pending and finish.
 
@@ -110,4 +138,5 @@ Order matters: every edit happens before the final gates, and the PR reports the
 
 The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
 reported, every validated finding is fixed or listed as a known limitation, and the summary names the team, the
-models, and the PR link.
+models, and the PR link. For user-facing UI, both user approvals are recorded for the current UI, with the approved
+direction, final screenshots, and reference comparisons attached in the PR; missing UI gates are not known limitations.

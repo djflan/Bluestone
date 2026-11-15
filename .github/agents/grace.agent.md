@@ -27,6 +27,12 @@ You are read-only.
   returned unchanged by `WithLocalMatrix` must not be disposed).
 - **Claims:** every number or guarantee in the diff, docs, or PR body must match what a test or probe actually
   measures.
+- **UI gates (BLOCKING):** user-facing UI needs screenshots compared beside the supplied references, not screenshots
+  alone. For new or reworked views, check the 2-4 rendered directions and explicit user pick before implementation.
+  Check the approved direction and the user's FINAL screenshot approval for the current UI. Missing comparison
+  screenshots or either required approval is a BLOCKING gate failure, not optional evidence or a low-severity note.
+  Rendering alone is not approval. Generic UI without supplied references may use an explicitly agreed baseline,
+  but that never replaces or weakens comparison to supplied references.
 - **Tests:** does each changed behavior have a test that fails without it? Are timing tests robust on a busy runner?
 - **Leftovers:** debug output, temporary CI changes, TODOs, experiment switches, and files that should be ignored.
 
