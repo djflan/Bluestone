@@ -254,6 +254,138 @@ public sealed class PlaybackEngineTests
         Assert.Equal(["903C64@30"], f.Sent());
     }
 
+    [Theory]
+    [InlineData(99.5)]
+    [InlineData(98.9)]
+    public void Loop_ReloadJustBeforeTheWrap_StillWrapsAtTheLoopEnd(double reloadAt)
+    {
+        using var f = new PlaybackFixture(null, Immediate);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+        f.PumpAt(reloadAt);
+
+        // An edit refresh: the same plan again, then the same loop.
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.PumpAt(99.75);
+
+        Assert.True(f.Engine.TryGetSongTimeAt(Start + TimeSpan.FromMilliseconds(99.75), out var heard));
+        Assert.Equal(TimeSpan.FromMilliseconds(100), heard.LoopEnd);
+
+        f.PumpAt(100);
+        f.PumpAt(150);
+
+        Assert.Equal(new Tick(50), f.Engine.Position);
+        Assert.Equal(1, f.Engine.LoopWraps);
+        Assert.Equal(["903C64@0", "903C64@100"], f.Sent().Where(m => m.StartsWith("90", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Loop_ScheduledReloadAfterLookAheadReachedTheEnd_StillWraps()
+    {
+        using var f = new PlaybackFixture();
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+
+        // The scheduled cursor's horizon (now + 20 ms) has processed through tick 99 but not reached the wrap.
+        f.PumpAt(79.5);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        foreach (var ms in new[] { 80.0, 90, 100, 110, 120, 130 })
+        {
+            f.PumpAt(ms);
+        }
+
+        Assert.Equal(new Tick(30), f.Engine.Position);
+        Assert.Equal(["903C64@0", "803C40@10", "903C64@100", "803C40@110"], f.Sent());
+    }
+
+    [Fact]
+    public void Loop_ReloadAtTheWrapOnEveryPass_WrapsEveryPass()
+    {
+        using var f = new PlaybackFixture(null, Immediate);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+        for (var pass = 0; pass < 5; pass++)
+        {
+            f.PumpAt((pass * 100) + 99.5);
+            f.Load(Note(0, 10), Note(150, 10, 62));
+            f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+            f.PumpAt((pass * 100) + 99.75);
+            f.PumpAt((pass * 100) + 100);
+            f.PumpAt((pass * 100) + 50 + 100);
+        }
+
+        Assert.Equal(5, f.Engine.LoopWraps);
+        Assert.Equal(new Tick(50), f.Engine.Position);
+        Assert.Equal([.. Enumerable.Range(0, 6).Select(p => $"903C64@{p * 100}")], f.Sent().Where(m => m.StartsWith("90", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Loop_SetLoopJustBeforeTheWrap_StillWraps()
+    {
+        using var f = new PlaybackFixture(null, Immediate);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+        f.PumpAt(99.5);
+
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.PumpAt(100);
+        f.PumpAt(150);
+
+        Assert.Equal(1, f.Engine.LoopWraps);
+        Assert.DoesNotContain(f.Sent(), m => m.StartsWith("903E", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Loop_SeekPastTheEndAfterAReloadAtTheWrap_Disengages()
+    {
+        using var f = new PlaybackFixture(null, Immediate);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+        f.PumpAt(99.5);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.Seek(new Tick(120));
+        f.PumpAt(99.75);
+        f.PumpAt(130);
+
+        Assert.Equal(0, f.Engine.LoopWraps);
+        Assert.Equal("903E64@130", f.Sent()[^1]);
+        Assert.True(f.Engine.TryGetSongTimeAt(Start + TimeSpan.FromMilliseconds(130), out var heard));
+        Assert.Equal(TimeSpan.Zero, heard.LoopEnd);
+    }
+
+    [Fact]
+    public void Loop_UnchangedLoopAfterAReload_KeepsThePreReloadAnchorAsPrevious()
+    {
+        using var f = new PlaybackFixture(null, Immediate);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+        f.PumpAt(50.5);
+        var beforeReload = f.Engine.ReadTransport().Current;
+
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.PumpAt(51);
+
+        var transport = f.Engine.ReadTransport();
+        Assert.Equal(beforeReload, transport.Previous);
+        Assert.NotEqual(transport.Previous, transport.Current);
+        Assert.Equal(100, transport.Current.LoopEnd);
+    }
+
     [Fact]
     public void LoadDuringPlayback_KeepsSoundingNotesAndSkipsWhatAlreadyPlayed()
     {
