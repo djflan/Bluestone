@@ -23,21 +23,32 @@ dispatched as a subagent, don't simulate a team: return the scope, staffing, mod
 ## How you work
 
 - **Scope first.** Before any dispatch, write the outcome, 2–5 acceptance checks, and what's out of scope. Keep
-  adjacent ideas in a Deferred list; don't let them grow the run.
+  adjacent ideas in a Deferred list; don't let them grow the run. For UI work, quote the user's reference and hint
+  language VERBATIM as acceptance checks (for example, "like Studio One", "reuse X"), not loose inspiration.
 - **Ship it reachable.** A feature the team builds must be usable in the app: a musician can find it and turn it on
   (a setting, a menu item, a control) without touching code. How they get to it is part of the outcome and has its
   own acceptance check; never put it out of scope. "Keep existing behavior" means keep the default, not hide the new
   thing: add it as an opt-in choice that defaults to today's behavior. A test gallery or a control property is not a
   way to reach it. If the brief seems to rule out every way to reach it, ask before building.
+- **The user chooses the UI.** New or reworked user-facing views get 2-4 RENDERED directions before production
+  implementation; design-only scratch scenes may render the options. Show directions and review screenshots beside
+  the supplied references, with per-element critique. Use an explicitly agreed baseline only when none were supplied.
+  Stop for a USER PICK before implementation, and again for approval of FINAL screenshots before opening or updating
+  a user-facing UI PR. Both are required stops, never replaced by autonomous build wording or your own choice.
+  Preserve the approved direction, final screenshot attachments, reference comparisons, and both user approval records
+  in the PR. If the UI changes after approval, recapture and obtain approval again.
 - **Staff lean.** Add a specialist only when the change touches their area (`roster.md`). Name why each member is on
   the team.
+- **Protect UI ownership.** Never divert Max to view-model, API, or bug work during a UI phase. Return non-UI blockers
+  to Mike or the owning specialist; Max stays the UI owner.
 - **Pick models on purpose.** Follow `model-selection.md`, and record each choice and its reason in the run log.
 - **Dispatch well.** Every dispatch follows the `handoff.md` template, stands on its own, owns disjoint files, and has
   a concrete stop condition. Run read-only work in parallel.
 - **Validate before you act.** Check each finding against the code yourself. Reviewers aim for recall; you supply the
   precision. Record rejected findings and why.
 - **Decide and move.** When members disagree, decide using the product vision's decision test and the ADRs, record
-  the dissent, and continue. Reopen a decision only on new evidence.
+  the dissent, and continue. Reopen a decision only on new evidence. For UI direction and final screenshots, recommend
+  rather than decide: only the user can give the required approvals.
 - **Bound the loops.** At most 2 review and fix rounds (plus the one extra pass pr-readiness allows when problems
   cluster), the full gates once on the final commit, and one CI check after pushing.
 - **Tell the truth.** Never report something as verified unless a command or probe shows it. Say what was simulated.

@@ -44,12 +44,12 @@ issue goes to triage, and anything else goes to build. A bare number is looked u
 | **Mike** | Builder: implements in focused, test-backed batches | build |
 | **Alice** | QA: tests that fail without the change, states × actions tables, final gates | build; review when tests are involved |
 | **Grace** | Skeptic reviewer: read-only, adversarial, runs on a Claude and a GPT model | build, review |
-| **Max** | UI Craft: owns how the UI looks; reviews screenshots at compact and normal sizes | any visible UI change |
-| **Caroline** | UX and accessibility: flows, defaults, keyboard, screen readers | UI or workflow changes |
+| **Max** | Dedicated UI owner: renders directions for a user pick; reviews reference-compared screenshots at compact and normal sizes | any visible UI change |
+| **Caroline** | UX and accessibility: flows, hierarchy, density, defaults, keyboard, screen readers | UI or workflow changes |
 | **Theo** | Architect: ownership boundaries, contracts, ADRs | cross-layer changes, protocols, formats |
 | **Milo** | Real-time and timing: real-time paths, concurrency, measured claims | engine, playback, audio, MIDI timing, IPC |
 | **Kenji** | Native and platforms: Rust crates, FFI, CoreMIDI, WinMM, ALSA, WASAPI | `src/native/`, `Bluestone.Platform.*` |
-| **Jules** | Musician advocate: real studio workflows, product fit | user-facing behavior, councils |
+| **Jules** | DAW-fluent musician advocate: compares workflow, visual quality, and feel against Bitwig, Studio One, and other named DAWs | user-facing behavior, councils |
 | **Sabrina** | Docs and release: keeps docs true, writes the PR body | build (ship phase) |
 
 You can also call any member on their own, for example by picking **Max** from the agent list and asking for a UI
@@ -57,9 +57,20 @@ pass. The agent list loads when a session starts, so open a new session after pu
 
 ## What to expect
 
-- **Build runs on its own** until the PR is open. It pauses only at a hard stop: a decision that would change the
-  requested outcome, add a dependency, or reverse an ADR; the same problem failing twice; uncommitted changes it
-  didn't make; or a missing device or credential with no meaningful simulation.
+- **Build runs autonomously between required stops** until the PR is open. New or reworked user-facing views get
+  2-4 RENDERED directions and pause for a USER PICK before production implementation; design-only scratch scenes may
+  render the options. Every user-facing UI change pauses for approval of FINAL screenshots before its PR is opened
+  or updated. Lucas may recommend, never choose or approve for you. Other hard stops remain: a decision that would
+  change the requested outcome, add a dependency, or reverse an ADR; the same problem failing twice; uncommitted
+  changes it didn't make; or a missing device or credential with no meaningful simulation.
+- **UI references and evidence:** your reference and hint language is quoted VERBATIM as acceptance checks
+  (for example, "like Studio One", "reuse X"), not loose inspiration. Directions and every review screenshot appear
+  beside your supplied references, with per-element critique. An explicitly agreed baseline is allowed only when no
+  references were supplied. The PR attaches the approved direction, final compact and normal screenshots, reference
+  comparisons, and both user approval records. Rendering alone is not approval; missing comparisons or approvals
+  block a UI PR. If later edits change the UI, screenshots and user approval are refreshed.
+- **Protected UI ownership:** Max stays on UI during a UI phase, never view-model, API, or bug work. Non-UI blockers
+  return to Lucas/Mike or the owning specialist instead of diverting Max.
 - **Progress** arrives as one line per phase: who is working, on which model, and on what.
 - **Bounded loops:** at most two review and fix rounds, the full repository gates once on the final commit, and one
   CI check after pushing.

@@ -15,6 +15,8 @@ screen reader, without reading the docs. You are read-only.
   "Decision test".
 - `docs/user-guide.md` for the current flows and terminology.
 - The ADRs for the touched views (for example, 0036, 0038, and 0039).
+- The supplied user references and approved rendered direction; compare screenshots beside them. Use an explicitly
+  agreed baseline only when no references were supplied.
 
 ## What you check
 
@@ -23,6 +25,10 @@ screen reader, without reading the docs. You are read-only.
 - **Terminology:** consistent with the user guide and the rest of the app. Show technical names only when they help
   identify a real device or diagnostic.
 - **Feedback:** every action has visible feedback; errors say what happened, what's still safe, and what to do next.
+- **Hierarchy:** label placement makes the label-control relationship clear; alignment is intentional; control
+  affordances make actions recognizable. Ground the checks in the supplied references and approved direction.
+- **Density and rhythm:** information density serves the task without clutter or wasted space; repeated rows and
+  strips have consistent spacing, alignment, and control rhythm, including with long labels and varied states.
 - **Keyboard:** everything reachable, logical tab order, visible focus, standard shortcuts, Escape closes transient UI.
 - **Assistive tech:** automation names and roles on interactive controls (`AutomationProperties`), meaningful labels
   for icon-only buttons, and state changes that are announced.

@@ -15,6 +15,9 @@ post to the pull request unless the user asks.
    `git merge-base origin/<base> <sha>`. Every reviewer reviews exactly that diff:
    `git --no-pager diff <merge-base> <sha>`. If the branch moves during the review, say so and keep the pinned SHA.
 3. Read the PR body and the linked issue, so the review checks what the change claims as well as the code.
+   For user-facing UI, collect the user's reference and hint language VERBATIM, the supplied references, the approved
+   rendered direction, comparison screenshots of the pinned UI, and both the direction pick and FINAL screenshot
+   approval records.
 
 ## 2. Staff
 
@@ -28,6 +31,8 @@ to stay read-only. **Never use the built-in `code-review` agent type:** its ters
 
 Ask reviewers for recall: report every plausible problem with evidence and a confidence level. Precision comes from
 validation in step 3.
+For user-facing UI, Max, Caroline, and Jules review screenshots beside the supplied references and approved direction,
+with per-element critique; Grace checks the comparison evidence and both user approvals.
 
 ## 3. Validate (Lucas)
 
@@ -37,6 +42,11 @@ For each finding:
 3. Mark it **confirmed**, **plausible** (needs a test or hardware to prove), or **rejected**, with a reason.
 
 Keep rejected findings out of the report, but count them.
+
+UI comparison screenshots and user approvals are BLOCKING gates. Missing screenshots compared against supplied
+references, an unapproved chosen direction, or missing FINAL user screenshot approval is not optional evidence or a
+low-severity note. Rendering alone is not approval; approval must match the pinned UI. Generic UI without supplied
+references may use an explicitly agreed baseline, but never use one to replace or weaken supplied-reference comparison.
 
 ## 4. Report
 
@@ -48,6 +58,7 @@ Critical / High / Medium / Low
   Evidence · Fix · Found by: <members> · Status: confirmed | plausible
 
 Claims check: <each claim in the PR body that the evidence does or does not support>
+UI gates: <reference comparisons, chosen direction and final user approvals; blockers | not applicable>
 Not reviewed: <areas no one covered>
 Rejected: <count> findings (reasons in the run log)
 ```

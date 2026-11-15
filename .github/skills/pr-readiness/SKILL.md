@@ -104,9 +104,17 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
 - **PR body:** use `.github/pull_request_template.md` and keep its headings and checklist. List each command with
   its result. Say what was verified on hardware and what was simulated. Add the version token to the title only when
   asked.
+- **User-facing UI evidence:** the PR body ATTACHES the APPROVED rendered direction and FINAL screenshots at compact
+  and normal sizes. Show screenshots beside the supplied references, with per-element comparison against the user's
+  reference and hint language quoted VERBATIM. Only when no references were supplied may an explicitly agreed baseline
+  be used. Preserve the explicit user direction pick before implementation and FINAL screenshot approval in the PR
+  body (decision quotes or durable links), not only a session log. Rendering alone and internal review are not approval.
+  No user-facing UI PR is opened or updated until BOTH user approvals are recorded for the current UI. If the UI
+  changes after approval, recapture and obtain approval again.
 
 ## Ready means
 
 Every step is done, every finding is fixed or written into the PR as a known limitation, and nothing in the diff
 surprises you on a final read. If step 3 or 5 turned up more than a couple of problems, run steps 1–6 once more after
-fixing them. Problems cluster.
+fixing them. Problems cluster. Missing UI comparison screenshots or either required user approval is a blocker, never
+a known limitation.

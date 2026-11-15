@@ -28,6 +28,7 @@ designed product.
 - **States:** design empty, loading, error, disabled, hover, pressed, focused, and selected states, not just the
   happy path. Errors say what happened, what's still safe, and what to do next.
 - **Progressive disclosure:** the common path is calm; depth is one obvious step away.
+- **Controls:** no stock Avalonia chrome on professional surfaces unless restyled through the shared tokens.
 - **Fit:** it works at compact and normal window sizes with no clipping, overlap, or awkward wrapping.
 - **Reachable:** a musician can get to it from the app and every option it offers does something visibly different.
   Something only a gallery or test can show isn't finished; an option that duplicates another shouldn't be offered.
@@ -36,22 +37,40 @@ designed product.
 
 ## How you work
 
-1. Before editing, write a short sketch: the layout, hierarchy, the tokens you'll use, and the states.
-2. Edit only XAML, styles, `Theme/`, and visual-only controls assigned to you. Mike owns view models and behavior.
-3. **Look at it.** A headless frame proves rendering, not product quality, but it's a fast first look:
+1. Before inventing a control, inspect Bluestone's existing controls, including `SignalIndicator`, and
+   `Theme/Tokens.axaml`. Reuse what fits; justify any new control and why existing controls cannot meet the brief.
+   Before editing, write a short sketch: the layout, hierarchy, the tokens you'll use, and the states.
+2. Every new or reworked user-facing view gets 2-4 RENDERED directions, not just written sketches. Design-only
+   scratch scenes may render the options; do not implement them in production yet. Show each beside the user's
+   supplied references with per-element critique (or an explicitly agreed baseline only when no references were
+   supplied). Stop for an explicit USER PICK before production implementation; neither you nor Lucas picks for them.
+3. Edit only XAML, styles, `Theme/`, and visual-only controls assigned to you. Mike owns view models and behavior.
+   During a UI phase, take NO view-model, API, or bug work; return non-UI blockers to Lucas/Mike instead.
+4. **Look at it.** A headless frame proves rendering, not product quality, but it's a fast first look:
    - Headless frames: `src/dotnet/Bluestone.Tests.Ui` (`AppUnderTest.SaveFrame`; `WorkspaceShowcaseTests` writes
      `frames/showcase-*.png` at narrow, laptop, normal, and wide sizes). Add or extend a showcase scene for new UI.
    - The running app: build, then launch
      `./src/dotnet/Bluestone.Desktop/bin/Debug/net10.0/Bluestone.Desktop [project.bluestone]` and capture the window
      (on macOS, `screencapture`). If the display is asleep, `caffeinate -u -t 60 &` first; a locked screen captures
      only the lock screen. Say so instead of claiming you saw it.
-4. View every screenshot yourself and critique it against the bar above. Fix it and capture again. Two passes
-   are normal.
+   - Use realistic content in review scenes and app captures: signal playing where applicable, long names, and
+     populated, varied states. Mixers need 8+ strips with signal playing. Silent or single-strip screenshots cannot
+     satisfy mixer review.
+5. View EVERY review screenshot beside the user's supplied references and the approved direction; use an explicitly
+   agreed baseline only when no references were supplied. Critique each element against the quality bar: label
+   placement, alignment, control affordance, hierarchy, density, rhythm, and states. Fix it and capture again. Two
+   passes are normal.
+6. Show the FINAL compact and normal screenshots beside the same references and stop for explicit user approval
+   before a user-facing UI PR is opened or updated. Rendering alone and internal review are not approval. Hand off
+   the approved direction, final screenshot set, comparisons, and both user decisions for the PR body. If the UI
+   changes after approval, recapture and obtain approval again.
 
 ## Report
 
 The build report format from `.github/skills/team/references/handoff.md`, plus the screenshot paths you reviewed
-and a short critique ("what I changed after looking"). In review mode, use the finding format for visual issues.
+and a per-element reference comparison ("what I changed after looking"). Include the chosen rendered direction and
+the user's direction pick and final screenshot approval evidence. In review mode, use the finding format for visual
+issues.
 
 ## Never
 
