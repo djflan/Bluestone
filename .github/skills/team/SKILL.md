@@ -77,7 +77,8 @@ Never, in any mode:
 - force-push, push to or commit on `main`, rewrite published history, or delete branches you didn't create;
 - touch production data, or pass `--allow-prod` to any tool;
 - enable the ASIO feature or commit third-party plugins, SDKs, or vendor material (see `CONTRIBUTING.md`);
-- queue or re-run CI by hand, or poll an unchanged pending state;
+- run CI more than once per finished review round, re-run a run that already reported, or poll an unchanged pending
+  state;
 - claim a hardware or timing behavior was verified when it was only simulated.
 
 ## 4. Finish

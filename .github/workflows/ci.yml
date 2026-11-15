@@ -1,10 +1,12 @@
 name: CI
 
-# Pull requests only: main is protected and takes changes only through pull requests that pass these checks, so the
-# merged commit is not tested again. Run it by hand (workflow_dispatch) to check main. Documentation-only pull requests
-# skip the build and tests (see the changes job).
+# On demand only: pushes and pull requests do not start it. Run it once a pull request's review rounds are done:
+#   gh workflow run ci.yml --ref <branch>
+# The run reports the required "Build and test" checks on the branch's head commit, which is what the pull request's
+# merge gate reads; a later push needs another run. main is protected and takes changes only through pull requests
+# that passed these checks, so the merged commit is not tested again. Run it on main by hand to check main. A branch
+# whose changes from main are documentation only skips the build and tests (see the changes job).
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -19,8 +21,8 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # Decides whether the change can affect the build or tests. A pull request that only touches documentation (files
-  # nothing builds or reads) skips the work below; the required checks still report, as passed.
+  # Decides whether the change can affect the build or tests. A branch that, compared with main, only touches
+  # documentation (files nothing builds or reads) skips the work below; the required checks still report, as passed.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -33,12 +35,9 @@ jobs:
 
       - id: detect
         shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          files=$(git diff --name-only "$BASE...$HEAD")
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(git diff --name-only "origin/main...HEAD")
           echo "$files"
           # Documentation only: Markdown anywhere, docs/, skills, issue templates, funding, licence. Nothing builds,
           # packs, or tests these (checked: no test or project reads a .md file).
