@@ -46,6 +46,19 @@ public enum SignalNodeKind
     DeviceInput,
 }
 
+/// <summary>How an audio connection participates in strip routing.</summary>
+public enum AudioRoutePurpose
+{
+    /// <summary>The strip's ordinary output to its Master or parent Group.</summary>
+    Output,
+
+    /// <summary>A pre- or post-fader copy sent to an Effect track.</summary>
+    Send,
+
+    /// <summary>An advanced junction-level route such as a device tap, receive, or sidechain.</summary>
+    Internal,
+}
+
 /// <summary>
 /// One end of a connection. Everything is addressed by stable ID, never by a position, so reordering
 /// tracks or devices rewires nothing.
@@ -143,6 +156,8 @@ public readonly record struct SignalNode
 /// </remarks>
 public sealed record SignalConnection
 {
+    private readonly double _sendLevel;
+
     public required ConnectionId Id { get; init; }
 
     public required SignalKind Kind { get; init; }
@@ -150,6 +165,21 @@ public sealed record SignalConnection
     public required SignalNode Source { get; init; }
 
     public required SignalNode Destination { get; init; }
+
+    /// <summary>The purpose of an audio route; ignored for event routes.</summary>
+    public AudioRoutePurpose AudioPurpose { get; init; } = AudioRoutePurpose.Output;
+
+    /// <summary>The send's level, in dB. Used only for <see cref="AudioRoutePurpose.Send"/> routes.</summary>
+    public double SendLevelDecibels
+    {
+        get => _sendLevel;
+        init => _sendLevel = value is >= AudioStrip.MinGainDecibels and <= AudioStrip.MaxGainDecibels
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(SendLevelDecibels), value, "A send's level must be between -120 and 24 dB.");
+    }
+
+    /// <summary>Whether a send taps before gain and pan.</summary>
+    public bool SendPreFader { get; init; }
 
     /// <summary>Channel handling for event connections. Ignored for audio.</summary>
     public ChannelMapping Mapping { get; init; } = ChannelMapping.Preserve;

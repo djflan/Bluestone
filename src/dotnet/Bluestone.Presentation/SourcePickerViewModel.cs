@@ -225,7 +225,7 @@ public sealed partial class DeviceInputViewModel : ObservableObject
     {
         var project = _view.Project;
         var commands = project.ConnectionsTo(Destination).Select(c => RoutingCommands.Disconnect(c.Id)).ToList();
-        commands.Add(RoutingCommands.Connect(SignalConnection.Create(Port.Kind, source, Destination), _view.Definitions));
+        commands.Add(RoutingCommands.Connect(ConnectionFrom(source), _view.Definitions));
         _view.Execute(ProjectCommands.Batch(IsSidechain ? "Set Sidechain" : "Set Source", commands));
     }
 
@@ -278,10 +278,16 @@ public sealed partial class DeviceInputViewModel : ObservableObject
         }
     }
 
+    private SignalConnection ConnectionFrom(SignalNode source) =>
+        SignalConnection.Create(Port.Kind, source, Destination) with
+        {
+            AudioPurpose = Port.Kind == SignalKind.Audio ? AudioRoutePurpose.Internal : AudioRoutePurpose.Output,
+        };
+
     // Whether a connection from source would be accepted: none of the errors the validator finds involve it.
     private bool CanConnect(Project baseline, SignalNode source, DeviceDefinitionLookup definitions)
     {
-        var candidate = SignalConnection.Create(Port.Kind, source, Destination);
+        var candidate = ConnectionFrom(source);
         var issues = SignalRoutingValidator.Validate(baseline with { Connections = baseline.Connections.Add(candidate) }, definitions);
         return !SignalRoutingValidator.Errors(issues).Any(i => i.Connections.Contains(candidate.Id));
     }

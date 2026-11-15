@@ -48,7 +48,7 @@ public sealed record TrackSound
 
     public bool HoldsAudio { get; init; }
 
-    /// <summary>Where the track's output audio goes ("Master", a mixer channel's or a track's name), or null.</summary>
+    /// <summary>Where the track's ordinary audio output goes ("Master" or its parent Group), or null.</summary>
     public string? AudioDestination { get; init; }
 
     /// <summary>The destination node of <see cref="AudioDestination"/>: the track's primary audio output.</summary>
@@ -81,8 +81,14 @@ public sealed record TrackSound
         var instruments = chain?.Devices.Where(d => definitions(d.Definition.Id)?.Category == DeviceCategory.Instrument).ToImmutableArray() ?? [];
         var instrument = instruments.FirstOrDefault();
         var output = SignalNode.Track(track);
-        var audioOutputs = project.Connections.Where(c => c.Kind == SignalKind.Audio && c.Source == output).ToList();
-        var audio = audioOutputs.FirstOrDefault();
+        var audio = project.Connections.FirstOrDefault(c =>
+            c.Kind == SignalKind.Audio
+            && c.AudioPurpose == AudioRoutePurpose.Output
+            && c.Source == output);
+        var sends = project.Connections.Count(c =>
+            c.Kind == SignalKind.Audio
+            && c.AudioPurpose == AudioRoutePurpose.Send
+            && c.Source == output);
         var notes = project.Connections.FirstOrDefault(c => c.Kind == SignalKind.Events && c.Source == output && c.Destination.Kind != SignalNodeKind.ExternalInstrument);
         var missing = chain?.Devices.FirstOrDefault(d => definitions(d.Definition.Id) is null);
         return new TrackSound
@@ -97,7 +103,7 @@ public sealed record TrackSound
             HoldsAudio = found.Clips.Any(c => c is AudioClip),
             AudioDestination = audio is null ? null : NameOf(project, audio.Destination),
             AudioNode = audio?.Destination,
-            AudioSendCount = Math.Max(0, audioOutputs.Count - 1),
+            AudioSendCount = sends,
             NoteDestination = notes is null ? null : NameOf(project, notes.Destination),
         };
     }
@@ -109,7 +115,6 @@ public sealed record TrackSound
         return node.Kind switch
         {
             SignalNodeKind.Master => "Master",
-            SignalNodeKind.MixerChannel => project.Mixer.Find(node.AsMixerChannel())?.Name ?? "Missing channel",
             SignalNodeKind.Track => project.Sequence.FindTrack(node.AsTrack())?.Name ?? "Missing track",
             SignalNodeKind.Rack => project.FindChain(node.AsRack()) is { } rack ? DeviceViewViewModel.RackName(rack) : "Missing rack",
             SignalNodeKind.Device or SignalNodeKind.DeviceInput => project.FindDevice(node.AsDevice())?.Device.DisplayName ?? "Missing device",

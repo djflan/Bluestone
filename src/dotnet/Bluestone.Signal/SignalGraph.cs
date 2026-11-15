@@ -252,8 +252,7 @@ public static class SignalGraph
             }
         }
 
-        // Every track's events and device automation, rendered once. Device automation is gathered from every
-        // track, playing or not, in track order and then position order.
+        // Every track's events and device automation, plus Master-chain automation, are rendered once.
         private ImmutableArray<SignalEvent>[] RenderTracks(out ImmutableArray<ParameterChange> changes)
         {
             var sequence = project.Sequence;
@@ -295,6 +294,11 @@ public static class SignalGraph
                 rendered[index] = events.ToImmutable();
             }
 
+            var masterLanes = project.MasterAutomation.Where(lane =>
+                !lane.Target.IsDevice
+                || project.FindDevice(lane.Target.Device) is not { } found
+                || found.Chain.Owner.Kind == ChainOwnerKind.Master);
+            allChanges.AddRange(TrackRendering.RenderDeviceParameters(masterLanes, sequence.Ppqn));
             changes = [.. allChanges.OrderBy(c => c.Position)];
             foreach (var orphan in changes.Select(c => c.Device).Distinct().Where(d => project.FindDevice(d) is null))
             {

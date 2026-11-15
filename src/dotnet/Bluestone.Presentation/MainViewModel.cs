@@ -34,6 +34,7 @@ public enum MessageSeverity
 public enum LowerPane
 {
     Devices,
+    Mixer,
     PianoRoll,
     EventList,
     Monitor,
@@ -93,12 +94,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Project = session.Project;
         Selection = new SelectionViewModel(this);
         Browser = new BrowserViewModel(this);
+        MixerConsole = new MixerConsoleViewModel(this);
         Workspace = new WorkspaceViewModel(this, Browser);
         _workspaceProject = session.Project.Id;
         _workspacePath = session.FilePath;
         Connections = new ConnectionsViewModel(this);
         Racks = new RacksViewModel(this);
-        Mixer = new MixerViewModel(this);
         Editor = new EditorViewModel(this);
         Arrangement = new ArrangementViewModel(this);
         Loop = new ArrangerLoopViewModel(this);
@@ -122,6 +123,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             OnPropertyChanged(nameof(SelectedTrack));
             SyncSelection();
+            MixerConsole.SyncSelection();
             EditorWindows?.SelectionChanged();
             SyncEditor();
             Arrangement.KeepOnTracks([.. SelectedTracks.Select(t => t.Id)]);
@@ -330,8 +332,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The project's racks: shared device chains.</summary>
     public RacksViewModel Racks { get; }
 
-    /// <summary>The project's mixer channels.</summary>
-    public MixerViewModel Mixer { get; }
+    /// <summary>The track-owned mixer console and its mandatory Master strip.</summary>
+    public MixerConsoleViewModel MixerConsole { get; }
 
     /// <summary>The plugins view: scanned plugins, failures, and quarantined modules. Null when the host does not offer it.</summary>
     public PluginsViewModel? Plugins { get; init; }
@@ -650,6 +652,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        if (pane == LowerPane.Mixer)
+        {
+            Workspace.Show(Workspace.Mixer);
+            return;
+        }
+
         if (pane == LowerPane.Devices && Workspace.DetailDeviceView is null)
         {
             // Every Device View is collapsed, detached, or closed: bring one back as a tab.
@@ -818,6 +826,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public void Select(TrackViewModel track)
     {
         ArgumentNullException.ThrowIfNull(track);
+        Selection.SelectTrackScope();
+        MixerConsole.SyncSelection();
         if (SelectedTracks.Count == 1 && SelectedTracks[0] == track)
         {
             return;
@@ -1497,18 +1507,82 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         var events = tracks.Sum(t => t.Clips.OfType<NoteClip>().Sum(c => c.Content.Items.Length));
         var points = tracks.Sum(t => t.Automation.Sum(l => l.Points.Length));
+        var trackIds = tracks.Select(t => t.Id).ToHashSet();
+        var deletedGroups = tracks.Where(t => t.Role == TrackRole.Group).Select(t => t.Id).ToHashSet();
+        var groupMembers = Project.Sequence.Tracks
+            .Where(t => t.Group is { } group && deletedGroups.Contains(group))
+            .Select(t => t.Id)
+            .ToHashSet();
+        var routesBeingRestored = Project.ParkedConnections
+            .Where(connection => connection.Source.Kind == SignalNodeKind.Track && groupMembers.Contains(connection.Source.AsTrack()))
+            .Select(connection => connection.Id)
+            .ToHashSet();
+        var incomingSends = Project.Connections.Concat(Project.ParkedConnections).Count(connection =>
+            connection.Kind == SignalKind.Audio
+            && connection.AudioPurpose == AudioRoutePurpose.Send
+            && connection.Destination.Kind == SignalNodeKind.Track
+            && trackIds.Contains(connection.Destination.AsTrack()));
         var subject = tracks.Count == 1 ? $"\"{tracks[0].Name}\"" : $"{tracks.Count} tracks";
-        var contents = points == 0 ? $"{events} events" : events == 0 ? $"{points} automation points" : $"{events} events and {points} automation points";
-        if (events + points > 0 && !await _ui.ConfirmAsync(
+        var contents = new List<string>();
+        if (events > 0)
+        {
+            contents.Add($"{events} events");
+        }
+
+        if (points > 0)
+        {
+            contents.Add($"{points} automation points");
+        }
+
+        if (incomingSends > 0)
+        {
+            contents.Add($"{incomingSends} incoming send{(incomingSends == 1 ? string.Empty : "s")}");
+        }
+
+        var sendNotice = incomingSends > 0 ? " Deleting these tracks will also remove their incoming sends." : string.Empty;
+        if (contents.Count > 0 && !await _ui.ConfirmAsync(
                 tracks.Count == 1 ? "Delete track?" : "Delete tracks?",
-                $"{subject} {(tracks.Count == 1 ? "has" : "have")} {contents}. You can undo this.",
+                $"{subject} {(tracks.Count == 1 ? "has" : "have")} {string.Join(" and ", contents)}.{sendNotice} You can undo this.",
                 "Delete",
                 destructive: true))
         {
             return;
         }
 
-        Execute(ProjectCommands.RemoveTracks([.. tracks.Select(t => t.Id)]));
+        if (Execute(ProjectCommands.RemoveTracks([.. tracks.Select(t => t.Id)])))
+        {
+            if (deletedGroups.Count > 0)
+            {
+                WarnForParkedRoutes(routesBeingRestored, "Delete Group", deletedGroups.Count == 1 ? "Deleting the group" : "Deleting groups");
+            }
+        }
+    }
+
+    internal void WarnForParkedRoutes(IEnumerable<ConnectionId> routeIds, string source, string action)
+    {
+        var ids = routeIds.ToHashSet();
+        // A track that moved into an outer group (a nested group was deleted) has its routes parked again on purpose.
+        var remaining = Project.ParkedConnections
+            .Where(connection => ids.Contains(connection.Id)
+                && !(connection.Source.Kind == SignalNodeKind.Track && Project.Sequence.FindTrack(connection.Source.AsTrack())?.Group is not null))
+            .ToList();
+        if (remaining.Count == 0)
+        {
+            return;
+        }
+
+        var descriptions = remaining
+            .Select(connection => $"{SignalRoutingValidator.Describe(Project, connection.Source)} → {SignalRoutingValidator.Describe(Project, connection.Destination)}")
+            .Distinct()
+            .ToList();
+        var routes = string.Join(", ", descriptions.Take(3));
+        var more = descriptions.Count > 3;
+        var details = routes.Length == 0 ? string.Empty : $" ({routes}{(more ? ", …" : string.Empty)})";
+        var count = remaining.Count;
+        AddMessage(
+            MessageSeverity.Warning,
+            source,
+            $"{action} succeeded, but {count} parked route{(count == 1 ? string.Empty : "s")} could not be restored and remain inactive{details}. No replacement route was created; resolve the destination conflict before reconnecting.");
     }
 
     /// <summary>Routes every track to the output shown in the inspector, except tracks in a group: they go through their group.</summary>
@@ -1734,7 +1808,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Connections.Sync(Project, single, rack);
         Racks.Sync(Project, rack);
         Browser.Sync(Devices, Project, _playback.Profiles);
-        Mixer.Sync(Project);
+        MixerConsole.Sync(Project);
         UpdateWatchedJunctions();
         OnPropertyChanged(nameof(DeviceView));
     }

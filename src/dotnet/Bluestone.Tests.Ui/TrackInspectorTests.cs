@@ -132,7 +132,8 @@ public sealed class TrackInspectorTests
         // The track's context menu still offers every role.
         app.ViewModel.Tracks[0].SetRoleCommand.Execute(TrackRole.Instrument);
         app.Settle();
-        Assert.Equal(TrackRole.Instrument, app.Session.Project.Sequence.Tracks[0].Role);
-        Assert.True(role.IsEffectivelyVisible);
+        Assert.Equal(TrackRole.Hybrid, app.Session.Project.Sequence.Tracks[0].Role);
+        Assert.Contains(app.ViewModel.Messages, m => m.Source == "Track Role");
+        Assert.False(role.IsEffectivelyVisible);
     });
 }

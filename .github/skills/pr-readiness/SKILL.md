@@ -36,6 +36,9 @@ PR. Report the outcome in the PR's Verification section.
   messages, your own notes.
 - Each must be fixed in this PR, or still true and written down in the PR and the docs. **Never switch a default
   on, or remove a fallback, while a related risk is open.**
+- Anything deferred or not built (requested, designed, mocked up, or promised, but not delivered) goes in two places:
+  the PR body's limitations and the "Unresolved implementation backlog" in `docs/engineering-handoff.md`. A note only
+  in a session log or agent report does not count.
 
 ### 3. States × actions
 

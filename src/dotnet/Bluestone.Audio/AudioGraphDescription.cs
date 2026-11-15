@@ -49,8 +49,16 @@ public sealed record DescribedNode(DescribedNodeKind Kind, Guid Key, string Name
 /// </summary>
 public sealed record DescribedPluginLink(ExchangeOptions Shape, int PipelineDepth, TimeSpan CollectWait, bool BypassOnFailure, int LatencyFrames, PluginDataPlane? DataPlane);
 
-/// <summary>A mixer strip by its channel's id, with its fader, pan, mute, and solo.</summary>
-public sealed record DescribedStrip(Guid Key, MixerStripSettings Settings);
+/// <summary>A sample-timed automation value; points at a frame interpolate only when <see cref="Linear"/> is true.</summary>
+public readonly record struct DescribedAutomationPoint(long Frame, double Value, bool Linear);
+
+/// <summary>A mixer strip by its channel's id, with its fader, pan, mute, solo, and automation.</summary>
+public sealed record DescribedStrip(Guid Key, MixerStripSettings Settings)
+{
+    public ImmutableArray<DescribedAutomationPoint> GainAutomation { get; init; } = [];
+
+    public ImmutableArray<DescribedAutomationPoint> PanAutomation { get; init; } = [];
+}
 
 /// <summary>
 /// A chain junction's meter (ADR 0037): the sum of the described nodes <see cref="Nodes"/> (indices into
@@ -87,6 +95,18 @@ public enum DescribedStepKind : byte
 
     /// <summary>Node <c>A</c> feeds node <c>B</c>'s sidechain (<see cref="AudioGraphBuilder.ConnectSidechain"/>).</summary>
     ConnectSidechain = 8,
+
+    /// <summary>Strip <c>A</c> feeds node <c>B</c>'s input after its fader.</summary>
+    RouteStripToNode = 9,
+
+    /// <summary>Strip <c>A</c> sends to node <c>B</c>'s input at <c>Level</c> dB.</summary>
+    SendStripToNode = 10,
+
+    /// <summary>Strip <c>A</c> feeds the Master bus.</summary>
+    RouteStripToMaster = 11,
+
+    /// <summary>Strip <c>A</c> has no ordinary output route.</summary>
+    UnrouteStrip = 12,
 }
 
 /// <summary>
@@ -113,6 +133,18 @@ public sealed record AudioGraphDescription(
 {
     public static AudioGraphDescription Empty { get; } = new([], [], [], 0, []);
 
+    /// <summary>The Master strip's pan.</summary>
+    public double MasterPan { get; init; }
+
+    /// <summary>Whether the Master strip is muted.</summary>
+    public bool MasterMuted { get; init; }
+
+    /// <summary>The Master fader's sample-timed automation.</summary>
+    public ImmutableArray<DescribedAutomationPoint> MasterGainAutomation { get; init; } = [];
+
+    /// <summary>The Master pan's sample-timed automation.</summary>
+    public ImmutableArray<DescribedAutomationPoint> MasterPanAutomation { get; init; } = [];
+
     /// <summary>The chain junctions that can be metered, at most one per key.</summary>
     public ImmutableArray<DescribedMeterPoint> MeterPoints { get; init; } = [];
 }
@@ -128,6 +160,8 @@ public sealed class AudioGraphDescriptionBuilder
     private readonly List<DescribedStrip> _strips = [];
     private readonly List<DescribedStep> _steps = [];
     private readonly HashSet<(int Strip, int Destination)> _sends = [];
+    private readonly HashSet<(int Strip, int Node)> _nodeSends = [];
+    private readonly HashSet<int> _stripOutputs = [];
     private readonly List<DescribedMeterPoint> _meterPoints = [];
     private readonly HashSet<Guid> _meterKeys = [];
 
@@ -173,7 +207,11 @@ public sealed class AudioGraphDescriptionBuilder
     public int AddStrip(DescribedStrip strip)
     {
         ArgumentNullException.ThrowIfNull(strip);
-        _strips.Add(strip);
+        _strips.Add(strip with
+        {
+            GainAutomation = ValidateAutomation(strip.GainAutomation, -120, 24, nameof(strip)),
+            PanAutomation = ValidateAutomation(strip.PanAutomation, -1, 1, nameof(strip)),
+        });
         return _strips.Count - 1;
     }
 
@@ -188,7 +226,30 @@ public sealed class AudioGraphDescriptionBuilder
     {
         CheckStrip(strip);
         CheckStrip(destination);
+        CheckStripOutput(strip);
         _steps.Add(new(DescribedStepKind.RouteStrip, strip, destination));
+    }
+
+    public void RouteStripToNode(int strip, int node)
+    {
+        CheckStrip(strip);
+        CheckNode(node);
+        CheckStripOutput(strip);
+        _steps.Add(new(DescribedStepKind.RouteStripToNode, strip, node));
+    }
+
+    public void RouteStripToMaster(int strip)
+    {
+        CheckStrip(strip);
+        CheckStripOutput(strip);
+        _steps.Add(new(DescribedStepKind.RouteStripToMaster, strip));
+    }
+
+    public void UnrouteStrip(int strip)
+    {
+        CheckStrip(strip);
+        CheckStripOutput(strip);
+        _steps.Add(new(DescribedStepKind.UnrouteStrip, strip));
     }
 
     public void SendStrip(int strip, int destination, double levelDecibels, bool preFader)
@@ -201,6 +262,18 @@ public sealed class AudioGraphDescriptionBuilder
         }
 
         _steps.Add(new(DescribedStepKind.SendStrip, strip, destination, levelDecibels, preFader));
+    }
+
+    public void SendStripToNode(int strip, int node, double levelDecibels, bool preFader)
+    {
+        CheckStrip(strip);
+        CheckNode(node);
+        if (!_nodeSends.Add((strip, node)))
+        {
+            throw new ArgumentException("A strip sends at most once to a node input.", nameof(node));
+        }
+
+        _steps.Add(new(DescribedStepKind.SendStripToNode, strip, node, levelDecibels, preFader));
     }
 
     /// <summary>A junction's meter over the sum of <paramref name="nodes"/> (see <see cref="DescribedMeterPoint"/>).</summary>
@@ -221,8 +294,54 @@ public sealed class AudioGraphDescriptionBuilder
         _meterPoints.Add(new DescribedMeterPoint(key, members));
     }
 
-    public AudioGraphDescription Build(double masterGainDecibels, IEnumerable<Guid> retained) =>
-        new([.. _nodes], [.. _strips], [.. _steps], masterGainDecibels, [.. retained]) { MeterPoints = [.. _meterPoints] };
+    public AudioGraphDescription Build(
+        double masterGainDecibels,
+        IEnumerable<Guid> retained,
+        double masterPan = 0,
+        bool masterMuted = false,
+        ImmutableArray<DescribedAutomationPoint> masterGainAutomation = default,
+        ImmutableArray<DescribedAutomationPoint> masterPanAutomation = default) =>
+        new([.. _nodes], [.. _strips], [.. _steps], masterGainDecibels, [.. retained])
+        {
+            MasterPan = masterPan,
+            MasterMuted = masterMuted,
+            MasterGainAutomation = ValidateAutomation(masterGainAutomation, -120, 24, nameof(masterGainAutomation)),
+            MasterPanAutomation = ValidateAutomation(masterPanAutomation, -1, 1, nameof(masterPanAutomation)),
+            MeterPoints = [.. _meterPoints],
+        };
+
+    private static ImmutableArray<DescribedAutomationPoint> ValidateAutomation(
+        ImmutableArray<DescribedAutomationPoint> points,
+        double minimum,
+        double maximum,
+        string parameter)
+    {
+        if (points.IsDefaultOrEmpty)
+        {
+            return [];
+        }
+
+        var previousFrame = -1L;
+        foreach (var point in points)
+        {
+            if (point.Frame < 0 || point.Frame <= previousFrame || !double.IsFinite(point.Value) || point.Value < minimum || point.Value > maximum)
+            {
+                throw new ArgumentException("Automation points must have ordered nonnegative frames and in-range finite values.", parameter);
+            }
+
+            previousFrame = point.Frame;
+        }
+
+        return points;
+    }
+
+    private void CheckStripOutput(int strip)
+    {
+        if (!_stripOutputs.Add(strip))
+        {
+            throw new ArgumentException("A strip has at most one ordinary output.", nameof(strip));
+        }
+    }
 
     private void CheckNode(int node) => ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)node, (uint)_nodes.Count, nameof(node));
 

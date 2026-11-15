@@ -224,7 +224,8 @@ public static class ProjectCommands
                         l.Points)),
                     track.Role,
                     track.Group,
-                    track.IsFolded);
+                    track.IsFolded,
+                    track.AudioStrip);
                 var index = result.Sequence.Tracks.IndexOf(track) + 1;
                 result = result with { Sequence = result.Sequence.InsertTrack(index, copy) };
                 // The copy sends where the original sends, from the same points of its chain, and its devices' inputs

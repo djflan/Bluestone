@@ -54,6 +54,8 @@ public sealed record Project
     private readonly ImmutableArray<SignalConnection> _connections = [];
     private readonly ImmutableArray<SignalConnection> _parked = [];
     private readonly Mixer _mixer = Mixer.Empty;
+    private readonly AudioStrip _masterStrip = AudioStrip.Default;
+    private readonly ImmutableArray<AutomationLane> _masterAutomation = [];
     private readonly ArrangerLoop _loop = ArrangerLoop.None;
 
     public required ProjectId Id { get; init; }
@@ -113,6 +115,20 @@ public sealed record Project
     {
         get => _mixer;
         init => _mixer = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    /// <summary>The always-present project Master strip.</summary>
+    public AudioStrip MasterStrip
+    {
+        get => _masterStrip;
+        init => _masterStrip = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    /// <summary>Project-level automation for the Master fader, pan, and devices in its chain.</summary>
+    public ImmutableArray<AutomationLane> MasterAutomation
+    {
+        get => _masterAutomation;
+        init => _masterAutomation = ValidateMasterAutomation(value);
     }
 
     /// <summary>The arranger loop: its range, kept while looping is off, and whether playback loops.</summary>
@@ -248,6 +264,7 @@ public sealed record Project
     {
         var unique = UniqueBy(chains, c => c.Id, nameof(chains), "Chain");
         var owners = new HashSet<TrackId>();
+        var hasMasterChain = false;
         var devices = new HashSet<DeviceId>();
         foreach (var chain in unique)
         {
@@ -255,6 +272,13 @@ public sealed record Project
             {
                 throw new ArgumentException($"Track {chain.Owner.Track} has more than one chain.", nameof(chains));
             }
+
+            if (chain.Owner.Kind == ChainOwnerKind.Master && hasMasterChain)
+            {
+                throw new ArgumentException("Master has more than one chain.", nameof(chains));
+            }
+
+            hasMasterChain |= chain.Owner.Kind == ChainOwnerKind.Master;
 
             foreach (var device in chain.Devices)
             {
@@ -266,5 +290,37 @@ public sealed record Project
         }
 
         return unique;
+    }
+
+    private static ImmutableArray<AutomationLane> ValidateMasterAutomation(ImmutableArray<AutomationLane> lanes)
+    {
+        var result = lanes.IsDefault ? [] : lanes;
+        if (result.Length > Track.MaxAutomationLanes)
+        {
+            throw new ArgumentException($"The Master holds at most {Track.MaxAutomationLanes} automation lanes.", nameof(lanes));
+        }
+
+        var seenIds = new HashSet<AutomationLaneId>();
+        var seenTargets = new HashSet<AutomationTarget>();
+        foreach (var lane in result)
+        {
+            ArgumentNullException.ThrowIfNull(lane);
+            if (!seenIds.Add(lane.Id))
+            {
+                throw new ArgumentException($"Automation lane {lane.Id} appears more than once.", nameof(lanes));
+            }
+
+            if (!lane.Target.IsMaster && !lane.Target.IsDevice)
+            {
+                throw new ArgumentException("Only Master fader, pan, and device automation can be stored on the project.", nameof(lanes));
+            }
+
+            if (!seenTargets.Add(lane.Target))
+            {
+                throw new ArgumentException("Two automation lanes control the same Master parameter.", nameof(lanes));
+            }
+        }
+
+        return result;
     }
 }

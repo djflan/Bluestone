@@ -2,6 +2,39 @@ using System.Collections.Immutable;
 
 namespace Bluestone.Domain.Mixing;
 
+/// <summary>Persisted gain and pan state for an audio-capable track or the project Master.</summary>
+public sealed record AudioStrip
+{
+    public const double MinGainDecibels = -120;
+    public const double MaxGainDecibels = 24;
+
+    private readonly double _gain;
+    private readonly double _pan;
+
+    public double GainDecibels
+    {
+        get => _gain;
+        init => _gain = value is >= MinGainDecibels and <= MaxGainDecibels
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(GainDecibels), value, "Gain must be between -120 and 24 dB.");
+    }
+
+    /// <summary>-1 is hard left, 0 is center, and 1 is hard right.</summary>
+    public double Pan
+    {
+        get => _pan;
+        init => _pan = value is >= -1 and <= 1
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(Pan), value, "Pan must be between -1 and 1.");
+    }
+
+    public bool IsMuted { get; init; }
+
+    public bool IsSoloed { get; init; }
+
+    public static AudioStrip Default { get; } = new();
+}
+
 /// <summary>Stable identity of a mixer channel. It is unrelated to any track's identity.</summary>
 public readonly record struct MixerChannelId(Guid Value)
 {

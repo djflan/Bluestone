@@ -84,27 +84,25 @@ public sealed class DawFirstTrackTests
     });
 
     [Fact]
-    public Task TheAudioDestination_IsChosenInTheInspector_AsOneUndoStep() => HeadlessApp.RunAsync(async () =>
+    public Task GroupMembership_SetsTheInspectorsAudioDestination_AndUndoRestoresMaster() => HeadlessApp.RunAsync(async () =>
     {
         var session = new ProjectSession();
-        session.Execute(RoutingCommands.AddMixerChannel(Domain.Mixing.MixerChannel.Create("Bus")));
+        var group = Track.Create("Bus", TrackRole.Group);
+        session.Execute(TrackSetup.NewTrack(group, Signal.DeviceCatalog.BuiltIn.Lookup));
         await using var app = await AppUnderTest.OpenAsync(session);
         app.ViewModel.AddTrackCommand.Execute(null);
         app.Settle();
-        var track = app.Session.Project.Sequence.Tracks.Single().Id;
+        var track = app.Session.Project.Sequence.Tracks.Single(t => t.Id != group.Id).Id;
 
-        app.Choose(AppUnderTest.ComboNamed(app.Section("Track"), "Audio output"), o => o is AudioDestinationOption { Name: "Bus" });
+        app.Session.Execute(GroupCommands.SetGroup(track, group.Id, Signal.DeviceCatalog.BuiltIn.Lookup));
+        app.Settle();
 
-        var bus = app.Session.Project.Mixer.Channels.Single().Id;
-        Assert.Equal(SignalNode.Mixer(bus), app.Session.Project.Connections.Single(c => c.Source == SignalNode.Track(track)).Destination);
-        Assert.Equal("Bus", app.ViewModel.Tracks[0].Sound.AudioDestination);
-
-        app.Choose(AppUnderTest.ComboNamed(app.Section("Track"), "Audio output"), o => o is AudioDestinationOption { Destination: null, IsMixed: false });
-        Assert.DoesNotContain(app.Session.Project.Connections, c => c.Source == SignalNode.Track(track));
+        Assert.Equal(SignalNode.Track(group.Id), app.Session.Project.Connections.Single(c => c.Kind == SignalKind.Audio && c.Source == SignalNode.Track(track)).Destination);
+        Assert.Equal("Bus", app.ViewModel.Tracks.Single(t => t.Id == track).Sound.AudioDestination);
 
         app.ViewModel.UndoCommand.Execute(null);
         app.Settle();
-        Assert.Equal(SignalNode.Mixer(bus), app.Session.Project.Connections.Single(c => c.Source == SignalNode.Track(track)).Destination);
+        Assert.Equal(SignalNode.Master, app.Session.Project.Connections.Single(c => c.Kind == SignalKind.Audio && c.Source == SignalNode.Track(track)).Destination);
     });
 
     [Fact]
@@ -135,7 +133,10 @@ public sealed class DawFirstTrackTests
         // Closed by hand, it stays closed while the same track is selected, even as the project changes.
         section.IsExpanded = false;
         app.Settle();
-        app.Choose(AppUnderTest.ComboNamed(app.Section("Track"), "Audio output"), o => o is AudioDestinationOption { Name: "Master" });
+        var hardware = app.Session.Project.Sequence.Tracks[0].Id;
+        var output = TrackOutputs.Read(app.Session.Project, hardware);
+        app.Session.Execute(ProjectCommands.SetTrackOutput(hardware, output with { Channel = MidiChannel.FromNumber(2) }));
+        app.Settle();
         Assert.False(section.IsExpanded);
     });
 

@@ -63,6 +63,7 @@ internal sealed class AudioHost : IDisposable
 
     // Under _gate.
     private SetAudio? _wanted;
+    private MixerMeterSettings _mixerMeterSettings = MixerMeterSettings.Default;
     private IAudioOutput? _output;
     private AudioEngine? _engine;
     private AudioGraphRealizer? _realizer;
@@ -119,7 +120,7 @@ internal sealed class AudioHost : IDisposable
     internal AudioEngine? Engine => Volatile.Read(ref _engine);
 
     /// <summary>Whether <paramref name="message"/> is an audio command.</summary>
-    public static bool Handles(EngineMessage message) => message is SetAudio or LoadAudioGraph or TestRender or WatchJunctions;
+    public static bool Handles(EngineMessage message) => message is SetAudio or SetMixerMeterSettings or LoadAudioGraph or TestRender or WatchJunctions;
 
     /// <summary>
     /// Queues one command from Bluestone for the audio thread, in order: the control thread never waits for a device to
@@ -251,6 +252,16 @@ internal sealed class AudioHost : IDisposable
                 {
                     Configure(audio);
                     PostStatus();
+                }
+
+                break;
+            case SetMixerMeterSettings settings:
+                lock (_gate)
+                {
+                    var configured = new MixerMeterSettings((MixerMeterMode)settings.Mode, settings.VuReferenceDbfs);
+                    configured.Validate();
+                    _mixerMeterSettings = configured;
+                    _realizer?.SetMixerMeterSettings(configured);
                 }
 
                 break;
@@ -418,6 +429,7 @@ internal sealed class AudioHost : IDisposable
         var device = Math.Max(Math.Max(wanted.BufferFrames, output.Status.MaxBufferFrames), block);
         engine.Transport.Follow(_timeline, ToleranceFrames(rate, device, block));
         var realizer = new AudioGraphRealizer(rate, block, ProcessorFor);
+        realizer.SetMixerMeterSettings(_mixerMeterSettings);
         lock (_watchGate)
         {
             realizer.Watch(_watched);
@@ -741,7 +753,7 @@ internal sealed class AudioHost : IDisposable
         {
             if (strips.Count < EngineLimits.MaxMeters)
             {
-                strips.Add(new StripMeter(key, Meter(state.Meter.Read())));
+                strips.Add(new StripMeter(key, Meter(state.Meter.ReadLevel())));
             }
         }
 
@@ -775,10 +787,19 @@ internal sealed class AudioHost : IDisposable
             }
         }
 
-        return new AudioStatus(Meter(realizer.Master.Meter.Read()), strips.ToImmutable(), counters, _meter.Read(_plugins.DeadlineMisses)) { Junctions = junctions.ToImmutable() };
+        return new AudioStatus(Meter(realizer.Master.Meter.ReadLevel()), strips.ToImmutable(), counters, _meter.Read(_plugins.DeadlineMisses)) { Junctions = junctions.ToImmutable() };
     }
 
     private static MeterSpec Meter(MeterReading reading) => new(Level(reading.PeakLeft), Level(reading.PeakRight), Level(reading.RmsLeft), Level(reading.RmsRight));
+
+    private static MeterSpec Meter(MixerMeterReading reading) =>
+        new(Level(reading.PeakRms.PeakLeft), Level(reading.PeakRms.PeakRight), Level(reading.PeakRms.RmsLeft), Level(reading.PeakRms.RmsRight))
+        {
+            DisplayMode = (byte)reading.Mode,
+            LeftValue = reading.LeftValue,
+            RightValue = reading.RightValue,
+            IsReady = reading.IsReady,
+        };
 
     private static float Level(float value) => float.IsFinite(value) && value > 0 ? value : 0;
 

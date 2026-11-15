@@ -58,6 +58,13 @@
   <Color x:Key="Meter.HotColor">#FF2E93</Color>
   <Color x:Key="Meter.ClipColor">#FF3036</Color>
   <Color x:Key="Meter.TrackColor">#222225</Color>
+  <!-- Mixer-only DSP display. These roles intentionally do not change Device View junction meters. -->
+  <Color x:Key="MixerMeter.TrackColor">#333338</Color>
+  <Color x:Key="MixerMeter.FillColor">#4FB3B0</Color>
+  <Color x:Key="MixerMeter.HotColor">#E0A43A</Color>
+  <Color x:Key="MixerMeter.PeakHoldColor">#F2F2F2</Color>
+  <Color x:Key="MixerMeter.WarmingColor">#E0A43A</Color>
+  <Color x:Key="MixerMeter.UnavailableColor">#6E6E75</Color>
   <!-- A junction's note lamp: a warm pilot-lamp amber segment under its level, lit while notes are held there. -->
   <!-- The MIDI icon: the level's first segment colour (Meter.Low), lightened 25%. -->
   <Color x:Key="Junction.LampColor">#6DD6FF</Color>
@@ -90,6 +97,13 @@
   <SolidColorBrush x:Key="Text.Muted" Color="{StaticResource Text.MutedColor}" />
   <SolidColorBrush x:Key="Text.Disabled" Color="{StaticResource Text.DisabledColor}" />
   <SolidColorBrush x:Key="Text.OnAccent" Color="{StaticResource Text.OnAccentColor}" />
+  <SolidColorBrush x:Key="Meter.Clip" Color="{StaticResource Meter.ClipColor}" />
+  <SolidColorBrush x:Key="MixerMeter.Track" Color="{StaticResource MixerMeter.TrackColor}" />
+  <SolidColorBrush x:Key="MixerMeter.Fill" Color="{StaticResource MixerMeter.FillColor}" />
+  <SolidColorBrush x:Key="MixerMeter.Hot" Color="{StaticResource MixerMeter.HotColor}" />
+  <SolidColorBrush x:Key="MixerMeter.PeakHold" Color="{StaticResource MixerMeter.PeakHoldColor}" />
+  <SolidColorBrush x:Key="MixerMeter.Warming" Color="{StaticResource MixerMeter.WarmingColor}" />
+  <SolidColorBrush x:Key="MixerMeter.Unavailable" Color="{StaticResource MixerMeter.UnavailableColor}" />
   <SolidColorBrush x:Key="Accent" Color="{StaticResource Accent.Color}" />
   <SolidColorBrush x:Key="Accent.Hover" Color="{StaticResource Accent.HoverColor}" />
   <SolidColorBrush x:Key="Signal.Note" Color="{StaticResource Signal.NoteColor}" />
@@ -228,6 +242,19 @@
   <Thickness x:Key="Inset.Panel">8</Thickness>
   <Thickness x:Key="Inset.Section">10,8</Thickness>
   <Thickness x:Key="Inset.Row">8,3</Thickness>
+  <Thickness x:Key="Inset.MixerTop">0,4,0,0</Thickness>
+  <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>
+  <Thickness x:Key="Inset.MixerRole">4,1</Thickness>
+  <Thickness x:Key="Inset.MixerRow">4,0</Thickness>
+  <Thickness x:Key="Inset.MixerStrip">6</Thickness>
+  <Thickness x:Key="Inset.MixerName">10,4,6,4</Thickness>
+  <Thickness x:Key="Inset.MixerReadout">4,2</Thickness>
+  <Thickness x:Key="Inset.MixerSelected">2</Thickness>
+  <Thickness x:Key="Inset.MixerProcessing">6,4</Thickness>
+  <Thickness x:Key="Inset.MixerBodyTight">6,4</Thickness>
+  <Thickness x:Key="Inset.MixerNameTight">10,3,6,3</Thickness>
+  <!-- Room under the strips for an overlay horizontal scroll bar, so it never covers the output chips. -->
+  <Thickness x:Key="Inset.MixerScrollClearance">0,0,0,6</Thickness>
   <Thickness x:Key="Inset.BrowserLeading">8,0,0,0</Thickness>
 
   <!-- Corner radii. -->
@@ -249,6 +276,55 @@
   <x:Double x:Key="Width.Handle">5</x:Double>
   <x:Double x:Key="Width.SettingsNav">220</x:Double>
   <x:Double x:Key="Width.SettingsPage">680</x:Double>
+  <!--
+    Track-owned mixer geometry: dense, fixed-pitch strips in one scrolling row, with Master pinned in its own column at
+    the same pitch. Each strip stacks fixed-height bands (processing, name, pan, buttons, readouts) above the rails, so
+    every strip's controls line up across the console whatever it contains.
+  -->
+  <x:Double x:Key="Mixer.StripWidth">132</x:Double>
+  <x:Double x:Key="Mixer.MasterWidth">132</x:Double>
+  <x:Double x:Key="Mixer.ProcessingHeight">96</x:Double>
+  <x:Double x:Key="Mixer.NameHeight">46</x:Double>
+  <x:Double x:Key="Mixer.InsertRowHeight">14</x:Double>
+  <x:Double x:Key="Mixer.InsertStackHeight">46</x:Double>
+  <x:Double x:Key="Mixer.SendKnobSize">20</x:Double>
+  <x:Double x:Key="Mixer.SendRowHeight">26</x:Double>
+  <x:Double x:Key="Mixer.StripButtonHeight">18</x:Double>
+  <x:Double x:Key="Mixer.PanRampHeight">20</x:Double>
+  <x:Double x:Key="Mixer.ValueWidth">30</x:Double>
+  <x:Double x:Key="Mixer.ScaleWidth">26</x:Double>
+  <x:Double x:Key="Mixer.GainBarWidth">8</x:Double>
+  <x:Double x:Key="Mixer.MeterRailWidth">14</x:Double>
+  <x:Double x:Key="Mixer.ColorNotchWidth">4</x:Double>
+  <x:Double x:Key="Mixer.InsertPowerWidth">18</x:Double>
+  <x:Double x:Key="Mixer.CountLineHeight">16</x:Double>
+  <x:Double x:Key="Mixer.StripButtonWidth">20</x:Double>
+  <x:Double x:Key="Mixer.CueHeight">24</x:Double>
+  <x:Double x:Key="Mixer.MinimumRailsHeight">96</x:Double>
+  <x:Double x:Key="Mixer.TightNameHeight">36</x:Double>
+  <x:Double x:Key="Mixer.TightRailsHeight">24</x:Double>
+  <!--
+    Height tiers of the strips area. At or above RoomyStripHeight every band has its full height (the approved strip).
+    Between the two, the strip tightens: one-line readouts, a shorter name block, and the star-sized rails shrink first.
+    Below FullStripHeight the processing band folds into a one-line cue so the meter keeps a usable height.
+  -->
+  <x:Double x:Key="Mixer.RoomyStripHeight">360</x:Double>
+  <x:Double x:Key="Mixer.FullStripHeight">264</x:Double>
+  <x:Double x:Key="Mixer.FlyoutWidth">220</x:Double>
+  <x:Double x:Key="Mixer.SendCellWidth">51</x:Double>
+  <x:Double x:Key="Mixer.FooterHeight">20</x:Double>
+  <!-- Mixer meter display: one LED rail per strip; the scale's range follows the global display mode. -->
+  <x:Double x:Key="MixerMeter.ModeWidth">116</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.PeakFloorDb">-60</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.PeakCeilingDb">6</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.VuFloorDb">-30</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.VuCeilingDb">6</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.KFloorDb">-20</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.KCeilingDb">20</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.LufsFloorDb">-60</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.LufsCeilingDb">-5</x:Double>
+  <x:Double x:Key="MixerMeter.ReferenceWidth">116</x:Double>
+  <x:Double x:Key="MixerMeter.SettingsFlyoutWidth">244</x:Double>
 
   <!-- Device panels: one fixed height, a few fixed widths (DevicePanelSize). -->
   <x:Double x:Key="DevicePanel.Height">212</x:Double>

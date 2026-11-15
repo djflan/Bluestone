@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Editing;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -73,10 +74,24 @@ public sealed partial class GroupsViewModel : ObservableObject
     private void RemoveSelected()
     {
         var tracks = _owner.SelectedTracks.Where(t => t.IsInGroup).Select(t => t.Id).ToList();
-        if (tracks.Count > 0)
+        if (tracks.Count == 0)
         {
-            _owner.Execute(GroupCommands.SetGroup(tracks, null, _owner.Devices.Lookup));
+            return;
         }
+
+        var selected = tracks.ToHashSet();
+        var routesBeingRestored = _owner.Project.ParkedConnections
+            .Where(connection => connection.Source.Kind == SignalNodeKind.Track && selected.Contains(connection.Source.AsTrack()))
+            .Select(connection => connection.Id)
+            .ToHashSet();
+
+        if (!_owner.Execute(GroupCommands.SetGroup(tracks, null, _owner.Devices.Lookup)))
+        {
+            return;
+        }
+
+        // Removing the group remains successful when a parked route no longer validates; report the partial outcome.
+        _owner.WarnForParkedRoutes(routesBeingRestored, "Remove From Group", "Ungrouping");
     }
 
     internal void Fold(TrackViewModel group, bool folded)

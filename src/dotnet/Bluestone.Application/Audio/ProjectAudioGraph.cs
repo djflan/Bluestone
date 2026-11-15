@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Security.Cryptography;
 using Bluestone.Application.Plugins;
 using Bluestone.Audio;
 using Bluestone.Audio.Clips;
@@ -23,8 +24,8 @@ public sealed record ProjectAudioGraphResult(AudioGraph Graph, ImmutableArray<st
 
 /// <summary>
 /// Turns a project into a render graph (ADR 0032): audio clips, plugin instruments and effects in chain order, the
-/// audio connections (ADR 0023) into mixer channels, buses, the master, and other chains, and the mixer's gain,
-/// pan, mute, and solo. It keeps node and strip state between builds, so an edit while playing does not restart a
+/// audio connections (ADR 0023) into track-owned strips, Group and Effect chains, and the Master chain and strip. It
+/// keeps node and strip state between builds, so an edit while playing does not restart a
 /// clip's stream, lose a plugin's note tracking, or reset a meter. Every path is delay-compensated (ADR 0035): the
 /// compensation delay lines are kept between builds too, and a plugin that reports a new latency raises
 /// <see cref="LatencyChanged"/> so the graph can be built again.
@@ -123,6 +124,12 @@ public sealed class ProjectAudioGraph : IDisposable
 
     /// <summary>The meter and gain state of a mixer channel, once a graph has included it. Any thread (meters are read from the UI).</summary>
     public MixerStripState? StripOf(MixerChannelId channel) => _realizer.StripOf(channel.Value);
+
+    /// <summary>The meter and gain state of a track-owned strip, once a graph has included it.</summary>
+    public MixerStripState? TrackStripOf(TrackId track) => _realizer.StripOf(track.Value);
+
+    /// <summary>Applies mixer meter settings to the Master and current/future strips. Control thread only.</summary>
+    public void SetMixerMeterSettings(MixerMeterSettings settings) => _realizer.SetMixerMeterSettings(settings);
 
     /// <summary>A chain junction's meter (a chain's ID for its input, a device's for the point after it), once a graph has it. Any thread.</summary>
     public AudioMeter? JunctionMeterOf(Guid junction) => _realizer.JunctionMeterOf(junction);
@@ -233,107 +240,117 @@ public sealed class ProjectAudioGraph : IDisposable
         private readonly HashSet<SignalNode> _visiting = [];
         private readonly ImmutableHashSet<DeviceId> _monitored = owner.Monitored;
         private readonly ImmutableHashSet<DeviceId> _livePlayed = owner.LivePlayed;
-        private readonly Dictionary<MixerChannelId, int> _stripIndex = [];
+        private readonly Dictionary<TrackId, int> _stripIndex = [];
+        private int? _masterInput;
         private ImmutableArray<SignalConnection> _audio = [];
 
         public (AudioGraphDescription Description, ImmutableArray<string> Problems) Run()
         {
-            var rejected = SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(project, devices.Lookup)).SelectMany(i => i.Connections).ToHashSet();
+            var validation = SignalRoutingValidator.Errors(SignalRoutingValidator.Validate(project, devices.Lookup)).ToArray();
+            _problems.AddRange(validation.Select(i => i.Message));
+            var rejected = validation.SelectMany(i => i.Connections).ToHashSet();
             _audio = [.. project.Connections.Where(c => c.Kind == SignalKind.Audio && !rejected.Contains(c.Id))];
             AddStrips();
+
+            foreach (var track in project.Sequence.Tracks.Where(t => _stripIndex.ContainsKey(t.Id)))
+            {
+                foreach (var node in Output(SignalNode.Track(track.Id)))
+                {
+                    _builder.ConnectToStrip(node, _stripIndex[track.Id]);
+                }
+            }
+
+            // Internal connections are materialized at their junctions by Inputs/Sources; they never sum directly
+            // into Master, which must receive the ordinary post-strip Output path.
             foreach (var connection in _audio)
             {
-                if (connection.Destination.Kind == SignalNodeKind.MixerChannel && _stripIndex.TryGetValue(connection.Destination.AsMixerChannel(), out var strip))
+                if (connection.AudioPurpose == AudioRoutePurpose.Output && connection.Source.Kind == SignalNodeKind.Track
+                    && _stripIndex.TryGetValue(connection.Source.AsTrack(), out var sourceStrip))
                 {
-                    foreach (var node in Output(connection.Source))
+                    if (connection.Destination.Kind == SignalNodeKind.Master)
                     {
-                        _builder.ConnectToStrip(node, strip);
+                        if (MasterChain() is { } masterInput)
+                        {
+                            _builder.RouteStripToNode(sourceStrip, masterInput);
+                        }
+                        else
+                        {
+                            _builder.RouteStripToMaster(sourceStrip);
+                        }
+                    }
+                    else if (connection.Destination.Kind == SignalNodeKind.Track
+                        && TrackInput(connection.Destination.AsTrack()) is { } destinationInput)
+                    {
+                        _builder.RouteStripToNode(sourceStrip, destinationInput);
                     }
                 }
-                else if (connection.Destination.Kind == SignalNodeKind.Master)
+                else if (connection.AudioPurpose == AudioRoutePurpose.Send && connection.Source.Kind == SignalNodeKind.Track
+                    && connection.Destination.Kind == SignalNodeKind.Track
+                    && _stripIndex.TryGetValue(connection.Source.AsTrack(), out var sendingStrip)
+                    && TrackInput(connection.Destination.AsTrack()) is { } effectInput)
                 {
-                    foreach (var node in Output(connection.Source))
-                    {
-                        _builder.ConnectToMaster(node);
-                    }
+                    _builder.SendStripToNode(sendingStrip, effectInput, connection.SendLevelDecibels, connection.SendPreFader);
+                }
+            }
+
+            var routed = _audio.Where(c => c.AudioPurpose == AudioRoutePurpose.Output && c.Source.Kind == SignalNodeKind.Track)
+                .Select(c => c.Source.AsTrack()).ToHashSet();
+            foreach (var track in project.Sequence.Tracks.Where(t => _stripIndex.ContainsKey(t.Id) && !routed.Contains(t.Id)))
+            {
+                _builder.UnrouteStrip(_stripIndex[track.Id]);
+            }
+
+            if (project.Chains.FirstOrDefault(c => c.Owner.Kind == ChainOwnerKind.Master) is { } masterChain)
+            {
+                foreach (var node in Fold(masterChain)[^1])
+                {
+                    _builder.ConnectToMaster(node);
                 }
             }
 
             // Nodes of every device and track in the project are kept, even those this graph does not play.
             var retained = project.Chains.SelectMany(c => c.Devices).Select(d => d.Id.Value).Concat(project.Sequence.Tracks.Select(t => t.Id.Value));
-            return (_builder.Build(project.Mixer.MasterGainDecibels, retained), _problems.Distinct().ToImmutableArray());
+            return (_builder.Build(
+                project.MasterStrip.GainDecibels,
+                retained,
+                project.MasterStrip.Pan,
+                project.MasterStrip.IsMuted,
+                Automation(project.MasterAutomation, AutomationParameter.MasterGain),
+                Automation(project.MasterAutomation, AutomationParameter.MasterPan)),
+                _problems.Distinct().ToImmutableArray());
         }
 
         private void AddStrips()
         {
-            foreach (var channel in project.Mixer.Channels)
+            foreach (var track in project.Sequence.Tracks.Where(t => t.AudioStrip is not null))
             {
-                _stripIndex[channel.Id] = _builder.AddStrip(new DescribedStrip(channel.Id.Value, new MixerStripSettings(channel.GainDecibels, channel.Pan, channel.IsMuted, channel.IsSoloed)));
-            }
-
-            // Outputs first, then sends; an edge that would close a loop (only in a file edited by hand) is left out.
-            var edges = new Dictionary<int, List<int>>();
-            foreach (var channel in project.Mixer.Channels)
-            {
-                if (channel.Output is { } bus && _stripIndex.TryGetValue(bus, out var destination))
+                var settings = track.AudioStrip!;
+                _stripIndex[track.Id] = _builder.AddStrip(new DescribedStrip(track.Id.Value,
+                    new MixerStripSettings(settings.GainDecibels, settings.Pan, settings.IsMuted, settings.IsSoloed))
                 {
-                    var from = _stripIndex[channel.Id];
-                    if (AddEdge(edges, from, destination))
-                    {
-                        _builder.RouteStrip(from, destination);
-                    }
-                    else
-                    {
-                        _problems.Add($"{channel.Name}: its output would feed back on itself, so it goes to the master.");
-                    }
-                }
-            }
-
-            foreach (var channel in project.Mixer.Channels)
-            {
-                foreach (var send in channel.Sends)
-                {
-                    if (_stripIndex.TryGetValue(send.Target, out var destination) && destination != _stripIndex[channel.Id])
-                    {
-                        var from = _stripIndex[channel.Id];
-                        if (AddEdge(edges, from, destination))
-                        {
-                            _builder.SendStrip(from, destination, send.LevelDecibels, send.PreFader);
-                        }
-                        else
-                        {
-                            _problems.Add($"{channel.Name}: a send would feed back on itself, so it is silent.");
-                        }
-                    }
-                }
+                    GainAutomation = Automation(track.Automation, AutomationParameter.AudioStripGain),
+                    PanAutomation = Automation(track.Automation, AutomationParameter.AudioStripPan),
+                });
             }
         }
 
-        // Adds from → to unless to already reaches from.
-        private static bool AddEdge(Dictionary<int, List<int>> edges, int from, int to)
+        private ImmutableArray<DescribedAutomationPoint> Automation(ImmutableArray<AutomationLane> lanes, AutomationParameter parameter)
         {
-            var seen = new HashSet<int>();
-            var pending = new Stack<int>([to]);
-            while (pending.TryPop(out var at))
+            var lane = lanes.FirstOrDefault(candidate => candidate.Target.Parameter == parameter);
+            if (lane is null)
             {
-                if (at == from)
-                {
-                    return false;
-                }
-
-                if (seen.Add(at) && edges.TryGetValue(at, out var next))
-                {
-                    next.ForEach(pending.Push);
-                }
+                return [];
             }
 
-            if (!edges.TryGetValue(from, out var list))
+            var points = lane.Points.Select(point =>
             {
-                edges[from] = list = [];
-            }
-
-            list.Add(to);
-            return true;
+                var normalized = point.Value.ToFraction();
+                var value = parameter is AutomationParameter.AudioStripGain or AutomationParameter.MasterGain
+                    ? AudioStrip.MinGainDecibels + (normalized * (AudioStrip.MaxGainDecibels - AudioStrip.MinGainDecibels))
+                    : (normalized * 2) - 1;
+                return new DescribedAutomationPoint(FrameAt(project.Sequence.TempoMap, point.Position, owner._sampleRate), value, point.Curve == AutomationCurve.Linear);
+            });
+            return [.. points.GroupBy(point => point.Frame).Select(group => group.Last())];
         }
 
         // The audio nodes a source's output is the sum of.
@@ -376,7 +393,12 @@ public sealed class ProjectAudioGraph : IDisposable
             }
 
             var points = new List<int>[chain.Devices.Length + 1];
-            var audio = chain.Owner.Kind == ChainOwnerKind.Track ? Start(chain.Owner.Track) : Inputs(SignalNode.Rack(chain.Id));
+            var audio = chain.Owner.Kind switch
+            {
+                ChainOwnerKind.Track => Start(chain.Owner.Track),
+                ChainOwnerKind.Master => MasterInput(chain),
+                _ => Inputs(SignalNode.Rack(chain.Id)),
+            };
             points[0] = audio;
             for (var i = 0; i < chain.Devices.Length; i++)
             {
@@ -447,7 +469,7 @@ public sealed class ProjectAudioGraph : IDisposable
             var input = SignalNode.DeviceInput(device.Id, DeviceInputPort.Receive);
             var level = (float)Math.Pow(10, BuiltInDevices.ReceiverGainOf(device) / 20);
             var received = new List<int>();
-            foreach (var connection in _audio.Where(c => c.Destination == input))
+            foreach (var connection in _audio.Where(c => c.AudioPurpose == AudioRoutePurpose.Internal && c.Destination == input))
             {
                 foreach (var source in SourcesOf(chain, points, at, connection).Distinct())
                 {
@@ -462,7 +484,7 @@ public sealed class ProjectAudioGraph : IDisposable
 
         // The audio nodes connected into a device input at chain index `at`, each once (a sidechain sums them).
         private List<int> Sources(DeviceChain chain, List<int>[] points, int at, SignalNode input) =>
-            [.. _audio.Where(c => c.Destination == input).SelectMany(c => SourcesOf(chain, points, at, c)).Distinct()];
+            [.. _audio.Where(c => c.AudioPurpose == AudioRoutePurpose.Internal && c.Destination == input).SelectMany(c => SourcesOf(chain, points, at, c)).Distinct()];
 
         // The audio nodes one connection into a device input at chain index `at` brings: a source earlier in the same chain
         // is that junction's audio (validation keeps it earlier); any other is its owner's output, or the point after its device.
@@ -495,18 +517,57 @@ public sealed class ProjectAudioGraph : IDisposable
                 return cached;
             }
 
-            var nodes = Inputs(SignalNode.Track(id));
-            if (project.Sequence.FindTrack(id) is { } track && Plays(track) && ClipsOf(track) is { } clips)
+            var track = project.Sequence.FindTrack(id);
+            var input = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, SyntheticKey(project.Id.Value, id.Value, 2), track?.Name ?? "Track input") { Gain = 1 });
+            var nodes = new List<int> { input };
+            _starts[id] = nodes;
+            foreach (var source in Inputs(SignalNode.Track(id)))
             {
-                nodes = [.. nodes, _builder.AddNode(clips)];
+                _builder.Connect(source, input);
             }
 
-            _starts[id] = nodes;
+            if (track is not null && Plays(track) && ClipsOf(track) is { } clips)
+            {
+                _builder.Connect(_builder.AddNode(clips), input);
+            }
+
             return nodes;
         }
 
         private List<int> Inputs(SignalNode destination) =>
-            [.. _audio.Where(c => c.Destination == destination).SelectMany(c => Output(c.Source)).Distinct()];
+            [.. _audio.Where(c => c.AudioPurpose == AudioRoutePurpose.Internal && c.Destination == destination).SelectMany(c => Output(c.Source)).Distinct()];
+
+        private int? TrackInput(TrackId id) =>
+            project.Sequence.FindTrack(id)?.AudioStrip is null ? null : Start(id)[0];
+
+        private int? MasterChain()
+        {
+            var chain = project.Chains.FirstOrDefault(c => c.Owner.Kind == ChainOwnerKind.Master);
+            return chain is null ? null : MasterInput(chain)[0];
+        }
+
+        private List<int> MasterInput(DeviceChain chain)
+        {
+            if (_masterInput is { } cached)
+            {
+                return [cached];
+            }
+
+            var input = _builder.AddNode(new DescribedNode(DescribedNodeKind.Gain, SyntheticKey(project.Id.Value, chain.Id.Value, 3), "Master input") { Gain = 1 });
+            _masterInput = input;
+            return [input];
+        }
+
+        private static Guid SyntheticKey(Guid project, Guid owner, byte purpose)
+        {
+            Span<byte> input = stackalloc byte[33];
+            Span<byte> hash = stackalloc byte[32];
+            project.TryWriteBytes(input);
+            owner.TryWriteBytes(input[16..]);
+            input[32] = purpose;
+            SHA256.HashData(input, hash);
+            return new Guid(hash[..16]);
+        }
 
         // The plan's rule, groups included (ADR 0030): mute and solo apply to a track's own content.
         private bool Plays(Track track) => GroupTracks.Plays(project.Sequence, track);

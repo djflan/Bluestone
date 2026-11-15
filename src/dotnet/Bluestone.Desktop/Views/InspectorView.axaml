@@ -13,12 +13,12 @@
   -->
   <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel>
-      <Border Padding="10" IsVisible="{Binding !Selection.HasSelection}">
+      <Border Padding="10" IsVisible="{Binding Selection.ShowsEmptyInspector}">
         <TextBlock Text="Select a track to see what plays it, its devices, and where its sound goes. Shift-click or ⌘/Ctrl-click to select several."
                    Classes="muted" TextWrapping="Wrap" />
       </Border>
 
-      <StackPanel x:Name="SelectionPanel" DataContext="{Binding Selection}" x:DataType="vm:SelectionViewModel" IsVisible="{Binding HasSelection}">
+      <StackPanel x:Name="SelectionPanel" DataContext="{Binding Selection}" x:DataType="vm:SelectionViewModel" IsVisible="{Binding ShowsTrackSelectionInspector}">
         <Grid Classes="inspectorTitle" ColumnDefinitions="Auto,*">
           <Border Classes="trackSwatch"
                   Background="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).SelectedTrack.ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}, FallbackValue={x:Null}}" />
@@ -72,12 +72,12 @@
                 </Grid>
               </Button>
             </Grid>
-            <Grid Classes="field" ColumnDefinitions="68,*">
+            <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding Track.CanChooseAudioDestination}">
               <TextBlock Text="Audio to" Classes="label" />
               <ComboBox Grid.Column="1" ItemsSource="{Binding Track.AudioDestinationChoices}" SelectedItem="{Binding Track.AudioDestination}" HorizontalAlignment="Stretch"
                         IsEnabled="{Binding Track.CanChooseAudioDestination}" ToolTip.ShowOnDisabled="True"
                         AutomationProperties.Name="Audio output" PlaceholderText="Mixed"
-                        ToolTip.Tip="Where the track's sound goes: the master, a mixer channel, or nowhere. A track in a group sends its sound through the group. Its devices' own sends stay in Connections." />
+                        ToolTip.Tip="Where the track's audio strip outputs: Master, or its parent Group. Audio sends are managed in the Mixer." />
             </Grid>
             <TextBlock Classes="muted" Text="{Binding Track.SendsText}" IsVisible="{Binding Track.HasSends}" Margin="68,0,0,0" />
             <Grid Classes="field" ColumnDefinitions="68,*" IsVisible="{Binding Track.HasNoteDestination}">
@@ -161,6 +161,55 @@
         </Expander>
       </StackPanel>
 
+      <StackPanel x:Name="MasterInspectorPanel" IsVisible="{Binding Selection.ShowsMasterInspector}"
+                  AutomationProperties.Name="Master Inspector scope">
+        <Grid Classes="inspectorTitle" ColumnDefinitions="Auto,*">
+          <PathIcon Data="{StaticResource Icon.Mixer}" Foreground="{StaticResource Signal.Audio}"
+                    Width="{StaticResource Icon.SizeSmall}" Height="{StaticResource Icon.SizeSmall}" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Spacing="1">
+            <TextBlock Text="MASTER OUTPUT" Classes="title" />
+            <TextBlock Text="Project output · independent of arrangement tracks." Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+        <Expander x:Name="MasterStripSection" Classes="section" Header="Master strip" IsExpanded="True">
+          <StackPanel Classes="fields">
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Gain" Classes="label" VerticalAlignment="Center" />
+              <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                <Slider Minimum="{Binding MixerConsole.Master.MinimumGain}" Maximum="{Binding MixerConsole.Master.MaximumGain}"
+                        Value="{Binding MixerConsole.Master.Gain}" SmallChange="0.5" LargeChange="3"
+                        AutomationProperties.Name="Master audio gain" ToolTip.Tip="Master output gain in decibels" />
+                <TextBlock Grid.Column="1" Text="{Binding MixerConsole.Master.GainText}" Classes="muted"
+                           FontFamily="{StaticResource Font.Mono}" VerticalAlignment="Center" />
+              </Grid>
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Pan" Classes="label" VerticalAlignment="Center" />
+              <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                <Slider Minimum="-1" Maximum="1" Value="{Binding MixerConsole.Master.Pan}" SmallChange="0.05" LargeChange="0.25"
+                        AutomationProperties.Name="Master audio pan" ToolTip.Tip="Master pan from left to right" />
+                <TextBlock Grid.Column="1" Text="{Binding MixerConsole.Master.PanText}" Classes="muted"
+                           FontFamily="{StaticResource Font.Mono}" VerticalAlignment="Center" />
+              </Grid>
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Strip" Classes="label" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.S}">
+                <ToggleButton Classes="trackButton mute" Content="M" IsChecked="{Binding MixerConsole.Master.IsMuted}"
+                              AutomationProperties.Name="Mute master audio" />
+                <ToggleButton Classes="trackButton solo" Content="S" IsChecked="{Binding MixerConsole.Master.IsSoloed}"
+                              AutomationProperties.Name="Solo master audio" />
+              </StackPanel>
+            </Grid>
+            <Grid Classes="field" ColumnDefinitions="68,*">
+              <TextBlock Text="Chain" Classes="label" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding MixerConsole.Master.ChainSummary}" Classes="muted" VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+        </Expander>
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding !Selection.IsMasterSelected}">
       <Expander x:Name="ClipLoopSection" Classes="section" IsExpanded="True" DataContext="{Binding ClipLoop}" x:DataType="vm:ClipLoopViewModel" IsVisible="{Binding HasClips}">
         <Expander.Header>
           <TextBlock Text="{Binding Header}" VerticalAlignment="Center" />
@@ -243,6 +292,7 @@
           <Button Classes="raised" Content="Connect" Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch" />
         </StackPanel>
       </Expander>
+      </StackPanel>
 
       <Expander x:Name="RacksSection" Classes="section" IsExpanded="False" DataContext="{Binding Racks}" x:DataType="vm:RacksViewModel">
         <Expander.Header>
@@ -269,49 +319,6 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <Button Classes="raised" Content="New rack" Command="{Binding NewRackCommand}" HorizontalAlignment="Stretch" />
-        </StackPanel>
-      </Expander>
-
-      <Expander x:Name="MixerSection" Classes="section" IsExpanded="False" DataContext="{Binding Mixer}" x:DataType="vm:MixerViewModel">
-        <Expander.Header>
-          <Grid ColumnDefinitions="Auto,*">
-            <TextBlock Text="Mixer" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Classes="sectionSummary" Text="{Binding Summary}" />
-          </Grid>
-        </Expander.Header>
-        <StackPanel Spacing="6">
-          <TextBlock Text="Mixer channels are audio paths, independent of tracks. They are heard while audio is on (Audio Settings… in the File menu, or the Window menu on macOS). The mixer console (Mixer in the same menu) also shows sends and meters." Classes="muted" TextWrapping="Wrap" />
-          <ItemsControl ItemsSource="{Binding Channels}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:MixerChannelRow">
-                <Border BorderBrush="{StaticResource Line.Divider}" BorderThickness="1" CornerRadius="3" Padding="6,4" Margin="0,0,0,4">
-                  <StackPanel Spacing="3">
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
-                      <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Channel name" />
-                      <ToggleButton Grid.Column="1" Content="M" IsChecked="{Binding IsMuted}" Padding="6,1" AutomationProperties.Name="Mute channel" />
-                      <ToggleButton Grid.Column="2" Content="S" IsChecked="{Binding IsSoloed}" Padding="6,1" AutomationProperties.Name="Solo channel" />
-                      <Button Grid.Column="3" Classes="tool" Content="✕" Command="{Binding RemoveCommand}" AutomationProperties.Name="Remove channel" />
-                    </Grid>
-                    <Grid ColumnDefinitions="30,*,50" RowDefinitions="Auto,Auto" ColumnSpacing="4">
-                      <TextBlock Text="Gain" Classes="muted" FontSize="10" VerticalAlignment="Center" />
-                      <Slider Grid.Column="1" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" Value="{Binding Gain}" SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Channel gain" />
-                      <TextBlock Grid.Column="2" Text="{Binding GainText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
-                      <TextBlock Grid.Row="1" Text="Pan" Classes="muted" FontSize="10" VerticalAlignment="Center" />
-                      <Slider Grid.Row="1" Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding Pan}" SmallChange="0.05" LargeChange="0.25" AutomationProperties.Name="Channel pan" />
-                    </Grid>
-                    <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding Output}" HorizontalAlignment="Stretch" AutomationProperties.Name="Channel output"
-                              ToolTip.Tip="Where this channel's audio goes: the master, or another channel used as a bus" />
-                  </StackPanel>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-          <Button Classes="raised" Content="New mixer channel" Command="{Binding NewChannelCommand}" HorizontalAlignment="Stretch" />
-          <Grid ColumnDefinitions="Auto,*,50" ColumnSpacing="6">
-            <TextBlock Text="Master" Classes="label" VerticalAlignment="Center" />
-            <Slider Grid.Column="1" Minimum="-120" Maximum="24" Value="{Binding MasterGain}" SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Master gain" />
-            <TextBlock Grid.Column="2" Text="{Binding MasterGainText}" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
-          </Grid>
         </StackPanel>
       </Expander>
 

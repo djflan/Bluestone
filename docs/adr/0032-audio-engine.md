@@ -1,7 +1,16 @@
 # 0032. Audio engine: cpal output in Rust, the render graph in C#, buffered by a ring, one transport
 
-- Status: Accepted; amended by 0035 (latency), 0043 (an engine process), 0046 (Windows ASIO host), and 0049 (audio thread priority, Automatic rate and block)
+- Status: Accepted; amended by 0035 (latency), 0043 (an engine process), 0046 (Windows ASIO
+  host), and 0049 (audio thread priority, Automatic rate and block); mixer-strip ownership,
+  routing, Master processing, and send semantics amended by ADR 0050
 - Date: 2026-10-11
+
+> [!NOTE]
+> **Accepted replacement annotation (ADR 0050, 2026-11-14):** The “Mixer strips” bullet under “Render graph,” the
+> mixer-channel destination/ownership portion of “Plugins and the project,” and the mixer ownership/target parts
+> of “Sends” below are superseded for format 6. Their historical rationale is retained below; ADR 0050 is the
+> implementation authority for mixer strips, Master processing, and audio routes. The device callback, audio
+> clips, transport, timing measurements, latency, plugin lifecycle, and device-loss decisions remain in force.
 
 ## Context
 
@@ -44,6 +53,12 @@ and in the worst case within the buffer period; garbage-collection pauses during
 - Every block has exactly the engine's block size (plugins need one size throughout); device callbacks of other
   sizes are served from the last rendered block. A loop end inside a block is a wrap at an offset that nodes handle
   (`AudioRenderContext.WrapOffset`).
+> [!NOTE]
+> **Accepted replacement annotation (ADR 0050):** The following bullet's strip ownership, output topology, and
+> mixer-strip/Master meter-mode contract are superseded for format 6. Its pan law, solo reachability, and the
+> separate, watched junction-meter contract remain in force; ADR 0050 adds mixer-only meter modes without
+> changing junction meters.
+
 - Mixer strips: gain (ramped over one block when it changes), pan, mute, solo, routing to a bus strip or the
   master. **Pan law:** stereo balance with a sine taper: the near side stays at unity and the far side is
   multiplied by `cos(|pan| × π/2)` (−3 dB half way, silent at the edge); centre is unity. **Solo:** while any strip
@@ -95,6 +110,10 @@ and in the worst case within the buffer period; garbage-collection pauses during
   device; audio connections lead to mixer channels, the master, or other chains. Routing errors leave connections
   out. Software-instrument feeds and parameter feeds from the signal graph become per-device schedules in song frames.
   A plugin instance at another sample rate or with a smaller block size than the engine's is reported and silent.
+  > [!NOTE]
+  > **Accepted replacement annotation (ADR 0050):** The mixer-channel destination and independent mixer-strip
+  > ownership in this paragraph are superseded for format 6. The historical wording is retained; chain processing
+  > and plugin scheduling remain in force.
 
 ### One clock
 
@@ -184,14 +203,21 @@ not force collections, so this is a bound, not the expected case.
   instruments and effects are heard during playback, in time with MIDI.
 - Plugin instances must run at the device's rate and accept the engine's block size (256 frames); each time a device
   opens, the plugin bridge restarts them at its rate (see below).
-- Not done: plugin delay compensation (latencies are reported), audio input and recording, compressed file formats,
-  and send or fader automation. Linux and Windows device output is built and unit-tested in CI but has not been heard.
+- Not implemented: plugin delay compensation (latencies are reported), audio input and recording, compressed file
+  formats, and send automation. Track/Master fader automation is specified by ADR 0050 but remains an
+  implementation requirement. Linux and Windows device output is built and unit-tested in CI but has not been heard.
 - The measurements are from one Mac and one USB headset; rerun the harness on other machines before changing the
   default queue.
 
 ## Sends, clip gain and fades, and device loss (added 2026-10-11)
 
 ### Sends
+
+> [!NOTE]
+> **Accepted replacement annotation (ADR 0050):** This subsection's mixer-channel send owners/targets, storage,
+> and route validation are superseded by strip-owned Output/Send routes to Group, Effect, and Master strips. The
+> historical decision below is retained for rationale only; pre/post-fader tap and existing send mute/solo
+> behavior remain except where ADR 0050 states otherwise.
 
 - A mixer channel has sends (`MixerSend`: target channel, level in dB, pre or post fader), at most one per target
   and never to itself. Any channel can be a target; one that receives sends is shown as a return. Sends are stored

@@ -363,7 +363,8 @@ public sealed class WorkspaceTests : IAsyncLifetime
         var state = WorkspaceStore.Deserialize(json)!;
 
         Assert.Equal(json, WorkspaceStore.Serialize(state));
-        Assert.Equal(3 + 1, state.Views.Length);
+        Assert.Equal(5, state.Views.Length);
+        Assert.Equal(ViewPlacement.Collapsed, state.Views.Single(v => v.Kind == WorkspaceViewKind.Mixer).Placement);
         var device = state.Views.Single(v => v.Id == First.Id).Device!;
         Assert.Equal(Keys.Id.Value, device.LockedTrack);
         Assert.Single(device.Collapsed);
@@ -385,6 +386,70 @@ public sealed class WorkspaceTests : IAsyncLifetime
         Assert.True(restored.Workspace.Browser.IsCollapsed);
         Assert.Equal(300, restored.Workspace.LeftExtent);
         Assert.Equal("arp", restored.Browser.SearchText);
+    }
+
+    [Fact]
+    public async Task Mixer_DetachIsSavedAndRestored_ThenDockingShowsTheMixerTab()
+    {
+        var display = DisplayConfiguration.Signature([Laptop]);
+        var mixer = _vm.Workspace.Mixer;
+        mixer.RememberBounds(display, new WindowBounds(100, 50, 1120, 420));
+        mixer.ShowCommand.Execute(null);
+        Assert.Equal(LowerPane.Mixer, _vm.LowerPane);
+        Assert.True(mixer.IsDocked);
+
+        mixer.DetachCommand.Execute(null);
+        await Settle();
+        Assert.True(mixer.IsDetached);
+        Assert.Equal(LowerPane.Devices, _vm.LowerPane);
+
+        var json = WorkspaceStore.Serialize(_vm.CaptureLayout());
+        var state = WorkspaceStore.Deserialize(json)!;
+        var savedMixer = Assert.Single(state.Views, view => view.Kind == WorkspaceViewKind.Mixer);
+        Assert.Equal(ViewPlacement.Detached, savedMixer.Placement);
+        Assert.Equal(new WindowBounds(100, 50, 1120, 420), savedMixer.DetachedBounds[display]);
+
+        await using var restored = NewViewModel();
+        await restored.InitializeAsync();
+        restored.Screens = () => [Laptop];
+        restored.ApplyLayout(state);
+
+        Assert.True(restored.Workspace.Mixer.IsDetached);
+        Assert.Same(restored.MixerConsole, restored.Workspace.Mixer.MixerConsole);
+        Assert.Equal(LowerPane.Devices, restored.LowerPane);
+
+        restored.Workspace.Mixer.DockCommand.Execute(null);
+        Assert.True(restored.Workspace.Mixer.IsDocked);
+        Assert.Contains(restored.Workspace.Mixer, restored.Workspace.DetailTabs);
+        restored.Workspace.Mixer.ShowCommand.Execute(null);
+        Assert.Equal(LowerPane.Mixer, restored.LowerPane);
+        Assert.True(restored.Workspace.Mixer.IsCurrentTab);
+    }
+
+    [Fact]
+    public async Task MixerWaitingForItsDisplay_ReattachesWhenTheSavedDisplayReturns()
+    {
+        var dual = DisplayConfiguration.Signature([Laptop, SideMonitor]);
+        var mixer = _vm.Workspace.Mixer;
+        mixer.RememberBounds(dual, new WindowBounds(1600, 100, 1120, 420));
+        mixer.DetachCommand.Execute(null);
+        await Settle();
+        var state = _vm.CaptureLayout();
+
+        await using var laptopOnly = NewViewModel();
+        await laptopOnly.InitializeAsync();
+        laptopOnly.Screens = () => [Laptop];
+        laptopOnly.ApplyLayout(state);
+
+        var restored = laptopOnly.Workspace.Mixer;
+        Assert.True(restored.IsAwaitingDisplay);
+        Assert.True(restored.IsCollapsed);
+        Assert.Equal(ViewPlacement.Detached, laptopOnly.CaptureLayout().Views.Single(view => view.Kind == WorkspaceViewKind.Mixer).Placement);
+
+        laptopOnly.Workspace.ReattachAwaitingViews([Laptop, SideMonitor]);
+        Assert.False(restored.IsAwaitingDisplay);
+        Assert.True(restored.IsDetached);
+        Assert.Equal(new WindowBounds(1600, 100, 1120, 420), LayoutRecovery.Restore(restored.DetachedBounds, [Laptop, SideMonitor]));
     }
 
     [Fact]

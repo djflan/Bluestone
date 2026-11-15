@@ -21,8 +21,12 @@ public sealed class ViewWindow : Window
         Title = $"{view.Title} — Bluestone";
         MinWidth = 320;
         MinHeight = 200;
-        Width = view.Kind == WorkspaceViewKind.Browser ? 300 : 900;
-        Height = view.Kind == WorkspaceViewKind.Browser ? 600 : 300;
+        (Width, Height) = view.Kind switch
+        {
+            WorkspaceViewKind.Browser => (300, 600),
+            WorkspaceViewKind.Mixer => (1120, 420),
+            _ => (900, 300),
+        };
         Background = Brush("Surface.Base");
         ShowInTaskbar = false;
         Content = content;
@@ -84,7 +88,7 @@ public sealed class ViewWindow : Window
         };
         ToolTip.SetTip(dock, "Dock in the main window");
         Avalonia.Automation.AutomationProperties.SetName(dock, "Dock");
-        if (view.Kind == WorkspaceViewKind.DeviceView)
+        if (view.Kind is WorkspaceViewKind.DeviceView or WorkspaceViewKind.Mixer)
         {
             // The Device View has its own header with these options.
             return body;

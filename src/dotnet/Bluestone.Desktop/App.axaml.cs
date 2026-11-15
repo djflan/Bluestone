@@ -216,6 +216,7 @@ public partial class App : Avalonia.Application
             LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
         viewModel.Display.Use(new DisplaySettingsStore(DisplaySettingsPath));
+        viewModel.MixerConsole.UseSettingsStore(new MixerMeterDisplaySettingsStore(MixerMeterSettingsPath));
         var initialized = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices, viewModel);
         await Step(splash, "Finding MIDI devices and resolving routes…");
@@ -259,7 +260,7 @@ public partial class App : Avalonia.Application
         }
 
         _audio = new AudioViewModel(audio, new AudioSettingsStore(AudioSettingsPath), new AvaloniaDispatcher(), activities: viewModel.Activities);
-        viewModel.Mixer.MeterSource = audio.MeterOf;
+        viewModel.MixerConsole.UseAudio(audio);
         viewModel.JunctionLevelSource = audio.JunctionMeterOf;
         // In-process audio takes its graph lock to watch junctions, which a rebuild can hold: never wait for it on the UI thread.
         var watch = new LatestOnBackground<IReadOnlyCollection<Guid>>(audio.WatchJunctions);
@@ -279,6 +280,10 @@ public partial class App : Avalonia.Application
     /// <summary>Display preferences (Settings ▸ Display), e.g. ~/Library/Application Support/Bluestone/display-settings.json on macOS.</summary>
     public static string DisplaySettingsPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "display-settings.json");
+
+    /// <summary>Mixer meter preferences, kept outside project data.</summary>
+    public static string MixerMeterSettingsPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone", "mixer-meter-settings.json");
 
     /// <summary>How plugins share worker processes (ADR 0034), e.g. ~/Library/Application Support/Bluestone/plugin-hosting.json on macOS.</summary>
     public static string PluginHostingSettingsPath =>

@@ -18,15 +18,15 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | ---- | ----- |
 | Domain: roles, devices, chains, instruments, connections, mixer, device automation | Done, tested |
 | `Bluestone.Signal`: chain runner, built-in devices, signal graph | Done, tested; built-in devices also have live, allocation-free forms (ADR 0035) |
-| Routing model, format 4, migrations, chain presets, commands, inspector | Done, tested |
+| Routing model, project format 6 and 2→3→4→5→6 migrations, chain presets, commands, inspector | Implemented; see `ProjectSerializerTests`, `Format5To6MigrationTests`, and routing command tests |
 | Group tracks: mute/solo reach members, joining routes into the group, folding saved (ADR 0030) | Done, tested; headless UI test |
 | Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; not verified on hardware |
-| Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, mixer with sends, clip gain and fades, meters, device-loss fallback, one transport (ADR 0032) | Done; Core Audio heard on macOS; WASAPI tested on Windows, its callback thread promoted to MMCSS "Pro Audio" and sample rate and block size Automatic by default (ADR 0049); ASIO was tested locally but is excluded from standard Windows builds pending licensing; output was not listened to |
+| Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, track-owned strips, Effect returns, Group buses, Master chain and meters (ADRs 0032, 0050), clip gain and fades, device-loss fallback, one transport | Existing Core Audio/WASAPI/ASIO evidence is recorded in ADRs 0032/0049; the professional mixer has no physical audio verification recorded here |
 | Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS and through Windows WinMM software loopback (Windows result misses target) |
 | Engine process: MIDI playback, endpoints, live input and thru, the audio device rendering in the callback, the graph, clips, meters, and the plugin data plane in a NativeAOT C# process with its own protocol and supervisor; depth 1 for the monitored plugin instrument; real-time plugin worker threads (ADRs 0043, 0044) | Done; default on macOS. Windows x64 WinMM live input and WASAPI were measured through software loopback; live added latency missed target, so remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux |
 | Third-party plugins: VST 3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins on all platforms; installed CLAP processing and Pro-Q 3/Surge XT editors tested on native Windows and macOS |
 | Plugin hosting modes: together, by manufacturer, by plugin (default), individually; per-plugin override; crash blast radius and counts (ADR 0034) | Done, tested with real workers |
-| UI: Plugins view (rescan, quarantine retry, hosting), Mixer console, Audio Settings, editor button, group menu, instrument parameter lanes | Done; view-model and headless UI tests; the app launched as a smoke test only |
+| UI: Plugins view (rescan, quarantine retry, hosting), dockable/detachable track-owned Mixer console and meter modes, Audio Settings, editor button, group menu, instrument parameter lanes | Focused view-model/UI tests for independent Master selection and Inspector scope passed; Max reviewed the running mixer at 1318×847 (compact) and 1620×1000 (normal), including Master selection and LUFS-S warm-up. The later C2 strip rebuild (insert stack, LED meter rail, gain bar, pan ramp) was reviewed in headless renders with simulated meter data only; physical audio remains unverified |
 | Device-centric workspace: design tokens, semantic regions and rails, dockable/detachable Browser, multiple follow/lock Device Views with per-view presentation, drag-and-drop insertion and reordering, local layout persistence with monitor recovery (ADR 0036); parallel signal bundle in chains (ADR 0037) | Done; view-model and headless UI tests with frames at 1280×800 and 1920×1080; the real app launched under Xvfb; not checked on real multiple monitors |
 | Interaction polish: arranger loop kept while off, clip loops on note and audio clips with Consolidate, format 5 (ADR 0039); ruler drag zoom and scroll, Zoom to Fit/Selection/Loop; drag to replace a device; floating editors that follow the selection, pin, and send keys to Bluestone (ADR 0040) | Done; unit, view-model, and headless UI tests; editor lifecycle and key routing checked on macOS and native Windows ([worklog](worklogs/bitwig-interaction-polish.md)) |
 | Headless UI tests: Device View, Browser, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
@@ -75,7 +75,7 @@ number ("decision 16 in docs/engineering-handoff.md"), so the numbers never chan
 says so.
 
 1. **Role is persisted and reconciled** with content (it cannot be derived for empty/Effect/Group tracks). `Track` never rejects clips because of role. Effect/Group refuse clips; narrowing that would hide content is refused; conversion never discards.
-2. **One routing model**: the `SignalConnection` list. Sources: track output, rack output, device tap. Destinations: track/rack input, external-instrument part (port + channel via mapping), mixer channel, master. The strip and the inspector must both edit this list only.
+2. **One routing model**: the `SignalConnection` list. Sources: track output, rack output, device tap. Destinations: track/rack input, external-instrument part (port + channel via mapping), or Master. Audio routes are `Output`, `Send`, or advanced `Internal`; the strip and the inspector must both edit this list only.
 3. **Chains are first-class**, one owner each, addressed by `DeviceChainId`; a track has at most one chain (optional, so `project with { Sequence = ... }` keeps working).
 4. **External instruments are project entities**; the profile is stated once per instrument. There is **no** "external instrument device kind": it would be a second way to express a route.
 5. **Passthrough** is by `EventClass`: a device is given only the classes in `Handles`; everything else is merged back in canonical order. Only explicit filter devices drop events (SysEx data must survive note processors).
@@ -85,7 +85,8 @@ says so.
 9. Old `TrackRoute.Transpose` migrates to a **Transpose device** in the track's chain; `Voice` moves onto the connection; `Channel` becomes `ChannelMapping.Force`; one `ExternalInstrument` per distinct (endpoint, profile) pair, including an "Unassigned" one for routes that have settings but no endpoint (the old code kept those).
 10. `TrackRendering.Render(track, ppqn, channelOverride)`: the override is the **unique Force channel** of the track's outgoing event connections, else none. This preserves the old "two lanes collide after the channel override" behaviour.
 11. **Mute and solo apply to a track's own content** (the old rule: solo overrides mute). Events routed *into* a muted track from a playing one still pass through its chain. Revisit only if the UI needs "mute silences the track's output". Amended for groups by decision 30 (ADR 0030).
-12. **Device automation is not signal**: it is rendered for every track, playing or muted, applied to built-in processors at its ticks, and returned as `ParameterFeed`s for every other device. A lane whose device is missing is reported (`AutomationTargetMissing`) and kept.
+12. **Device automation is not signal**: it is rendered for every track, playing or muted, and for project-owned Master-chain lanes, applied to built-in processors at its ticks, and returned as `ParameterFeed`s for every other device. A lane whose device is missing is reported (`AutomationTargetMissing`) and kept.
+    Track and Master fader/pan automation hold the first value before the first breakpoint. Automated blocks must retain their final applied stereo gains, including pan and mute, for manual gain handoff across graph snapshots. Elapsed points are located with a binary search; seeking and in-block loop wraps reset the cursors without allocation or locks.
 13. **At compile time, a plugin MIDI effect runs in its own worker (ADR 0028)**: a `RenderEvents` request runs a fresh copy from the project's stored state and parameters over the timeline (sample frames on the tempo map), and its output joins the chain. If its worker is gone, hung, or failing, or the request is over the protocol's limits, its events pass through unchanged with a diagnostic. An unknown device always passes events through, with a diagnostic. An instrument without an in-process processor takes its `Handles` classes out of the chain (this matches `SignalPresence.Through`); SysEx and other unhandled classes go on to the track's connections.
 14. **The evaluator never fails on bad routing.** It leaves out every connection named in a validator error, reports it (`InvalidConnection`), and as a backstop drops any connection that still closes a loop during topological ordering (`Feedback`). Audio connections are validated and reported here but followed by the audio engine's render graph (ADR 0032).
 15. **"Not routed"** is reported for a playing track with no outgoing event connection (from the track or any point inside its chain) and no instrument in its chain, whatever its content, like the old compiler. With an instrument but no connection, it is reported only when events remain after the chain (for example SysEx the instrument does not handle). A tap on a chain whose owning track is gone is left out and reported (it can never run).
@@ -173,9 +174,15 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
   plugins live and delay-compensated through the audio engine on a real device (reference and test plugins only).
 - The acoustic round trip of live input (no loopback recording); measured numbers include the device's reported
   output latency.
-- The views added with the audio engine and plugins (Plugins view, mixer console, Audio Settings) were not looked at
-  by eye: the app was launched as a smoke test with the screen locked. Headless UI tests cover the workflows and save
-  frames.
+- The Plugins view and Audio Settings were not looked at by eye: the app was launched as a smoke test with the screen
+  locked. Headless UI tests cover the workflows and save frames.
+- Max reviewed the track-owned professional mixer in the running app at 1318×847 (compact) and 1620×1000 (normal),
+  including independent Master selection and Inspector scope, LUFS-S warm-up, and the since-removed Bar/Round meter
+  presentation. This was a no-signal UI review only; physical audio remains unverified.
+- The C2 mixer strip rebuild (insert stack, one LED-segment meter per strip, gain bar, pan ramp, clip reset) was seen
+  only in headless Avalonia renders with simulated meter data, not in the running app, on hardware, or with real-time
+  audio. Per-strip width and spectrum views, an input-monitor button, a Master chain view from the Master inserts, and
+  Ctrl+Left/Right strip jumps are not built. At the default docked height the meter is short (about 44 px).
 - The Medium and Large `SignalIndicator` variants appear in the Device View's seams when chosen in Settings ▸ Display;
   they were seen only in headless frames (the gallery and `junction-size-*` Device View frames), with no HiDPI, GPU, or
   screen-reader check. Compact, the default, is drawn by the seam as before and compared pixel for pixel against
@@ -205,3 +212,14 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
    base versus modulated parameter values and control-rate modulators; optional auto-collapse of panels; samples
    and presets in the Browser once there is an index; drag from the Browser onto a track or the arranger;
    keyboard reordering of devices; and verifying detached windows and monitor recovery on real multi-monitor setups.
+7. **Professional mixer (ADR 0050, PR #95), deferred or not built:** per-strip width and spectrum analysis views
+   (they need analysis DSP; collapsed must mean no analysis runs and no reserved space); an input-monitor button
+   (the model has no monitor state); a Master chain view opened from the Master inserts (today they only select
+   Master); Ctrl+Left/Right jumps between strips; arming MIDI-only tracks from the mixer; a console-level LUFS-S
+   warming-up status (only Master announces it); a taller meter at the default docked height (about 44 px today);
+   undo merging for continuous gestures that does not rely on a 1 s time window; the bx_console AMEK 9099 parameter
+   mapping (needs verified parameter IDs and a normalized-to-dB conversion); and tests for the send knob's wheel,
+   modifier-chord and disabled-automation handling and the Master clip-reset button. Also deferred and not yet
+   verified: Copilot review of PR #95 flagged that device-parameter automation may not be chased to its value at the
+   new position on play, seek, or loop wrap. Master-chain lanes use the same `ParameterChange` schedule as track
+   device lanes, so any fix belongs to that shared path.

@@ -38,6 +38,17 @@ public sealed partial class SelectionViewModel : ObservableObject
 
     public bool IsMultiple => _tracks.Count > 1;
 
+    /// <summary>The Inspector is scoped to the project Master, independently of arrangement-track selection.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsMasterInspector), nameof(ShowsTrackSelectionInspector), nameof(ShowsEmptyInspector))]
+    public partial bool IsMasterSelected { get; private set; }
+
+    public bool ShowsMasterInspector => IsMasterSelected;
+
+    public bool ShowsTrackSelectionInspector => HasSelection && !IsMasterSelected;
+
+    public bool ShowsEmptyInspector => !HasSelection && !IsMasterSelected;
+
     /// <summary>The track name, or "3 tracks".</summary>
     [ObservableProperty]
     public partial string Title { get; private set; } = string.Empty;
@@ -127,6 +138,11 @@ public sealed partial class SelectionViewModel : ObservableObject
         try
         {
             var reselected = !_tracks.Select(t => t.Id).SequenceEqual(tracks.Select(t => t.Id));
+            if (reselected)
+            {
+                IsMasterSelected = false;
+            }
+
             _tracks = [.. tracks];
             Title = tracks.Count switch
             {
@@ -158,12 +174,18 @@ public sealed partial class SelectionViewModel : ObservableObject
             OnPropertyChanged(nameof(HasSelection));
             OnPropertyChanged(nameof(IsSingle));
             OnPropertyChanged(nameof(IsMultiple));
+            OnPropertyChanged(nameof(ShowsTrackSelectionInspector));
+            OnPropertyChanged(nameof(ShowsEmptyInspector));
         }
         finally
         {
             _syncing = false;
         }
     }
+
+    internal void SelectMasterScope() => IsMasterSelected = true;
+
+    internal void SelectTrackScope() => IsMasterSelected = false;
 
     partial void OnRoleChanged(TrackRole? value)
     {

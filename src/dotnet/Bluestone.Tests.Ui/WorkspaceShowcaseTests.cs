@@ -276,7 +276,7 @@ public sealed class WorkspaceShowcaseTests
         Assert.All(chip, c => Assert.False(c.IsEffectivelyVisible));
 
         // Keyed through the routing (as a project made where it has one would be), the chip shows, in the key's colour.
-        app.Session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(app.ViewModel.Tracks[2].Id), SignalNode.DeviceInput(view.Devices[1].Id, DeviceInputPort.Sidechain)), app.Playback.Devices.Lookup));
+        app.Session.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(app.ViewModel.Tracks[2].Id), SignalNode.DeviceInput(view.Devices[1].Id, DeviceInputPort.Sidechain)) with { AudioPurpose = AudioRoutePurpose.Internal }, app.Playback.Devices.Lookup));
         app.Settle();
         Assert.Equal("Pad · Output", view.Devices[1].Sidechain!.SourceText);
         var keyed = deviceView.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("scChip") && b.IsEffectivelyVisible);

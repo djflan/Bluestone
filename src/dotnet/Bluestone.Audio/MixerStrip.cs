@@ -36,16 +36,100 @@ public readonly record struct MixerStripSettings(double GainDecibels = 0, double
 /// </summary>
 public sealed class MixerStripState
 {
-    private readonly Dictionary<MixerStripState, GainRamp> _sends = [];
+    private readonly Dictionary<object, GainRamp> _sends = [];
     private readonly GainRamp _gain = new();
+    private bool _muteStarted;
+    private float _muteLevel;
+    private bool _levelStarted;
+    private double _lastGainLevel;
+    private double _lastPan;
 
-    public AudioMeter Meter { get; } = new();
+    public MixerMeter Meter { get; } = new();
 
     /// <summary>Applies the gains, ramping from the previous block's; the first block starts at the target.</summary>
     internal void Apply(StereoBuffer block, float left, float right) => _gain.Apply(block, left, right);
 
+    /// <summary>Applies sample-timed fader and pan automation without allocating or taking a lock.</summary>
+    internal void ApplyAutomated(
+        StereoBuffer block,
+        in AudioRenderContext context,
+        double gainDecibels,
+        double pan,
+        bool unmuted,
+        DescribedAutomationPoint[] gainAutomation,
+        DescribedAutomationPoint[] panAutomation)
+    {
+        if (gainAutomation.Length == 0 && panAutomation.Length == 0)
+        {
+            var faderGain = PanLaw.DecibelsToGain(gainDecibels);
+            var gain = unmuted ? faderGain : 0f;
+            var (left, right) = PanLaw.Gains(pan);
+            _gain.Apply(block, gain * left, gain * right);
+            _muteLevel = unmuted ? 1f : 0f;
+            _muteStarted = true;
+            RememberLevel(faderGain, pan);
+            return;
+        }
+
+        // The parameter without automation follows the manual control; ramp it across the block from the value last
+        // applied (automated or manual) so a fader or pan move doesn't jump while the other parameter is automated.
+        var manualGain = (double)PanLaw.DecibelsToGain(gainDecibels);
+        var startGain = _levelStarted ? _lastGainLevel : manualGain;
+        var startPan = _levelStarted ? _lastPan : pan;
+        var lastGain = startGain;
+        var lastPan = startPan;
+        var targetMute = unmuted ? 1f : 0f;
+        var startMute = _muteStarted ? _muteLevel : targetMute;
+        var muteStep = (targetMute - startMute) / block.Frames;
+        var gainIndex = 0;
+        var panIndex = 0;
+        var finalLeft = 0f;
+        var finalRight = 0f;
+        for (var i = 0; i < block.Frames; i++)
+        {
+            if (context.Wraps && i == context.WrapOffset)
+            {
+                gainIndex = 0;
+                panIndex = 0;
+            }
+
+            var frame = context.Wraps && i >= context.WrapOffset
+                ? context.WrapFrame + i - context.WrapOffset
+                : context.SongFrame + i;
+            var progress = (double)(i + 1) / block.Frames;
+            lastGain = gainAutomation.Length == 0
+                ? startGain + ((manualGain - startGain) * progress)
+                : PanLaw.DecibelsToGain(ValueAt(gainAutomation, frame, gainDecibels, ref gainIndex));
+            lastPan = panAutomation.Length == 0
+                ? startPan + ((pan - startPan) * progress)
+                : ValueAt(panAutomation, frame, pan, ref panIndex);
+            var level = (float)lastGain * (startMute + ((i + 1) * muteStep));
+            var (left, right) = PanLaw.Gains(lastPan);
+            finalLeft = level * left;
+            finalRight = level * right;
+            block.Left[i] *= finalLeft;
+            block.Right[i] *= finalRight;
+        }
+
+        if (block.Frames > 0)
+        {
+            _gain.SetCurrent(finalLeft, finalRight);
+            RememberLevel(lastGain, lastPan);
+        }
+
+        _muteLevel = targetMute;
+        _muteStarted = true;
+    }
+
+    private void RememberLevel(double gain, double pan)
+    {
+        _lastGainLevel = gain;
+        _lastPan = pan;
+        _levelStarted = true;
+    }
+
     /// <summary>The ramp state of this strip's send to <paramref name="target"/>. Control thread (graph building).</summary>
-    internal GainRamp SendTo(MixerStripState target)
+    internal GainRamp SendTo(object target)
     {
         lock (_sends)
         {
@@ -60,7 +144,7 @@ public sealed class MixerStripState
     }
 
     /// <summary>Forgets the ramp state of sends that are gone. Control thread; graphs already built keep theirs.</summary>
-    internal void KeepSendsTo(IReadOnlySet<MixerStripState> targets)
+    internal void KeepSendsTo(IReadOnlySet<object> targets)
     {
         lock (_sends)
         {
@@ -69,6 +153,54 @@ public sealed class MixerStripState
                 _sends.Remove(gone);
             }
         }
+    }
+
+    private static double ValueAt(DescribedAutomationPoint[] points, long frame, double fallback, ref int index)
+    {
+        if (points.Length == 0)
+        {
+            return fallback;
+        }
+
+        if (frame < points[0].Frame)
+        {
+            return points[0].Value;
+        }
+
+        if (index + 1 < points.Length && points[index + 1].Frame <= frame)
+        {
+            var lower = index + 1;
+            var upper = points.Length - 1;
+            while (lower < upper)
+            {
+                var middle = lower + ((upper - lower + 1) / 2);
+                if (points[middle].Frame <= frame)
+                {
+                    lower = middle;
+                }
+                else
+                {
+                    upper = middle - 1;
+                }
+            }
+
+            index = lower;
+        }
+
+        var current = points[index];
+        if (!current.Linear || index + 1 == points.Length || points[index + 1].Frame <= current.Frame)
+        {
+            return current.Value;
+        }
+
+        var next = points[index + 1];
+        if (frame >= next.Frame)
+        {
+            return next.Value;
+        }
+
+        var amount = (frame - current.Frame) / (double)(next.Frame - current.Frame);
+        return current.Value + ((next.Value - current.Value) * amount);
     }
 }
 
@@ -97,6 +229,13 @@ internal sealed class GainRamp
         Mix.AddRamped(source.Right, destination.Right, _right, right);
         _left = left;
         _right = right;
+    }
+
+    public void SetCurrent(float left, float right)
+    {
+        _left = left;
+        _right = right;
+        _started = true;
     }
 
     private void Start(float left, float right)

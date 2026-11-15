@@ -35,9 +35,16 @@ public enum RoutingIssueCode
     DuplicateConnection,
     InvalidMapping,
     VoiceNotApplicable,
+    InvalidAudioPurpose,
+    InvalidAudioOwner,
+    InvalidOutputCount,
+    InvalidSendTarget,
 
     /// <summary>A lane's device is not in the project. The lane is kept.</summary>
     AutomationDeviceMissing,
+
+    /// <summary>A Master automation lane targets a device outside the Master chain. The lane is kept.</summary>
+    AutomationDeviceWrongOwner,
 
     /// <summary>A lane's parameter is not one its device defines. The lane is kept.</summary>
     AutomationParameterUnknown,
@@ -88,12 +95,18 @@ public static class SignalRoutingValidator
 
             sound &= CheckSource(project, connection, issues);
             sound &= CheckDestination(project, connection, definitions, issues);
+            if (connection.Kind == SignalKind.Audio)
+            {
+                sound &= CheckAudioPurpose(project, connection, issues);
+            }
+
             if (sound)
             {
                 CheckSignal(project, connection, definitions, issues);
             }
         }
 
+        CheckOutputs(project, issues);
         CheckSends(project, issues);
         FindCycles(project, issues);
         CheckAutomation(project, definitions, issues);
@@ -251,6 +264,107 @@ public static class SignalRoutingValidator
         }
     }
 
+    private static bool CheckAudioPurpose(Project project, SignalConnection connection, ImmutableArray<RoutingIssue>.Builder issues)
+    {
+        var sourceTrack = connection.Source.Kind == SignalNodeKind.Track
+            ? project.Sequence.FindTrack(connection.Source.AsTrack())
+            : null;
+        var destinationTrack = connection.Destination.Kind == SignalNodeKind.Track
+            ? project.Sequence.FindTrack(connection.Destination.AsTrack())
+            : null;
+        switch (connection.AudioPurpose)
+        {
+            case AudioRoutePurpose.Output:
+                if (sourceTrack?.AudioStrip is null || connection.Source.Kind != SignalNodeKind.Track)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioOwner, "An ordinary audio output must come from an audio-capable track strip.", connection));
+                    return false;
+                }
+
+                if (connection.Destination.Kind == SignalNodeKind.Master)
+                {
+                    if (sourceTrack.Group is not null)
+                    {
+                        issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioOwner, $"\"{sourceTrack.Name}\" is grouped and must output to its parent Group.", connection));
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                if (destinationTrack is not { Role: TrackRole.Group, AudioStrip: not null })
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioOwner, "An ordinary audio output may target only Master or a Group track.", connection));
+                    return false;
+                }
+
+                if (sourceTrack.Group != destinationTrack.Id)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioOwner, $"\"{sourceTrack.Name}\" may output only to its parent Group or Master.", connection));
+                    return false;
+                }
+
+                return true;
+
+            case AudioRoutePurpose.Send:
+                if (sourceTrack?.AudioStrip is null || connection.Source.Kind != SignalNodeKind.Track)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioOwner, "An audio send must come from an audio-capable track strip.", connection));
+                    return false;
+                }
+
+                if (destinationTrack is not { Role: TrackRole.Effect, AudioStrip: not null } || sourceTrack.Id == destinationTrack.Id)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidSendTarget, "An audio send must target a different Effect track.", connection));
+                    return false;
+                }
+
+                return true;
+
+            case AudioRoutePurpose.Internal:
+                if (connection.Destination.Kind == SignalNodeKind.Master)
+                {
+                    issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioOwner,
+                        "Internal audio routes cannot sum into Master; use an ordinary Output route through the source track's strip.", connection));
+                    return false;
+                }
+
+                return true;
+
+            default:
+                issues.Add(Issue(RoutingSeverity.Error, RoutingIssueCode.InvalidAudioPurpose, "The audio route has an unknown purpose.", connection));
+                return false;
+        }
+    }
+
+    private static void CheckOutputs(Project project, ImmutableArray<RoutingIssue>.Builder issues)
+    {
+        foreach (var track in project.Sequence.Tracks)
+        {
+            if (track.AudioStrip is null)
+            {
+                continue;
+            }
+
+            var outputs = project.Connections.Where(c => c.Kind == SignalKind.Audio
+                && c.AudioPurpose == AudioRoutePurpose.Output
+                && c.Source == SignalNode.Track(track.Id)).ToArray();
+            if (outputs.Length == 0 && project.ParkedConnections.Any(c => c.Kind == SignalKind.Audio
+                && c.AudioPurpose == AudioRoutePurpose.Output
+                && c.Source == SignalNode.Track(track.Id)))
+            {
+                continue;
+            }
+
+            if (outputs.Length != 1)
+            {
+                var wording = outputs.Length == 0 ? "has no ordinary audio output" : "has more than one ordinary audio output";
+                issues.Add(new RoutingIssue(RoutingSeverity.Error, RoutingIssueCode.InvalidOutputCount,
+                    $"Audio-capable track \"{track.Name}\" {wording}.", [.. outputs.Select(c => c.Id)]));
+            }
+        }
+    }
+
     // A cycle is a path of connections (and mixer outputs and sends) that returns to a node. Nodes are the things
     // that own a chain (tracks and racks) and mixer channels; a tap, a chain's input, and a device's input port belong
     // to their chain's owner. This is conservative: a path that leaves a chain after one device and comes back into a
@@ -347,13 +461,18 @@ public static class SignalRoutingValidator
         SignalNodeKind.Track => ('T', node.Id),
         SignalNodeKind.Rack => ('R', node.Id),
         SignalNodeKind.MixerChannel => ('M', node.Id),
+        SignalNodeKind.Master => ('P', Guid.Empty),
         SignalNodeKind.Device or SignalNodeKind.DeviceInput when project.FindDevice(node.AsDevice()) is { } found => OwnerOf(found.Chain),
         SignalNodeKind.ChainInput when project.FindChain(node.AsChain()) is { } chain => OwnerOf(chain),
         _ => null,
     };
 
-    private static (char, Guid) OwnerOf(DeviceChain chain) =>
-        chain.Owner.Kind == ChainOwnerKind.Track ? ('T', chain.Owner.Track.Value) : ('R', chain.Id.Value);
+    private static (char, Guid) OwnerOf(DeviceChain chain) => chain.Owner.Kind switch
+    {
+        ChainOwnerKind.Track => ('T', chain.Owner.Track.Value),
+        ChainOwnerKind.Master => ('P', Guid.Empty),
+        _ => ('R', chain.Id.Value),
+    };
 
     // A connection from a point of a chain into a device input of the same chain: the chain itself orders it, so it is
     // not an edge between owners. Whether it runs forwards is checked by CheckJunctionOrder.
@@ -362,12 +481,17 @@ public static class SignalRoutingValidator
         && project.FindDevice(connection.Destination.AsDevice()) is { } target
         && (connection.Source.IsInside(target.Chain) || connection.Source == OwnerNode(target.Chain));
 
-    private static SignalNode OwnerNode(DeviceChain chain) =>
-        chain.Owner.Kind == ChainOwnerKind.Track ? SignalNode.Track(chain.Owner.Track) : SignalNode.Rack(chain.Id);
+    private static SignalNode OwnerNode(DeviceChain chain) => chain.Owner.Kind switch
+    {
+        ChainOwnerKind.Track => SignalNode.Track(chain.Owner.Track),
+        ChainOwnerKind.Master => SignalNode.Master,
+        _ => SignalNode.Rack(chain.Id),
+    };
 
     private static string NameOf(Project project, (char Kind, Guid Id) node) => node.Kind switch
     {
         'T' => project.Sequence.FindTrack(new TrackId(node.Id))?.Name ?? "a track",
+        'P' => "Master",
         'R' => project.FindChain(new DeviceChainId(node.Id)) is { Name.Length: > 0 } rack ? rack.Name : "a rack",
         _ => project.Mixer.Find(new MixerChannelId(node.Id))?.Name ?? "a mixer channel",
     };
@@ -400,6 +524,22 @@ public static class SignalRoutingValidator
                 }
             }
         }
+
+        foreach (var lane in project.MasterAutomation.Where(l => l.Target.IsDevice))
+        {
+            if (project.FindDevice(lane.Target.Device) is not { } found)
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationDeviceMissing, "A Master automation lane targets a device that is not in the project. The lane is kept."));
+            }
+            else if (found.Chain.Owner.Kind != ChainOwnerKind.Master)
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationDeviceWrongOwner, $"A Master automation lane targets {found.Device.DisplayName}, which is not in the Master chain. The lane is kept."));
+            }
+            else if (definitions(found.Device.Definition.Id) is { } definition && definition.FindParameter(lane.Target.DeviceParameter) is null)
+            {
+                issues.Add(new RoutingIssue(RoutingSeverity.Warning, RoutingIssueCode.AutomationParameterUnknown, $"A Master automation lane targets parameter {lane.Target.DeviceParameter} of {found.Device.DisplayName}, which it does not define. The lane is kept."));
+            }
+        }
     }
 
     /// <summary>A short name for a node, for messages.</summary>
@@ -419,8 +559,12 @@ public static class SignalRoutingValidator
         };
     }
 
-    private static string OwnerName(Project project, DeviceChain chain) =>
-        chain.Owner.Kind == ChainOwnerKind.Track && project.Sequence.FindTrack(chain.Owner.Track) is { } track ? $"\"{track.Name}\"" : (chain.Name.Length > 0 ? $"rack \"{chain.Name}\"" : "a rack");
+    private static string OwnerName(Project project, DeviceChain chain) => chain.Owner.Kind switch
+    {
+        ChainOwnerKind.Track when project.Sequence.FindTrack(chain.Owner.Track) is { } track => $"\"{track.Name}\"",
+        ChainOwnerKind.Master => "Master",
+        _ => chain.Name.Length > 0 ? $"rack \"{chain.Name}\"" : "a rack",
+    };
 
     private static RoutingIssue Issue(RoutingSeverity severity, RoutingIssueCode code, string message, SignalConnection connection) =>
         new(severity, code, message, [connection.Id]);

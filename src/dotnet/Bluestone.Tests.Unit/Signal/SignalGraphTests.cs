@@ -37,6 +37,43 @@ public sealed class SignalGraphTests
     }
 
     [Fact]
+    public void MasterChainDeviceAutomation_IsReturnedAsAParameterFeed()
+    {
+        var device = Instance(TestDevices.Filter);
+        var lane = new AutomationLane(
+            AutomationLaneId.New(),
+            AutomationTarget.ForDevice(device.Id, new ParameterId(1)),
+            [new AutomationPoint(Tick.Zero, ControlValue.FromFraction(0.35), AutomationCurve.Hold)]);
+        var master = DeviceChain.Create(ChainOwner.Master) with { Devices = [device] };
+        var project = NewProject().WithChain(master) with { MasterAutomation = [lane] };
+
+        var feed = Assert.Single(project.Evaluate().Parameters);
+
+        Assert.Equal(device.Id, feed.Device);
+        var change = Assert.Single(feed.Changes);
+        Assert.Equal(Tick.Zero, change.Position);
+        Assert.Equal(new ParameterId(1), change.Parameter);
+        Assert.Equal(0.35, change.Value.ToFraction(), 6);
+    }
+
+    [Fact]
+    public void MasterAutomationTargetingAnotherChain_IsReportedAndNotScheduled()
+    {
+        var device = Instance(TestDevices.Filter);
+        var track = TrackOf("Track");
+        var lane = new AutomationLane(
+            AutomationLaneId.New(),
+            AutomationTarget.ForDevice(device.Id, new ParameterId(1)),
+            [new AutomationPoint(Tick.Zero, ControlValue.FromFraction(0.35), AutomationCurve.Hold)]);
+        var project = NewProject().With(track, device) with { MasterAutomation = [lane] };
+
+        var result = project.Evaluate();
+
+        Assert.Empty(result.Parameters);
+        Assert.Contains(project.Validate(), issue => issue.Code == RoutingIssueCode.AutomationDeviceWrongOwner);
+    }
+
+    [Fact]
     public void Scenario2_ATrackMidiEffect_TransformsNotesBeforeExternalHardware()
     {
         var keys = Chord("Keys", length: 480);

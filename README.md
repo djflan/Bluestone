@@ -20,7 +20,13 @@ Bluestone combines deep, flexible signal flow with clear, approachable workflows
 
 New builds on the [Releases](https://github.com/djflan/Bluestone/releases) page include categorized notes and the complete pull-request and commit history since the previous published release.
 
-![Bluestone's workspace while playing: the inspector beside the arrangement, and a Device View whose chain (Arpeggiator, Transpose, Bluestone's reference instrument and gain) shows its signal between every device, glowing MIDI icons where notes are held and levels where audio flows](docs/images/bluestone-workspace.png)
+![Bluestone's workspace with the professional mixer docked below the arrangement](docs/images/professional-mixer/final-docked-default.png)
+
+The approved C2 mixer design direction and compact layout:
+
+| Normal | Compact |
+|---|---|
+| ![C2 mixer design, normal layout](docs/images/professional-mixer/C2-normal.png) | ![C2 mixer design, compact layout](docs/images/professional-mixer/C2-compact.png) |
 
 ## The idea
 
@@ -55,14 +61,14 @@ Read the full [product vision](docs/product-vision.md), the public [roadmap](doc
 - Track and rack device chains with built-in Transpose, Event Filter, Arpeggiator, and Note and Audio Receiver devices; any point in a chain can be routed from.
 - A Browser and Device View for inserting, replacing, reordering, bypassing, and editing devices.
 - Parallel note, control, protocol, and audio signals through a chain, allowing layered instruments and effects in either domain.
-- Shared racks, group routing, mixer channels, sends, buses, master routing, and validation that refuses feedback loops.
+- Shared racks, track-owned mixer strips, Group buses, Effect returns, Output/Send/Internal routing, mandatory Master processing, and validation that refuses feedback loops.
 - Device parameter automation and hardware-parameter automation.
 
 ### Audio and plugins
 
 - An audio engine with one transport for MIDI, audio clips, plugin instruments, and plugin effects.
 - WAVE and AIFF playback at any source rate, streamed from disk with clip gain, fades, and loops.
-- A mixer console with gain, pan, mute, solo, buses, pre/post sends, and peak and RMS meters.
+- A dockable or detachable mixer console with track and Master controls, pre/post sends, and Peak + RMS, VU, K-System, or LUFS-S meters.
 - Plugin latency compensation and a shorter render-ahead path for live plugin instruments.
 - VST 3 and CLAP instruments, note effects, and audio effects hosted in worker processes.
 - Per-module scanning and quarantine, saved plugin state, crash recovery, configurable hosting modes, and floating editors.

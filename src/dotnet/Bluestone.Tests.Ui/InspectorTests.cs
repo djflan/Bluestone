@@ -13,6 +13,7 @@ using Bluestone.Midi.Endpoints;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol;
 using Bluestone.Signal;
+using ToggleButton = Avalonia.Controls.Primitives.ToggleButton;
 
 namespace Bluestone.Tests.Ui;
 
@@ -30,7 +31,9 @@ public sealed class InspectorTests
     }
 
     private static string? Header(Expander section) =>
-        section.Header is Control content ? content.GetLogicalDescendants().OfType<TextBlock>().First().Text : section.Header?.ToString();
+        section.Header is TextBlock text ? text.Text
+        : section.Header is Control content ? content.GetLogicalDescendants().OfType<TextBlock>().FirstOrDefault()?.Text
+        : section.Header?.ToString();
 
     [Fact]
     public Task TheWindow_Loads_WithTheInspectorsSections_AndRendersAFrame() => HeadlessApp.RunAsync(async () =>
@@ -40,7 +43,9 @@ public sealed class InspectorTests
         app.Settle();
 
         Assert.Equal("Racks", Header(app.Find<Expander>("RacksSection")));
-        Assert.Equal("Mixer", Header(app.Find<Expander>("MixerSection")));
+        Assert.DoesNotContain(app.Window.GetLogicalDescendants().OfType<Expander>(), section => Header(section) == "Mixer");
+        Assert.Contains(app.Window.GetLogicalDescendants().OfType<ToggleButton>(), button =>
+            button.IsEffectivelyVisible && AutomationProperties.GetName(button) == "Mixer");
         Assert.True(File.Exists(app.SaveFrame("inspector")));
     });
 
@@ -69,33 +74,6 @@ public sealed class InspectorTests
 
         Assert.Equal("Lead", heading.Text);
         Assert.False(back.IsEffectivelyVisible);
-    });
-
-    [Fact]
-    public Task AMixerFader_MovedSeveralTimes_IsOneUndoStep_AndShowsItsValue() => HeadlessApp.RunAsync(async () =>
-    {
-        await using var app = await AppUnderTest.OpenAsync(OneTrack());
-        var mixer = app.Find<Expander>("MixerSection");
-        mixer.IsExpanded = true;
-        app.Settle();
-        app.Click(AppUnderTest.Within<Button>(mixer, b => Equals(b.Content, "New mixer channel")));
-        var fader = AppUnderTest.Within<Slider>(mixer, s => AutomationProperties.GetName(s) == "Channel gain");
-
-        foreach (var value in new[] { -2.0, -4.0, -6.0 })
-        {
-            fader.Value = value;
-            app.Settle();
-        }
-
-        Assert.Equal(-6, app.Session.Project.Mixer.Channels[0].GainDecibels);
-        Assert.NotNull(AppUnderTest.Within<TextBlock>(mixer, t => t.Text == "-6.0 dB"));
-        app.SaveFrame("mixer-channel");
-
-        app.ViewModel.UndoCommand.Execute(null);
-        app.Settle();
-
-        Assert.Equal(0, app.Session.Project.Mixer.Channels[0].GainDecibels);
-        Assert.Equal(0, fader.Value);
     });
 
     [Fact]

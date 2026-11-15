@@ -1,4 +1,5 @@
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
@@ -51,7 +52,7 @@ public static class GroupCommands
             }
 
             var parent = chosen.Select(t => t.Group).Distinct().Count() == 1 ? chosen[0].Group : null;
-            var created = new Track(group, name, [], role: TrackRole.Group);
+            var created = new Track(group, name, [], role: TrackRole.Group, audioStrip: AudioStrip.Default);
             var result = p with { Sequence = sequence.InsertTrack(sequence.Tracks.IndexOf(chosen[0]), created) };
             foreach (var member in chosen)
             {
@@ -66,6 +67,11 @@ public static class GroupCommands
                 {
                     result = AddIfItWorks(result, SignalConnection.Create(kind, SignalNode.Track(group), destinations[0]), definitions);
                 }
+            }
+
+            if (!HasAudioOutput(result, group))
+            {
+                result = AddIfItWorks(result, SignalConnection.Create(SignalKind.Audio, SignalNode.Track(group), SignalNode.Master), definitions);
             }
 
             // Last, so the group's own outputs are parked like any member's, and come back if it leaves.
@@ -129,13 +135,16 @@ public static class GroupCommands
         {
             Sequence = project.Sequence.WithTrack(track.WithGroup(null)),
             Connections = project.Connections.RemoveAll(c => c.Source == node && c.Destination == SignalNode.Track(group)),
-            ParkedConnections = parked.Count == 0 ? project.ParkedConnections : project.ParkedConnections.RemoveAll(c => c.Source == node),
         };
 
         // What no longer works (a removed instrument, a loop through the track's new place) stays out.
         foreach (var connection in parked)
         {
-            result = AddIfItWorks(result, connection, definitions);
+            var restored = AddIfItWorks(result, connection, definitions);
+            if (restored.Connections.Any(c => c.Id == connection.Id))
+            {
+                result = restored with { ParkedConnections = restored.ParkedConnections.RemoveAll(c => c.Id == connection.Id) };
+            }
         }
 
         return result;
@@ -160,11 +169,24 @@ public static class GroupCommands
             Mapping = kind == SignalKind.Events && events.Count == 1 ? events[0].Mapping : ChannelMapping.Preserve,
         });
         var member = project.Sequence.FindTrack(track)!;
+        if (kinds.Contains(SignalKind.Audio) && member.AudioStrip is null)
+        {
+            member = member.WithAudioStrip(Bluestone.Domain.Mixing.AudioStrip.Default);
+        }
+
+        var parked = project.ParkedConnections.AddRange(outgoing);
+        if (kinds.Contains(SignalKind.Audio)
+            && !outgoing.Any(c => c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output)
+            && !parked.Any(c => c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == node))
+        {
+            parked = parked.Add(SignalConnection.Create(SignalKind.Audio, node, SignalNode.Master));
+        }
+
         return project with
         {
             Sequence = project.Sequence.WithTrack(member.WithGroup(group)),
             Connections = project.Connections.RemoveAll(c => c.Source == node).AddRange(routes),
-            ParkedConnections = project.ParkedConnections.AddRange(outgoing),
+            ParkedConnections = parked,
         };
     }
 
@@ -179,4 +201,7 @@ public static class GroupCommands
             return project;
         }
     }
+
+    private static bool HasAudioOutput(Project project, TrackId track) =>
+        project.Connections.Any(c => c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(track));
 }

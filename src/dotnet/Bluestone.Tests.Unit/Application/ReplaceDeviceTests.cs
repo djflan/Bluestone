@@ -17,7 +17,11 @@ public sealed class ReplaceDeviceTests
         var track = Track.Create("t", TrackRole.Hybrid);
         var fx = TestDevices.Instance(TestDevices.MidiFx);
         var synth = TestDevices.Instance(TestDevices.Synth);
-        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(track) });
+        var history = new EditHistory(Project.CreateNew() with
+        {
+            Sequence = Project.CreateNew().Sequence.WithTrack(track),
+            Connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master)],
+        });
         history.Execute(DeviceCommands.InsertDevice(track.Id, fx, TestDevices.Lookup));
         history.Execute(DeviceCommands.InsertDevice(track.Id, synth, TestDevices.Lookup));
         return (history, track.Id, fx, synth);
@@ -30,10 +34,12 @@ public sealed class ReplaceDeviceTests
     {
         var (history, track, fx, synth) = Chain();
         var lane = new AutomationLane(AutomationLaneId.New(), AutomationTarget.ForDevice(synth.Id, new ParameterId(1)), [new AutomationPoint(Tick.Zero, ControlValue.Center)]);
-        var tap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Master);
+        var channel = Bluestone.Domain.Mixing.MixerChannel.Create("Device tap");
+        var tap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Mixer(channel.Id)) with { AudioPurpose = AudioRoutePurpose.Internal };
         history.Execute(new ProjectCommand("track state", p => p with
         {
             Sequence = p.Sequence.WithTrack(p.Sequence.FindTrack(track)!.WithMuted(true).WithAutomation([lane])),
+            Mixer = p.Mixer.With(channel),
             Connections = p.Connections.Add(tap),
             ParkedConnections = p.ParkedConnections.Add(tap with { Id = ConnectionId.New() }),
         }));
@@ -75,8 +81,13 @@ public sealed class ReplaceDeviceTests
     [InlineData(false)]
     public void ReplacingADisconnectedTracksChain_DoesNotReconnectIt(bool instrument)
     {
-        var (history, track, _, _) = Chain();
-        history.Execute(TrackSetup.SetAudioDestination([track], null, TestDevices.Lookup));
+        var trackModel = Track.Create("t", TrackRole.Instrument);
+        var fx = TestDevices.Instance(TestDevices.MidiFx);
+        var synth = TestDevices.Instance(TestDevices.Synth);
+        var project = (Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(trackModel) })
+            .WithChain(DeviceChain.Create(ChainOwner.ForTrack(trackModel.Id)) with { Devices = [fx, synth] });
+        var history = new EditHistory(project);
+        var track = trackModel.Id;
         var before = history.Current;
 
         history.Execute(DeviceCommands.ReplaceTrackDevices(track, TestDevices.Instance(instrument ? TestDevices.Synth : TestDevices.Filter), TestDevices.Lookup));
@@ -134,20 +145,44 @@ public sealed class ReplaceDeviceTests
     }
 
     [Fact]
+    public void MasterAutomationOfAReplacedMasterDevice_FollowsTheSameKindOfDevice()
+    {
+        var delay = TestDevices.Instance(TestDevices.Delay);
+        var lane = new AutomationLane(AutomationLaneId.New(), AutomationTarget.ForDevice(delay.Id, new ParameterId(1)), [new AutomationPoint(Tick.Zero, ControlValue.Max)]);
+        var history = new EditHistory(Project.CreateNew().WithChain(DeviceChain.Create(ChainOwner.Master) with { Devices = [delay] }) with { MasterAutomation = [lane] });
+
+        var sameKind = TestDevices.Instance(TestDevices.Delay);
+        history.Execute(DeviceCommands.ReplaceDevice(delay.Id, sameKind, TestDevices.Lookup));
+
+        var retargeted = Assert.Single(history.Current.MasterAutomation);
+        Assert.Equal(lane.Id, retargeted.Id);
+        Assert.Equal(sameKind.Id, retargeted.Target.Device);
+        Assert.Equal(lane.Points, retargeted.Points);
+    }
+
+    [Fact]
     public void AParkedRouteIntoADevicesInput_FollowsItsReplacement_AndComesBackWhenTheTrackLeavesItsGroup()
     {
         var keyed = Track.Create("keyed", TrackRole.Hybrid);
         var key = Track.Create("key", TrackRole.Hybrid);
         var ducker = TestDevices.Instance(TestDevices.Ducker);
         var synth = TestDevices.Instance(TestDevices.Synth);
-        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key) });
+        var group = Track.Create("group", TrackRole.Group);
+        var history = new EditHistory(Project.CreateNew() with
+        {
+            Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key).WithTrack(group),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(keyed.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(group.Id), SignalNode.Master),
+            ],
+        });
         history.Execute(DeviceCommands.InsertDevice(key.Id, synth, TestDevices.Lookup));
         history.Execute(DeviceCommands.InsertDevice(keyed.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
         history.Execute(DeviceCommands.InsertDevice(keyed.Id, ducker, TestDevices.Lookup));
         var sidechain = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
-        history.Execute(RoutingCommands.Connect(sidechain, TestDevices.Lookup));
-        var group = Track.Create("group", TrackRole.Group);
-        history.Execute(new ProjectCommand("group", p => p with { Sequence = p.Sequence.WithTrack(group) }));
+        history.Execute(RoutingCommands.Connect(sidechain with { AudioPurpose = AudioRoutePurpose.Internal }, TestDevices.Lookup));
         history.Execute(GroupCommands.SetGroup(key.Id, group.Id, TestDevices.Lookup));
         Assert.Contains(history.Current.ParkedConnections, c => c.Id == sidechain.Id);
 
@@ -165,13 +200,21 @@ public sealed class ReplaceDeviceTests
         var keyed = Track.Create("keyed", TrackRole.Hybrid);
         var key = Track.Create("key", TrackRole.Hybrid);
         var ducker = TestDevices.Instance(TestDevices.Ducker);
-        var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key) });
+        var group = Track.Create("group", TrackRole.Group);
+        var history = new EditHistory(Project.CreateNew() with
+        {
+            Sequence = Project.CreateNew().Sequence.WithTrack(keyed).WithTrack(key).WithTrack(group),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(keyed.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(group.Id), SignalNode.Master),
+            ],
+        });
         history.Execute(DeviceCommands.InsertDevice(key.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
         history.Execute(DeviceCommands.InsertDevice(keyed.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
         history.Execute(DeviceCommands.InsertDevice(keyed.Id, ducker, TestDevices.Lookup));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), TestDevices.Lookup));
-        var group = Track.Create("group", TrackRole.Group);
-        history.Execute(new ProjectCommand("group", p => p with { Sequence = p.Sequence.WithTrack(group) }));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(key.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)) with { AudioPurpose = AudioRoutePurpose.Internal }, TestDevices.Lookup));
         history.Execute(GroupCommands.SetGroup(key.Id, group.Id, TestDevices.Lookup));
 
         history.Execute(ProjectCommands.DuplicateTracks([keyed.Id]));
@@ -192,9 +235,11 @@ public sealed class ReplaceDeviceTests
         var history = new EditHistory(Project.CreateNew() with { Sequence = Project.CreateNew().Sequence.WithTrack(keys).WithTrack(drums) });
         history.Execute(DeviceCommands.InsertDevice(drums.Id, TestDevices.Instance(TestDevices.Synth), TestDevices.Lookup));
         history.Execute(DeviceCommands.InsertDevice(keys.Id, TestDevices.Instance(TestDevices.MidiFx), TestDevices.Lookup));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id)), TestDevices.Lookup));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }, TestDevices.Lookup));
         var input = SignalNode.ChainInput(history.Current.ChainOf(keys.Id)!.Id);
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, input, SignalNode.Master), TestDevices.Lookup));
+        var channel = Bluestone.Domain.Mixing.MixerChannel.Create("Input tap");
+        history.Execute(RoutingCommands.AddMixerChannel(channel));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, input, SignalNode.Mixer(channel.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }, TestDevices.Lookup));
 
         history.Execute(ProjectCommands.DuplicateTracks([keys.Id], TestDevices.Lookup));
 
@@ -208,10 +253,11 @@ public sealed class ReplaceDeviceTests
     {
         var (history, track, fx, synth) = Chain();
         var eventsTap = SignalConnection.Create(SignalKind.Events, SignalNode.Device(fx.Id), SignalNode.Track(track));
-        var audioTap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Master);
+        var channel = Bluestone.Domain.Mixing.MixerChannel.Create("Device tap");
+        var audioTap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Mixer(channel.Id)) with { AudioPurpose = AudioRoutePurpose.Internal };
         var other = Track.Create("other", TrackRole.Hybrid);
         eventsTap = eventsTap with { Destination = SignalNode.Track(other.Id) };
-        history.Execute(new ProjectCommand("taps", p => p with { Sequence = p.Sequence.WithTrack(other), Connections = p.Connections.Add(eventsTap).Add(audioTap) }));
+        history.Execute(new ProjectCommand("taps", p => p with { Sequence = p.Sequence.WithTrack(other), Mixer = p.Mixer.With(channel), Connections = p.Connections.Add(eventsTap).Add(audioTap) }));
 
         // A note effect replaced by another keeps its events tap; the synth replaced by an audio effect keeps its audio tap.
         var newFx = TestDevices.Instance(TestDevices.MidiFx);

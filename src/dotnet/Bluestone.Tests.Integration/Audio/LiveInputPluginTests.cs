@@ -174,7 +174,7 @@ public sealed class LiveInputPluginTests
         var session = new ProjectSession();
         var clock = new VirtualClock(Origin);
         var a = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Keys", []);
-        var z = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Synth", []);
+        var z = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Synth", []).WithRole(TrackRole.Hybrid);
         var sine = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());
         var project = session.Project with
         {
@@ -275,7 +275,7 @@ public sealed class LiveInputPluginTests
         public static async Task<Rig> CreateAsync(PluginTestHost host, int transpose, DeviceInstance? arpeggiator = null)
         {
             var rig = new Rig();
-            var track = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Lead", []);
+            var track = Domain.Sequencing.Track.FromEvents(TrackId.New(), "Lead", []).WithRole(TrackRole.Hybrid);
             rig.Track = track.Id;
             rig.Effect = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Transpose).ToReference()).WithParameter(new ParameterId(0), ControlValue.FromFraction(NormalizedFor(transpose)));
             var sine = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());

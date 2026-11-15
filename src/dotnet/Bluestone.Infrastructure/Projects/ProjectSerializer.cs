@@ -21,7 +21,7 @@ namespace Bluestone.Infrastructure.Projects;
 public sealed class ProjectSerializer
 {
     public const string FormatName = "bluestone-project";
-    public const int CurrentFormatVersion = 5;
+    public const int CurrentFormatVersion = 6;
     public const int MaxBytes = 256 * 1024 * 1024;
 
     private const int MaxTracks = 4096;
@@ -37,7 +37,7 @@ public sealed class ProjectSerializer
     private readonly Dictionary<int, IProjectMigration> _migrations;
 
     public ProjectSerializer()
-        : this(CurrentFormatVersion, [new Format2To3Migration(), new Format3To4Migration(), new Format4To5Migration()])
+        : this(CurrentFormatVersion, [new Format2To3Migration(), new Format3To4Migration(), new Format4To5Migration(), new Format5To6Migration()])
     {
     }
 
@@ -73,7 +73,18 @@ public sealed class ProjectSerializer
 
             WriteSequence(writer, project.Sequence);
             WriteRoutingModel(writer, project);
-            WriteMixer(writer, project.Mixer);
+            WriteAudioStrip(writer, "masterStrip", project.MasterStrip);
+            if (!project.MasterAutomation.IsEmpty)
+            {
+                writer.WriteStartArray("masterAutomation");
+                foreach (var lane in project.MasterAutomation)
+                {
+                    WriteLane(writer, lane);
+                }
+
+                writer.WriteEndArray();
+            }
+
             writer.WriteEndObject();
 
             foreach (var (name, value) in document.Preserved)
@@ -209,6 +220,11 @@ public sealed class ProjectSerializer
             writer.WriteBoolean("muted", track.IsMuted);
             writer.WriteBoolean("soloed", track.IsSoloed);
             writer.WriteString("role", RoleName(track.Role));
+            if (track.AudioStrip is { } audioStrip)
+            {
+                WriteAudioStrip(writer, "audioStrip", audioStrip);
+            }
+
             if (track.Group is { } group)
             {
                 writer.WriteString("group", group.Value.ToString("D"));
@@ -325,6 +341,10 @@ public sealed class ProjectSerializer
             AutomationParameter.ChannelPressure => "channelPressure",
             AutomationParameter.DeviceParameter => "device",
             AutomationParameter.InstrumentParameter => "instrument",
+            AutomationParameter.AudioStripGain => "audioStripGain",
+            AutomationParameter.AudioStripPan => "audioStripPan",
+            AutomationParameter.MasterGain => "masterGain",
+            AutomationParameter.MasterPan => "masterPan",
             _ => "controller",
         });
         if (target.IsMidi)
@@ -338,7 +358,7 @@ public sealed class ProjectSerializer
             writer.WriteNumber("channel", target.Channel.Number);
             writer.WriteString("parameter", target.InstrumentParameter);
         }
-        else
+        else if (target.IsDevice)
         {
             writer.WriteString("device", target.Device.Value.ToString("D"));
             writer.WriteNumber("parameter", target.DeviceParameter.Value);
@@ -503,6 +523,21 @@ public sealed class ProjectSerializer
         writer.WriteStartObject();
         writer.WriteString("id", connection.Id.Value.ToString("D"));
         writer.WriteString("kind", connection.Kind == SignalKind.Events ? "events" : "audio");
+        if (connection.Kind == SignalKind.Audio)
+        {
+            writer.WriteString("purpose", connection.AudioPurpose switch
+            {
+                AudioRoutePurpose.Output => "output",
+                AudioRoutePurpose.Send => "send",
+                _ => "internal",
+            });
+            if (connection.AudioPurpose == AudioRoutePurpose.Send)
+            {
+                writer.WriteNumber("sendLevel", connection.SendLevelDecibels);
+                writer.WriteBoolean("preFader", connection.SendPreFader);
+            }
+        }
+
         WriteNode(writer, "source", connection.Source);
         WriteNode(writer, "destination", connection.Destination);
         if (!connection.Mapping.IsPreserving)
@@ -563,6 +598,10 @@ public sealed class ProjectSerializer
         {
             writer.WriteString("type", "track");
             writer.WriteString("track", chain.Owner.Track.Value.ToString("D"));
+        }
+        else if (chain.Owner.Kind == ChainOwnerKind.Master)
+        {
+            writer.WriteString("type", "master");
         }
         else
         {
@@ -648,44 +687,13 @@ public sealed class ProjectSerializer
         writer.WriteEndObject();
     }
 
-    private static void WriteMixer(Utf8JsonWriter writer, Mixer mixer)
+    private static void WriteAudioStrip(Utf8JsonWriter writer, string propertyName, AudioStrip strip)
     {
-        writer.WriteStartObject("mixer");
-        writer.WriteNumber("masterGain", mixer.MasterGainDecibels);
-        writer.WriteStartArray("channels");
-        foreach (var channel in mixer.Channels)
-        {
-            writer.WriteStartObject();
-            writer.WriteString("id", channel.Id.Value.ToString("D"));
-            writer.WriteString("name", channel.Name);
-            writer.WriteNumber("gain", channel.GainDecibels);
-            writer.WriteNumber("pan", channel.Pan);
-            writer.WriteBoolean("muted", channel.IsMuted);
-            writer.WriteBoolean("soloed", channel.IsSoloed);
-            if (channel.Output is { } output)
-            {
-                writer.WriteString("output", output.Value.ToString("D"));
-            }
-
-            if (channel.Sends.Length > 0)
-            {
-                writer.WriteStartArray("sends");
-                foreach (var send in channel.Sends)
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("target", send.Target.Value.ToString("D"));
-                    writer.WriteNumber("level", send.LevelDecibels);
-                    writer.WriteBoolean("preFader", send.PreFader);
-                    writer.WriteEndObject();
-                }
-
-                writer.WriteEndArray();
-            }
-
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
+        writer.WriteStartObject(propertyName);
+        writer.WriteNumber("gain", strip.GainDecibels);
+        writer.WriteNumber("pan", strip.Pan);
+        writer.WriteBoolean("muted", strip.IsMuted);
+        writer.WriteBoolean("soloed", strip.IsSoloed);
         writer.WriteEndObject();
     }
 
@@ -759,7 +767,13 @@ public sealed class ProjectSerializer
             throw new ProjectFormatException($"{path}.parkedConnections", $"connection {twice.Id} is also in connections.");
         }
 
-        var mixer = ReadMixer(Object(json, "mixer", path), $"{path}.mixer");
+        var masterStrip = ReadAudioStrip(Object(json, "masterStrip", path), $"{path}.masterStrip");
+        var masterPointCount = 0;
+        var masterAutomation = json["masterAutomation"] is null
+            ? []
+            : Array(json, "masterAutomation", path, Track.MaxAutomationLanes)
+                .Select((node, i) => ReadLane(Object(node, $"{path}.masterAutomation[{i}]"), $"{path}.masterAutomation[{i}]", ref masterPointCount))
+                .ToList();
         return Guard($"{path}", () => new Project
         {
             Id = new ProjectId(Guid(json, "id", path)),
@@ -769,7 +783,8 @@ public sealed class ProjectSerializer
             Chains = [.. chains],
             Connections = [.. connections],
             ParkedConnections = [.. parked],
-            Mixer = mixer,
+            MasterStrip = masterStrip,
+            MasterAutomation = [.. masterAutomation],
             Loop = loop,
         });
     }
@@ -839,7 +854,10 @@ public sealed class ProjectSerializer
         };
         TrackId? group = json["group"] is null ? null : new TrackId(Guid(json, "group", path));
         var folded = Bool(json, "folded", path, false);
-        var track = Guard($"{path}.clips", () => new Track(id, name, clips, muted, soloed, role: role, group: group, isFolded: folded));
+        var audioStrip = OptionalObject(json, "audioStrip", path) is { } strip
+            ? ReadAudioStrip(strip, $"{path}.audioStrip")
+            : null;
+        var track = Guard($"{path}.clips", () => new Track(id, name, clips, muted, soloed, role: role, group: group, isFolded: folded, audioStrip: audioStrip));
         return Guard($"{path}.automation", () => track.WithAutomation(lanes));
     }
 
@@ -901,6 +919,10 @@ public sealed class ProjectSerializer
             "pitchBend" => AutomationTarget.ForPitchBend(Channel(target, at)),
             "channelPressure" => AutomationTarget.ForChannelPressure(Channel(target, at)),
             "device" => Guard(at, () => AutomationTarget.ForDevice(new DeviceId(Guid(target, "device", at)), new ParameterId((uint)Long(target, "parameter", at, 0, uint.MaxValue)))),
+            "audioStripGain" => AutomationTarget.ForAudioStripGain(),
+            "audioStripPan" => AutomationTarget.ForAudioStripPan(),
+            "masterGain" => AutomationTarget.ForMasterGain(),
+            "masterPan" => AutomationTarget.ForMasterPan(),
             "instrument" => Guard(at, () => AutomationTarget.ForInstrument(
                 new ExternalInstrumentId(Guid(target, "instrument", at)),
                 String(target, "port", at, AutomationTarget.MaxKeyLength),
@@ -1026,6 +1048,7 @@ public sealed class ProjectSerializer
         var owner = String(ownerJson, "type", at, 16) switch
         {
             "track" => ChainOwner.ForTrack(new TrackId(Guid(ownerJson, "track", at))),
+            "master" => ChainOwner.Master,
             "rack" => ChainOwner.Rack,
             var other => throw new ProjectFormatException($"{at}.type", $"\"{other}\" is not a known chain owner."),
         };
@@ -1119,6 +1142,17 @@ public sealed class ProjectSerializer
         {
             Id = new ConnectionId(Guid(json, "id", path)),
             Kind = kind,
+            AudioPurpose = kind == SignalKind.Audio ? String(json, "purpose", path, 16) switch
+            {
+                "output" => AudioRoutePurpose.Output,
+                "send" => AudioRoutePurpose.Send,
+                "internal" => AudioRoutePurpose.Internal,
+                var other => throw new ProjectFormatException($"{path}.purpose", $"\"{other}\" is not a known audio route purpose."),
+            } : AudioRoutePurpose.Output,
+            SendLevelDecibels = kind == SignalKind.Audio && String(json, "purpose", path, 16) == "send"
+                ? Double(json, "sendLevel", path, AudioStrip.MinGainDecibels, AudioStrip.MaxGainDecibels)
+                : 0,
+            SendPreFader = kind == SignalKind.Audio && String(json, "purpose", path, 16) == "send" && Bool(json, "preFader", path, false),
             Source = ReadNode(Object(json, "source", path), $"{path}.source"),
             Destination = ReadNode(Object(json, "destination", path), $"{path}.destination"),
             Mapping = mapping,
@@ -1148,35 +1182,15 @@ public sealed class ProjectSerializer
         };
     }
 
-    private static Mixer ReadMixer(JsonObject json, string path)
+    private static AudioStrip ReadAudioStrip(JsonObject json, string path)
     {
-        var channels = Array(json, "channels", path, Mixer.MaxChannels).Select((node, i) =>
+        return Guard(path, () => new AudioStrip
         {
-            var at = $"{path}.channels[{i}]";
-            var item = Object(node, at);
-            var sends = item["sends"] is null ? [] : Array(item, "sends", at, MixerChannel.MaxSends).Select((sendNode, j) =>
-            {
-                var sendAt = $"{at}.sends[{j}]";
-                var send = Object(sendNode, sendAt);
-                return Guard(sendAt, () => new MixerSend(
-                    new MixerChannelId(Guid(send, "target", sendAt)),
-                    Double(send, "level", sendAt, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels),
-                    Bool(send, "preFader", sendAt, false)));
-            }).ToList();
-            return Guard(at, () => new MixerChannel
-            {
-                Id = new MixerChannelId(Guid(item, "id", at)),
-                Name = String(item, "name", at, MixerChannel.MaxNameLength),
-                GainDecibels = Double(item, "gain", at, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels),
-                Pan = Double(item, "pan", at, -1, 1),
-                IsMuted = Bool(item, "muted", at, false),
-                IsSoloed = Bool(item, "soloed", at, false),
-                Output = item["output"] is null ? null : new MixerChannelId(Guid(item, "output", at)),
-                Sends = [.. sends],
-            });
-        }).ToList();
-        var master = Double(json, "masterGain", path, MixerChannel.MinGainDecibels, MixerChannel.MaxGainDecibels);
-        return Guard(path, () => new Mixer { Channels = [.. channels], MasterGainDecibels = master });
+            GainDecibels = Double(json, "gain", path, AudioStrip.MinGainDecibels, AudioStrip.MaxGainDecibels),
+            Pan = Double(json, "pan", path, -1, 1),
+            IsMuted = Bool(json, "muted", path, false),
+            IsSoloed = Bool(json, "soloed", path, false),
+        });
     }
 
     /// <summary>Converts domain validation failures into format errors at <paramref name="path"/>.</summary>

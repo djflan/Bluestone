@@ -5,8 +5,9 @@ rules. Product positioning belongs in [product-vision.md](product-vision.md); pr
 [roadmap.md](roadmap.md); ordered delivery work belongs in [release-1.0.md](release-1.0.md).
 
 Bluestone models music and musical intent. Tracks organize music, clips contain it (notes or audio),
-devices process signals in chains, automation targets device and instrument parameters, and one list
-of connections routes signals to other tracks, shared racks, external instruments, and mixer channels.
+devices process signals in chains, automation targets device, instrument, and audio-strip parameters,
+and one list of connections routes signals to other tracks, shared racks, external instruments, and
+the track-owned audio strips and Master.
 An audio engine plays audio clips, plugin instruments and effects, and the mixer; third-party plugins
 run in separate worker processes. On macOS by default, and elsewhere with `BLUESTONE_ENGINE=1`, MIDI
 playback, endpoints, live input, audio, and the plugin data plane run in a separate engine process
@@ -154,7 +155,7 @@ and Linux; separate tests check the macOS menu's items, gestures, and Window men
 | How processed events reach the plan | `Bluestone.Signal/SignalGraph.cs`, then `Bluestone.Application/Routing/PlaybackRouting.cs` |
 | An edit to chains, connections, instruments, the mixer, or roles | `Bluestone.Application/Editing` (`DeviceCommands`, `RoutingCommands`, `TrackRoleCommands`) |
 | Group tracks: membership, mute and solo, folding | `Bluestone.Domain/Sequencing/GroupTracks.cs`; edits in `Bluestone.Application/Editing/GroupCommands.cs` |
-| A mixer concept (channels, outputs, sends) | `Bluestone.Domain/Mixing/Mixer.cs`; edits in `RoutingCommands`; strips and meters in `Bluestone.Audio/MixerStrip.cs` |
+| Track/Master audio-strip state and audio route purposes | `Bluestone.Domain/Mixing/Mixer.cs` and `Routing/SignalConnection.cs`; edits in `AudioStripCommands.cs` and `RoutingCommands.cs`; strip processing and meters in `Bluestone.Audio` |
 | Audio processing on the real-time path (a node, metering, decoding, resampling, delay compensation) | `Bluestone.Audio` |
 | How a project becomes audio (clips, chains, connections, mixer) | `Bluestone.Application/Audio/ProjectAudioGraph.cs`; the device and engine lifecycle in `AudioPlayback.cs` (in process) or `Bluestone.Engine/AudioHost.cs` with `Bluestone.Application/Engine/EngineAudio.cs` (engine process), both behind `IAudioPlayback` |
 | Audio device access (a backend, a stream setting) | `src/native/crates/bluestone_audio` (Rust), its C ABI in `Bluestone.Audio/Devices/NativeMethods.cs` |
@@ -339,7 +340,8 @@ Project
   ├── racks             free-standing chains that several tracks route into (one instrument instance)
   ├── instruments       external MIDI instruments: profile, operating mode, ports → endpoints
   ├── connections       the one routing model: events or audio, source → destination, channel mapping
-  └── mixer             channels with outputs and sends, and the master, independent of tracks
+  ├── track audio strips  gain, pan, audio mute/solo, fader automation
+  └── Master              mandatory project strip, optional chain, fader/pan/device automation
 ```
 
 ### Tracks and clips
@@ -390,11 +392,13 @@ templates without identities: loading one creates new devices.
 
 ### Routing
 
-Every route is a `SignalConnection` in the project's one list (ADR 0023). A connection starts at a
+Every route is a `SignalConnection` in the project's one list (ADRs 0023 and 0050). A connection starts at a
 junction of a chain (ADR 0037): its input before the first device, the point after one device (a tap), or its
-output (the track's or rack's). It ends at a track or rack, an input port of a device inside a chain (a receiver or a
-sidechain), a part of an external instrument (port plus channel), a mixer channel, or the master. A
-connection's `ChannelMapping` filters, forces, or remaps channels; clips are never changed to reach a
+output (the track's or rack's). It ends at a track or rack, a chain input, an input port of a device inside a chain
+(a receiver or sidechain), a part of an external instrument (port plus channel), or the Master. Audio routes state their purpose:
+`Output` sends a strip to Master or its parent Group; `Send` copies audio to an Effect track, before or after
+the source strip's fader and pan; `Internal` expresses advanced device-tap, receiver, or sidechain routes.
+Event connections keep their existing meaning. A connection's `ChannelMapping` filters, forces, or remaps channels; clips are never changed to reach a
 different part. Validation rejects connections that cannot work and every feedback loop. The track
 inspector's External MIDI fields (Output, Profile, Channel, Transpose, Voice) are a view of this model
 (`TrackOutputs`), and so is its **Audio to** (a track's primary audio output, ADR 0038), so the inspector,
@@ -403,11 +407,13 @@ gets an instrument while its sound goes nowhere, is given an explicit audio conn
 (`TrackSetup`, ADR 0038).
 
 ```text
-Piano ───┐                                          ┌──► Hardware synth port A, ch 1..16
-Strings ─┼──► rack "Keys" [Synth → Delay] ──audio──► mixer "Keys" ──► master
+Piano ───┐
+Strings ─┼──► rack "Keys" [Synth → Delay] ──audio──► track "Keys" [strip] ──Output──► Master
 Bass ────┘
 Lead ──► [Arpeggiator → Transpose] ──► Hardware synth port B, ch 4
                  └── tap ──► track "Harmony"
+Drums ──Output──► Group "Band" ──Output──► Master
+Drums ──Send──► Effect "Room" ──Output──► Master
 ```
 
 In the app, the Device View (ADR 0036) edits the selected track's chain, or a rack's chain after
@@ -417,19 +423,46 @@ same merge key within a second (a slider drag) are one undo step.
 
 ### Mixer
 
-Mixer channels are audio paths, independent of tracks. A channel has gain, pan, mute, and solo, an
-output (the master, or another channel as a bus), and sends: a copy of its audio to another channel at
-a level, taken before or after the fader and pan (ADR 0032). A channel that receives sends is shown as a
-return. An edit that would close a loop of outputs and sends is refused; one read from a file is reported
-and left out of the audio graph. Channels are heard while audio runs.
+Every arrangement track owns its mixer row and stable strip state; there is no separate mixer-channel
+entity. Audio-capable Audio, Hybrid, Effect, and Group tracks have a fader, pan, audio mute/solo,
+automation, and a post-strip meter. MIDI-only hardware tracks remain visible with their MIDI
+destination/status but have no audio controls or audio meter. The always-present project Master is
+not an arrangement track: it owns its fader, pan, mute/solo, meter, automation, and optional device
+chain, and stays at the console's right edge.
 
-The inspector's Mixer section edits channels, their outputs, and the master gain. The mixer console
-(File ▸ Mixer…, or Window ▸ Mixer on macOS) shows the same `MixerViewModel` as one strip per channel and
-the master: name, what feeds it (and whether it is a group's, a bus, or a return), output, sends (level,
-pre or post fader), pan, fader, mute, solo, and a peak and RMS meter with a two-second peak hold and a
-clip light. The meters are read from the engine's lock-free meters on a 30 Hz UI timer without
-allocating. The inspector's Audio Clip section edits the selected audio clip's gain and fades; the
-arrangement draws the fades.
+An ungrouped track's `Output` goes to Master; a grouped member's goes to its parent Group. A Group
+sums its direct members into its chain, then applies its strip and routes to its parent or Master.
+`Send` routes target Effect tracks only; sends sum at the Effect chain input, the chain runs once,
+then the Effect strip applies before its ordinary output. Sends tap before or after the source fader
+and pan. `Internal` routes are reserved for explicit junction/device-input connections and do not
+become strip outputs or sends. The Master sums ungrouped track and top-level Group outputs, processes
+Master devices in chain order, then applies Master fader and pan before final output. Routing validation
+checks output, send, and internal audio edges together for cycles.
+
+The mixer console can be docked in the main window, collapsed to its workspace rail, or detached to a
+window. Selecting a track strip follows track selection in the arranger and Inspector. Master is
+independently selectable; selecting it leaves no arrangement track selected and puts Master gain, pan,
+mute, solo, and chain in the Inspector. Selecting a track restores that track's Inspector scope. The
+strip controls edit the same saved state and route graph as the Inspector.
+
+Mixer-strip and Master meters default to **Peak + RMS**: post-fader peak hold falls at 20 dB/s and
+RMS uses a 300 ms time constant. The console also offers **VU** (average-rectified level with 300 ms
+ballistics; app-local reference from −36 to 0 dBFS, default −18 dBFS), **K-20**, **K-14**, **K-12**
+digital scales with their 0 references at −20, −14, and −12 dBFS, and ungated **LUFS-S** (standard
+stereo channel weighting over the trailing three seconds of K-weighted energy). K-System references
+are digital scales, not room calibration; VU reference is not acoustic SPL calibration. LUFS-S shows
+a warming-up/not-ready state until three seconds of valid samples have accumulated and after a
+discontinuity. Each strip draws one LED-segment meter with the shared `SignalIndicatorRenderer`; the
+mode changes its scale and ballistics, not the meter count. Meter mode and VU reference are saved in
+application-local settings, not the project; they do not change Device View junction meters. The
+former Bar/Round presentation setting was removed; older settings files still load. A focused BenchmarkDotNet
+ShortRun covered warmed 128-frame Peak+RMS/VU/LUFS-S processing and build/preparation/reused-snapshot
+cases; it reported no managed render allocation. Three iterations had wide intervals and synthetic
+fan-out, so it does not measure device/plugin callbacks or establish an xrun, deadline, or performance
+bound (ADR 0050).
+
+The inspector's Audio Clip section edits the selected audio clip's gain and fades; the arrangement
+draws the fades.
 
 ### From project to plan
 
@@ -445,9 +478,9 @@ same bytes (`Format3EquivalenceTests`). The real-time engine plays the plan (ADR
 
 ### From project to audio
 
-`ProjectAudioGraph` turns the project into a render graph (ADR 0032): audio clips, plugin instruments and
-effects in chain order, audio connections into mixer channels, buses, the master, and other chains, and
-the mixer's gains, pans, mutes, solos, and sends. Node and strip state live across rebuilds, so an edit
+`ProjectAudioGraph` turns the project into a render graph (ADRs 0032 and 0050): audio clips, plugin
+instruments and effects in chain order, explicit Output/Send/Internal routes, track-owned strips,
+Groups, and the mandatory Master chain and strip. Node and strip state live across rebuilds, so an edit
 while playing does not restart a clip's stream, lose a plugin's notes, or reset a meter. `AudioEngine`
 renders the graph in fixed 256-frame blocks; in the default buffered mode a .NET thread renders ahead into
 a ring that the Rust device callback only copies from. The MIDI playback engine is the one transport the
@@ -461,13 +494,14 @@ Bluestone describes the graph (`ProjectAudioGraph.Describe`) for the stream the 
 over as an `AudioGraphImage` file, with each plugin instance's block exchange; the engine realizes it off
 the real-time thread and attaches to the exchanges of workers that Bluestone still supervises
 (`AttachedPluginInstance`). `EngineAudio` mirrors the device's state, meters, and figures. The Audio
-window and the mixer read either through `IAudioPlayback`.
+window and the mixer read either through `IAudioPlayback`. The engine control channel is protocol 12;
+protocol-11 Engine binaries are incompatible, and the version handshake rejects a mismatched Engine.
 
 ### Delay compensation
 
 Every path through the render graph is delay-compensated (ADR 0035). A node's output lags by its own
 latency (for a plugin, its pipelining plus the plugin's reported latency; 0 for clips) plus its slowest
-input's. At every summing point (a node's input, a mixer channel, the master, through outputs and sends)
+input's. At every summing point (a node's input, a track/Group/Effect strip, the Master, through outputs and sends)
 faster arrivals are delayed to match, by delay lines kept across graph rebuilds. The engine renders the
 master's latency ahead of the transport, so audio, plugin instruments, and external MIDI line up. A plugin
 that reports a new latency gets the graph rebuilt. With low-latency monitoring (Audio Settings), the
@@ -688,7 +722,7 @@ Not built. The product roadmap decides priority; this list records architectural
 | Tracks hold clips; note clips, audio clips, and automation lanes | ADR 0020 |
 | Track roles are stored and reconciled; conversions never discard | ADR 0021 |
 | Device chains with stable identities; passthrough by event class | ADR 0022 |
-| One routing model of connections; external instruments and mixer channels are entities | ADR 0023 (supersedes 0008) |
+| One routing model of connections; external instruments are entities; pre-format-6 mixer channels | ADR 0023 (superseded for mixer ownership by ADR 0050) |
 | Device automation targets parameters, separate from signal flow | ADR 0024 |
 | Plugins run out of process; isolation is not a sandbox | ADR 0025 |
 | C# first; Rust only for measured or native-interface needs | ADR 0026 |
@@ -703,10 +737,11 @@ Not built. The product roadmap decides priority; this list records architectural
 | A semantic workspace; Device Views own presentation, the project owns devices; layout is local state | ADR 0036 |
 | A chain carries notes, events, and audio in parallel; instruments pass notes on and layer | ADR 0037 |
 | New tracks are hybrid and heard through explicit connections; Settings takes the workspace's place | ADR 0038 |
-| Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; project format 5 | ADR 0039 |
+| Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; introduced in project format 5 | ADR 0039 |
 | Floating plugin editors follow the selection, can be pinned, and can send their keys to Bluestone | ADR 0040 |
 | Bluestone is a device-centric production DAW; routing depth is progressively disclosed | ADR 0041 |
 | Bluestone alone, with plugins, with hardware, or any mix is a complete studio with the same timing guarantees | ADR 0042 |
+| Track-owned strips, routable Effect tracks, Master processing, and format 6 | ADR 0050 |
 
 ## Native technology
 

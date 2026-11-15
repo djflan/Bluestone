@@ -1,7 +1,10 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using Bluestone.Domain.Devices;
+using Bluestone.Domain.Midi;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Sequencing;
+using Bluestone.Domain.Time;
 using Bluestone.Infrastructure.Projects;
 using CsCheck;
 
@@ -26,6 +29,24 @@ public sealed class ProjectSerializerTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesMasterDeviceAutomationForAnUnavailableDeviceDefinition()
+    {
+        var device = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("vst3:unavailable"), "Unavailable", "1"));
+        var target = AutomationTarget.ForDevice(device.Id, new ParameterId(17));
+        var lane = new AutomationLane(AutomationLaneId.New(), target, [new AutomationPoint(Tick.Zero, ControlValue.FromFraction(0.42))]);
+        var master = DeviceChain.Create(ChainOwner.Master) with { Devices = [device] };
+        var project = Project.CreateNew() with { MasterAutomation = [lane] };
+        project = project.WithChain(master);
+
+        var restored = Serializer.Deserialize(Serializer.Serialize(new ProjectDocument(project))).Project;
+
+        var restoredLane = Assert.Single(restored.MasterAutomation);
+        Assert.Equal(lane.Id, restoredLane.Id);
+        Assert.Equal(target, restoredLane.Target);
+        Assert.Equal(lane.Points, restoredLane.Points);
+    }
+
+    [Fact]
     public void Serialize_IsDeterministicAndHumanReadable()
     {
         var document = new ProjectDocument(ProjectSamples.Full());
@@ -34,7 +55,7 @@ public sealed class ProjectSerializerTests
         var text = Encoding.UTF8.GetString(first);
 
         Assert.Equal(first, Serializer.Serialize(document));
-        Assert.StartsWith("{\n  \"format\": \"bluestone-project\",\n  \"formatVersion\": 5,", text, StringComparison.Ordinal);
+        Assert.StartsWith("{\n  \"format\": \"bluestone-project\",\n  \"formatVersion\": 6,", text, StringComparison.Ordinal);
         Assert.Contains("\"bytes\": \"F0 43 10 4C 00 00 7E 00 F7\"", text, StringComparison.Ordinal);
         Assert.Contains("\"channel\": 2", text, StringComparison.Ordinal);
         Assert.EndsWith("}\n", text, StringComparison.Ordinal);
@@ -135,8 +156,8 @@ public sealed class ProjectSerializerTests
     [InlineData("$.project.connections[1].mapping.remap[0].to", "0")]
     [InlineData("$.project.connections[0].source.type", "\"bus\"")]
     [InlineData("$.project.connections[0].kind", "\"light\"")]
-    [InlineData("$.project.mixer.channels[0].gain", "99")]
-    [InlineData("$.project.mixer.masterGain", "\"loud\"")]
+    [InlineData("$.project.sequence.tracks[1].audioStrip.gain", "99")]
+    [InlineData("$.project.masterStrip.gain", "\"loud\"")]
     [InlineData("$.project.loop.end", "0")]
     public void InvalidValues_AreReportedWithTheirPath(string path, string replacement)
     {

@@ -1,7 +1,6 @@
 using Bluestone.Application.Editing;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
-using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
@@ -86,9 +85,10 @@ public sealed class GroupCommandsTests
     }
 
     [Fact]
-    public void Leaving_LeavesOutAParkedOutputThatNoLongerWorks()
+    public void Leaving_KeepsAnUnrestorableOutputParkedWithoutReroutingIt()
     {
         var (history, bass, _, band, mu2000) = Band();
+        var original = From(history.Current, bass).Single();
         history.Execute(GroupCommands.SetGroup(bass.Id, band.Id, Definitions));
         history.Execute(new ProjectCommand("Remove the MU2000", p => p with
         {
@@ -99,7 +99,9 @@ public sealed class GroupCommandsTests
         history.Execute(GroupCommands.SetGroup(bass.Id, null, Definitions));
 
         Assert.Empty(From(history.Current, bass));
-        Assert.Empty(history.Current.ParkedConnections);
+        Assert.Equal<SignalConnection>([original], history.Current.ParkedConnections);
+        Assert.Empty(history.Current.ConnectionsTo(SignalNode.Master));
+        Assert.Empty(history.Current.ConnectionsTo(SignalNode.Track(band.Id)));
         Assert.DoesNotContain(history.Current.Instruments, i => i.Id == mu2000.Id);
     }
 
@@ -160,14 +162,16 @@ public sealed class GroupCommandsTests
         Assert.Equal(["Band", "Rhythm", "Bass", "Keys"], project.Sequence.Tracks.Select(t => t.Name));
         Assert.Equal(TrackRole.Group, project.Sequence.FindTrack(group)!.Role);
         Assert.All([bass, keys], t => Assert.Equal(group, project.Sequence.FindTrack(t.Id)!.Group));
-        Assert.Equal(SignalNode.ExternalPart(mu2000.Id), project.ConnectionsFrom(SignalNode.Track(group)).Single().Destination);
+        Assert.Equal(
+            SignalNode.ExternalPart(mu2000.Id),
+            project.ConnectionsFrom(SignalNode.Track(group)).Single(connection => connection.Kind == SignalKind.Events).Destination);
         Assert.Equal([(40, 1), (60, 2)], sentBefore);
         Assert.Equal(sentBefore, Sent(project));
         Assert.Equal("Group Tracks", history.UndoLabel);
     }
 
     [Fact]
-    public void CreateGroup_LeavesTheGroupUnrouted_WhenTheMembersWentToDifferentPlaces()
+    public void CreateGroup_UsesMasterOutput_WhenTheMembersWentToDifferentPlaces()
     {
         var (history, bass, keys, _, _) = Band();
         var jv = ExternalInstrument.Create("JV-1080", new EndpointReference("test", "jv", "JV-1080"));
@@ -178,7 +182,12 @@ public sealed class GroupCommandsTests
 
         history.Execute(GroupCommands.CreateGroup(group, "Rhythm", [bass.Id, keys.Id], Definitions));
 
-        Assert.Empty(history.Current.ConnectionsFrom(SignalNode.Track(group)));
+        var groupConnections = history.Current.ConnectionsFrom(SignalNode.Track(group));
+        var output = Assert.Single(groupConnections, connection =>
+            connection.Kind == SignalKind.Audio && connection.AudioPurpose == AudioRoutePurpose.Output);
+        Assert.Equal(SignalNode.Master, output.Destination);
+        Assert.DoesNotContain(groupConnections, connection =>
+            connection.Kind == SignalKind.Audio && connection.AudioPurpose == AudioRoutePurpose.Send);
         Assert.Empty(Sent(history.Current));
     }
 
@@ -194,7 +203,9 @@ public sealed class GroupCommandsTests
         var project = history.Current;
         Assert.Equal(band.Id, project.Sequence.FindTrack(inner)!.Group);
         Assert.Equal(inner, project.Sequence.FindTrack(bass.Id)!.Group);
-        Assert.Equal(SignalNode.Track(band.Id), project.ConnectionsFrom(SignalNode.Track(inner)).Single().Destination);
+        Assert.Equal(
+            SignalNode.Track(band.Id),
+            project.ConnectionsFrom(SignalNode.Track(inner)).Single(connection => connection.Kind == SignalKind.Events).Destination);
     }
 
     [Fact]
@@ -255,12 +266,17 @@ public sealed class GroupCommandsTests
     [Fact]
     public void AnAudioTrack_JoinsWithAnAudioConnection()
     {
-        var (history, _, _, band, _) = Band();
+        var band = Track.Create("Band", TrackRole.Group);
         var vocals = Track.Create("Vocals", TrackRole.Audio);
-        var bus = MixerChannel.Create("Vocal bus");
-        history.Execute(ProjectCommands.AddTrack(vocals));
-        history.Execute(RoutingCommands.AddMixerChannel(bus));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocals.Id), SignalNode.Mixer(bus.Id)), Definitions));
+        var history = new EditHistory(Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(vocals).WithTrack(band),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocals.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(band.Id), SignalNode.Master),
+            ],
+        });
 
         history.Execute(GroupCommands.SetGroup(vocals.Id, band.Id, Definitions));
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Bluestone.Audio;
 using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Theme;
@@ -86,6 +87,29 @@ public sealed class EnumEqualsConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>Friendly labels for the mixer meter's global display mode.</summary>
+public sealed class MixerMeterModeLabelConverter : IValueConverter
+{
+    public static readonly MixerMeterModeLabelConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is MixerMeterMode mode
+            ? mode switch
+            {
+                MixerMeterMode.PeakRms => "Peak + RMS",
+                MixerMeterMode.Vu => "VU",
+                MixerMeterMode.K20 => "K-20",
+                MixerMeterMode.K14 => "K-14",
+                MixerMeterMode.K12 => "K-12",
+                MixerMeterMode.LufsS => "LUFS-S",
+                _ => "Peak + RMS",
+            }
+            : "Peak + RMS";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>A left margin of the given width, for indenting a group's members in the track list.</summary>
 public sealed class IndentConverter : IValueConverter
 {
@@ -153,6 +177,7 @@ public sealed class WorkspaceIconConverter : IValueConverter
         {
             WorkspaceViewKind.Inspector => "Icon.Inspector",
             WorkspaceViewKind.Browser => "Icon.Browser",
+            WorkspaceViewKind.Mixer => "Icon.Mixer",
             _ => "Icon.Devices",
         };
         return ThemeResources.Find(key);
@@ -170,4 +195,87 @@ public sealed class SettingsIconConverter : IValueConverter
         ThemeResources.Find(value is SettingsPage.Plugins ? "Icon.Plug" : "Icon.Speaker");
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>A track's colour index as its palette colour (not a brush), for drawn controls with a colour property.</summary>
+public sealed class TrackColorConverter : IValueConverter
+{
+    public static readonly TrackColorConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Palette.Track(value is int index ? index : 0);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>The mixer meter's unit for the console footer, so a gain setting (dB) is never read as a level.</summary>
+public sealed class MixerMeterUnitConverter : IValueConverter
+{
+    public static readonly MixerMeterUnitConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value switch
+        {
+            MixerMeterMode.Vu => "meter VU",
+            MixerMeterMode.K20 => "meter K-20 dB",
+            MixerMeterMode.K14 => "meter K-14 dB",
+            MixerMeterMode.K12 => "meter K-12 dB",
+            MixerMeterMode.LufsS => "meter LUFS",
+            _ => "meter dBFS",
+        };
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>True when a number is greater than the parameter, e.g. a name long enough to need the smaller, wrapping style.</summary>
+public sealed class GreaterThanConverter : IValueConverter
+{
+    public static readonly GreaterThanConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int number && parameter is string text && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) && number > limit;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// The one-line cue a folded mixer strip shows instead of its insert stack and sends: "2 devices · 1 send ›". Values are
+/// the insert count and, for a track strip, the send count and whether it has an audio strip (a MIDI-only strip has no
+/// sends); Master passes only its insert count.
+/// </summary>
+public sealed class MixerProcessingCueConverter : IMultiValueConverter
+{
+    public static readonly MixerProcessingCueConverter Instance = new();
+
+    public object Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var devices = values.Count > 0 && values[0] is int d ? d : 0;
+        var text = Count(devices, "device", "No");
+        if (values.Count > 1 && !(values.Count > 2 && values[2] is false))
+        {
+            text += " · " + Count(values[1] is int s ? s : 0, "send", "no");
+        }
+
+        return text + " ›";
+
+        static string Count(int count, string noun, string none) => count switch
+        {
+            0 => $"{none} {noun}s",
+            1 => $"1 {noun}",
+            _ => string.Create(CultureInfo.InvariantCulture, $"{count} {noun}s"),
+        };
+    }
+}
+
+/// <summary>
+/// A formatted level without its trailing unit ("-21.0 dB" to "-21.0"), for a cell too narrow for the unit; the unit
+/// stays in the control's tooltip and spoken value.
+/// </summary>
+public sealed class MixerUnitlessConverter : IValueConverter
+{
+    public static readonly MixerUnitlessConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is string text && text.LastIndexOf(' ') is var space and > 0 ? text[..space] : value;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }

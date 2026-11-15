@@ -14,6 +14,7 @@ public enum WorkspaceViewKind
     Inspector,
     Browser,
     DeviceView,
+    Mixer,
 }
 
 /// <summary>The semantic region a view belongs to (ADR 0036). Global chrome and the arranger are fixed; these regions host views.</summary>
@@ -43,7 +44,7 @@ public enum ViewPlacement
 }
 
 /// <summary>
-/// One view instance in the workspace: an inspector, the Browser, or one of several Device Views. It owns presentation only; the
+/// One view instance in the workspace: an inspector, the Browser, a Device View, or the Mixer. It owns presentation only; the
 /// content it shows belongs to the project or to the view model it wraps (ADR 0036).
 /// </summary>
 public sealed partial class WorkspaceView : ObservableObject
@@ -74,6 +75,8 @@ public sealed partial class WorkspaceView : ObservableObject
     public object? Content { get; }
 
     public DeviceViewViewModel? DeviceView => Content as DeviceViewViewModel;
+
+    public MixerConsoleViewModel? MixerConsole => Content as MixerConsoleViewModel;
 
     /// <summary>The inspector is tied to the main window; palettes and Device Views can have windows of their own.</summary>
     public bool CanDetach => Kind != WorkspaceViewKind.Inspector;
@@ -107,7 +110,7 @@ public sealed partial class WorkspaceView : ObservableObject
     /// </summary>
     public bool IsAwaitingDisplay { get; internal set; }
 
-    /// <summary>A docked Device View whose tab is the one showing in the detail region.</summary>
+    /// <summary>The selected docked detail view: a Device View or the Mixer.</summary>
     [ObservableProperty]
     public partial bool IsCurrentTab { get; internal set; }
 
@@ -169,6 +172,12 @@ public sealed partial class WorkspaceViewModel : ObservableObject
         _owner = owner;
         Inspector = Add(new WorkspaceView(this, "inspector", WorkspaceViewKind.Inspector, null) { Title = "Inspector", RailLabel = "Inspector" });
         Browser = Add(new WorkspaceView(this, "browser", WorkspaceViewKind.Browser, browser) { Title = "Browser", RailLabel = "Browser" });
+        Mixer = Add(new WorkspaceView(this, "mixer", WorkspaceViewKind.Mixer, owner.MixerConsole)
+        {
+            Title = "Mixer",
+            RailLabel = "Mixer",
+        });
+        Mixer.SetPlacement(ViewPlacement.Collapsed);
         var first = Add(CreateDeviceView(null));
         Retitle();
         ActiveDeviceView = first.DeviceView;
@@ -182,13 +191,15 @@ public sealed partial class WorkspaceViewModel : ObservableObject
 
     public WorkspaceView Browser { get; }
 
-    /// <summary>The left border rail: the inspector, and Device Views that are collapsed or detached.</summary>
+    public WorkspaceView Mixer { get; }
+
+    /// <summary>The left border rail: the inspector, Mixer, and Device Views that are collapsed or detached.</summary>
     public ObservableCollection<WorkspaceView> LeftRail { get; } = [];
 
     /// <summary>The right border rail: the Browser.</summary>
     public ObservableCollection<WorkspaceView> RightRail { get; } = [];
 
-    /// <summary>The Device Views docked in the detail region, shown as tabs beside the editors.</summary>
+    /// <summary>Device Views and the Mixer docked in the detail region, shown as tabs beside the editors.</summary>
     public ObservableCollection<WorkspaceView> DetailTabs { get; } = [];
 
     public IEnumerable<DeviceViewViewModel> DeviceViews => Views.Select(v => v.DeviceView).OfType<DeviceViewViewModel>();
@@ -238,7 +249,8 @@ public sealed partial class WorkspaceViewModel : ObservableObject
     {
         foreach (var view in Views)
         {
-            view.IsCurrentTab = view == DetailDeviceView && _owner.LowerPane == LowerPane.Devices;
+            view.IsCurrentTab = (view == DetailDeviceView && _owner.LowerPane == LowerPane.Devices)
+                || (view.Kind == WorkspaceViewKind.Mixer && _owner.LowerPane == LowerPane.Mixer);
         }
     }
 
@@ -374,6 +386,10 @@ public sealed partial class WorkspaceViewModel : ObservableObject
             Activate(deviceView);
             _owner.ShowDetail(LowerPane.Devices);
         }
+        else if (view.Kind == WorkspaceViewKind.Mixer)
+        {
+            _owner.ShowDetail(LowerPane.Mixer);
+        }
     }
 
     internal void Dock(WorkspaceView view)
@@ -480,6 +496,7 @@ public sealed partial class WorkspaceViewModel : ObservableObject
             {
                 WorkspaceViewKind.Inspector => Inspector,
                 WorkspaceViewKind.Browser => Browser,
+                WorkspaceViewKind.Mixer => Mixer,
                 _ => Add(CreateDeviceView(saved.Id)),
             };
             view.DetachedBounds = saved.DetachedBounds;
@@ -501,12 +518,17 @@ public sealed partial class WorkspaceViewModel : ObservableObject
             Add(CreateDeviceView(null));
         }
 
+        if (!state.Views.Any(view => view.Kind == WorkspaceViewKind.Mixer))
+        {
+            Mixer.SetPlacement(ViewPlacement.Collapsed);
+        }
+
         Retitle();
         ActiveDeviceView = DeviceViews.FirstOrDefault(v => v.Id == state.ActiveDeviceView) ?? DeviceViews.First();
         Refresh();
         _owner.IsInspectorVisible = Inspector.IsDocked;
         _owner.SyncDeviceViews();
-        _owner.LowerPane = state.DetailPane;
+        _owner.LowerPane = state.DetailPane == LowerPane.Mixer && !Mixer.IsDocked ? LowerPane.Devices : state.DetailPane;
         _owner.IsEditorVisible = state.IsDetailVisible;
     }
 
@@ -563,6 +585,11 @@ public sealed partial class WorkspaceViewModel : ObservableObject
         }
 
         view.SetPlacement(placement);
+        if (view.Kind == WorkspaceViewKind.Mixer && placement != ViewPlacement.Docked && !IsRestoring && _owner.LowerPane == LowerPane.Mixer)
+        {
+            _owner.LowerPane = LowerPane.Devices;
+        }
+
         if (view == Inspector)
         {
             _owner.IsInspectorVisible = placement == ViewPlacement.Docked;

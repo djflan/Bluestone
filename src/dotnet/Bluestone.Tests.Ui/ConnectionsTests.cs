@@ -2,10 +2,14 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
+using Bluestone.Application.Editing;
+using Bluestone.Application.Sessions;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
+using Bluestone.Domain.Sequencing;
 using Bluestone.Presentation;
+using Track = Bluestone.Domain.Sequencing.Track;
 
 namespace Bluestone.Tests.Ui;
 
@@ -85,5 +89,33 @@ public sealed class ConnectionsTests
         Assert.Equal(message.Text, app.Find<TextBlock>("LastMessage").Text);
         Assert.Equal("Track: Lead", app.ViewModel.Connections.Destination?.Name);
         app.SaveFrame("connection-refused");
+    });
+
+    [Fact]
+    public Task ConnectingToAnAudioReceiverInput_CreatesAnInternalAudioRoute() => HeadlessApp.RunAsync(async () =>
+    {
+        var definitions = Signal.DeviceCatalog.BuiltIn.Lookup;
+        var session = new ProjectSession();
+        var source = Track.Create("Source", TrackRole.Audio);
+        var receiver = Track.Create("Receiver", TrackRole.Audio);
+        session.Execute(TrackSetup.NewTrack(source, definitions));
+        session.Execute(TrackSetup.NewTrack(receiver, definitions));
+        var audioReceiver = DeviceInstance.Create(BuiltInDevices.AudioReceiver.ToReference());
+        session.Execute(DeviceCommands.InsertDevice(receiver.Id, audioReceiver, BuiltInDevices.Find));
+
+        await using var app = await AppUnderTest.OpenAsync(session);
+        TrackInspectorTests.SelectTrack(app, 0);
+        var section = app.Find<Expander>("ConnectionsSection");
+        Expand(app, section);
+        var input = SignalNode.DeviceInput(audioReceiver.Id, DeviceInputPort.Receive);
+
+        app.Choose(AppUnderTest.ComboNamed(section, "Connection destination"), destination =>
+            destination is DestinationOption { Node: var node } && node == input);
+        app.Click(AppUnderTest.Within<Button>(section, button => Equals(button.Content, "Connect")));
+
+        var connection = Assert.Single(app.Session.Project.Connections, candidate =>
+            candidate.Source == SignalNode.Track(source.Id) && candidate.Destination == input);
+        Assert.Equal(SignalKind.Audio, connection.Kind);
+        Assert.Equal(AudioRoutePurpose.Internal, connection.AudioPurpose);
     });
 }

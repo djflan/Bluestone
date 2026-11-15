@@ -53,7 +53,7 @@ public sealed partial class AudioClipViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsEqualPower { get; set; }
 
-    public string GainText => MixerChannelRow.FormatGain(Gain);
+    public string GainText => MixerConsoleViewModel.FormatGain(Gain);
 
     public string FadeInText => Beats(FadeIn);
 

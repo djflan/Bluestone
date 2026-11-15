@@ -1,5 +1,7 @@
+using System.Reflection;
 using Bluestone.Application.Audio;
 using Bluestone.Application.Sessions;
+using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
@@ -26,6 +28,61 @@ public sealed class AudioPlaybackRecoveryTests : IAsyncDisposable
         var session = new ProjectSession();
         _playback = new PlaybackController(session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
         _audio = new AudioPlayback(_playback, session, _ => null, backend: _backend, prepareFormat: Prepare, checkInterval: Timeout.InfiniteTimeSpan, clock: _clock);
+    }
+
+    [Fact]
+    public async Task SetMixerMeterSettings_DoesNotWaitForRebuild_AndAppliesLatestToCurrentAndFutureGraphs()
+    {
+        _backend.Devices.Add(Device("built-in", "Speakers", 48_000, isDefault: true));
+        Assert.True(_audio.Start(new AudioSettings(true)));
+
+        var gate = (Lock)typeof(AudioPlayback).GetField("_gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_audio)!;
+        using var rebuildEntered = new ManualResetEventSlim();
+        using var finishRebuild = new ManualResetEventSlim();
+        var rebuild = Task.Run(() =>
+        {
+            lock (gate)
+            {
+                rebuildEntered.Set();
+                finishRebuild.Wait(TestContext.Current.CancellationToken);
+            }
+        }, TestContext.Current.CancellationToken);
+
+        var returnedWhileRebuildHeldTheGate = false;
+        var first = new MixerMeterSettings(MixerMeterMode.Vu, -20);
+        var latest = new MixerMeterSettings(MixerMeterMode.K14, -24);
+        try
+        {
+            Assert.True(rebuildEntered.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            var updates = Task.Run(() =>
+            {
+                _audio.SetMixerMeterSettings(first);
+                _audio.SetMixerMeterSettings(latest);
+            }, TestContext.Current.CancellationToken);
+
+            returnedWhileRebuildHeldTheGate =
+                await Task.WhenAny(updates, Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)) == updates;
+            finishRebuild.Set();
+            await rebuild.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await updates.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            finishRebuild.Set();
+        }
+
+        Assert.True(returnedWhileRebuildHeldTheGate, "Meter-setting calls must return while a rebuild holds the playback gate.");
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (_audio.Graph?.Master.Meter.Settings != latest && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(latest, _audio.Graph!.Master.Meter.Settings);
+
+        _audio.Stop();
+        Assert.True(_audio.Start(new AudioSettings(true)));
+        Assert.Equal(latest, _audio.Graph!.Master.Meter.Settings);
     }
 
     public async ValueTask DisposeAsync()

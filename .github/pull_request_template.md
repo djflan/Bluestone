@@ -19,6 +19,7 @@
 - [ ] If Rust code changed: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` pass in `src/native/`
 - [ ] Tests do not require specific hardware, an audio device, or installed plugins (they skip with a reason)
 - [ ] Documentation and ADRs are updated where needed
+- [ ] Everything deferred or not built is listed in this PR and in `docs/engineering-handoff.md` ("Unresolved implementation backlog")
 - [ ] User-facing work was reviewed in the running app at relevant window sizes and scaling; keyboard and accessibility behavior was considered
 - [ ] Timing, latency, recording-placement, or export claims include reproducible measurements and configuration
 - [ ] Contributed data (profiles, samples) is redistributable and has provenance; no third-party plugins are committed

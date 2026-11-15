@@ -20,7 +20,7 @@ public sealed class SignalRoutingValidatorTests
             project = project.WithTrackChain(track).Connect(SignalKind.Events, SignalNode.Track(track.Id), SignalNode.Rack(xg.Id), ChannelMapping.ForceTo(MidiChannel.FromNumber(tracks.IndexOf(track) + 1)));
         }
 
-        project = project.Connect(SignalKind.Audio, SignalNode.Rack(xg.Id), SignalNode.Mixer(channel.Id));
+        project = project.Connect(SignalKind.Audio, SignalNode.Rack(xg.Id), SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal);
 
         Assert.Empty(project.Validate());
         Assert.Single(project.Chains, c => c.Devices.Any(d => d.Definition.Id == TestDevices.Synth.Id));
@@ -56,9 +56,11 @@ public sealed class SignalRoutingValidatorTests
     public void EventsCannotGoToTheMixer_AndAudioCannotGoToAMidiPort()
     {
         var piano = NoteTrack("Piano");
-        var project = Empty().WithTrackChain(piano, TestDevices.Synth).WithInstrument(out var mu).WithMixerChannel(out var channel, "Bus")
+        var audioPiano = piano.WithRole(TrackRole.Hybrid);
+        var project = Empty().WithTrackChain(audioPiano, TestDevices.Synth).WithInstrument(out var mu).WithMixerChannel(out var channel, "Bus")
             .Connect(SignalKind.Events, SignalNode.Track(piano.Id), SignalNode.Mixer(channel.Id))
-            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.ExternalPart(mu.Id));
+            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.ExternalPart(mu.Id), purpose: AudioRoutePurpose.Internal)
+            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.Master);
 
         Assert.All(project.Errors(), e => Assert.Equal(RoutingIssueCode.KindMismatch, e.Code));
         Assert.Equal(2, project.Errors().Count());
@@ -69,7 +71,7 @@ public sealed class SignalRoutingValidatorTests
     {
         var piano = NoteTrack("Piano");
         var project = Empty().WithTrackChain(piano).WithMixerChannel(out var channel, "Bus")
-            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.Mixer(channel.Id));
+            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal);
 
         var error = Assert.Single(project.Errors());
         Assert.Equal(RoutingIssueCode.NothingToCarry, error.Code);
@@ -85,8 +87,8 @@ public sealed class SignalRoutingValidatorTests
         var beforeSynth = SignalNode.Device(chain.Devices[0].Id);
         var afterSynth = SignalNode.Device(chain.Devices[1].Id);
 
-        Assert.Single(project.Connect(SignalKind.Audio, beforeSynth, SignalNode.Mixer(channel.Id)).Errors(), e => e.Code == RoutingIssueCode.NothingToCarry);
-        Assert.Empty(project.Connect(SignalKind.Audio, afterSynth, SignalNode.Mixer(channel.Id)).Errors());
+        Assert.Single(project.Connect(SignalKind.Audio, beforeSynth, SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal).Errors(), e => e.Code == RoutingIssueCode.NothingToCarry);
+        Assert.Empty(project.Connect(SignalKind.Audio, afterSynth, SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal).Errors());
     }
 
     [Fact]
@@ -140,7 +142,7 @@ public sealed class SignalRoutingValidatorTests
         var project = Empty().WithTrackChain(piano, TestDevices.Synth).WithMixerChannel(out var channel, "Bus");
         var chain = project.ChainOf(piano.Id)!;
         project = project.WithChain(chain.Replace(chain.Devices[0] with { IsBypassed = true }))
-            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.Mixer(channel.Id));
+            .Connect(SignalKind.Audio, SignalNode.Device(chain.Devices[0].Id), SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal);
 
         Assert.Equal(RoutingIssueCode.NothingToCarry, Assert.Single(project.Errors()).Code);
     }
@@ -152,7 +154,7 @@ public sealed class SignalRoutingValidatorTests
         var project = Empty().WithTrackChain(piano).WithMixerChannel(out var channel, "Bus");
         var missing = DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId("vst3:uninstalled"), "Vital"));
         project = project.WithChain(project.ChainOf(piano.Id)! with { Devices = [missing] })
-            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.Mixer(channel.Id));
+            .Connect(SignalKind.Audio, SignalNode.Track(piano.Id), SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal);
 
         Assert.Empty(project.Validate());
     }
@@ -304,7 +306,7 @@ public sealed class SignalRoutingValidatorTests
         var project = Empty().WithTrackChain(piano, TestDevices.MidiFx, TestDevices.Synth, TestDevices.Filter).WithMixerChannel(out var channel, "Bus");
         var chain = project.ChainOf(piano.Id)!;
         var filter = chain.Devices[2];
-        project = project.Connect(SignalKind.Audio, SignalNode.Device(filter.Id), SignalNode.Mixer(channel.Id));
+        project = project.Connect(SignalKind.Audio, SignalNode.Device(filter.Id), SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal);
         Assert.Empty(project.Validate());
 
         var moved = project.WithChain(chain.Move(filter.Id, 0));
@@ -341,11 +343,11 @@ public sealed class SignalRoutingValidatorTests
         // Notes reach the chain's input even though the instrument would end them at its output if it did not pass them on.
         var piano = NoteTrack("Piano");
         var other = NoteTrack("Other");
-        var project = Empty().WithTrackChain(piano, TestDevices.Synth).WithTrackChain(other);
+        var project = Empty().WithTrackChain(piano, TestDevices.Synth).WithTrackChain(other).WithMixerChannel(out var channel, "Input");
         var chain = project.ChainOf(piano.Id)!;
         project = project
             .Connect(SignalKind.Events, SignalNode.ChainInput(chain.Id), SignalNode.Track(other.Id))
-            .Connect(SignalKind.Audio, SignalNode.ChainInput(chain.Id), SignalNode.Master);
+            .Connect(SignalKind.Audio, SignalNode.ChainInput(chain.Id), SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal);
 
         var error = Assert.Single(project.Errors());
         Assert.Equal(RoutingIssueCode.NothingToCarry, error.Code);
@@ -370,13 +372,14 @@ public sealed class SignalRoutingValidatorTests
         var drums = NoteTrack("Drums", TrackRole.Hybrid);
         var bass = NoteTrack("Bass");
         var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(bass, TestDevices.Synth, TestDevices.Ducker);
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Master);
         var ducker = project.ChainOf(bass.Id)!.Devices[1];
         var sidechain = SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain);
 
-        Assert.Empty(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), sidechain).Validate());
+        Assert.Empty(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), sidechain, purpose: AudioRoutePurpose.Internal).Validate());
         Assert.Equal(RoutingIssueCode.KindMismatch, Assert.Single(project.Connect(SignalKind.Events, SignalNode.Track(drums.Id), sidechain).Errors()).Code);
-        Assert.Equal(RoutingIssueCode.UnknownPort, Assert.Single(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, "other")).Errors()).Code);
-        Assert.Equal(RoutingIssueCode.UnknownDestination, Assert.Single(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(DeviceId.New(), DeviceInputPort.Sidechain)).Errors()).Code);
+        Assert.Equal(RoutingIssueCode.UnknownPort, Assert.Single(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, "other"), purpose: AudioRoutePurpose.Internal).Errors()).Code);
+        Assert.Equal(RoutingIssueCode.UnknownDestination, Assert.Single(project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(DeviceId.New(), DeviceInputPort.Sidechain), purpose: AudioRoutePurpose.Internal).Errors()).Code);
     }
 
     [Fact]
@@ -385,8 +388,9 @@ public sealed class SignalRoutingValidatorTests
         var drums = NoteTrack("Drums", TrackRole.Hybrid);
         var bass = NoteTrack("Bass");
         var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(bass, TestDevices.Synth, TestDevices.Ducker);
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Master);
         var ducker = project.ChainOf(bass.Id)!.Devices[1];
-        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, "anything"));
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, "anything"), purpose: AudioRoutePurpose.Internal);
 
         Assert.DoesNotContain(project.Validate(id => id == TestDevices.Ducker.Id ? null : TestDevices.Lookup(id)), i => i.Severity == RoutingSeverity.Error);
     }
@@ -396,12 +400,13 @@ public sealed class SignalRoutingValidatorTests
     {
         var drums = NoteTrack("Drums", TrackRole.Hybrid);
         var keys = NoteTrack("Keys", TrackRole.Instrument);
-        var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(keys, TestDevices.MidiFx);
+        var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(keys, TestDevices.MidiFx).WithMixerChannel(out var channel, "Input");
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Master);
         var input = SignalNode.ChainInput(project.ChainOf(keys.Id)!.Id);
-        Assert.Equal(RoutingIssueCode.NothingToCarry, Assert.Single(project.Connect(SignalKind.Audio, input, SignalNode.Master).Errors()).Code);
+        Assert.Equal(RoutingIssueCode.NothingToCarry, Assert.Single(project.Connect(SignalKind.Audio, input, SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal).Errors()).Code);
 
-        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id));
-        Assert.Empty(project.Connect(SignalKind.Audio, input, SignalNode.Master).Errors());
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Track(keys.Id), purpose: AudioRoutePurpose.Internal);
+        Assert.Empty(project.Connect(SignalKind.Audio, input, SignalNode.Mixer(channel.Id), purpose: AudioRoutePurpose.Internal).Errors());
     }
 
     [Fact]
@@ -410,9 +415,10 @@ public sealed class SignalRoutingValidatorTests
         var drums = NoteTrack("Drums", TrackRole.Hybrid);
         var bass = NoteTrack("Bass");
         var project = Empty().WithTrackChain(drums, TestDevices.Synth).WithTrackChain(bass, TestDevices.Synth, TestDevices.Ducker);
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.Master);
         var ducker = project.ChainOf(bass.Id)!.Devices[1];
         project = project with { Sequence = project.Sequence.WithoutTrack(bass.Id) };
-        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain));
+        project = project.Connect(SignalKind.Audio, SignalNode.Track(drums.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain), purpose: AudioRoutePurpose.Internal);
 
         Assert.Equal(RoutingIssueCode.UnknownDestination, Assert.Single(project.Errors()).Code);
     }

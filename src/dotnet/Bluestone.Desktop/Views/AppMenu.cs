@@ -161,7 +161,7 @@ internal static class AppMenu
                     Item("Minimize", () => window.WindowState = WindowState.Minimized, Cmd(Key.M)),
                     Item("Zoom", () => window.WindowState = window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized),
                     new NativeMenuItemSeparator()),
-                Item("Mixer", new RelayCommand(window.ShowMixer)),
+                Item("Mixer", vm.Workspace.Mixer.ShowCommand),
                 Item("Plugins…", new RelayCommand(window.ShowPlugins)),
                 Item("Audio Settings…", new RelayCommand(window.ShowAudioSettings)),
             ]),

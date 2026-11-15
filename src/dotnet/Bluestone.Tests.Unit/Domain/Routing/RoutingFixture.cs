@@ -45,10 +45,10 @@ internal static class RoutingFixture
         return project with { Instruments = project.Instruments.Add(instrument) };
     }
 
-    public static Project Connect(this Project project, SignalKind kind, SignalNode source, SignalNode destination, ChannelMapping? mapping = null, VoiceAssignment? voice = null) =>
+    public static Project Connect(this Project project, SignalKind kind, SignalNode source, SignalNode destination, ChannelMapping? mapping = null, VoiceAssignment? voice = null, AudioRoutePurpose purpose = AudioRoutePurpose.Output) =>
         project with
         {
-            Connections = project.Connections.Add(SignalConnection.Create(kind, source, destination) with { Mapping = mapping ?? ChannelMapping.Preserve, Voice = voice }),
+            Connections = project.Connections.Add(SignalConnection.Create(kind, source, destination) with { Mapping = mapping ?? ChannelMapping.Preserve, Voice = voice, AudioPurpose = purpose }),
         };
 
     public static ImmutableArray<RoutingIssue> Validate(this Project project) => SignalRoutingValidator.Validate(project, TestDevices.Lookup);

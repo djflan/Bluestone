@@ -276,9 +276,13 @@ public partial class MainWindow : Window
             Control body = view.Kind switch
             {
                 WorkspaceViewKind.Browser => new BrowserView { DataContext = vm.Browser },
+                WorkspaceViewKind.Mixer => new MixerConsoleView { DataContext = vm.MixerConsole },
                 _ => new DeviceViewControl { DataContext = view.DeviceView },
             };
             var window = new ViewWindow(view, ViewWindow.Frame(view, body));
+            // The main window's key bindings are not on a detached window's key route; undo and redo must still work there.
+            window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, CommandModifier), Command = InWorkspace(vm.UndoCommand) });
+            window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, CommandModifier | KeyModifiers.Shift), Command = InWorkspace(vm.RedoCommand) });
             if (!Place(window, view, screens))
             {
                 window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -617,6 +621,12 @@ public partial class MainWindow : Window
         }
 
         vm.OnFrame();
+        if (vm.Workspace.Mixer.IsDetached
+            || (vm.IsEditorVisible && vm.LowerPane == LowerPane.Mixer && vm.Workspace.Mixer.IsDocked))
+        {
+            vm.MixerConsole.RefreshMeters(System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+
         var tick = vm.PlayheadTick;
         Playhead.X = Timeline.TickToX(tick);
         Ruler.PlayheadTick = tick;
@@ -694,6 +704,17 @@ public partial class MainWindow : Window
 
     /// <summary>The text field being edited, if any. Single-key shortcuts stand aside while one is focused.</summary>
     internal TextBox? FocusedTextBox() => FocusManager?.GetFocusedElement() as TextBox;
+
+    private bool IsValueControlFocused() =>
+        FocusManager?.GetFocusedElement() is Visual focused
+        && (focused is Controls.MixerValueControl or Controls.Knob
+            || focused.FindAncestorOfType<Controls.MixerValueControl>() is not null
+            || focused.FindAncestorOfType<Controls.Knob>() is not null);
+
+    private bool IsInsertNameFocused() =>
+        FocusManager?.GetFocusedElement() is Visual focused
+        && (focused as Button ?? focused.FindAncestorOfType<Button>()) is { DataContext: MixerInsertViewModel } button
+        && button.Classes.Contains("insertName");
 
     /// <summary>Select All: the text in a focused field, the notes in a focused editor, otherwise every track.</summary>
     internal void SelectAll()
@@ -984,6 +1005,20 @@ public partial class MainWindow : Window
             }
 
             e.Handled = true;
+            return;
+        }
+
+        // A focused fader, pan, or knob owns its value keys; the transport, selection, and Delete must not take them.
+        if (e.Key is Key.Home or Key.End or Key.Up or Key.Down or Key.Left or Key.Right or Key.PageUp or Key.PageDown or Key.Delete or Key.Back
+            && modifiers is KeyModifiers.None or KeyModifiers.Shift
+            && IsValueControlFocused())
+        {
+            return;
+        }
+
+        // A focused mixer insert name takes Space to turn its device on or off (MixerConsoleView.ToggleInsertPower).
+        if (e.Key == Key.Space && modifiers == KeyModifiers.None && IsInsertNameFocused())
+        {
             return;
         }
 

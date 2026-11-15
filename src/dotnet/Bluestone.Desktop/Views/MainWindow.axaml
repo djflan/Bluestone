@@ -57,6 +57,10 @@
                         ToolTip.Tip="Show or hide the Browser (Shift+B)" AutomationProperties.Name="Browser">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
           </ToggleButton>
+          <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
+                        ToolTip.Tip="Open the track mixer" AutomationProperties.Name="Mixer">
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" />
+          </ToggleButton>
           <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the detail region: devices and editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
             <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
           </ToggleButton>
@@ -592,6 +596,13 @@
               <TextBlock Classes="emptyTitle" Text="No Device View is docked here" />
               <Button Classes="raised compact" Content="New Device View" Command="{Binding Workspace.AddDeviceViewCommand}" HorizontalAlignment="Center" />
             </StackPanel>
+          </Panel>
+
+          <!-- Track-owned mixer. It is hosted here only while docked; detached hosting uses the same view in ViewWindow. -->
+          <Panel IsVisible="{Binding Workspace.Mixer.IsDocked}">
+            <Panel IsVisible="{Binding LowerPane, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Mixer}">
+              <views:MixerConsoleView DataContext="{Binding MixerConsole}" />
+            </Panel>
           </Panel>
 
           <!-- Piano roll -->

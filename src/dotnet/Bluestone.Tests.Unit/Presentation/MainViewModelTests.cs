@@ -239,6 +239,43 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DeletingAnEmptyEffectWithIncomingSend_RequiresConfirmation()
+    {
+        await ImportAsync();
+        var source = Track.Create("Send Source", TrackRole.Audio);
+        var effect = Track.Create("Empty Effect", TrackRole.Effect);
+        var send = SignalConnection.Create(
+            Bluestone.Domain.Devices.SignalKind.Audio,
+            SignalNode.Track(source.Id),
+            SignalNode.Track(effect.Id)) with
+        {
+            AudioPurpose = AudioRoutePurpose.Send,
+        };
+        _session.Execute(new Bluestone.Application.Editing.ProjectCommand("Add effect send", project => project with
+        {
+            Sequence = project.Sequence.WithTrack(source).WithTrack(effect),
+            Connections = project.Connections.Add(send),
+        }));
+        await Settle();
+        _vm.Select(_vm.Tracks.Single(track => track.Id == effect.Id));
+
+        _ui.ConfirmAnswer = false;
+        await _vm.DeleteTracksCommand.ExecuteAsync(null);
+
+        Assert.Contains("1 incoming send", _ui.LastConfirmMessage, StringComparison.Ordinal);
+        Assert.Contains("remove their incoming sends", _ui.LastConfirmMessage, StringComparison.Ordinal);
+        Assert.NotNull(_session.Project.Sequence.FindTrack(effect.Id));
+        Assert.Contains(send, _session.Project.Connections);
+
+        _ui.ConfirmAnswer = true;
+        await _vm.DeleteTracksCommand.ExecuteAsync(null);
+        await Settle();
+
+        Assert.Null(_session.Project.Sequence.FindTrack(effect.Id));
+        Assert.DoesNotContain(_session.Project.Connections, connection => connection.Id == send.Id);
+    }
+
+    [Fact]
     public async Task UnsavedChanges_CancelKeepsTheProject()
     {
         await ImportAsync();
@@ -987,7 +1024,6 @@ public sealed class MainViewModelTests : IAsyncLifetime
         _vm.Selection.Role = TrackRole.Hybrid;
         await Settle();
         Assert.Equal(TrackRole.Hybrid, _session.Project.Sequence.FindTrack(track.Id)!.Role);
-        Assert.Equal(TrackRole.Hybrid, track.Role);
     }
 
     [Fact]
@@ -1049,31 +1085,22 @@ public sealed class MainViewModelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MixerChannels_AreEdited_AFaderDragIsOneUndoStep_AndALoopIsRefused()
+    public async Task ImportedMidiTrackHasNoAudioStrip_AndMixerOpensAsAWorkspaceView()
     {
-        await ImportAsync();
-        _vm.Mixer.NewChannelCommand.Execute(null);
-        _vm.Mixer.NewChannelCommand.Execute(null);
-        await Settle();
-        var (first, second) = (_vm.Mixer.Channels[0], _vm.Mixer.Channels[1]);
+        var track = await ImportAsync();
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
 
-        first.Gain = -3;
-        first.Gain = -6;
-        first.Gain = -9;
-        await Settle();
-        Assert.Equal(-9, _session.Project.Mixer.Channels[0].GainDecibels);
-        _vm.UndoCommand.Execute(null);
-        await Settle();
-        Assert.Equal(0, _session.Project.Mixer.Channels[0].GainDecibels);
+        Assert.Equal(track.Id, row.Id);
+        Assert.False(row.HasAudioStrip);
+        Assert.False(row.CanChooseOutput);
+        Assert.NotNull(_vm.MixerConsole.Master);
 
-        first.Output = first.Outputs.Single(o => o.Name == "Channel 2");
-        await Settle();
-        second.Output = second.Outputs.Single(o => o.Name == "Channel 1");
+        _vm.Workspace.Mixer.ShowCommand.Execute(null);
         await Settle();
 
-        Assert.Null(_session.Project.Mixer.Channels[1].Output);
-        Assert.Equal("Master", _vm.Mixer.Channels[1].Output!.Name);
-        Assert.Contains(_vm.Messages, m => m.Text.Contains("feed back", StringComparison.Ordinal));
+        Assert.True(_vm.Workspace.Mixer.IsDocked);
+        Assert.Equal(LowerPane.Mixer, _vm.LowerPane);
+        Assert.Same(_vm.MixerConsole, _vm.Workspace.Mixer.MixerConsole);
     }
 
     [Fact]

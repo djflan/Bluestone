@@ -1,4 +1,5 @@
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
@@ -33,6 +34,26 @@ public sealed class TrackRoleTests
         Assert.Equal(track.Automation, changed.Automation);
         Assert.True(changed.IsMuted);
         Assert.Equal(track.Id, changed.Id);
+    }
+
+    [Fact]
+    public void RoleChangeAndReconciliation_PreservePersistedAudioStripState()
+    {
+        var strip = new AudioStrip { GainDecibels = -9, Pan = -0.25, IsMuted = true, IsSoloed = true };
+        var piano = Track.Create("Piano").WithAudioStrip(strip);
+        var project = Empty().With(piano);
+
+        var plan = TrackRoleConversion.ForRoleChange(project, piano.Id, TrackRole.Audio, TestDevices.Lookup);
+        var changed = plan.Apply(project).Sequence.FindTrack(piano.Id)!;
+
+        Assert.Equal(RoleChangeOutcome.Automatic, plan.Outcome);
+        Assert.Equal(strip, changed.AudioStrip);
+
+        var staleRole = piano.WithClip(Audio());
+        var reconciled = TrackRoleConversion.Reconcile(Empty().With(staleRole)).Project.Sequence.FindTrack(staleRole.Id)!;
+
+        Assert.Equal(TrackRole.Audio, reconciled.Role);
+        Assert.Equal(strip, reconciled.AudioStrip);
     }
 
     [Fact]
@@ -102,14 +123,18 @@ public sealed class TrackRoleTests
 
         Assert.Equal(RoleChangeOutcome.NeedsConfirmation, plan.Outcome);
         Assert.True(plan.AddsAudioPath);
-        Assert.Contains("mixer channel", plan.Message, StringComparison.Ordinal);
+        Assert.Contains("Master", plan.Message, StringComparison.Ordinal);
 
         var result = plan.Apply(project);
 
         var converted = result.Sequence.FindTrack(piano.Id)!;
         Assert.Equal(TrackRole.Hybrid, converted.Role);
-        var channel = Assert.Single(result.Mixer.Channels);
-        Assert.Contains(result.Connections, c => c.Kind == SignalKind.Audio && c.Source == SignalNode.Track(piano.Id) && c.Destination == SignalNode.Mixer(channel.Id));
+        Assert.Equal(AudioStrip.Default, converted.AudioStrip);
+        var output = Assert.Single(result.Connections, c => c.Kind == SignalKind.Audio);
+        Assert.Equal(SignalNode.Track(piano.Id), output.Source);
+        Assert.Equal(SignalNode.Master, output.Destination);
+        Assert.Equal(AudioRoutePurpose.Output, output.AudioPurpose);
+        Assert.Equal(project.Mixer, result.Mixer);
         // The hardware route, the effect, and the notes are untouched.
         Assert.Contains(project.Connections[0], result.Connections);
         Assert.Equal(project.ChainOf(piano.Id), result.ChainOf(piano.Id));
@@ -207,9 +232,52 @@ public sealed class TrackRoleTests
         var plan = TrackRoleConversion.ForRoleChange(project, piano.Id, TrackRole.Audio, TestDevices.Lookup);
 
         Assert.Equal(RoleChangeOutcome.NeedsConfirmation, plan.Outcome);
+        Assert.True(plan.AddsAudioPath);
         var result = plan.Apply(project);
-        Assert.Equal(TrackRole.Audio, result.Sequence.FindTrack(piano.Id)!.Role);
+        var changed = result.Sequence.FindTrack(piano.Id)!;
+        Assert.Equal(TrackRole.Audio, changed.Role);
+        Assert.NotNull(changed.AudioStrip);
+        Assert.Single(result.Connections, c =>
+            c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(piano.Id));
+        Assert.Empty(SignalRoutingValidator.Errors(result.Validate()));
         Assert.Equal(project.ChainOf(piano.Id), result.ChainOf(piano.Id));
+    }
+
+    [Theory]
+    [InlineData(TrackRole.Audio)]
+    [InlineData(TrackRole.Effect)]
+    [InlineData(TrackRole.Group)]
+    public void ChangingAnUnroutedMidiOnlyTrackToAnAudioCapableRole_AddsAValidOutput(TrackRole role)
+    {
+        var midiOnly = Track.Create("MIDI");
+        var project = Empty().With(midiOnly);
+
+        var plan = TrackRoleConversion.ForRoleChange(project, midiOnly.Id, role, TestDevices.Lookup);
+        var changed = plan.Apply(project);
+
+        Assert.True(plan.AddsAudioPath);
+        Assert.NotNull(changed.Sequence.FindTrack(midiOnly.Id)!.AudioStrip);
+        var output = Assert.Single(changed.Connections.Where(c =>
+            c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(midiOnly.Id)));
+        Assert.Equal(SignalNode.Master, output.Destination);
+        Assert.Empty(SignalRoutingValidator.Errors(changed.Validate()));
+    }
+
+    [Fact]
+    public void ChangingARoleWithAParkedOutput_PreservesItAndAddsAnActiveOutput()
+    {
+        var midiOnly = Track.Create("MIDI");
+        var parkedOutput = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(midiOnly.Id), SignalNode.Master);
+        var project = Empty().With(midiOnly) with { ParkedConnections = [parkedOutput] };
+
+        var plan = TrackRoleConversion.ForRoleChange(project, midiOnly.Id, TrackRole.Effect, TestDevices.Lookup);
+        var changed = plan.Apply(project);
+
+        Assert.True(plan.AddsAudioPath);
+        Assert.Equal([parkedOutput], changed.ParkedConnections);
+        var output = Assert.Single(changed.Connections.Where(c =>
+            c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(midiOnly.Id)));
+        Assert.Equal(SignalNode.Master, output.Destination);
     }
 
     [Fact]

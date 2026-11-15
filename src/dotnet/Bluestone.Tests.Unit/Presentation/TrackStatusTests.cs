@@ -3,7 +3,6 @@ using Bluestone.Application.Routing;
 using Bluestone.Application.Sessions;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
-using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Projects;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
@@ -179,16 +178,16 @@ public sealed class TrackStatusTests : IAsyncLifetime
     {
         var track = Track.Create("Pad", TrackRole.Hybrid);
         var rack = DeviceChain.Create(ChainOwner.Rack, "Strings");
-        var channel = MixerChannel.Create("Pads");
+        var group = Track.Create("Pads", TrackRole.Group);
         var fx = TestDevices.Instance(TestDevices.MidiFx);
         var synth = TestDevices.Instance(TestDevices.Synth);
         var project = Project.CreateNew() with
         {
-            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track),
-            Mixer = Project.CreateNew().Mixer.With(channel),
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track).WithTrack(group),
             Connections =
             [
-                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(channel.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Track(group.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(group.Id), SignalNode.Master),
                 SignalConnection.Create(SignalKind.Events, SignalNode.Track(track.Id), SignalNode.Rack(rack.Id)),
             ],
         };

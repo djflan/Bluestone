@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
 using Bluestone.Audio;
 
 namespace Bluestone.Tests.Unit.Audio;
@@ -38,6 +40,188 @@ public sealed class AudioGraphTests
 
         Assert.Equal(left, l, 6);
         Assert.Equal(right, r, 6);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void AutomationHandoff_RampsFromTheLastAppliedStereoGainsDuringPlayback(bool master, bool muted)
+    {
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        var state = new MixerStripState();
+        engine.Publish(StripGraph(state, new MixerStripSettings(), master));
+        engine.Transport.Play(0);
+        var driver = new OfflineAudioDriver(engine);
+        driver.Render(Block, Block);
+
+        engine.Publish(StripGraph(
+            state,
+            new MixerStripSettings(Muted: muted),
+            master,
+            [new DescribedAutomationPoint(0, -40, false)],
+            [new DescribedAutomationPoint(0, 0.5, false)]));
+        driver.Render(Block * 3, Block);
+
+        engine.Publish(StripGraph(state, new MixerStripSettings(GainDecibels: -40, Pan: 0.5), master));
+        var output = driver.Render(Block, Block);
+        for (var i = 0; i < Block; i++)
+        {
+            var tone = 0.5 * Math.Sin(2 * Math.PI * 1000 * i / Rate);
+            var gain = muted ? 0.01 * (i + 1) / Block : 0.01;
+            Assert.Equal(tone * gain * Math.Cos(Math.PI / 4), output[2 * i], 6);
+            Assert.Equal(tone * gain, output[(2 * i) + 1], 6);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AutomationBeforeFirstPoint_HoldsItsValueForTrackAndMaster(bool master)
+    {
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(StripGraph(
+            new MixerStripState(),
+            new MixerStripSettings(),
+            master,
+            [new DescribedAutomationPoint(Block * 4, -6.0206, false)],
+            [new DescribedAutomationPoint(Block * 4, 0.5, false)]));
+        engine.Transport.Play(0);
+
+        var output = new OfflineAudioDriver(engine).Render(Block, Block);
+        for (var i = 0; i < Block; i++)
+        {
+            var tone = 0.25 * Math.Sin(2 * Math.PI * 1000 * i / Rate);
+            Assert.Equal(tone * Math.Cos(Math.PI / 4), output[2 * i], 6);
+            Assert.Equal(tone, output[(2 * i) + 1], 6);
+        }
+    }
+
+    [Fact]
+    public void AutomationLookup_PreservesInterpolationAcrossSeekAndInBlockWrap()
+    {
+        var state = new MixerStripState();
+        DescribedAutomationPoint[] gain = [new(0, -40, true), new(100, -20, false), new(200, -6, false)];
+        DescribedAutomationPoint[] pan = [new(0, -1, true), new(100, 1, false), new(200, 0, false)];
+        var left = new float[4];
+        var right = new float[4];
+
+        void Render(AudioRenderContext context)
+        {
+            left.AsSpan().Fill(1);
+            right.AsSpan().Fill(1);
+            state.ApplyAutomated(new StereoBuffer(left, right), context, 0, 0, true, gain, pan);
+        }
+
+        Render(new AudioRenderContext(4, Rate, true, 150, false));
+        Assert.All(left, sample => Assert.Equal(0f, sample));
+        Assert.All(right, sample => Assert.Equal(0.1f, sample, 6));
+
+        Render(new AudioRenderContext(4, Rate, true, 50, true));
+        Assert.Equal(PanLaw.DecibelsToGain(-30), left[0], 6);
+        Assert.Equal(left[0], right[0]);
+
+        Render(new AudioRenderContext(4, Rate, true, 99, false, WrapOffset: 2, WrapFrame: 0));
+        (double Gain, double Pan)[] expected = [(-20.2, 0.98), (-20, 1), (-40, -1), (-39.8, -0.98)];
+        for (var i = 0; i < expected.Length; i++)
+        {
+            var level = PanLaw.DecibelsToGain(expected[i].Gain);
+            var balance = PanLaw.Gains(expected[i].Pan);
+            Assert.Equal(level * balance.Left, left[i], 6);
+            Assert.Equal(level * balance.Right, right[i], 6);
+        }
+    }
+
+    [Fact]
+    public void PartialAutomation_RampsTheManualParameterInsteadOfJumping()
+    {
+        var left = new float[4];
+        var right = new float[4];
+        var context = new AudioRenderContext(4, Rate, true, 0, false);
+        DescribedAutomationPoint[] none = [];
+        DescribedAutomationPoint[] centrePan = [new(0, 0, false)];
+        DescribedAutomationPoint[] unityGain = [new(0, 0, false)];
+
+        void Render(MixerStripState state, double gainDecibels, double pan, DescribedAutomationPoint[] gain, DescribedAutomationPoint[] panLane)
+        {
+            left.AsSpan().Fill(1);
+            right.AsSpan().Fill(1);
+            state.ApplyAutomated(new StereoBuffer(left, right), context, gainDecibels, pan, true, gain, panLane);
+        }
+
+        // Pan automated, manual fader moves from 0 dB to -20 dB: the gain ramps across the block.
+        var faderState = new MixerStripState();
+        Render(faderState, 0, 0, none, centrePan);
+        Render(faderState, -20, 0, none, centrePan);
+        var target = PanLaw.DecibelsToGain(-20);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(1 + ((target - 1) * (i + 1) / 4.0), left[i], 5);
+            Assert.Equal(left[i], right[i]);
+        }
+
+        // Gain automated, manual pan moves from centre to hard right: the pan ramps across the block.
+        var panState = new MixerStripState();
+        Render(panState, 0, 0, unityGain, none);
+        Render(panState, 0, 1, unityGain, none);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(PanLaw.Gains((i + 1) / 4.0).Left, left[i], 5);
+            Assert.Equal(1f, right[i], 5);
+        }
+    }
+
+    [Fact]
+    public void AutomationLookup_SkipsDenseElapsedPointsWithoutRenderAllocations()
+    {
+        var state = new MixerStripState();
+        var context = new AudioRenderContext(1, Rate, true, 100_001, false);
+        var left = new float[1];
+        var right = new float[1];
+        DescribedAutomationPoint[] sparseGain = [new(0, -40, false)];
+        DescribedAutomationPoint[] sparsePan = [new(0, 0.5, false)];
+        var denseGain = new DescribedAutomationPoint[100_000];
+        var densePan = new DescribedAutomationPoint[100_000];
+        for (var i = 0; i < denseGain.Length; i++)
+        {
+            denseGain[i] = new DescribedAutomationPoint(i, -40, false);
+            densePan[i] = new DescribedAutomationPoint(i, 0.5, false);
+        }
+
+        void Render(DescribedAutomationPoint[] gain, DescribedAutomationPoint[] pan)
+        {
+            left[0] = 1;
+            right[0] = 1;
+            state.ApplyAutomated(new StereoBuffer(left, right), context, 0, 0, true, gain, pan);
+        }
+
+        Action sparse = () => Render(sparseGain, sparsePan);
+        Action dense = () => Render(denseGain, densePan);
+        Assert.Equal(0, Allocations.InSteadyState(dense, 200));
+        var sparseTime = BestTime(sparse);
+        var denseTime = BestTime(dense);
+        var limit = 32 * Math.Max(sparseTime, Stopwatch.Frequency / 1000);
+        Assert.True(denseTime < limit, $"Dense elapsed automation took {denseTime} ticks; sparse took {sparseTime}, limit {limit}.");
+        Assert.Equal(0.01 * Math.Cos(Math.PI / 4), left[0], 6);
+        Assert.Equal(0.01, right[0], 6);
+
+        static long BestTime(Action render)
+        {
+            var best = long.MaxValue;
+            for (var round = 0; round < 5; round++)
+            {
+                var started = Stopwatch.GetTimestamp();
+                for (var block = 0; block < 2048; block++)
+                {
+                    render();
+                }
+
+                best = Math.Min(best, Stopwatch.GetTimestamp() - started);
+            }
+
+            return best;
+        }
     }
 
     [Fact]
@@ -322,10 +506,28 @@ public sealed class AudioGraphTests
         Assert.Equal(0, Allocations.InSteadyState(() => driver.Render(buffer, 512), 200));
     }
 
-    private static AudioGraph StripGraph(MixerStripState state, MixerStripSettings settings)
+    private static AudioGraph StripGraph(
+        MixerStripState state,
+        MixerStripSettings settings,
+        bool master = false,
+        ImmutableArray<DescribedAutomationPoint> gainAutomation = default,
+        ImmutableArray<DescribedAutomationPoint> panAutomation = default)
     {
         var builder = new AudioGraphBuilder();
-        var strip = builder.AddStrip(state, settings);
+        if (master)
+        {
+            builder.ConnectToMaster(builder.AddNode(new ToneNode(1000, 0.5)));
+            return builder.Build(
+                Block,
+                state,
+                masterGainDecibels: settings.GainDecibels,
+                masterPan: settings.Pan,
+                masterMuted: settings.Muted,
+                masterGainAutomation: gainAutomation,
+                masterPanAutomation: panAutomation);
+        }
+
+        var strip = builder.AddStrip(state, settings, gainAutomation, panAutomation);
         builder.ConnectToStrip(builder.AddNode(new ToneNode(1000, 0.5)), strip);
         return builder.Build(Block, new MixerStripState());
     }
