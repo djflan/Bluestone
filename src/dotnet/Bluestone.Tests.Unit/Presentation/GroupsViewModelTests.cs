@@ -226,6 +226,27 @@ public sealed class GroupsViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DeletingANestedGroup_ReparksMemberRoutesInTheOuterGroup_WithoutWarning()
+    {
+        var outer = await GroupBassAndKeysAsync();
+        var bass = Row("Bass");
+        SelectRows("Bass");
+        Groups.GroupSelectedCommand.Execute(null);
+        await Settle();
+        var inner = _vm.SelectedTrack!;
+        Assert.NotEqual(outer.Id, inner.Id);
+        Assert.Equal(outer.Id, _session.Project.Sequence.FindTrack(inner.Id)!.Group);
+
+        await _vm.DeleteTracksCommand.ExecuteAsync(null);
+        await Settle();
+
+        Assert.Null(_session.Project.Sequence.FindTrack(inner.Id));
+        Assert.Equal(outer.Id, _session.Project.Sequence.FindTrack(bass.Id)!.Group);
+        Assert.Contains(_session.Project.ParkedConnections, c => c.Source == SignalNode.Track(bass.Id));
+        Assert.DoesNotContain(_vm.Messages, m => m.Source == "Delete Group");
+    }
+
+    [Fact]
     public async Task UseOutputForAllTracks_LeavesMembersGoingThroughTheirGroup()
     {
         var group = await GroupBassAndKeysAsync();

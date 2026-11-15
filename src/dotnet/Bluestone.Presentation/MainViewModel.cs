@@ -1561,7 +1561,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     internal void WarnForParkedRoutes(IEnumerable<ConnectionId> routeIds, string source, string action)
     {
         var ids = routeIds.ToHashSet();
-        var remaining = Project.ParkedConnections.Where(connection => ids.Contains(connection.Id)).ToList();
+        // A track that moved into an outer group (a nested group was deleted) has its routes parked again on purpose.
+        var remaining = Project.ParkedConnections
+            .Where(connection => ids.Contains(connection.Id)
+                && !(connection.Source.Kind == SignalNodeKind.Track && Project.Sequence.FindTrack(connection.Source.AsTrack())?.Group is not null))
+            .ToList();
         if (remaining.Count == 0)
         {
             return;
