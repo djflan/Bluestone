@@ -702,6 +702,18 @@ public partial class MainWindow : Window
     /// <summary>The text field being edited, if any. Single-key shortcuts stand aside while one is focused.</summary>
     internal TextBox? FocusedTextBox() => FocusManager?.GetFocusedElement() as TextBox;
 
+    private bool IsValueControlFocused() =>
+        FocusManager?.GetFocusedElement() is Visual focused
+        && (focused is Controls.MixerValueControl or Controls.Knob
+            || focused.FindAncestorOfType<Controls.MixerValueControl>() is not null
+            || focused.FindAncestorOfType<Controls.Knob>() is not null);
+
+    private bool IsInsertNameFocused() =>
+        FocusManager?.GetFocusedElement() is Visual focused
+        && (focused as Button ?? focused.FindAncestorOfType<Button>()) is { DataContext: MixerInsertViewModel } button
+        && button.Classes.Contains("insertName")
+        && button.FindAncestorOfType<MixerConsoleView>() is not null;
+
     /// <summary>Select All: the text in a focused field, the notes in a focused editor, otherwise every track.</summary>
     internal void SelectAll()
     {
@@ -991,6 +1003,20 @@ public partial class MainWindow : Window
             }
 
             e.Handled = true;
+            return;
+        }
+
+        // A focused fader, pan, or knob owns its value keys; the transport, selection, and Delete must not take them.
+        if (e.Key is Key.Home or Key.End or Key.Up or Key.Down or Key.Left or Key.Right or Key.PageUp or Key.PageDown or Key.Delete or Key.Back
+            && modifiers is KeyModifiers.None or KeyModifiers.Shift
+            && IsValueControlFocused())
+        {
+            return;
+        }
+
+        // A focused mixer insert name takes Space to turn its device on or off (MixerConsoleView.ToggleInsertPower).
+        if (e.Key == Key.Space && modifiers == KeyModifiers.None && IsInsertNameFocused())
+        {
             return;
         }
 

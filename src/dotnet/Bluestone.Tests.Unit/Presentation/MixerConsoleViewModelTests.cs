@@ -241,6 +241,7 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
         await Settle();
 
         var send = Assert.Single(source.Sends);
+        Assert.Equal("Reverb", send.TargetName);
         var connection = Assert.Single(_session.Project.Connections, item => item.AudioPurpose == AudioRoutePurpose.Send);
         Assert.Equal(SignalNode.Track(effect.Id), connection.Destination);
         Assert.Equal(connection.Id, Assert.Single(_session.Project.Connections, item => item.AudioPurpose == AudioRoutePurpose.Send).Id);
@@ -372,6 +373,340 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
 
         _vm.Arrangement.ClearSelection();
         Assert.False(_vm.AudioClip.HasClip);
+    }
+
+    private static DeviceInstance Effect(string name) =>
+        DeviceInstance.Create(new DeviceReference(new DeviceDefinitionId($"plugin:vst3:test/{name.Replace(' ', '-')}"), name));
+
+    private async Task<Track> SeedWithInsertsAsync(params string[] devices)
+    {
+        var track = Track.Create("Bass", TrackRole.Audio);
+        await SeedAsync(track);
+        if (devices.Length > 0)
+        {
+            _session.Execute(new ProjectCommand("Add inserts", project =>
+                project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [.. devices.Select(Effect)] })));
+            await Settle();
+        }
+
+        return track;
+    }
+
+    [Fact]
+    public async Task Inserts_FollowChainOrder_AndTheEnabledToggleBypassesTheDeviceAsOneUndoStep()
+    {
+        await SeedWithInsertsAsync("Stone EQ", "Opto", "Saturator");
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        var chain = _session.Project.Chains.Single(candidate => candidate.Owner.Kind == ChainOwnerKind.Track);
+        Assert.Equal(["Stone EQ", "Opto", "Saturator"], row.Inserts.Select(insert => insert.Name));
+        Assert.Equal(chain.Devices.Select(device => device.Id), row.Inserts.Select(insert => insert.DeviceId));
+        Assert.All(row.Inserts, insert => Assert.True(insert.IsEnabled));
+        var opto = row.Inserts[1];
+
+        opto.IsEnabled = false;
+        await Settle();
+
+        Assert.True(_session.Project.FindDevice(opto.DeviceId)!.Value.Device.IsBypassed);
+        Assert.False(opto.IsEnabled);
+        Assert.Same(opto, row.Inserts[1]);
+        _vm.UndoCommand.Execute(null);
+        await Settle();
+        Assert.False(_session.Project.FindDevice(opto.DeviceId)!.Value.Device.IsBypassed);
+        Assert.True(opto.IsEnabled);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, "", "0 DEVICES")]
+    [InlineData(1, 1, 0, "", "1 DEVICE")]
+    [InlineData(3, 3, 0, "", "3 DEVICES")]
+    [InlineData(5, 3, 2, "+2 more", "5 DEVICES")]
+    public async Task VisibleInserts_ShowTheFirstRowsAndSummarizeTheRest(int devices, int visible, int overflow, string overflowText, string countText)
+    {
+        await SeedWithInsertsAsync([.. Enumerable.Range(1, devices).Select(i => $"FX {i}")]);
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+
+        Assert.Equal(row.Inserts.Take(visible), row.VisibleInserts);
+        Assert.Equal((overflow, overflow > 0, overflowText, devices == 0, countText), (row.OverflowInsertCount, row.HasOverflow, row.OverflowText, row.HasNoInserts, row.InsertCountText));
+    }
+
+    [Fact]
+    public async Task RemovingAnInsert_ShrinksTheVisibleRowsAndOverflowInPlace()
+    {
+        await SeedWithInsertsAsync("A", "B", "C", "D");
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        Assert.Equal(1, row.OverflowInsertCount);
+        var first = row.Inserts[0];
+
+        _session.Execute(DeviceCommands.RemoveDevice(row.Inserts[1].DeviceId, _vm.Devices.Lookup));
+        await Settle();
+
+        Assert.Equal(["A", "C", "D"], row.VisibleInserts.Select(insert => insert.Name));
+        Assert.Same(first, row.Inserts[0]);
+        Assert.False(row.HasOverflow);
+    }
+
+    [Fact]
+    public async Task OpeningAnInsert_SelectsItsTrackAndRevealsTheChainAtThatDevice()
+    {
+        var other = Track.Create("Other", TrackRole.Audio);
+        var track = await SeedWithInsertsAsync("Stone EQ", "Opto");
+        _session.Execute(new ProjectCommand("Add other", project => project with { Sequence = project.Sequence.WithTrack(other) }));
+        await Settle();
+        _vm.Select(_vm.Tracks.Single(row => row.Id == other.Id));
+        var strip = _vm.MixerConsole.Tracks.Single(row => row.Id == track.Id);
+
+        strip.Inserts[1].OpenCommand.Execute(null);
+        await Settle();
+
+        Assert.Equal(track.Id, Assert.Single(_vm.SelectedTracks).Id);
+        Assert.Equal(strip.Inserts[1].DeviceId, _vm.Workspace.ActiveDeviceView?.SelectedDevice?.Id);
+    }
+
+    [Theory]
+    [InlineData(0.0, "<C>")]
+    [InlineData(0.004, "<C>")]
+    [InlineData(-0.41, "L41")]
+    [InlineData(0.35, "R35")]
+    [InlineData(-1.0, "L100")]
+    public async Task PanText_ShowsCenterOrSideAndWholePercent(double pan, string expected)
+    {
+        await SeedAsync(Track.Create("Audio", TrackRole.Audio));
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+
+        row.Pan = pan;
+        _vm.MixerConsole.Master.Pan = pan;
+        await Settle();
+
+        Assert.Equal((expected, expected), (row.PanText, _vm.MixerConsole.Master.PanText));
+    }
+
+    [Fact]
+    public async Task GainValueText_IsTheSignedNumberWithoutUnits()
+    {
+        await SeedAsync(Track.Create("Audio", TrackRole.Audio));
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+
+        row.Gain = -7.24;
+        _vm.MixerConsole.Master.Gain = 1.5;
+        await Settle();
+
+        Assert.Equal(("-7.2", "+1.5"), (row.GainValueText, _vm.MixerConsole.Master.GainValueText));
+        row.Gain = 0;
+        Assert.Equal("0.0", row.GainValueText);
+    }
+
+    [Fact]
+    public async Task TheSingleMeter_FillsToTheLouderRms_WithTheHeldPeakAsItsMarkerAndReadout()
+    {
+        await SeedAsync(Track.Create("Audio", TrackRole.Audio));
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        Assert.True(double.IsNaN(row.MeterValue));
+        Assert.Equal("—", row.PeakText);
+        var changed = new List<string?>();
+        row.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        _vm.MixerConsole.MeterSource = _ => new MeterReading(0.25f, 0.66f, 0.1f, 0.2f);
+        var start = Stopwatch.GetTimestamp();
+
+        _vm.MixerConsole.RefreshMeters(start);
+
+        // Peak + RMS: the fill is RMS (the louder side), the marker and readout the held peak.
+        Assert.Equal(MeterReading.ToDecibels(0.2f), row.MeterValue, 5);
+        Assert.Equal(MeterReading.ToDecibels(0.66f), row.MeterPeakHold, 5);
+        Assert.True(row.MeterPeakHold > row.MeterValue);
+        Assert.Equal("-3.6", row.PeakText);
+        Assert.Contains(nameof(row.MeterValue), changed);
+        Assert.Contains(nameof(row.MeterPeakHold), changed);
+        Assert.Contains(nameof(row.PeakText), changed);
+
+        // The level falls within the hold time: the fill follows the RMS down; the held readout neither changes nor notifies.
+        changed.Clear();
+        _vm.MixerConsole.MeterSource = _ => new MeterReading(0.1f, 0.1f, 0.05f, 0.05f);
+        _vm.MixerConsole.RefreshMeters(start + 1);
+        Assert.Equal(MeterReading.ToDecibels(0.05f), row.MeterValue, 5);
+        Assert.Equal("-3.6", row.PeakText);
+        Assert.Contains(nameof(row.MeterValue), changed);
+        Assert.DoesNotContain(nameof(row.PeakText), changed);
+
+        _vm.MixerConsole.MeterSource = _ => null;
+        _vm.MixerConsole.RefreshMeters(start + 2);
+        Assert.True(double.IsNaN(row.MeterValue));
+        Assert.Equal("—", row.PeakText);
+    }
+
+    [Fact]
+    public async Task RefreshMeters_WithChangingLevelsAndABoundReader_AllocatesNothingAfterWarmup()
+    {
+        await SeedAsync(Track.Create("Audio", TrackRole.Audio));
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        var readings = new[] { new MeterReading(0.3f, 0.2f, 0.1f, 0.1f), new MeterReading(0.6f, 0.7f, 0.3f, 0.35f) };
+        var frame = 0;
+        _vm.MixerConsole.MeterSource = _ => readings[frame & 1];
+        double sink = 0;
+        var texts = 0;
+        row.PropertyChanged += (_, _) =>
+        {
+            sink += row.MeterValue + row.MeterPeakHold;
+            texts += row.PeakText.Length;
+        };
+        _vm.MixerConsole.Master.PropertyChanged += (_, _) => texts += _vm.MixerConsole.Master.PeakText.Length;
+
+        // Each frame is past the hold time, so the held peak, its readout, and the fill all change every frame.
+        var start = Stopwatch.GetTimestamp();
+        var hold = (long)(MeterLevels.HoldTime.TotalSeconds * Stopwatch.Frequency) + 1;
+        void Step()
+        {
+            frame++;
+            _vm.MixerConsole.RefreshMeters(start + (frame * hold));
+        }
+
+        for (var i = 0; i < 10; i++)
+        {
+            Step();
+        }
+
+        Assert.Equal(0, Allocations.InSteadyState(Step, 300));
+        Assert.True(texts > 0 && sink != 0);
+    }
+
+    [Fact]
+    public async Task VisibleSends_ShowTheFirstTwoKnobs_AndCountTheRestInPlace()
+    {
+        var vocal = Track.Create("Vocal", TrackRole.Audio);
+        var effects = Enumerable.Range(1, 3).Select(i => Track.Create($"Return {i}", TrackRole.Effect)).ToArray();
+        await SeedAsync([vocal, .. effects]);
+        var row = _vm.MixerConsole.Tracks.Single(strip => strip.Id == vocal.Id);
+        Assert.Empty(row.VisibleSends);
+        Assert.Equal("No sends, add a send", row.SendsAutomationName);
+
+        foreach (var effect in effects)
+        {
+            _session.Execute(RoutingCommands.AddAudioSend(vocal.Id, effect.Id, 0, false, _vm.Devices.Lookup));
+        }
+
+        await Settle();
+        Assert.Equal(row.Sends.Take(2), row.VisibleSends);
+        Assert.Equal((1, true, "3 sends, show all or add"), (row.OverflowSendCount, row.HasSendOverflow, row.SendsAutomationName));
+        Assert.Equal("Send to Return 1 level", row.VisibleSends[0].LevelAutomationName);
+        var first = row.VisibleSends[0];
+
+        row.Sends[2].RemoveCommand.Execute(null);
+        await Settle();
+        Assert.Same(first, row.VisibleSends[0]);
+        Assert.Equal((2, 0, false, "2 sends, show all or add"), (row.VisibleSends.Count, row.OverflowSendCount, row.HasSendOverflow, row.SendsAutomationName));
+    }
+
+    [Fact]
+    public async Task AutomationNames_NameTheTrackAndFollowRenameAndSelection()
+    {
+        var kick = Track.Create("Kick", TrackRole.Audio);
+        var other = Track.Create("Other", TrackRole.Audio);
+        await SeedAsync(kick, other);
+        _session.Execute(new ProjectCommand("Add insert", project =>
+            project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(kick.Id)) with { Devices = [Effect("Tone EQ")] })));
+        _vm.Select(_vm.Tracks.Single(track => track.Id == other.Id));
+        await Settle();
+        var row = _vm.MixerConsole.Tracks.Single(strip => strip.Id == kick.Id);
+
+        Assert.Equal(
+            ("Kick gain", "Kick pan", "Mute Kick", "Solo Kick", "Record arm Kick", "Select Kick", "Output: Master", "Tone EQ power"),
+            (row.GainAutomationName, row.PanAutomationName, row.MuteAutomationName, row.SoloAutomationName, row.ArmAutomationName,
+                row.SelectAutomationName, row.OutputAutomationName, row.Inserts[0].PowerAutomationName));
+
+        var changed = new List<string?>();
+        row.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        _vm.Select(_vm.Tracks.Single(track => track.Id == kick.Id));
+        _session.Execute(new ProjectCommand("Rename", project => project with
+        {
+            Sequence = new Sequence(
+                project.Sequence.TempoMap,
+                project.Sequence.MeterMap,
+                [.. project.Sequence.Tracks.Select(track => track.Id == kick.Id ? track.WithName("Kick In") : track)],
+                project.Sequence.Markers),
+        }));
+        await Settle();
+
+        Assert.Equal(("Kick In, selected", "Kick In gain"), (row.SelectAutomationName, row.GainAutomationName));
+        Assert.Contains(nameof(row.SelectAutomationName), changed);
+        Assert.Contains(nameof(row.GainAutomationName), changed);
+
+        var master = _vm.MixerConsole.Master;
+        Assert.Equal(("Master gain", "Select Master"), (master.GainAutomationName, master.SelectAutomationName));
+        master.SelectCommand.Execute(null);
+        Assert.Equal("Master, selected", master.SelectAutomationName);
+    }
+
+    [Fact]
+    public async Task StripIdentity_MatchesTheArrangementNumberAndColour_AndGroupsCountTheirMembers()
+    {
+        var group = Track.Create("Drums", TrackRole.Group);
+        var kick = Track.Create("Kick", TrackRole.Audio).WithGroup(group.Id);
+        var snare = Track.Create("Snare", TrackRole.Audio).WithGroup(group.Id);
+        var tracks = Enumerable.Range(1, 6).Select(i => Track.Create($"T{i}", TrackRole.Audio)).Concat([group, kick, snare]).ToArray();
+        await SeedAsync(tracks);
+
+        foreach (var strip in _vm.MixerConsole.Tracks)
+        {
+            var arrangement = _vm.Tracks.Single(track => track.Id == strip.Id);
+            Assert.Equal((arrangement.Number, arrangement.ColorIndex), (strip.Number, strip.ColorIndex));
+        }
+
+        var groupStrip = _vm.MixerConsole.Tracks.Single(row => row.Id == group.Id);
+        Assert.Equal(("07", 6, 2, "GROUP · 2", "GROUP"), (groupStrip.NumberText, groupStrip.ColorIndex, groupStrip.GroupChildCount, groupStrip.RoleCaption, groupStrip.RoleLabel));
+        Assert.Equal(0, _vm.MixerConsole.Tracks.Single(row => row.Id == snare.Id).ColorIndex);
+    }
+
+    [Fact]
+    public async Task ArmingAStrip_UsesTheArrangementsSingleArmedTrack()
+    {
+        var first = Track.Create("First", TrackRole.Audio);
+        var second = Track.Create("Second", TrackRole.Hybrid);
+        var group = Track.Create("Group", TrackRole.Group);
+        await SeedAsync(first, second, group);
+        var strips = _vm.MixerConsole.Tracks.ToDictionary(row => row.Id);
+
+        strips[first.Id].IsArmed = true;
+        Assert.Equal(first.Id, _vm.ArmedTrack?.Id);
+        Assert.True(_vm.Tracks.Single(track => track.Id == first.Id).IsArmed);
+
+        strips[second.Id].IsArmed = true;
+        Assert.Equal(second.Id, _vm.ArmedTrack?.Id);
+        Assert.False(strips[first.Id].IsArmed);
+
+        _vm.ToggleArm(_vm.Tracks.Single(track => track.Id == second.Id));
+        Assert.Null(_vm.ArmedTrack);
+        Assert.False(strips[second.Id].IsArmed);
+
+        Assert.False(strips[group.Id].CanArm);
+        strips[group.Id].IsArmed = true;
+        Assert.False(strips[group.Id].IsArmed);
+        Assert.Null(_vm.ArmedTrack);
+    }
+
+    [Fact]
+    public void MeterSettings_FromBeforeTheSingleLedMeter_StillLoad_AndSaveWithoutAPresentation()
+    {
+        var directory = Directory.CreateTempSubdirectory("bluestone-mixer-settings-");
+        try
+        {
+            var path = Path.Combine(directory.FullName, "mixer-meters.json");
+            File.WriteAllText(path, """{ "mode": "vu", "presentation": "round", "vuReferenceDbfs": -14 }""");
+            var store = new MixerMeterDisplaySettingsStore(path);
+
+            var loaded = store.Load();
+            Assert.Equal((MixerMeterMode.Vu, -14), (loaded.Mode, loaded.VuReferenceDbfs));
+
+            File.WriteAllText(path, """{ "mode": "k14", "presentation": "sparkle" }""");
+            Assert.Equal(MixerMeterMode.K14, store.Load().Mode);
+
+            _vm.MixerConsole.UseSettingsStore(store);
+            _vm.MixerConsole.VuReferenceDbfs = -20;
+            Assert.DoesNotContain("presentation", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal((MixerMeterMode.K14, -20), (store.Load().Mode, store.Load().VuReferenceDbfs));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
     }
 
     private sealed class ImmediateDispatcher : IUiDispatcher

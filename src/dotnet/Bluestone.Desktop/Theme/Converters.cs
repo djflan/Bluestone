@@ -196,3 +196,104 @@ public sealed class SettingsIconConverter : IValueConverter
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>A track's colour index as its palette colour (not a brush), for drawn controls with a colour property.</summary>
+public sealed class TrackColorConverter : IValueConverter
+{
+    public static readonly TrackColorConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Palette.Track(value is int index ? index : 0);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>The mixer meter's unit for the console footer, so a gain setting (dB) is never read as a level.</summary>
+public sealed class MixerMeterUnitConverter : IValueConverter
+{
+    public static readonly MixerMeterUnitConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value switch
+        {
+            MixerMeterMode.Vu => "meter VU",
+            MixerMeterMode.K20 => "meter K-20 dB",
+            MixerMeterMode.K14 => "meter K-14 dB",
+            MixerMeterMode.K12 => "meter K-12 dB",
+            MixerMeterMode.LufsS => "meter LUFS",
+            _ => "meter dBFS",
+        };
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// For a count shown in a fixed number of slots (the parameter): "+N" for the items beyond them, or "+" when they all
+/// fit, so one small button both adds and reveals the rest.
+/// </summary>
+public sealed class MixerOverflowConverter : IValueConverter
+{
+    public static readonly MixerOverflowConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var slots = parameter is string text && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) ? s : 0;
+        var count = value is int c ? c : 0;
+        return count > slots ? string.Create(CultureInfo.InvariantCulture, $"+{count - slots}") : "+";
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>True when a number is greater than the parameter, e.g. a name long enough to need the smaller, wrapping style.</summary>
+public sealed class GreaterThanConverter : IValueConverter
+{
+    public static readonly GreaterThanConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int number && parameter is string text && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) && number > limit;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// The one-line cue a folded mixer strip shows instead of its insert stack and sends: "2 devices · 1 send ›". Values are
+/// the insert count and, for a track strip, the send count and whether it has an audio strip (a MIDI-only strip has no
+/// sends); Master passes only its insert count.
+/// </summary>
+public sealed class MixerProcessingCueConverter : IMultiValueConverter
+{
+    public static readonly MixerProcessingCueConverter Instance = new();
+
+    public object Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var devices = values.Count > 0 && values[0] is int d ? d : 0;
+        var text = Count(devices, "device", "No");
+        if (values.Count > 1 && !(values.Count > 2 && values[2] is false))
+        {
+            text += " · " + Count(values[1] is int s ? s : 0, "send", "no");
+        }
+
+        return text + " ›";
+
+        static string Count(int count, string noun, string none) => count switch
+        {
+            0 => $"{none} {noun}s",
+            1 => $"1 {noun}",
+            _ => string.Create(CultureInfo.InvariantCulture, $"{count} {noun}s"),
+        };
+    }
+}
+
+/// <summary>
+/// A formatted level without its trailing unit ("-21.0 dB" to "-21.0"), for a cell too narrow for the unit; the unit
+/// stays in the control's tooltip and spoken value.
+/// </summary>
+public sealed class MixerUnitlessConverter : IValueConverter
+{
+    public static readonly MixerUnitlessConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is string text && text.LastIndexOf(' ') is var space and > 0 ? text[..space] : value;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}

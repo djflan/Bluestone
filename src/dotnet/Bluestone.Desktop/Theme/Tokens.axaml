@@ -244,6 +244,16 @@
   <Thickness x:Key="Inset.MixerTop">0,4,0,0</Thickness>
   <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>
   <Thickness x:Key="Inset.MixerRole">4,1</Thickness>
+  <Thickness x:Key="Inset.MixerRow">4,0</Thickness>
+  <Thickness x:Key="Inset.MixerStrip">6</Thickness>
+  <Thickness x:Key="Inset.MixerName">10,4,6,4</Thickness>
+  <Thickness x:Key="Inset.MixerReadout">4,2</Thickness>
+  <Thickness x:Key="Inset.MixerSelected">2</Thickness>
+  <Thickness x:Key="Inset.MixerProcessing">6,4</Thickness>
+  <Thickness x:Key="Inset.MixerBodyTight">6,4</Thickness>
+  <Thickness x:Key="Inset.MixerNameTight">10,3,6,3</Thickness>
+  <!-- Room under the strips for an overlay horizontal scroll bar, so it never covers the output chips. -->
+  <Thickness x:Key="Inset.MixerScrollClearance">0,0,0,6</Thickness>
   <Thickness x:Key="Inset.BrowserLeading">8,0,0,0</Thickness>
 
   <!-- Corner radii. -->
@@ -265,25 +275,47 @@
   <x:Double x:Key="Width.Handle">5</x:Double>
   <x:Double x:Key="Width.SettingsNav">220</x:Double>
   <x:Double x:Key="Width.SettingsPage">680</x:Double>
-  <!-- Track-owned mixer geometry: compact enough for the lower workspace, with Master always pinned beside the scrollable strips. -->
-  <x:Double x:Key="Mixer.StripWidth">208</x:Double>
-  <x:Double x:Key="Mixer.MasterWidth">192</x:Double>
-  <x:Double x:Key="Mixer.MeterHeight">104</x:Double>
-  <x:Double x:Key="Mixer.FaderHeight">92</x:Double>
-  <!-- Mixer meter presentation controls; values/readiness are shared across Bar and Round. -->
+  <!--
+    Track-owned mixer geometry: dense, fixed-pitch strips in one scrolling row, with Master pinned in its own column at
+    the same pitch. Each strip stacks fixed-height bands (processing, name, pan, buttons, readouts) above the rails, so
+    every strip's controls line up across the console whatever it contains.
+  -->
+  <x:Double x:Key="Mixer.StripWidth">132</x:Double>
+  <x:Double x:Key="Mixer.MasterWidth">132</x:Double>
+  <x:Double x:Key="Mixer.ProcessingHeight">96</x:Double>
+  <x:Double x:Key="Mixer.NameHeight">46</x:Double>
+  <x:Double x:Key="Mixer.InsertRowHeight">14</x:Double>
+  <x:Double x:Key="Mixer.InsertStackHeight">46</x:Double>
+  <x:Double x:Key="Mixer.SendKnobSize">20</x:Double>
+  <x:Double x:Key="Mixer.SendRowHeight">26</x:Double>
+  <x:Double x:Key="Mixer.StripButtonHeight">18</x:Double>
+  <x:Double x:Key="Mixer.PanRampHeight">20</x:Double>
+  <x:Double x:Key="Mixer.ValueWidth">30</x:Double>
+  <x:Double x:Key="Mixer.ScaleWidth">26</x:Double>
+  <x:Double x:Key="Mixer.GainBarWidth">8</x:Double>
+  <x:Double x:Key="Mixer.MeterRailWidth">14</x:Double>
+  <x:Double x:Key="Mixer.ColorNotchWidth">4</x:Double>
+  <x:Double x:Key="Mixer.InsertPowerWidth">18</x:Double>
+  <x:Double x:Key="Mixer.CountLineHeight">16</x:Double>
+  <x:Double x:Key="Mixer.StripButtonWidth">20</x:Double>
+  <x:Double x:Key="Mixer.CueHeight">24</x:Double>
+  <x:Double x:Key="Mixer.MinimumRailsHeight">96</x:Double>
+  <x:Double x:Key="Mixer.TightNameHeight">36</x:Double>
+  <x:Double x:Key="Mixer.TightRailsHeight">24</x:Double>
+  <!--
+    Height tiers of the strips area. At or above RoomyStripHeight every band has its full height (the approved strip).
+    Between the two, the strip tightens: one-line readouts, a shorter name block, and the star-sized rails shrink first.
+    Below FullStripHeight the processing band folds into a one-line cue so the meter keeps a usable height.
+  -->
+  <x:Double x:Key="Mixer.RoomyStripHeight">360</x:Double>
+  <x:Double x:Key="Mixer.FullStripHeight">264</x:Double>
+  <x:Double x:Key="Mixer.FlyoutWidth">220</x:Double>
+  <x:Double x:Key="Mixer.SendCellWidth">51</x:Double>
+  <x:Double x:Key="Mixer.FooterHeight">20</x:Double>
+  <!-- Mixer meter display: one LED rail per strip; the scale's range follows the global display mode. -->
   <x:Double x:Key="MixerMeter.ModeWidth">116</x:Double>
-  <x:Double x:Key="MixerMeter.FaceWidth">64</x:Double>
-  <x:Double x:Key="MixerMeter.FaceHeight">72</x:Double>
-  <x:Double x:Key="MixerMeter.PeakWidth">20</x:Double>
-  <x:Double x:Key="MixerMeter.DisplayGap">4</x:Double>
-  <x:Double x:Key="MixerMeter.BarCornerRadius">2</x:Double>
-  <x:Double x:Key="MixerMeter.RoundStroke">4</x:Double>
-  <x:Double x:Key="MixerMeter.PeakHoldStroke">1.5</x:Double>
-  <x:Double x:Key="MixerMeter.RoundStartAngle">135</x:Double>
-  <x:Double x:Key="MixerMeter.RoundSweepAngle">270</x:Double>
-  <x:Double x:Key="MixerMeter.HotFraction">0.85</x:Double>
   <x:Double x:Key="MixerMeter.Scale.PeakFloorDb">-60</x:Double>
-  <x:Double x:Key="MixerMeter.Scale.PeakCeilingDb">0</x:Double>
+  <x:Double x:Key="MixerMeter.Scale.PeakCeilingDb">6</x:Double>
   <x:Double x:Key="MixerMeter.Scale.VuFloorDb">-30</x:Double>
   <x:Double x:Key="MixerMeter.Scale.VuCeilingDb">6</x:Double>
   <x:Double x:Key="MixerMeter.Scale.KFloorDb">-20</x:Double>

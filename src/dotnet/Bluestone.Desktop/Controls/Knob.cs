@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
+using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
@@ -31,10 +33,16 @@ public sealed class Knob : Control
     /// <summary>The value arc's colour: the device's signal accent.</summary>
     public static readonly StyledProperty<Color> AccentProperty = AvaloniaProperty.Register<Knob, Color>(nameof(Accent), Palette.Accent);
 
+    /// <summary>
+    /// What a screen reader says the value is, with its unit (for example "-21.0 dB"); when unset, the plain number.
+    /// </summary>
+    public static readonly StyledProperty<string?> ValueTextProperty = AvaloniaProperty.Register<Knob, string?>(nameof(ValueText));
+
     private const double SweepDegrees = 270;
     private const double StartDegrees = 135;
     private const double PixelsForFullRange = 160;
     private double? _preview;
+    private KnobAutomationPeer? _peer;
     private Point _dragStart;
     private double _dragStartValue;
 
@@ -81,7 +89,15 @@ public sealed class Knob : Control
         set => SetValue(AccentProperty, value);
     }
 
+    public string? ValueText
+    {
+        get => GetValue(ValueTextProperty);
+        set => SetValue(ValueTextProperty, value);
+    }
+
     private double Range => Math.Max(Maximum - Minimum, double.Epsilon);
+
+    private string SpokenValue => ValueText ?? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Value:0.###}");
 
     private double Shown => _preview ?? Value;
 
@@ -143,6 +159,8 @@ public sealed class Knob : Control
     }
 
     protected override Size MeasureOverride(Size availableSize) => new(34, 34);
+
+    protected override AutomationPeer OnCreateAutomationPeer() => _peer = new KnobAutomationPeer(this);
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -241,7 +259,12 @@ public sealed class Knob : Control
         base.OnPropertyChanged(change);
         if (change.Property == ValueProperty)
         {
-            AutomationProperties.SetHelpText(this, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Value:0.###}"));
+            AutomationProperties.SetHelpText(this, SpokenValue);
+            _peer?.RaiseValueChanged(change.OldValue, change.NewValue);
+        }
+        else if (change.Property == ValueTextProperty)
+        {
+            AutomationProperties.SetHelpText(this, SpokenValue);
         }
     }
 
@@ -269,6 +292,33 @@ public sealed class Knob : Control
         context.ArcTo(PointAt(center, radius, end), new Size(radius, radius), 0, (to - from) * SweepDegrees > 180, SweepDirection.Clockwise);
         context.EndFigure(false);
         return geometry;
+    }
+
+    /// <summary>Reports the knob as a slider with a settable range value, as the mixer's drawn value controls do.</summary>
+    private sealed class KnobAutomationPeer(Knob owner) : ControlAutomationPeer(owner), IRangeValueProvider
+    {
+        private new Knob Owner => (Knob)base.Owner;
+
+        public bool IsReadOnly => !Owner.IsEnabled;
+
+        public double Minimum => Owner.Minimum;
+
+        public double Maximum => Owner.Maximum;
+
+        public double Value => Owner.Value;
+
+        public double LargeChange => Owner.Step > 0 ? Owner.Step : Owner.Range * 0.1;
+
+        public double SmallChange => Owner.Step > 0 ? Owner.Step : Owner.Range * 0.02;
+
+        public void SetValue(double value) => Owner.Value = Owner.Snap(value);
+
+        public void RaiseValueChanged(object? oldValue, object? newValue) =>
+            RaisePropertyChangedEvent(RangeValuePatternIdentifiers.ValueProperty, oldValue, newValue);
+
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Slider;
+
+        protected override string? GetHelpTextCore() => Owner.SpokenValue;
     }
 
     private static double Radians(double degrees) => degrees * Math.PI / 180;
