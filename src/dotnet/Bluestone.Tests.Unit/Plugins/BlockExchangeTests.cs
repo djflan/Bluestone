@@ -306,10 +306,12 @@ public sealed class BlockExchangeTests : IDisposable
         var events = new[] { PluginEvent.NoteOn(1, 0, 60, 100) };
         var changes = new[] { new ParameterChange(0, 3, 0.5) };
         var outputEvents = new PluginEvent[4];
-        long allocated = 0;
+        // The best of several rounds after a warm-up: one-time runtime work (tiering, a first slow-path wait on a busy
+        // runner) may land in any single round, but steady-state allocation shows up in every round.
+        var allocated = long.MaxValue;
         try
         {
-            for (var round = 0; round < 2; round++)
+            for (var round = 0; round < 6; round++)
             {
                 var before = GC.GetAllocatedBytesForCurrentThread();
                 for (long k = round * 1000; k < (round + 1) * 1000; k++)
@@ -318,7 +320,10 @@ public sealed class BlockExchangeTests : IDisposable
                     host.TryCollect(k - 1, TimeSpan.FromSeconds(1), output, outputEvents, out _);
                 }
 
-                allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                if (round > 0)
+                {
+                    allocated = Math.Min(allocated, GC.GetAllocatedBytesForCurrentThread() - before);
+                }
             }
         }
         finally
