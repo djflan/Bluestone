@@ -71,6 +71,8 @@ public sealed class MixerStripState
         var muteStep = (targetMute - startMute) / block.Frames;
         var gainIndex = 0;
         var panIndex = 0;
+        var finalLeft = 0f;
+        var finalRight = 0f;
         for (var i = 0; i < block.Frames; i++)
         {
             if (context.Wraps && i == context.WrapOffset)
@@ -86,8 +88,15 @@ public sealed class MixerStripState
             var automatedPan = ValueAt(panAutomation, frame, pan, ref panIndex);
             var level = PanLaw.DecibelsToGain(automatedGain) * (startMute + ((i + 1) * muteStep));
             var (left, right) = PanLaw.Gains(automatedPan);
-            block.Left[i] *= level * left;
-            block.Right[i] *= level * right;
+            finalLeft = level * left;
+            finalRight = level * right;
+            block.Left[i] *= finalLeft;
+            block.Right[i] *= finalRight;
+        }
+
+        if (block.Frames > 0)
+        {
+            _gain.SetCurrent(finalLeft, finalRight);
         }
 
         _muteLevel = targetMute;
@@ -123,14 +132,34 @@ public sealed class MixerStripState
 
     private static double ValueAt(DescribedAutomationPoint[] points, long frame, double fallback, ref int index)
     {
-        if (points.Length == 0 || frame < points[0].Frame)
+        if (points.Length == 0)
         {
             return fallback;
         }
 
-        while (index + 1 < points.Length && points[index + 1].Frame <= frame)
+        if (frame < points[0].Frame)
         {
-            index++;
+            return points[0].Value;
+        }
+
+        if (index + 1 < points.Length && points[index + 1].Frame <= frame)
+        {
+            var lower = index + 1;
+            var upper = points.Length - 1;
+            while (lower < upper)
+            {
+                var middle = lower + ((upper - lower + 1) / 2);
+                if (points[middle].Frame <= frame)
+                {
+                    lower = middle;
+                }
+                else
+                {
+                    upper = middle - 1;
+                }
+            }
+
+            index = lower;
         }
 
         var current = points[index];
@@ -175,6 +204,13 @@ internal sealed class GainRamp
         Mix.AddRamped(source.Right, destination.Right, _right, right);
         _left = left;
         _right = right;
+    }
+
+    public void SetCurrent(float left, float right)
+    {
+        _left = left;
+        _right = right;
+        _started = true;
     }
 
     private void Start(float left, float right)

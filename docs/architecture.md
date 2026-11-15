@@ -341,7 +341,7 @@ Project
   ├── instruments       external MIDI instruments: profile, operating mode, ports → endpoints
   ├── connections       the one routing model: events or audio, source → destination, channel mapping
   ├── track audio strips  gain, pan, audio mute/solo, fader automation
-  └── Master              mandatory project strip, optional chain, fader/pan automation
+  └── Master              mandatory project strip, optional chain, fader/pan/device automation
 ```
 
 ### Tracks and clips

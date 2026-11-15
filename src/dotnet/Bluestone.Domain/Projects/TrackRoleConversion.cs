@@ -45,7 +45,7 @@ public sealed record RoleChangePlan
     /// <summary>Plain language for the user: why, and what changes. Empty for <see cref="RoleChangeOutcome.NoChange"/>.</summary>
     public string Message { get; init; } = string.Empty;
 
-    /// <summary>The conversion adds an ordinary audio Output route when no active or parked one already exists.</summary>
+    /// <summary>The conversion adds an active ordinary audio Output route without discarding parked routes.</summary>
     public bool AddsAudioPath { get; init; }
 
     /// <summary>Applies the plan.</summary>
