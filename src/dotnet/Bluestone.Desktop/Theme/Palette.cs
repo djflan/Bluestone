@@ -56,6 +56,13 @@ internal static class Palette
     public static readonly Color MeterHot = Color.Parse("#FF2E93");
     public static readonly Color MeterClip = Color.Parse("#FF3036");
     public static readonly Color MeterTrack = Color.Parse("#222225");
+    // Mixer-only DSP display (kept separate from Device View junction meters).
+    public static readonly Color MixerMeterTrack = Color.Parse("#333338");
+    public static readonly Color MixerMeterFill = Color.Parse("#4FB3B0");
+    public static readonly Color MixerMeterHot = Color.Parse("#E0A43A");
+    public static readonly Color MixerMeterPeakHold = Color.Parse("#F2F2F2");
+    public static readonly Color MixerMeterWarming = Color.Parse("#E0A43A");
+    public static readonly Color MixerMeterUnavailable = Color.Parse("#6E6E75");
     public static readonly Color JunctionLamp = Lighten(MeterLow, 0.25);
 
     /// <summary>Track colours, muted so dense arrangements stay readable; status is never conveyed by these alone.</summary>

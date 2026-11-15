@@ -1,0 +1,356 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:audio="using:Bluestone.Audio"
+             xmlns:vm="using:Bluestone.Presentation"
+             xmlns:controls="using:Bluestone.Desktop.Controls"
+             xmlns:theme="using:Bluestone.Desktop.Theme"
+             x:Class="Bluestone.Desktop.Views.MixerConsoleView"
+             x:DataType="vm:MixerConsoleViewModel"
+             AutomationProperties.Name="Track-owned mixer console">
+  <Grid RowDefinitions="Auto,*" Background="{StaticResource Surface.Base}">
+    <Border Classes="header" Padding="{StaticResource Inset.Header}">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="{StaticResource Space.M}">
+        <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" Width="{StaticResource Icon.SizeMedium}" Height="{StaticResource Icon.SizeMedium}"
+                  Foreground="{StaticResource Signal.Audio}" VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.S}" VerticalAlignment="Center">
+          <TextBlock Text="MIXER" Classes="overline" Foreground="{StaticResource Text.Primary}" />
+          <TextBlock Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <Button Grid.Column="2" Classes="mixerMeterMode" Width="{StaticResource MixerMeter.ModeWidth}"
+                Height="{StaticResource Height.Control}" VerticalAlignment="Center"
+                AutomationProperties.Name="Mixer meter display mode"
+                ToolTip.Tip="Choose the global DSP display. These preferences are saved on this computer, not in the project.">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+            <TextBlock Text="{Binding MeterMode, Converter={x:Static theme:MixerMeterModeLabelConverter.Instance}}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <PathIcon Grid.Column="1" Classes="stroke" Data="{StaticResource Icon.ChevronDown}"
+                      Width="{StaticResource Icon.SizeSmall}" Height="{StaticResource Icon.SizeSmall}" />
+          </Grid>
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight">
+              <MenuItem Header="Peak + RMS" IsChecked="{Binding MeterMode, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=PeakRms}"
+                        Command="{Binding SetMeterModeCommand}" CommandParameter="{x:Static audio:MixerMeterMode.PeakRms}" />
+              <MenuItem Header="VU" IsChecked="{Binding MeterMode, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Vu}"
+                        Command="{Binding SetMeterModeCommand}" CommandParameter="{x:Static audio:MixerMeterMode.Vu}" />
+              <MenuItem Header="K-20" IsChecked="{Binding MeterMode, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=K20}"
+                        Command="{Binding SetMeterModeCommand}" CommandParameter="{x:Static audio:MixerMeterMode.K20}" />
+              <MenuItem Header="K-14" IsChecked="{Binding MeterMode, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=K14}"
+                        Command="{Binding SetMeterModeCommand}" CommandParameter="{x:Static audio:MixerMeterMode.K14}" />
+              <MenuItem Header="K-12" IsChecked="{Binding MeterMode, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=K12}"
+                        Command="{Binding SetMeterModeCommand}" CommandParameter="{x:Static audio:MixerMeterMode.K12}" />
+              <MenuItem Header="LUFS-S" IsChecked="{Binding MeterMode, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=LufsS}"
+                        Command="{Binding SetMeterModeCommand}" CommandParameter="{x:Static audio:MixerMeterMode.LufsS}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+        <Button Grid.Column="3" Classes="tool small" ToolTip.Tip="Meter presentation and workspace options"
+                AutomationProperties.Name="Mixer meter and workspace options">
+          <PathIcon Classes="stroke" Data="{StaticResource Icon.More}" />
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="mixerMeterSettings">
+              <StackPanel Spacing="{StaticResource Space.S}">
+                <TextBlock Text="PRESENTATION" Classes="overline" />
+                <Border Classes="segmented" AutomationProperties.Name="Mixer meter presentation">
+                  <UniformGrid Rows="1">
+                    <RadioButton Classes="segment" GroupName="MixerMeterPresentation" Content="Bar"
+                                 IsChecked="{Binding MeterPresentation, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Bar}"
+                                 Command="{Binding SetMeterPresentationCommand}" CommandParameter="{x:Static vm:MixerMeterPresentation.Bar}"
+                                 AutomationProperties.Name="Bar meter presentation" />
+                    <RadioButton Classes="segment" GroupName="MixerMeterPresentation" Content="Round"
+                                 IsChecked="{Binding MeterPresentation, Mode=OneWay, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Round}"
+                                 Command="{Binding SetMeterPresentationCommand}" CommandParameter="{x:Static vm:MixerMeterPresentation.Round}"
+                                 AutomationProperties.Name="Round meter presentation" />
+                  </UniformGrid>
+                </Border>
+                <StackPanel Spacing="{StaticResource Space.XS}"
+                            IsVisible="{Binding MeterMode, Converter={x:Static theme:EnumEqualsConverter.Instance}, ConverterParameter=Vu}">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                    <TextBlock Text="VU REFERENCE" Classes="overline" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding VuReferenceDbfs, StringFormat='{}{0} dBFS'}" Classes="muted" />
+                  </Grid>
+                  <ComboBox ItemsSource="{Binding VuReferenceChoices}" SelectedItem="{Binding VuReferenceDbfs, Mode=TwoWay}"
+                            Width="{StaticResource MixerMeter.ReferenceWidth}" AutomationProperties.Name="VU reference in dBFS">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <TextBlock Text="A sine at this RMS level reads 0 VU." Classes="muted" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="hairline" Height="1" />
+                <Button Classes="link" HorizontalAlignment="Stretch" Command="{Binding Host.DetachCommand}" IsVisible="{Binding !Host.IsDetached}">
+                  <TextBlock Text="Detach to Window" />
+                </Button>
+                <Button Classes="link" HorizontalAlignment="Stretch" Command="{Binding Host.DockCommand}" IsVisible="{Binding Host.IsDetached}">
+                  <TextBlock Text="Dock" />
+                </Button>
+                <Button Classes="link" HorizontalAlignment="Stretch" Command="{Binding Host.CollapseCommand}">
+                  <TextBlock Text="Collapse to Rail" />
+                </Button>
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="{StaticResource Inset.Panel}" ColumnSpacing="{StaticResource Space.M}">
+      <!-- Track strips scroll as one console; Master remains in its own fixed column. -->
+      <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                    AutomationProperties.Name="Track mixer strips">
+        <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.S}" VerticalAlignment="Top">
+          <ItemsControl ItemsSource="{Binding Tracks}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.S}" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:MixerTrackStripViewModel">
+                <Border Classes="mixerStrip" Classes.selected="{Binding IsSelected}" Width="{StaticResource Mixer.StripWidth}"
+                        AutomationProperties.Name="{Binding AccessibilitySummary}">
+                  <StackPanel Spacing="{StaticResource Space.S}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                      <Button Classes="link" Command="{Binding SelectCommand}" HorizontalAlignment="Left"
+                              ToolTip.Tip="Select this track in the arrangement">
+                        <TextBlock Text="{Binding Name}" Classes="title" TextTrimming="CharacterEllipsis" MaxWidth="140" />
+                      </Button>
+                      <Border Grid.Column="1" Classes="mixerRole" IsVisible="{Binding RoleLabel.Length}">
+                        <TextBlock Text="{Binding RoleLabel}" Classes="overline" Foreground="{StaticResource Text.Secondary}" />
+                      </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding Status}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
+
+                    <StackPanel IsVisible="{Binding HasAudioStrip}" Spacing="{StaticResource Space.S}">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.S}">
+                        <StackPanel Spacing="{StaticResource Space.XXS}">
+                          <TextBlock Text="GAIN" Classes="overline" />
+                          <TextBlock Text="{Binding GainText}" FontFamily="{StaticResource Font.Mono}" FontSize="{StaticResource FontSize.Small}"
+                                     AutomationProperties.Name="Track gain in decibels" />
+                          <Slider Classes="mixerFader" Orientation="Vertical" Height="{StaticResource Mixer.FaderHeight}" HorizontalAlignment="Center"
+                                  Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" Value="{Binding Gain}" SmallChange="0.5" LargeChange="3"
+                                  AutomationProperties.Name="Track audio gain" ToolTip.Tip="Track audio gain in decibels" />
+                          <TextBlock Text="0 dB" Classes="micro" HorizontalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="{StaticResource Space.XXS}" VerticalAlignment="Center">
+                          <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto"
+                                ColumnSpacing="{StaticResource MixerMeter.DisplayGap}" RowSpacing="{StaticResource Space.XXS}"
+                                HorizontalAlignment="Center">
+                            <TextBlock Text="PEAK / RMS" Classes="micro" HorizontalAlignment="Center" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding MeterMode, Converter={x:Static theme:MixerMeterModeLabelConverter.Instance}}"
+                                       Classes="micro" HorizontalAlignment="Center" />
+                            <controls:LevelMeter Grid.Row="1" Levels="{Binding Meter}"
+                                                 Width="{StaticResource MixerMeter.PeakWidth}" Height="{StaticResource MixerMeter.FaceHeight}"
+                                                 HorizontalAlignment="Center" />
+                            <controls:MixerMeterFace Grid.Row="1" Grid.Column="1" Mode="{Binding MeterMode}"
+                                                     Presentation="{Binding $parent[UserControl].((vm:MixerConsoleViewModel)DataContext).MeterPresentation}"
+                                                     LeftValue="{Binding MeterLeftValue}" RightValue="{Binding MeterRightValue}"
+                                                     LeftPeakHold="{Binding MeterLeftPeakHold}" RightPeakHold="{Binding MeterRightPeakHold}" IsReady="{Binding IsMeterReady}"
+                                                     Width="{StaticResource MixerMeter.FaceWidth}" Height="{StaticResource MixerMeter.FaceHeight}"
+                                                     PeakFloor="{StaticResource MixerMeter.Scale.PeakFloorDb}" PeakCeiling="{StaticResource MixerMeter.Scale.PeakCeilingDb}"
+                                                     VuFloor="{StaticResource MixerMeter.Scale.VuFloorDb}" VuCeiling="{StaticResource MixerMeter.Scale.VuCeilingDb}"
+                                                     KFloor="{StaticResource MixerMeter.Scale.KFloorDb}" KCeiling="{StaticResource MixerMeter.Scale.KCeilingDb}"
+                                                     LufsFloor="{StaticResource MixerMeter.Scale.LufsFloorDb}" LufsCeiling="{StaticResource MixerMeter.Scale.LufsCeilingDb}"
+                                                     BarGap="{StaticResource MixerMeter.DisplayGap}" BarCornerRadius="{StaticResource MixerMeter.BarCornerRadius}"
+                                                     RoundStroke="{StaticResource MixerMeter.RoundStroke}" PeakHoldStroke="{StaticResource MixerMeter.PeakHoldStroke}"
+                                                     RoundStartAngle="{StaticResource MixerMeter.RoundStartAngle}"
+                                                     RoundSweepAngle="{StaticResource MixerMeter.RoundSweepAngle}" HotFraction="{StaticResource MixerMeter.HotFraction}"
+                                                     ToolTip.Tip="Selected display-mode values. Peak and RMS are shown alongside in every presentation."
+                                                     AutomationProperties.Name="Selected mixer meter values" />
+                          </Grid>
+                          <Grid ColumnDefinitions="*,*" ColumnSpacing="{StaticResource MixerMeter.DisplayGap}"
+                                HorizontalAlignment="Center" IsVisible="{Binding IsMeterReady}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Center">
+                              <TextBlock Text="L" Classes="micro" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding MeterLeftValue, StringFormat='{}{0:0.0}'}" Classes="muted" FontSize="{StaticResource FontSize.Caption}"
+                                         FontFamily="{StaticResource Font.Mono}" AutomationProperties.Name="Left mixer meter value" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Center">
+                              <TextBlock Text="R" Classes="micro" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding MeterRightValue, StringFormat='{}{0:0.0}'}" Classes="muted" FontSize="{StaticResource FontSize.Caption}"
+                                         FontFamily="{StaticResource Font.Mono}" AutomationProperties.Name="Right mixer meter value" />
+                            </StackPanel>
+                          </Grid>
+                          <TextBlock Text="{Binding MeterStatus}" Classes="mixerMeterStatus" Classes.warming="{Binding IsMeterWarmingUp}"
+                                     Classes.unavailable="{Binding !HasMeterReading}" IsVisible="{Binding !IsMeterReady}"
+                                     HorizontalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                      </Grid>
+
+                      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="{StaticResource Space.S}" RowSpacing="{StaticResource Space.XS}"
+                            Margin="{StaticResource Inset.MixerTop}">
+                        <TextBlock Text="Pan" Classes="label" VerticalAlignment="Center" />
+                        <Slider Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding Pan}" SmallChange="0.05" LargeChange="0.25"
+                                AutomationProperties.Name="Track audio pan" ToolTip.Tip="Pan from left to right" />
+                        <TextBlock Grid.Column="2" Text="{Binding PanText}" Classes="muted"
+                                   FontFamily="{StaticResource Font.Mono}" VerticalAlignment="Center" />
+                        <ToggleButton Grid.Row="1" Classes="trackButton mute" Content="M" IsChecked="{Binding IsMuted}"
+                                      AutomationProperties.Name="Mute track audio" ToolTip.Tip="Mute this track's audio strip; MIDI content mute is separate" />
+                        <ToggleButton Grid.Row="1" Grid.Column="2" Classes="trackButton solo" Content="S" IsChecked="{Binding IsSoloed}"
+                                      AutomationProperties.Name="Solo track audio" ToolTip.Tip="Solo this track's audio strip; MIDI content solo is separate" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="AUDIO STRIP" Classes="micro" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Grid>
+                    </StackPanel>
+
+                    <Panel IsVisible="{Binding !HasAudioStrip}">
+                      <Border Classes="mixerSend" BorderBrush="{StaticResource State.Offline}">
+                        <StackPanel Spacing="{StaticResource Space.XS}">
+                          <TextBlock Text="MIDI ONLY" Classes="overline" Foreground="{StaticResource Signal.Note}" />
+                          <TextBlock Text="{Binding OutputSummary}" Classes="secondary" TextWrapping="Wrap" />
+                          <TextBlock Text="No audio fader, pan, or meter" Classes="muted" />
+                        </StackPanel>
+                      </Border>
+                    </Panel>
+
+                    <StackPanel Spacing="{StaticResource Space.XS}" IsVisible="{Binding HasAudioStrip}">
+                      <TextBlock Text="OUTPUT" Classes="overline" />
+                      <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding Output}" IsEnabled="{Binding CanChooseOutput}"
+                                HorizontalAlignment="Stretch" AutomationProperties.Name="Track audio output"
+                                ToolTip.Tip="The ordinary output goes to Master or the parent Group." />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="{StaticResource Space.XS}">
+                      <TextBlock Text="CHAIN" Classes="overline" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="link" Command="{Binding OpenChainCommand}" HorizontalAlignment="Left"
+                              ToolTip.Tip="Open this track's device chain">
+                        <TextBlock Text="{Binding ChainSummary}" Classes="muted" TextTrimming="CharacterEllipsis" />
+                      </Button>
+                    </Grid>
+
+                    <Expander Header="Sends" IsVisible="{Binding HasAudioStrip}" AutomationProperties.Name="Audio sends">
+                      <StackPanel Spacing="{StaticResource Space.XS}" Margin="{StaticResource Inset.MixerTop}">
+                        <TextBlock Text="Send to an Effect track" Classes="muted" IsVisible="{Binding !Sends.Count}" />
+                        <ItemsControl ItemsSource="{Binding Sends}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MixerSendViewModel">
+                              <Border Classes="mixerSend" Margin="{StaticResource Inset.MixerTrailing}">
+                                <StackPanel Spacing="{StaticResource Space.XS}">
+                                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                                    <ComboBox ItemsSource="{Binding Targets}" SelectedItem="{Binding Target}" AutomationProperties.Name="Send destination" />
+                                    <Button Grid.Column="1" Classes="tool tiny" Command="{Binding RemoveCommand}" AutomationProperties.Name="Remove audio send">
+                                      <PathIcon Classes="stroke" Data="{StaticResource Icon.Close}" />
+                                    </Button>
+                                  </Grid>
+                                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                                    <TextBlock Text="{Binding LevelText}" Classes="muted" FontFamily="{StaticResource Font.Mono}" VerticalAlignment="Center" />
+                                    <Slider Grid.Column="1" Minimum="{Binding MinimumLevel}" Maximum="{Binding MaximumLevel}" Value="{Binding Level}"
+                                            SmallChange="0.5" LargeChange="3" AutomationProperties.Name="Send level in decibels" />
+                                    <CheckBox Grid.Column="2" Content="Pre" IsChecked="{Binding IsPreFader}" AutomationProperties.Name="Pre-fader send"
+                                              ToolTip.Tip="Take the send before this strip's fader" />
+                                  </Grid>
+                                </StackPanel>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
+                          <ComboBox ItemsSource="{Binding SendTargets}" SelectedItem="{Binding NewSendTarget}" PlaceholderText="Effect track…"
+                                    AutomationProperties.Name="New send destination" />
+                          <Button Grid.Column="1" Classes="raised compact" Command="{Binding AddSendCommand}" IsEnabled="{Binding CanAddSend}"
+                                  ToolTip.Tip="Add an audio send">Add</Button>
+                        </Grid>
+                      </StackPanel>
+                    </Expander>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Border Classes="mixerStrip" IsVisible="{Binding !Tracks.Count}" Width="{StaticResource Mixer.StripWidth}">
+            <StackPanel Classes="emptyState" Spacing="{StaticResource Space.S}" VerticalAlignment="Center">
+              <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" Width="{StaticResource Icon.SizeLarge}" Height="{StaticResource Icon.SizeLarge}"
+                        Foreground="{StaticResource Line.BorderStrong}" HorizontalAlignment="Center" />
+              <TextBlock Text="No tracks yet" Classes="emptyTitle" HorizontalAlignment="Center" />
+              <TextBlock Text="Add an audio or MIDI track to begin mixing." Classes="muted" TextWrapping="Wrap" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Border Classes="mixerMaster" Classes.selected="{Binding Master.IsSelected}" Width="{StaticResource Mixer.MasterWidth}"
+                AutomationProperties.Name="Master audio strip">
+        <StackPanel Spacing="{StaticResource Space.S}">
+          <Button Classes="link" Command="{Binding Master.SelectCommand}" HorizontalAlignment="Left"
+                  ToolTip.Tip="Select the project Master and show its Inspector scope"
+                  AutomationProperties.Name="Select Master in Inspector">
+            <TextBlock Text="MASTER" Classes="overline" Foreground="{StaticResource Signal.Audio}" />
+          </Button>
+          <TextBlock Text="Project output" Classes="muted" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.S}">
+            <StackPanel Spacing="{StaticResource Space.XXS}">
+              <TextBlock Text="GAIN" Classes="overline" />
+              <TextBlock Text="{Binding Master.GainText}" FontFamily="{StaticResource Font.Mono}" FontSize="{StaticResource FontSize.Small}" />
+              <Slider Classes="mixerFader" Orientation="Vertical" Height="{StaticResource Mixer.FaderHeight}" HorizontalAlignment="Center"
+                      Minimum="{Binding Master.MinimumGain}" Maximum="{Binding Master.MaximumGain}" Value="{Binding Master.Gain}" SmallChange="0.5" LargeChange="3"
+                      AutomationProperties.Name="Master audio gain" ToolTip.Tip="Master output gain in decibels" />
+              <TextBlock Text="0 dB" Classes="micro" HorizontalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="{StaticResource Space.XXS}" VerticalAlignment="Center">
+              <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto"
+                    ColumnSpacing="{StaticResource MixerMeter.DisplayGap}" RowSpacing="{StaticResource Space.XXS}"
+                    HorizontalAlignment="Center">
+                <TextBlock Text="PEAK / RMS" Classes="micro" HorizontalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Master.MeterMode, Converter={x:Static theme:MixerMeterModeLabelConverter.Instance}}"
+                           Classes="micro" HorizontalAlignment="Center" />
+                <controls:LevelMeter Grid.Row="1" Levels="{Binding Master.Meter}"
+                                     Width="{StaticResource MixerMeter.PeakWidth}" Height="{StaticResource MixerMeter.FaceHeight}"
+                                     HorizontalAlignment="Center" />
+                <controls:MixerMeterFace Grid.Row="1" Grid.Column="1" Mode="{Binding Master.MeterMode}" Presentation="{Binding MeterPresentation}"
+                                         LeftValue="{Binding Master.MeterLeftValue}" RightValue="{Binding Master.MeterRightValue}"
+                                         LeftPeakHold="{Binding Master.MeterLeftPeakHold}" RightPeakHold="{Binding Master.MeterRightPeakHold}" IsReady="{Binding Master.IsMeterReady}"
+                                         Width="{StaticResource MixerMeter.FaceWidth}" Height="{StaticResource MixerMeter.FaceHeight}"
+                                         PeakFloor="{StaticResource MixerMeter.Scale.PeakFloorDb}" PeakCeiling="{StaticResource MixerMeter.Scale.PeakCeilingDb}"
+                                         VuFloor="{StaticResource MixerMeter.Scale.VuFloorDb}" VuCeiling="{StaticResource MixerMeter.Scale.VuCeilingDb}"
+                                         KFloor="{StaticResource MixerMeter.Scale.KFloorDb}" KCeiling="{StaticResource MixerMeter.Scale.KCeilingDb}"
+                                         LufsFloor="{StaticResource MixerMeter.Scale.LufsFloorDb}" LufsCeiling="{StaticResource MixerMeter.Scale.LufsCeilingDb}"
+                                         BarGap="{StaticResource MixerMeter.DisplayGap}" BarCornerRadius="{StaticResource MixerMeter.BarCornerRadius}"
+                                         RoundStroke="{StaticResource MixerMeter.RoundStroke}" PeakHoldStroke="{StaticResource MixerMeter.PeakHoldStroke}"
+                                         RoundStartAngle="{StaticResource MixerMeter.RoundStartAngle}"
+                                         RoundSweepAngle="{StaticResource MixerMeter.RoundSweepAngle}" HotFraction="{StaticResource MixerMeter.HotFraction}"
+                                         ToolTip.Tip="Selected display-mode values. Peak and RMS are shown alongside in every presentation."
+                                         AutomationProperties.Name="Selected mixer meter values" />
+              </Grid>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="{StaticResource MixerMeter.DisplayGap}"
+                    HorizontalAlignment="Center" IsVisible="{Binding Master.IsMeterReady}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Center">
+                  <TextBlock Text="L" Classes="micro" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Master.MeterLeftValue, StringFormat='{}{0:0.0}'}" Classes="muted" FontSize="{StaticResource FontSize.Caption}"
+                             FontFamily="{StaticResource Font.Mono}" AutomationProperties.Name="Master left meter value" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Center">
+                  <TextBlock Text="R" Classes="micro" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Master.MeterRightValue, StringFormat='{}{0:0.0}'}" Classes="muted" FontSize="{StaticResource FontSize.Caption}"
+                             FontFamily="{StaticResource Font.Mono}" AutomationProperties.Name="Master right meter value" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="{Binding Master.MeterStatus}" Classes="mixerMeterStatus" Classes.warming="{Binding Master.IsMeterWarmingUp}"
+                         Classes.unavailable="{Binding !Master.HasMeterReading}" IsVisible="{Binding !Master.IsMeterReady}"
+                         HorizontalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+          </Grid>
+          <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="{StaticResource Space.S}" RowSpacing="{StaticResource Space.XS}">
+            <TextBlock Text="Pan" Classes="label" VerticalAlignment="Center" />
+            <Slider Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding Master.Pan}" SmallChange="0.05" LargeChange="0.25"
+                    AutomationProperties.Name="Master audio pan" ToolTip.Tip="Master pan from left to right" />
+            <TextBlock Grid.Column="2" Text="{Binding Master.PanText}" Classes="muted"
+                       FontFamily="{StaticResource Font.Mono}" VerticalAlignment="Center" />
+            <ToggleButton Grid.Row="1" Classes="trackButton mute" Content="M" IsChecked="{Binding Master.IsMuted}"
+                          AutomationProperties.Name="Mute master audio" />
+            <ToggleButton Grid.Row="1" Grid.Column="2" Classes="trackButton solo" Content="S" IsChecked="{Binding Master.IsSoloed}"
+                          AutomationProperties.Name="Solo master audio" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="MASTER" Classes="micro" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="{StaticResource Space.XS}">
+            <TextBlock Text="CHAIN" Classes="overline" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding Master.ChainSummary}" Classes="muted" TextTrimming="CharacterEllipsis" />
+          </Grid>
+          <TextBlock Text="Peak/RMS is retained in every mode." Classes="muted" TextWrapping="Wrap" />
+        </StackPanel>
+        </Border>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -21,6 +21,15 @@ public sealed partial class EngineChannel
                 writer.Int32(audio.LiveQueuedFrames);
                 WriteOptional(ref writer, audio.Host);
                 break;
+            case SetMixerMeterSettings settings:
+                if (settings.Mode > EngineLimits.MaxMixerMeterMode || settings.VuReferenceDbfs is < -36 or > 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(message), "Mixer meter settings are outside the protocol's limits.");
+                }
+
+                writer.Byte(settings.Mode);
+                writer.Int32(settings.VuReferenceDbfs);
+                break;
             case AudioDeviceStatus status:
                 writer.Int64(status.Request);
                 writer.Byte((byte)status.State);
@@ -140,6 +149,8 @@ public sealed partial class EngineChannel
                     reader.Bool(),
                     reader.Int32In(0, EngineLimits.MaxQueuedFrames),
                     ReadOptionalName(ref reader));
+            case EngineMessageType.SetMixerMeterSettings:
+                return new SetMixerMeterSettings(reader.ByteUpTo(EngineLimits.MaxMixerMeterMode), reader.Int32In(-36, 0));
             case EngineMessageType.AudioDeviceStatus:
                 {
                     var request = reader.NonNegative();
@@ -266,11 +277,50 @@ public sealed partial class EngineChannel
 
     private static void WriteMeter(ref Writer writer, in MeterSpec meter)
     {
+        if (meter.DisplayMode > EngineLimits.MaxMixerMeterMode
+            || !ValidMeterDisplayValue(meter.LeftValue, meter.DisplayMode, meter.IsReady)
+            || !ValidMeterDisplayValue(meter.RightValue, meter.DisplayMode, meter.IsReady))
+        {
+            throw new ArgumentException("A mixer-meter display value is outside the protocol's limits.", nameof(meter));
+        }
+
         writer.Single(meter.PeakLeft);
         writer.Single(meter.PeakRight);
         writer.Single(meter.RmsLeft);
         writer.Single(meter.RmsRight);
+        writer.Byte(meter.DisplayMode);
+        writer.Double(meter.LeftValue);
+        writer.Double(meter.RightValue);
+        writer.Bool(meter.IsReady);
     }
 
-    private static MeterSpec ReadMeter(ref Reader reader) => new(reader.Level(), reader.Level(), reader.Level(), reader.Level());
+    private static MeterSpec ReadMeter(ref Reader reader)
+    {
+        var peakLeft = reader.Level();
+        var peakRight = reader.Level();
+        var rmsLeft = reader.Level();
+        var rmsRight = reader.Level();
+        var mode = reader.ByteUpTo(EngineLimits.MaxMixerMeterMode);
+        var left = reader.Double();
+        var right = reader.Double();
+        var ready = reader.Bool();
+        if (!ValidMeterDisplayValue(left, mode, ready) || !ValidMeterDisplayValue(right, mode, ready))
+        {
+            throw new EngineProtocolException("A mixer-meter display value is invalid.");
+        }
+
+        return new MeterSpec(peakLeft, peakRight, rmsLeft, rmsRight)
+        {
+            DisplayMode = mode,
+            LeftValue = left,
+            RightValue = right,
+            IsReady = ready,
+        };
+    }
+
+    private static bool ValidMeterDisplayValue(double value, byte mode, bool ready) =>
+        !double.IsPositiveInfinity(value)
+        && (double.IsNaN(value)
+            ? mode == EngineLimits.MaxMixerMeterMode && !ready
+            : mode != EngineLimits.MaxMixerMeterMode || ready);
 }

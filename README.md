@@ -55,14 +55,14 @@ Read the full [product vision](docs/product-vision.md), the public [roadmap](doc
 - Track and rack device chains with built-in Transpose, Event Filter, Arpeggiator, and Note and Audio Receiver devices; any point in a chain can be routed from.
 - A Browser and Device View for inserting, replacing, reordering, bypassing, and editing devices.
 - Parallel note, control, protocol, and audio signals through a chain, allowing layered instruments and effects in either domain.
-- Shared racks, group routing, mixer channels, sends, buses, master routing, and validation that refuses feedback loops.
+- Shared racks, track-owned mixer strips, Group buses, Effect returns, Output/Send/Internal routing, mandatory Master processing, and validation that refuses feedback loops.
 - Device parameter automation and hardware-parameter automation.
 
 ### Audio and plugins
 
 - An audio engine with one transport for MIDI, audio clips, plugin instruments, and plugin effects.
 - WAVE and AIFF playback at any source rate, streamed from disk with clip gain, fades, and loops.
-- A mixer console with gain, pan, mute, solo, buses, pre/post sends, and peak and RMS meters.
+- A dockable or detachable mixer console with track and Master controls, pre/post sends, and Peak + RMS, VU, K-System, or LUFS-S meters.
 - Plugin latency compensation and a shorter render-ahead path for live plugin instruments.
 - VST 3 and CLAP instruments, note effects, and audio effects hosted in worker processes.
 - Per-module scanning and quarantine, saved plugin state, crash recovery, configurable hosting modes, and floating editors.

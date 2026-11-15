@@ -1,44 +1,64 @@
+using System.Collections.Immutable;
+
 namespace Bluestone.Audio;
 
 /// <summary>
-/// An immutable render graph: nodes (sources and processors), mixer strips, and the master. Built on a control
-/// thread with <see cref="AudioGraphBuilder"/> and published to the engine, which swaps it in atomically between
-/// blocks; the audio thread never waits for it. Rendering allocates nothing.
+/// An immutable render graph built on the control thread and rendered without allocation or locks on the audio thread.
+/// Nodes and strips share one topological schedule so strip outputs can feed track chains and the Master chain.
 /// </summary>
 public sealed class AudioGraph
 {
     private readonly NodeEntry[] _nodes;
     private readonly StripEntry[] _strips;
+    private readonly StageEntry[] _renderOrder;
     private readonly MeterEntry[] _meterPoints;
     private readonly float[] _silence;
     private readonly float[] _delayed;
     private readonly float[] _metered;
 
-    internal AudioGraph(int blockFrames, NodeEntry[] nodes, StripEntry[] strips, MixerStripState master, float masterGain, IReadOnlyList<IStreamedSource> streams, int latencyFrames, MeterEntry[]? meterPoints = null)
+    internal AudioGraph(
+        int blockFrames,
+        NodeEntry[] nodes,
+        StripEntry[] strips,
+        StageEntry[] renderOrder,
+        MixerStripState master,
+        float masterGain,
+        double masterGainDecibels,
+        double masterPan,
+        bool masterAudible,
+        DescribedAutomationPoint[] masterGainAutomation,
+        DescribedAutomationPoint[] masterPanAutomation,
+        float masterLeft,
+        float masterRight,
+        IReadOnlyList<IStreamedSource> streams,
+        int latencyFrames,
+        MeterEntry[]? meterPoints = null)
     {
         BlockFrames = blockFrames;
         _nodes = nodes;
         _strips = strips;
+        _renderOrder = renderOrder;
         _meterPoints = meterPoints ?? [];
         _metered = _meterPoints.Length > 0 ? new float[2 * blockFrames] : [];
         Master = master;
         MasterGain = masterGain;
+        MasterGainDecibels = masterGainDecibels;
+        MasterPan = masterPan;
+        MasterAudible = masterAudible;
+        MasterGainAutomation = masterGainAutomation;
+        MasterPanAutomation = masterPanAutomation;
+        MasterLeft = masterLeft;
+        MasterRight = masterRight;
         Streams = streams;
         LatencyFrames = latencyFrames;
         _silence = new float[2 * blockFrames];
         _delayed = new float[2 * blockFrames];
     }
 
-    /// <summary>
-    /// Frames between the song position a block renders and the song position the master puts out (the longest path's
-    /// latency; every shorter path is delayed to match). The engine renders this far ahead of the transport.
-    /// </summary>
+    /// <summary>Frames between the song position a block renders and the song position the master puts out.</summary>
     public int LatencyFrames { get; }
 
-    /// <summary>
-    /// True when a node now reports another latency than the one this graph was built for (a plugin's latency changed):
-    /// the graph should be rebuilt so its compensation matches. Any thread.
-    /// </summary>
+    /// <summary>Whether a node now reports another latency than the one this graph was built for.</summary>
     public bool IsLatencyStale
     {
         get
@@ -55,11 +75,7 @@ public sealed class AudioGraph
         }
     }
 
-    /// <summary>
-    /// Frames from <paramref name="node"/>'s output until the master puts it out: the compensation delays and the latency
-    /// of the plugin nodes after it on its way there (along the slowest way, when there are several), or null when the
-    /// node is not in this graph.
-    /// </summary>
+    /// <summary>Frames from <paramref name="node"/>'s output until the master puts it out, or null if absent.</summary>
     public int? DelayToMasterOf(AudioNode node)
     {
         foreach (var entry in _nodes)
@@ -73,23 +89,45 @@ public sealed class AudioGraph
         return null;
     }
 
-    /// <summary>The largest block this graph renders; its buffers are this long.</summary>
+    /// <summary>The largest block this graph renders.</summary>
     public int BlockFrames { get; }
 
     public MixerStripState Master { get; }
 
     public float MasterGain { get; }
 
-    /// <summary>Nodes in render order.</summary>
-    public IEnumerable<AudioNode> Nodes => _nodes.Select(n => n.Node);
+    private double MasterGainDecibels { get; }
 
-    /// <summary>Sources that read from disk; the engine's disk streamer services them while this graph is current.</summary>
+    private double MasterPan { get; }
+
+    private bool MasterAudible { get; }
+
+    private DescribedAutomationPoint[] MasterGainAutomation { get; }
+
+    private DescribedAutomationPoint[] MasterPanAutomation { get; }
+
+    internal float MasterLeft { get; }
+
+    internal float MasterRight { get; }
+
+    /// <summary>Nodes in graph order.</summary>
+    public IEnumerable<AudioNode> Nodes => _renderOrder.Where(stage => !stage.IsStrip).Select(stage => _nodes[stage.Index].Node);
+
     internal IReadOnlyList<IStreamedSource> Streams { get; }
 
-    /// <summary>A graph that renders silence.</summary>
     public static AudioGraph Silent(int blockFrames) => new AudioGraphBuilder().Build(blockFrames, new MixerStripState());
 
-    /// <summary>Renders one block of <see cref="BlockFrames"/> frames into <paramref name="output"/>. Audio thread.</summary>
+    /// <summary>Prepares each mixer's immutable sample-rate DSP state before the graph is published or rendered.</summary>
+    internal void PrepareMeters(int sampleRate)
+    {
+        Master.Meter.Prepare(sampleRate);
+        foreach (var strip in _strips)
+        {
+            strip.State.Meter.Prepare(sampleRate);
+        }
+    }
+
+    /// <summary>Renders one block. Audio thread; all storage is allocated while building the graph.</summary>
     internal void Render(in AudioRenderContext context, StereoBuffer output)
     {
         var frames = context.Frames;
@@ -97,94 +135,125 @@ public sealed class AudioGraph
         output.Clear();
         var silence = StereoBuffer.Of(_silence, stride, frames);
         silence.Clear();
+
+        foreach (var node in _nodes)
+        {
+            StereoBuffer.Of(node.OutputStorage, stride, frames).Clear();
+            if (node.InputStorage is { } input)
+            {
+                StereoBuffer.Of(input, stride, frames).Clear();
+            }
+
+            if (node.SidechainStorage is { } sidechain)
+            {
+                StereoBuffer.Of(sidechain, stride, frames).Clear();
+            }
+        }
+
         foreach (var strip in _strips)
         {
             StereoBuffer.Of(strip.Storage, stride, frames).Clear();
+            StereoBuffer.Of(strip.PreFaderStorage, stride, frames).Clear();
         }
 
-        foreach (var entry in _nodes)
+        foreach (var stage in _renderOrder)
         {
-            var input = silence;
-            if (entry.Inputs.Length > 0)
+            if (!stage.IsStrip)
             {
-                input = StereoBuffer.Of(entry.InputStorage!, stride, frames);
-                input.Clear();
-                for (var i = 0; i < entry.Inputs.Length; i++)
+                var entry = _nodes[stage.Index];
+                var input = entry.InputStorage is { } inputStorage ? StereoBuffer.Of(inputStorage, stride, frames) : silence;
+                foreach (var source in entry.Inputs)
                 {
-                    input.Add(Delayed(StereoBuffer.Of(_nodes[entry.Inputs[i]].OutputStorage, stride, frames), entry.InputDelays[i], frames));
+                    input.Add(Delayed(StereoBuffer.Of(_nodes[source.Index].OutputStorage, stride, frames), source.Delay, frames));
+                }
+
+                foreach (var source in entry.StripInputs)
+                {
+                    var sourceBuffer = _strips[source.Index].RouteAudible
+                        ? StereoBuffer.Of(_strips[source.Index].Storage, stride, frames)
+                        : silence;
+                    input.Add(Delayed(sourceBuffer, source.Delay, frames));
+                }
+
+                foreach (var send in entry.SendInputs)
+                {
+                    var source = _strips[send.SourceStrip];
+                    var buffer = send.PreFader ? StereoBuffer.Of(source.PreFaderStorage, stride, frames) : StereoBuffer.Of(source.Storage, stride, frames);
+                    send.Ramp.AddTo(Delayed(buffer, send.Delay, frames), input, send.Left, send.Right);
+                }
+
+                var sidechain = entry.SidechainStorage is { } sidechainStorage ? StereoBuffer.Of(sidechainStorage, stride, frames) : default;
+                foreach (var source in entry.SidechainInputs)
+                {
+                    sidechain.Add(Delayed(StereoBuffer.Of(_nodes[source.Index].OutputStorage, stride, frames), source.Delay, frames));
+                }
+
+                var rendered = StereoBuffer.Of(entry.OutputStorage, stride, frames);
+                entry.Node.Render(context, input, sidechain, rendered);
+                if (entry.ToMaster)
+                {
+                    output.Add(Delayed(rendered, entry.MasterDelay, frames));
                 }
             }
-
-            var sidechain = default(StereoBuffer);
-            if (entry.SidechainInputs.Length > 0)
+            else
             {
-                sidechain = StereoBuffer.Of(entry.SidechainStorage!, stride, frames);
-                sidechain.Clear();
-                for (var i = 0; i < entry.SidechainInputs.Length; i++)
+                var strip = _strips[stage.Index];
+                var buffer = StereoBuffer.Of(strip.Storage, stride, frames);
+                foreach (var source in strip.NodeInputs)
                 {
-                    sidechain.Add(Delayed(StereoBuffer.Of(_nodes[entry.SidechainInputs[i]].OutputStorage, stride, frames), entry.SidechainDelays[i], frames));
+                    buffer.Add(Delayed(StereoBuffer.Of(_nodes[source.Index].OutputStorage, stride, frames), source.Delay, frames));
                 }
-            }
 
-            var rendered = StereoBuffer.Of(entry.OutputStorage, stride, frames);
-            rendered.Clear();
-            entry.Node.Render(context, input, sidechain, rendered);
-            for (var i = 0; i < entry.Strips.Length; i++)
-            {
-                StereoBuffer.Of(_strips[entry.Strips[i]].Storage, stride, frames).Add(Delayed(rendered, entry.StripDelays[i], frames));
-            }
+                foreach (var source in strip.StripInputs)
+                {
+                    var sourceBuffer = _strips[source.Index].RouteAudible
+                        ? StereoBuffer.Of(_strips[source.Index].Storage, stride, frames)
+                        : silence;
+                    buffer.Add(Delayed(sourceBuffer, source.Delay, frames));
+                }
 
-            if (entry.ToMaster)
-            {
-                output.Add(Delayed(rendered, entry.MasterDelay, frames));
+                foreach (var send in strip.SendInputs)
+                {
+                    var source = _strips[send.SourceStrip];
+                    var sourceBuffer = send.PreFader ? StereoBuffer.Of(source.PreFaderStorage, stride, frames) : StereoBuffer.Of(source.Storage, stride, frames);
+                    send.Ramp.AddTo(Delayed(sourceBuffer, send.Delay, frames), buffer, send.Left, send.Right);
+                }
+
+                var preFader = StereoBuffer.Of(strip.PreFaderStorage, stride, frames);
+                for (var i = 0; i < frames; i++)
+                {
+                    preFader.Left[i] = buffer.Left[i];
+                    preFader.Right[i] = buffer.Right[i];
+                }
+
+                strip.State.ApplyAutomated(buffer, context, strip.GainDecibels, strip.Pan, strip.Unmuted, strip.GainAutomation, strip.PanAutomation);
+                strip.State.Meter.Update(buffer, context);
+                if (strip.ToMaster)
+                {
+                    output.Add(Delayed(strip.RouteAudible ? buffer : silence, strip.MasterDelay, frames));
+                }
             }
         }
 
         foreach (var point in _meterPoints)
         {
-            if (!point.Meter.IsWatched)
+            if (point.Meter.IsWatched)
             {
-                continue;
-            }
+                var sum = StereoBuffer.Of(_metered, stride, frames);
+                sum.Clear();
+                foreach (var node in point.Nodes)
+                {
+                    sum.Add(StereoBuffer.Of(_nodes[node].OutputStorage, stride, frames));
+                }
 
-            var sum = StereoBuffer.Of(_metered, stride, frames);
-            sum.Clear();
-            foreach (var node in point.Nodes)
-            {
-                sum.Add(StereoBuffer.Of(_nodes[node].OutputStorage, stride, frames));
-            }
-
-            point.Meter.Update(sum, context.SampleRate);
-        }
-
-        foreach (var strip in _strips)
-        {
-            var buffer = StereoBuffer.Of(strip.Storage, stride, frames);
-
-            // Sends read the strip's input; their gains include the fader and pan when they are post-fader.
-            foreach (var send in strip.Sends)
-            {
-                send.Ramp.AddTo(Delayed(buffer, send.Delay, frames), StereoBuffer.Of(_strips[send.Destination].Storage, stride, frames), send.Left, send.Right);
-            }
-
-            strip.State.Apply(buffer, strip.Left, strip.Right);
-            strip.State.Meter.Update(buffer, context.SampleRate);
-            var leaving = Delayed(buffer, strip.OutputDelay, frames);
-            if (strip.Destination < 0)
-            {
-                output.Add(leaving);
-            }
-            else
-            {
-                StereoBuffer.Of(_strips[strip.Destination].Storage, stride, frames).Add(leaving);
+                point.Meter.Update(sum, context.SampleRate);
             }
         }
 
-        Master.Apply(output, MasterGain, MasterGain);
-        Master.Meter.Update(output, context.SampleRate);
+        Master.ApplyAutomated(output, context, MasterGainDecibels, MasterPan, MasterAudible, MasterGainAutomation, MasterPanAutomation);
+        Master.Meter.Update(output, context);
     }
 
-    // The signal through its edge's compensation delay (in a scratch buffer), or the signal itself when there is none.
     private StereoBuffer Delayed(StereoBuffer signal, in EdgeDelay delay, int frames)
     {
         if (delay.Line is not { } line)
@@ -199,41 +268,60 @@ public sealed class AudioGraph
 
     internal readonly record struct EdgeDelay(DelayLine? Line, int Frames);
 
+    internal readonly record struct InputEdge(bool IsStrip, int Index, EdgeDelay Delay);
+
+    internal sealed record SendEntry(int SourceStrip, GainRamp Ramp, float Left, float Right, bool PreFader, EdgeDelay Delay);
+
+    internal readonly record struct StageEntry(bool IsStrip, int Index);
+
     internal sealed record MeterEntry(AudioMeter Meter, int[] Nodes);
 
-    internal sealed record NodeEntry(AudioNode Node, int[] Inputs, EdgeDelay[] InputDelays, float[]? InputStorage, float[] OutputStorage, int[] Strips, EdgeDelay[] StripDelays, bool ToMaster, EdgeDelay MasterDelay, int BuiltLatency, int DelayToMaster)
-    {
-        public int[] SidechainInputs { get; init; } = [];
+    internal sealed record NodeEntry(
+        AudioNode Node,
+        InputEdge[] Inputs,
+        InputEdge[] StripInputs,
+        SendEntry[] SendInputs,
+        InputEdge[] SidechainInputs,
+        float[]? InputStorage,
+        float[]? SidechainStorage,
+        float[] OutputStorage,
+        bool ToMaster,
+        EdgeDelay MasterDelay,
+        int BuiltLatency,
+        int DelayToMaster);
 
-        public EdgeDelay[] SidechainDelays { get; init; } = [];
-
-        public float[]? SidechainStorage { get; init; }
-    }
-
-    internal sealed record StripEntry(MixerStripState State, float Left, float Right, int Destination, float[] Storage, SendEntry[] Sends, EdgeDelay OutputDelay);
-
-    internal sealed record SendEntry(GainRamp Ramp, int Destination, float Left, float Right, EdgeDelay Delay);
+    internal sealed record StripEntry(
+        MixerStripState State,
+        float[] Storage,
+        float[] PreFaderStorage,
+        double GainDecibels,
+        double Pan,
+        bool RouteAudible,
+        bool Unmuted,
+        DescribedAutomationPoint[] GainAutomation,
+        DescribedAutomationPoint[] PanAutomation,
+        InputEdge[] NodeInputs,
+        InputEdge[] StripInputs,
+        SendEntry[] SendInputs,
+        bool ToMaster,
+        EdgeDelay MasterDelay);
 }
 
-/// <summary>
-/// Assembles an <see cref="AudioGraph"/>. Nodes may feed other nodes (an instrument into an effect), mixer strips,
-/// or the master; strips feed another strip (a bus) or the master, and send copies to other strips (returns).
-/// Feedback is refused.
-/// </summary>
+/// <summary>Assembles a node/strip graph on the control thread. Feedback is refused.</summary>
 public sealed class AudioGraphBuilder
 {
     private readonly List<AudioNode> _nodes = [];
     private readonly List<(int From, int To, bool Sidechain)> _nodeEdges = [];
     private readonly List<(int Node, int Strip)> _toStrips = [];
     private readonly HashSet<int> _toMaster = [];
-    private readonly List<(MixerStripState State, MixerStripSettings Settings)> _strips = [];
-    private readonly Dictionary<int, int> _stripDestinations = [];
-    private readonly List<(int Strip, int Destination, double LevelDecibels, bool PreFader)> _sends = [];
+    private readonly List<(MixerStripState State, MixerStripSettings Settings, DescribedAutomationPoint[] GainAutomation, DescribedAutomationPoint[] PanAutomation)> _strips = [];
+    private readonly Dictionary<int, RouteTarget> _stripOutputs = [];
+    private readonly HashSet<int> _unrouted = [];
+    private readonly List<SendRoute> _sends = [];
     private readonly List<IStreamedSource> _streams = [];
     private readonly HashSet<int> _monitored = [];
     private readonly List<(AudioMeter Meter, int[] Nodes)> _meterPoints = [];
 
-    /// <returns>The node's index in this builder.</returns>
     public int AddNode(AudioNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -246,7 +334,6 @@ public sealed class AudioGraphBuilder
         return _nodes.Count - 1;
     }
 
-    /// <summary>Feeds node <paramref name="from"/>'s output into node <paramref name="to"/>'s input.</summary>
     public void Connect(int from, int to)
     {
         CheckNode(from);
@@ -254,10 +341,6 @@ public sealed class AudioGraphBuilder
         _nodeEdges.Add((from, to, false));
     }
 
-    /// <summary>
-    /// Feeds node <paramref name="from"/>'s output into node <paramref name="to"/>'s sidechain (ADR 0037). Ordered and
-    /// delay-compensated like an input, so the sidechain arrives aligned with the audio it acts on.
-    /// </summary>
     public void ConnectSidechain(int from, int to)
     {
         CheckNode(from);
@@ -265,12 +348,6 @@ public sealed class AudioGraphBuilder
         _nodeEdges.Add((from, to, true));
     }
 
-    /// <summary>
-    /// Low-latency monitoring for a node that plays live input (ADR 0035): its signal, and that of the nodes it feeds,
-    /// is not delayed for compensation anywhere on its way to the master, and does not make the other signals wait for
-    /// it. A mixer channel, bus, or return it passes through delays its other inputs to the graph's latency on the way
-    /// in instead of delaying its output, so they stay aligned.
-    /// </summary>
     public void Monitor(int node)
     {
         CheckNode(node);
@@ -283,12 +360,6 @@ public sealed class AudioGraphBuilder
         _toMaster.Add(node);
     }
 
-    /// <summary>
-    /// Measures the sum of <paramref name="nodes"/>' outputs with <paramref name="meter"/> while it is watched: a chain
-    /// junction (ADR 0037), which is a point in a chain, not a node of its own. Nothing is rendered for it, so it changes
-    /// neither what is heard nor the delay compensation. Its sources are summed as they leave their nodes, before any
-    /// compensation delay; a meter does not need them aligned. No nodes measures silence.
-    /// </summary>
     public void AddMeterPoint(AudioMeter meter, IEnumerable<int> nodes)
     {
         ArgumentNullException.ThrowIfNull(meter);
@@ -302,11 +373,14 @@ public sealed class AudioGraphBuilder
         _meterPoints.Add((meter, members));
     }
 
-    /// <returns>The strip's index in this builder.</returns>
-    public int AddStrip(MixerStripState state, MixerStripSettings settings)
+    public int AddStrip(
+        MixerStripState state,
+        MixerStripSettings settings,
+        ImmutableArray<DescribedAutomationPoint> gainAutomation = default,
+        ImmutableArray<DescribedAutomationPoint> panAutomation = default)
     {
         ArgumentNullException.ThrowIfNull(state);
-        _strips.Add((state, settings));
+        _strips.Add((state, settings, gainAutomation.IsDefault ? [] : gainAutomation.ToArray(), panAutomation.IsDefault ? [] : panAutomation.ToArray()));
         return _strips.Count - 1;
     }
 
@@ -317,228 +391,341 @@ public sealed class AudioGraphBuilder
         _toStrips.Add((node, strip));
     }
 
-    /// <summary>Sends strip <paramref name="strip"/> to strip <paramref name="destination"/> (a bus) instead of the master.</summary>
     public void RouteStrip(int strip, int destination)
     {
         CheckStrip(strip);
         CheckStrip(destination);
-        _stripDestinations[strip] = destination;
+        SetOutput(strip, new RouteTarget(false, destination));
     }
 
-    /// <summary>
-    /// Sends a copy of strip <paramref name="strip"/> to strip <paramref name="destination"/> at
-    /// <paramref name="levelDecibels"/>: before the strip's fader and pan (<paramref name="preFader"/>), or after both.
-    /// Mute silences a strip's sends too; see <see cref="Build"/> for solo.
-    /// </summary>
+    public void RouteStripToNode(int strip, int node)
+    {
+        CheckStrip(strip);
+        CheckNode(node);
+        SetOutput(strip, new RouteTarget(true, node));
+    }
+
+    public void RouteStripToMaster(int strip)
+    {
+        CheckStrip(strip);
+        SetOutput(strip, new RouteTarget(true, -1));
+    }
+
+    public void UnrouteStrip(int strip)
+    {
+        CheckStrip(strip);
+        if (_stripOutputs.ContainsKey(strip) || !_unrouted.Add(strip))
+        {
+            throw new ArgumentException("A strip has at most one ordinary output.", nameof(strip));
+        }
+    }
+
     public void SendStrip(int strip, int destination, double levelDecibels, bool preFader)
     {
         CheckStrip(strip);
         CheckStrip(destination);
-        if (strip == destination || _sends.Any(s => s.Strip == strip && s.Destination == destination))
-        {
-            throw new ArgumentException("A strip sends at most once to another strip, and never to itself.", nameof(destination));
-        }
+        AddSend(new SendRoute(strip, false, destination, levelDecibels, preFader));
+    }
 
-        _sends.Add((strip, destination, levelDecibels, preFader));
+    public void SendStripToNode(int strip, int node, double levelDecibels, bool preFader)
+    {
+        CheckStrip(strip);
+        CheckNode(node);
+        AddSend(new SendRoute(strip, true, node, levelDecibels, preFader));
     }
 
     /// <summary>
-    /// Builds the graph. Mute silences a strip and its sends. While any strip is soloed, a strip sounds if it is soloed,
-    /// feeds a soloed strip through its output (a bus's members), or is reached from a soloed strip through outputs and
-    /// sends (its buses and returns); a send carries audio when its strip sounds or its target is soloed (so soloing a
-    /// return plays what is sent to it, without the dry channels).
+    /// Builds the immutable graph. Every route and send is an edge in one mixed node/strip schedule. Delay lines,
+    /// buffers, send ramps, and stage ordering are prepared here, never in Render.
     /// </summary>
-    /// <remarks>
-    /// Delay compensation (ADR 0035): each node's output lags by its own <see cref="AudioNode.LatencyFrames"/> plus the
-    /// latency of its inputs, each summing point (a node's input, a mixer channel, the master) waits for its slowest
-    /// input, and every faster input is delayed by the difference, so audio arrives aligned. The graph's
-    /// <see cref="AudioGraph.LatencyFrames"/> is the master's. Delay lines come from <paramref name="compensation"/> and
-    /// keep their audio across builds; without one, each graph gets new lines.
-    /// </remarks>
-    public AudioGraph Build(int blockFrames, MixerStripState master, double masterGainDecibels = 0, LatencyCompensation? compensation = null)
+    public AudioGraph Build(
+        int blockFrames,
+        MixerStripState master,
+        double masterGainDecibels = 0,
+        LatencyCompensation? compensation = null,
+        double masterPan = 0,
+        bool masterMuted = false,
+        ImmutableArray<DescribedAutomationPoint> masterGainAutomation = default,
+        ImmutableArray<DescribedAutomationPoint> masterPanAutomation = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(blockFrames);
         ArgumentNullException.ThrowIfNull(master);
         compensation ??= new LatencyCompensation();
         compensation.BeginBuild();
-        var nodeOrder = OrderNodes();
-        var stripOrder = OrderStrips();
-        var nodePosition = new int[_nodes.Count];
-        for (var i = 0; i < nodeOrder.Count; i++)
-        {
-            nodePosition[nodeOrder[i]] = i;
-        }
 
-        var stripPosition = new int[_strips.Count];
-        for (var i = 0; i < stripOrder.Count; i++)
-        {
-            stripPosition[stripOrder[i]] = i;
-        }
+        var nodeCount = _nodes.Count;
+        var stripCount = _strips.Count;
+        var vertexCount = nodeCount + stripCount;
+        var edges = AllEdges();
+        var order = TopologicalOrder(vertexCount, edges);
+        int StripVertex(int strip) => nodeCount + strip;
+        bool IsStrip(int vertex) => vertex >= nodeCount;
+        int LocalIndex(int vertex) => IsStrip(vertex) ? vertex - nodeCount : vertex;
 
-        // Latencies: what each node's output lags the song by, and what each summing point waits for.
         var built = _nodes.Select(n => n.LatencyFrames).ToArray();
-        var nodeInput = new int[_nodes.Count];
-        var nodeOutput = new int[_nodes.Count];
-        var monitored = new bool[_nodes.Count];
-        foreach (var index in nodeOrder)
+        var monitored = new bool[vertexCount];
+        var inputLatency = new int[vertexCount];
+        var outputLatency = new int[vertexCount];
+        foreach (var vertex in order)
         {
-            // Monitoring follows the audio path, not a sidechain: a live-played key does not take the effect it keys (and
-            // that effect's main signal) out of delay compensation.
-            monitored[index] = _monitored.Contains(index) || _nodeEdges.Any(e => e.To == index && !e.Sidechain && monitored[e.From]);
-            nodeInput[index] = _nodeEdges.Where(e => e.To == index && !monitored[e.From]).Select(e => nodeOutput[e.From]).DefaultIfEmpty(0).Max();
-            nodeOutput[index] = nodeInput[index] + built[index];
+            var incoming = edges.Where(e => e.To == vertex).ToArray();
+            monitored[vertex] = (!IsStrip(vertex) && _monitored.Contains(vertex))
+                || incoming.Any(e => !e.Sidechain && monitored[e.From]);
+            inputLatency[vertex] = incoming.Where(e => !monitored[e.From]).Select(e => outputLatency[e.From]).DefaultIfEmpty(0).Max();
+            outputLatency[vertex] = inputLatency[vertex] + (IsStrip(vertex) ? 0 : built[vertex]);
         }
 
-        // A strip the monitored signal reaches (through outputs and sends) passes it on undelayed; its other inputs
-        // are delayed to the graph's latency on the way in instead.
-        var strip = new int[_strips.Count];
-        var monitoredStrip = new bool[_strips.Count];
-        foreach (var index in stripOrder)
+        var masterInputs = new List<int>();
+        masterInputs.AddRange(_toMaster);
+        for (var s = 0; s < stripCount; s++)
         {
-            monitoredStrip[index] = _toStrips.Any(e => e.Strip == index && monitored[e.Node])
-                || _stripDestinations.Any(d => d.Value == index && monitoredStrip[d.Key])
-                || _sends.Any(x => x.Destination == index && monitoredStrip[x.Strip]);
-            var arrivals = _toStrips.Where(e => e.Strip == index && !monitored[e.Node]).Select(e => nodeOutput[e.Node])
-                .Concat(_stripDestinations.Where(d => d.Value == index && !monitoredStrip[d.Key]).Select(d => strip[d.Key]))
-                .Concat(_sends.Where(x => x.Destination == index && !monitoredStrip[x.Strip]).Select(x => strip[x.Strip]));
-            strip[index] = arrivals.DefaultIfEmpty(0).Max();
+            if (OutputOf(s).IsMaster)
+            {
+                masterInputs.Add(StripVertex(s));
+            }
         }
 
-        var latency = _toMaster.Where(n => !monitored[n]).Select(n => nodeOutput[n]).Concat(strip).DefaultIfEmpty(0).Max();
-
-        // When a signal must have reached a strip: the strip's own alignment, or the graph's latency for a monitored strip.
-        int Due(int s) => monitoredStrip[s] ? latency : strip[s];
-
-        // From a node's output to the master: an unmonitored node is aligned with everything at the graph's latency; a
-        // monitored one goes through the nodes it feeds undelayed, and then on undelayed. A sidechain it keys is not on its
-        // way to the master.
-        var delayToMaster = new int[_nodes.Count];
-        for (var i = nodeOrder.Count - 1; i >= 0; i--)
-        {
-            var index = nodeOrder[i];
-            delayToMaster[index] = monitored[index]
-                ? _nodeEdges.Where(e => e.From == index && !e.Sidechain).Select(e => built[e.To] + delayToMaster[e.To]).DefaultIfEmpty(0).Max()
-                : latency - nodeOutput[index];
-        }
+        var latency = masterInputs.Where(v => !monitored[v]).Select(v => outputLatency[v]).DefaultIfEmpty(0).Max();
+        var (audible, soloNodeInputs) = Audible(edges, nodeCount, stripCount);
+        var anySolo = _strips.Any(s => s.Settings.Soloed);
+        var delayToMaster = DelayToMaster(order, edges, vertexCount, nodeCount, stripCount, built, outputLatency, monitored, latency);
 
         AudioGraph.EdgeDelay Edge(object source, object destination, int kind, int frames)
         {
-            var line = compensation.LineFor(source, destination, kind, frames, blockFrames);
-            return new AudioGraph.EdgeDelay(line, line is null ? 0 : frames);
+            var delay = Math.Max(0, frames);
+            var line = compensation.LineFor(source, destination, kind, delay, blockFrames);
+            return new AudioGraph.EdgeDelay(line, line is null ? 0 : delay);
         }
 
-        var nodes = nodeOrder.Select(index =>
+        var nodeEntries = new AudioGraph.NodeEntry[nodeCount];
+        for (var n = 0; n < nodeCount; n++)
         {
-            var node = _nodes[index];
-            var inputEdges = _nodeEdges.Where(e => e.To == index && !e.Sidechain).ToList();
-            int[] inputs = [.. inputEdges.Select(e => nodePosition[e.From])];
-            AudioGraph.EdgeDelay[] inputDelays = [.. inputEdges.Select(e => Edge(_nodes[e.From], node, 0, monitored[index] ? 0 : nodeInput[index] - nodeOutput[e.From]))];
-            var sidechainEdges = _nodeEdges.Where(e => e.To == index && e.Sidechain).ToList();
-            int[] sidechain = [.. sidechainEdges.Select(e => nodePosition[e.From])];
-            AudioGraph.EdgeDelay[] sidechainDelays = [.. sidechainEdges.Select(e => Edge(_nodes[e.From], node, 2, monitored[index] ? 0 : Math.Max(0, nodeInput[index] - nodeOutput[e.From])))];
-            var strips = _toStrips.Where(e => e.Node == index).Select(e => e.Strip).Distinct().ToList();
-            AudioGraph.EdgeDelay[] stripDelays = [.. strips.Select(s => Edge(node, _strips[s].State, 0, monitored[index] ? 0 : Due(s) - nodeOutput[index]))];
-            var toMaster = _toMaster.Contains(index);
-            var masterDelay = toMaster ? Edge(node, master, 0, monitored[index] ? 0 : latency - nodeOutput[index]) : default;
-            return new AudioGraph.NodeEntry(
+            var node = _nodes[n];
+            var normalNodes = _nodeEdges.Where(e => e.To == n && !e.Sidechain)
+                .Select(e => new AudioGraph.InputEdge(false, e.From, Edge(_nodes[e.From], node, 0, ArrivalDelay(e.From, n))))
+                .ToArray();
+            var stripInputs = _stripOutputs.Where(p => p.Value.IsNode && p.Value.Index == n)
+                .Select(p => new AudioGraph.InputEdge(true, p.Key, Edge(_strips[p.Key].State, node, 0, ArrivalDelay(StripVertex(p.Key), n))))
+                .ToArray();
+            var sends = _sends.Where(s => s.IsNode && s.Destination == n)
+                .Select(s => CreateSend(s, node, n))
+                .ToArray();
+            var sidechain = _nodeEdges.Where(e => e.To == n && e.Sidechain)
+                .Select(e => new AudioGraph.InputEdge(false, e.From, Edge(_nodes[e.From], node, 2, monitored[n] ? 0 : inputLatency[n] - outputLatency[e.From])))
+                .ToArray();
+            var toMaster = _toMaster.Contains(n);
+            var masterDelay = toMaster ? Edge(node, master, 0, monitored[n] ? 0 : latency - outputLatency[n]) : default;
+            var hasInput = normalNodes.Length + stripInputs.Length + sends.Length > 0;
+            nodeEntries[n] = new AudioGraph.NodeEntry(
                 node,
-                inputs,
-                inputDelays,
-                inputs.Length > 0 ? new float[2 * blockFrames] : null,
+                normalNodes,
+                stripInputs,
+                sends,
+                sidechain,
+                hasInput ? new float[2 * blockFrames] : null,
+                sidechain.Length > 0 ? new float[2 * blockFrames] : null,
                 new float[2 * blockFrames],
-                [.. strips.Select(s => stripPosition[s])],
-                stripDelays,
                 toMaster,
                 masterDelay,
-                built[index],
-                delayToMaster[index])
-            {
-                SidechainInputs = sidechain,
-                SidechainDelays = sidechainDelays,
-                SidechainStorage = sidechain.Length > 0 ? new float[2 * blockFrames] : null,
-            };
-        }).ToArray();
-
-        var audible = Audible();
-        var anySolo = _strips.Any(s => s.Settings.Soloed);
-        var strips = stripOrder.Select(index =>
-        {
-            var (state, settings) = _strips[index];
-            var fader = PanLaw.DecibelsToGain(settings.GainDecibels);
-            var (left, right) = PanLaw.Gains(settings.Pan);
-            var gain = audible[index] ? fader : 0f;
-            var hasDestination = _stripDestinations.TryGetValue(index, out var d);
-            var destination = hasDestination ? stripPosition[d] : -1;
-            var outputDelay = Edge(state, hasDestination ? _strips[d].State : master, 0, monitoredStrip[index] ? 0 : (hasDestination ? Due(d) : latency) - strip[index]);
-            var sends = _sends.Where(s => s.Strip == index).Select(send =>
-            {
-                var carries = !settings.Muted && (!anySolo || audible[index] || _strips[send.Destination].Settings.Soloed);
-                var level = carries ? PanLaw.DecibelsToGain(send.LevelDecibels) : 0f;
-                var (sendLeft, sendRight) = send.PreFader ? (level, level) : (level * fader * left, level * fader * right);
-                var target = _strips[send.Destination].State;
-                return new AudioGraph.SendEntry(state.SendTo(target), stripPosition[send.Destination], sendLeft, sendRight, Edge(state, target, 1, monitoredStrip[index] ? 0 : Due(send.Destination) - strip[index]));
-            }).ToArray();
-            state.KeepSendsTo(_sends.Where(s => s.Strip == index).Select(s => _strips[s.Destination].State).ToHashSet());
-            return new AudioGraph.StripEntry(state, gain * left, gain * right, destination, new float[2 * blockFrames], sends, outputDelay);
-        }).ToArray();
-
-        compensation.EndBuild();
-        AudioGraph.MeterEntry[] meterPoints = [.. _meterPoints.Select(p => new AudioGraph.MeterEntry(p.Meter, [.. p.Nodes.Select(n => nodePosition[n])]))];
-        return new AudioGraph(blockFrames, nodes, strips, master, PanLaw.DecibelsToGain(masterGainDecibels), [.. _streams], latency, meterPoints);
-    }
-
-    // See Build for the rule.
-    private bool[] Audible()
-    {
-        var audible = new bool[_strips.Count];
-        var anySolo = _strips.Any(s => s.Settings.Soloed);
-        for (var i = 0; i < _strips.Count; i++)
-        {
-            audible[i] = !anySolo || _strips[i].Settings.Soloed || Path(i).Skip(1).Any(s => _strips[s].Settings.Soloed);
+                built[n],
+                delayToMaster[n]);
         }
 
-        if (anySolo)
+        var stripEntries = new AudioGraph.StripEntry[stripCount];
+        for (var s = 0; s < stripCount; s++)
         {
-            for (var i = 0; i < _strips.Count; i++)
+            var (state, settings, gainAutomation, panAutomation) = _strips[s];
+            var nodeInputs = _toStrips.Where(e => e.Strip == s)
+                .Select(e => new AudioGraph.InputEdge(false, e.Node, Edge(_nodes[e.Node], state, 0, ArrivalDelay(e.Node, StripVertex(s)))))
+                .ToArray();
+            var stripInputs = _stripOutputs.Where(p => !p.Value.IsNode && p.Value.Index == s)
+                .Select(p => new AudioGraph.InputEdge(true, p.Key, Edge(_strips[p.Key].State, state, 0, ArrivalDelay(StripVertex(p.Key), StripVertex(s)))))
+                .ToArray();
+            var sends = _sends.Where(send => !send.IsNode && send.Destination == s)
+                .Select(send => CreateSend(send, state, StripVertex(s)))
+                .ToArray();
+            var target = OutputOf(s);
+            var toMaster = target.IsMaster;
+            var masterDelay = toMaster ? Edge(state, master, 0, monitored[StripVertex(s)] ? 0 : latency - outputLatency[StripVertex(s)]) : default;
+
+            state.KeepSendsTo(_sends.Where(send => send.SourceStrip == s)
+                .Select(send => send.IsNode ? (object)_nodes[send.Destination] : _strips[send.Destination].State).ToHashSet());
+            stripEntries[s] = new AudioGraph.StripEntry(
+                state,
+                new float[2 * blockFrames],
+                new float[2 * blockFrames],
+                settings.GainDecibels,
+                settings.Pan,
+                audible[s],
+                !settings.Muted,
+                gainAutomation,
+                panAutomation,
+                nodeInputs,
+                stripInputs,
+                sends,
+                toMaster,
+                masterDelay);
+        }
+
+        var renderOrder = order.Select(vertex => new AudioGraph.StageEntry(IsStrip(vertex), LocalIndex(vertex))).ToArray();
+        AudioGraph.MeterEntry[] meterPoints = [.. _meterPoints.Select(p => new AudioGraph.MeterEntry(p.Meter, p.Nodes))];
+        compensation.EndBuild();
+
+        var masterGain = PanLaw.DecibelsToGain(masterGainDecibels);
+        var (masterPanLeft, masterPanRight) = PanLaw.Gains(masterPan);
+        var masterLevel = masterMuted ? 0 : masterGain;
+        return new AudioGraph(
+            blockFrames,
+            nodeEntries,
+            stripEntries,
+            renderOrder,
+            master,
+            masterGain,
+            masterGainDecibels,
+            masterPan,
+            !masterMuted,
+            masterGainAutomation.IsDefault ? [] : masterGainAutomation.ToArray(),
+            masterPanAutomation.IsDefault ? [] : masterPanAutomation.ToArray(),
+            masterLevel * masterPanLeft,
+            masterLevel * masterPanRight,
+            [.. _streams],
+            latency,
+            meterPoints);
+
+        int ArrivalDelay(int source, int destination)
+        {
+            var due = IsStrip(destination) && monitored[destination] ? latency : inputLatency[destination];
+            return monitored[source] ? 0 : due - outputLatency[source];
+        }
+
+        AudioGraph.SendEntry CreateSend(SendRoute send, object destination, int destinationVertex)
+        {
+            var settings = _strips[send.SourceStrip].Settings;
+            var reachesSoloedEffect = send.IsNode
+                ? soloNodeInputs.Contains(send.Destination)
+                : _strips[send.Destination].Settings.Soloed;
+            var carries = !settings.Muted && (!anySolo || audible[send.SourceStrip] || reachesSoloedEffect);
+            var level = carries ? PanLaw.DecibelsToGain(send.LevelDecibels) : 0f;
+            var sendLeft = level;
+            var sendRight = level;
+            var sourceState = _strips[send.SourceStrip].State;
+            object targetState = send.IsNode ? _nodes[send.Destination] : _strips[send.Destination].State;
+            var frames = ArrivalDelay(StripVertex(send.SourceStrip), destinationVertex);
+            return new AudioGraph.SendEntry(send.SourceStrip, sourceState.SendTo(targetState), sendLeft, sendRight, send.PreFader,
+                Edge(sourceState, destination, 1, frames));
+        }
+    }
+
+    private static int[] TopologicalOrder(int vertexCount, List<GraphEdge> edges)
+    {
+        var pending = new int[vertexCount];
+        foreach (var edge in edges)
+        {
+            pending[edge.To]++;
+        }
+
+        var ready = new PriorityQueue<int, int>();
+        for (var i = 0; i < pending.Length; i++)
+        {
+            if (pending[i] == 0)
             {
-                if (_strips[i].Settings.Soloed)
+                ready.Enqueue(i, i);
+            }
+        }
+
+        var order = new int[vertexCount];
+        var count = 0;
+        while (ready.TryDequeue(out var vertex, out _))
+        {
+            order[count++] = vertex;
+            foreach (var edge in edges)
+            {
+                if (edge.From == vertex && --pending[edge.To] == 0)
                 {
-                    foreach (var downstream in Reached(i))
-                    {
-                        audible[downstream] = true;
-                    }
+                    ready.Enqueue(edge.To, edge.To);
                 }
             }
         }
 
-        for (var i = 0; i < _strips.Count; i++)
-        {
-            audible[i] &= !_strips[i].Settings.Muted;
-        }
-
-        return audible;
+        return count == vertexCount ? order : throw new InvalidOperationException("The audio graph contains a routing loop.");
     }
 
-    // The strip and every bus after it, towards the master.
-    private IEnumerable<int> Path(int strip)
+    private List<GraphEdge> AllEdges()
     {
-        var seen = new HashSet<int>();
-        for (int? current = strip; current is { } at && seen.Add(at); current = _stripDestinations.TryGetValue(at, out var next) ? next : null)
+        var edges = new List<GraphEdge>(_nodeEdges.Count + _toStrips.Count + _stripOutputs.Count + _sends.Count);
+        foreach (var (from, to, sidechain) in _nodeEdges)
         {
-            yield return at;
+            edges.Add(new GraphEdge(from, to, sidechain));
         }
-    }
 
-    // The strip and every strip its audio reaches through outputs and sends.
-    private HashSet<int> Reached(int strip)
-    {
-        var reached = new HashSet<int> { strip };
-        var pending = new Queue<int>([strip]);
-        while (pending.TryDequeue(out var at))
+        foreach (var (node, strip) in _toStrips)
         {
-            foreach (var next in Next(at))
+            edges.Add(new GraphEdge(node, _nodes.Count + strip, false));
+        }
+
+        foreach (var output in _stripOutputs)
+        {
+            if (output.Value.IsMaster)
             {
-                if (reached.Add(next))
+                continue;
+            }
+
+            var destination = output.Value.IsNode ? output.Value.Index : _nodes.Count + output.Value.Index;
+            edges.Add(new GraphEdge(_nodes.Count + output.Key, destination, false));
+        }
+
+        foreach (var send in _sends)
+        {
+            var destination = send.IsNode ? send.Destination : _nodes.Count + send.Destination;
+            edges.Add(new GraphEdge(_nodes.Count + send.SourceStrip, destination, false, true));
+        }
+
+        return edges;
+    }
+
+    private (bool[] Strips, HashSet<int> NodesLeadingToSoloedStrips) Audible(List<GraphEdge> edges, int nodeCount, int stripCount)
+    {
+        var audible = Enumerable.Repeat(!_strips.Any(s => s.Settings.Soloed), stripCount).ToArray();
+        var soloed = Enumerable.Range(0, stripCount).Where(i => _strips[i].Settings.Soloed).Select(i => nodeCount + i).ToArray();
+        var soloNodeInputs = new HashSet<int>();
+        if (soloed.Length > 0)
+        {
+            var all = new HashSet<int>();
+            foreach (var solo in soloed)
+            {
+                var forward = Reach(solo, edges.Where(e => !e.Sidechain).ToList(), nodeCount + stripCount, false);
+                var backward = Reach(solo, edges.Where(e => !e.Sidechain && !e.Send).ToList(), nodeCount + stripCount, true);
+                all.UnionWith(forward);
+                all.UnionWith(backward);
+                soloNodeInputs.UnionWith(backward.Where(vertex => vertex < nodeCount));
+            }
+
+            for (var i = 0; i < stripCount; i++)
+            {
+                audible[i] = all.Contains(nodeCount + i);
+            }
+        }
+
+        return (audible, soloNodeInputs);
+    }
+
+    private static HashSet<int> Reach(int start, List<GraphEdge> edges, int count, bool reverse)
+    {
+        var reached = new HashSet<int> { start };
+        var pending = new Queue<int>();
+        pending.Enqueue(start);
+        while (pending.TryDequeue(out var current))
+        {
+            foreach (var edge in edges)
+            {
+                var from = reverse ? edge.To : edge.From;
+                if (from != current)
+                {
+                    continue;
+                }
+
+                var next = reverse ? edge.From : edge.To;
+                if ((uint)next < (uint)count && reached.Add(next))
                 {
                     pending.Enqueue(next);
                 }
@@ -548,85 +735,72 @@ public sealed class AudioGraphBuilder
         return reached;
     }
 
-    private IEnumerable<int> Next(int strip)
+    private static int[] DelayToMaster(
+        int[] order,
+        List<GraphEdge> edges,
+        int vertexCount,
+        int nodeCount,
+        int stripCount,
+        int[] nodeLatency,
+        int[] outputLatency,
+        bool[] monitored,
+        int latency)
     {
-        if (_stripDestinations.TryGetValue(strip, out var output))
+        _ = vertexCount;
+        _ = stripCount;
+        var distance = new int[nodeCount + stripCount];
+        for (var i = order.Length - 1; i >= 0; i--)
         {
-            yield return output;
+            var vertex = order[i];
+            var downstream = edges.Where(e => e.From == vertex && !e.Sidechain).Select(e =>
+                (e.To < nodeCount ? nodeLatency[e.To] : 0) + distance[e.To]).DefaultIfEmpty(0).Max();
+            distance[vertex] = downstream;
         }
 
-        foreach (var send in _sends)
+        var result = new int[nodeCount];
+        for (var i = 0; i < nodeCount; i++)
         {
-            if (send.Strip == strip)
-            {
-                yield return send.Destination;
-            }
+            result[i] = monitored[i] ? distance[i] : Math.Max(0, latency - outputLatency[i]);
         }
+
+        return result;
     }
 
-    private List<int> OrderNodes()
+    private RouteTarget OutputOf(int strip) => _stripOutputs.TryGetValue(strip, out var output)
+        ? output
+        : _unrouted.Contains(strip) ? new RouteTarget(true, -2) : new RouteTarget(true, -1);
+
+    private void SetOutput(int strip, RouteTarget output)
     {
-        var pending = new int[_nodes.Count];
-        foreach (var (_, to, _) in _nodeEdges)
+        if (_stripOutputs.ContainsKey(strip) || _unrouted.Contains(strip))
         {
-            pending[to]++;
+            throw new ArgumentException("A strip has at most one ordinary output.", nameof(strip));
         }
 
-        var ready = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(i => pending[i] == 0));
-        var order = new List<int>(_nodes.Count);
-        while (ready.TryDequeue(out var node))
-        {
-            order.Add(node);
-            foreach (var (from, to, _) in _nodeEdges)
-            {
-                if (from == node && --pending[to] == 0)
-                {
-                    ready.Enqueue(to);
-                }
-            }
-        }
-
-        return order.Count == _nodes.Count ? order : throw new InvalidOperationException("The audio nodes are connected in a loop.");
+        _stripOutputs.Add(strip, output);
     }
 
-    // Every strip renders before the strips it feeds or sends to; otherwise in the order they were added.
-    private List<int> OrderStrips()
+    private void AddSend(SendRoute send)
     {
-        var pending = new int[_strips.Count];
-        for (var i = 0; i < _strips.Count; i++)
+        if (send.IsNode && _sends.Any(s => s.SourceStrip == send.SourceStrip && s.IsNode && s.Destination == send.Destination)
+            || !send.IsNode && (send.SourceStrip == send.Destination || _sends.Any(s => s.SourceStrip == send.SourceStrip && !s.IsNode && s.Destination == send.Destination)))
         {
-            foreach (var next in Next(i))
-            {
-                pending[next]++;
-            }
+            throw new ArgumentException("A strip sends at most once to a destination, and never to itself.");
         }
 
-        var ready = new PriorityQueue<int, int>();
-        for (var i = 0; i < _strips.Count; i++)
-        {
-            if (pending[i] == 0)
-            {
-                ready.Enqueue(i, i);
-            }
-        }
-
-        var order = new List<int>(_strips.Count);
-        while (ready.TryDequeue(out var strip, out _))
-        {
-            order.Add(strip);
-            foreach (var next in Next(strip))
-            {
-                if (--pending[next] == 0)
-                {
-                    ready.Enqueue(next, next);
-                }
-            }
-        }
-
-        return order.Count == _strips.Count ? order : throw new InvalidOperationException("The mixer strips are routed in a loop.");
+        _sends.Add(send);
     }
 
     private void CheckNode(int node) => ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)node, (uint)_nodes.Count, nameof(node));
 
     private void CheckStrip(int strip) => ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)strip, (uint)_strips.Count, nameof(strip));
+
+    private readonly record struct GraphEdge(int From, int To, bool Sidechain, bool Send = false);
+
+    private readonly record struct RouteTarget(bool IsNode, int Index)
+    {
+        public bool IsMaster => IsNode && Index == -1;
+    }
+
+    private readonly record struct SendRoute(int SourceStrip, bool IsNode, int Destination, double LevelDecibels, bool PreFader);
 }

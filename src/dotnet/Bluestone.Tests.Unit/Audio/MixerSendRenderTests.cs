@@ -108,7 +108,8 @@ public sealed class MixerSendRenderTests
         var output = Render(mix.Graph);
 
         Assert.Equal(PanLaw.DecibelsToGain(-6), output[0]);
-        Assert.Equal(0f, mix.Source.Meter.Read().PeakLeft);
+        // The source's post-fader strip meter sees its signal before solo-path gating; only its master output is silenced.
+        Assert.Equal(1f, mix.Source.Meter.Read().PeakLeft);
     }
 
     [Fact]

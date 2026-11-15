@@ -166,6 +166,37 @@ public sealed class GroupsViewModelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RemoveFromGroup_LeavesAnUnrestorableRouteParked_AndWarnsThatUngroupingSucceeded()
+    {
+        await GroupBassAndKeysAsync();
+        var bass = Row("Bass");
+        var parkedOutput = _session.Project.ParkedConnections.Single(c => c.Source == SignalNode.Track(bass.Id));
+
+        _session.Execute(new ProjectCommand("Remove the Synth", project => project with
+        {
+            Instruments = [],
+            Connections = project.Connections.RemoveAll(c => c.Destination.Kind == SignalNodeKind.ExternalInstrument),
+        }));
+        SelectRows("Bass");
+
+        Groups.RemoveSelectedCommand.Execute(null);
+        await Settle();
+
+        Assert.False(bass.IsInGroup);
+        Assert.Null(_session.Project.Sequence.FindTrack(bass.Id)!.Group);
+        Assert.Contains(_session.Project.ParkedConnections, c => c.Id == parkedOutput.Id);
+        Assert.DoesNotContain(_session.Project.Connections, c => c.Id == parkedOutput.Id);
+        Assert.DoesNotContain(_session.Project.Connections, c => c.Source == SignalNode.Track(bass.Id));
+
+        var warning = Assert.Single(_vm.Messages, m => m.Source == "Remove From Group");
+        Assert.Equal(MessageSeverity.Warning, warning.Severity);
+        Assert.Contains("Ungrouping succeeded", warning.Text, StringComparison.Ordinal);
+        Assert.Contains("1 parked route", warning.Text, StringComparison.Ordinal);
+        Assert.Contains("remain inactive", warning.Text, StringComparison.Ordinal);
+        Assert.Contains("No replacement route was created", warning.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UseOutputForAllTracks_LeavesMembersGoingThroughTheirGroup()
     {
         var group = await GroupBassAndKeysAsync();

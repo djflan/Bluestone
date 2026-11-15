@@ -106,9 +106,11 @@ during migration. The ordinary workflow does not create Effect-to-Effect sends.
     warming-up/not-ready state rather than a numeric zero or stale value.
 - Implement LUFS-S with a fixed ring of thirty 100 ms energy segments plus bounded partial-segment
   state, not per-frame 3-second history. Allocate meter state off the audio thread; update it without
-  allocation, locks, or logging. The processing cost is unmeasured: do not claim a performance
-  bound until a benchmark covers supported rates, strip counts, graph rebuilds, and steady-state
-  allocation.
+  allocation, locks, or logging. A focused BenchmarkDotNet ShortRun covered warmed 128-frame
+  Peak+RMS, VU, and LUFS-S processing at 44.1, 48, 88.2, and 96 kHz with 1, 8, and 32 strips, plus
+  build/preparation and reused-snapshot cases. The run reported no managed render allocation. It
+  used three iterations with wide intervals and synthetic fan-out; it did not measure a device or
+  plugin callback, establish an xrun/deadline result, or support a performance-bound claim.
 - Persist meter mode, meter presentation, and VU reference in global Desktop settings, not in a
   project. Define a separate `MixerMeter` token family in `Theme/Tokens.axaml` for meter background,
   signal fill, peak hold, warning, clip, text, and not-ready state; do not reuse Device View junction
@@ -148,7 +150,9 @@ during migration. The ordinary workflow does not create Effect-to-Effect sends.
 
 - Selecting a track strip selects the same track in the arranger and Inspector; selecting a track
   in the arranger or Inspector selects its mixer strip. Multi-selection mirrors across these views.
-  The Master has its own selection and Inspector scope and never selects an arrangement track.
+  The Master is independently selectable: selecting it leaves no arrangement track selected and
+  shows Master gain, pan, mute, solo, and chain in the Inspector. Selecting a track restores that
+  track's Inspector scope.
   Selection is UI state, not project data or an undo step.
 - Mixer section visibility and width are presentation-only Desktop view settings. They do not change
   track ownership, routing, audio, project undo history, or saved project content. Group folding
@@ -203,9 +207,11 @@ lane targets even when a Master-chain device is missing.
   `Desktop/Profiles`; a profile keyed only by display name or unit is insufficient.
 - Before claiming `bx_console` support, perform and retain a live scan/report for the installed
   plugin identity/version, candidate and selected parameter metadata, normalized↔dB and formatting
-  round trips, optional-control semantics, and bypass/removal/crash recovery. Without that report
-  and a trustworthy Level contract, `bx_console` remains unsupported for fader hand-off; do not
-  claim its scale from labels or screenshots.
+  round trips, optional-control semantics, and bypass/removal/crash recovery. No verified VST 3
+  class ID, parameter ID, physical parameter range, or normalized-to-dB conversion has been
+  established for bx_console AMEK 9099. Its strip-fader hand-off therefore remains deferred; no
+  plugin-specific mapping or vendor endorsement is implied. Do not claim its scale from labels or
+  screenshots.
 - While linked and enabled, the plugin Level parameter is the sole effective gain control and strip
   DSP gain is unity. Fader gestures and fader automation write the linked parameter. A plugin-editor
   parameter notification updates project state and the console fader without echoing another write

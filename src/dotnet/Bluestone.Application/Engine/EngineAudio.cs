@@ -8,6 +8,7 @@ using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Mixing;
+using Bluestone.Domain.Sequencing;
 using Bluestone.Engine.Protocol;
 using Bluestone.Plugins;
 using Bluestone.Plugins.Protocol;
@@ -66,6 +67,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private int _latencyFrames;
     private ImmutableArray<string> _describeProblems = [];
     private ImmutableArray<string> _engineProblems = [];
+    private MixerMeterSettings _mixerMeterSettings = MixerMeterSettings.Default;
     private Meters _meters = Meters.None;
 
     /// <param name="supervisor">The engine's supervisor; this attaches to it.</param>
@@ -296,6 +298,37 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         return meters.Strips.TryGetValue(id.Value, out var reading) ? reading : null;
     }
 
+    public MixerMeterReading? MixerMeterOf(TrackId? track)
+    {
+        if (!IsRunning)
+        {
+            return null;
+        }
+
+        var meters = Volatile.Read(ref _meters);
+        if (meters.Counters is null)
+        {
+            return null;
+        }
+
+        if (track is not { } id)
+        {
+            return meters.MixerMaster;
+        }
+
+        return meters.MixerStrips.TryGetValue(id.Value, out var reading) ? reading : null;
+    }
+
+    public void SetMixerMeterSettings(MixerMeterSettings settings)
+    {
+        settings.Validate();
+        lock (_gate)
+        {
+            _mixerMeterSettings = settings;
+            _link?.Send(new SetMixerMeterSettings((byte)settings.Mode, settings.VuReferenceDbfs));
+        }
+    }
+
     public MeterReading? JunctionMeterOf(Guid junction) =>
         IsRunning && Volatile.Read(ref _watchedJunctionSet).Contains(junction) && Volatile.Read(ref _meters).Junctions.TryGetValue(junction, out var reading) ? reading : null;
 
@@ -438,6 +471,11 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             _graphLink = null;
             ForgetAnsweredGraphs();
             Volatile.Write(ref _meters, Meters.None);
+            if (_mixerMeterSettings != MixerMeterSettings.Default)
+            {
+                link.Send(new SetMixerMeterSettings((byte)_mixerMeterSettings.Mode, _mixerMeterSettings.VuReferenceDbfs));
+            }
+
             if (!_watchedJunctions.IsEmpty)
             {
                 link.Send(new WatchJunctions(_watchedJunctions));
@@ -473,9 +511,11 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
                 }
 
                 var strips = new Dictionary<Guid, MeterReading>(status.Strips.Length);
+                var mixerStrips = new Dictionary<Guid, MixerMeterReading>(status.Strips.Length);
                 foreach (var strip in status.Strips)
                 {
                     strips[strip.Key] = Reading(strip.Levels);
+                    mixerStrips[strip.Key] = MixerReading(strip.Levels);
                 }
 
                 var junctions = new Dictionary<Guid, MeterReading>(status.Junctions.Length);
@@ -484,7 +524,16 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
                     junctions[junction.Key] = Reading(junction.Levels);
                 }
 
-                Volatile.Write(ref _meters, new Meters(Reading(status.Master), strips, status.Counters, status.Live) { Junctions = junctions });
+                Volatile.Write(ref _meters, new Meters(
+                    Reading(status.Master),
+                    strips,
+                    status.Counters,
+                    status.Live,
+                    MixerReading(status.Master),
+                    mixerStrips)
+                {
+                    Junctions = junctions,
+                });
                 break;
             case TestRendered rendered:
                 TaskCompletionSource<string?>? done;
@@ -658,6 +707,14 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
 
     private static MeterReading Reading(in MeterSpec meter) => new(meter.PeakLeft, meter.PeakRight, meter.RmsLeft, meter.RmsRight);
 
+    private static MixerMeterReading MixerReading(in MeterSpec meter) =>
+        new(
+            Reading(meter),
+            (MixerMeterMode)meter.DisplayMode,
+            meter.LeftValue,
+            meter.RightValue,
+            meter.IsReady);
+
     private static void TryDelete(string path)
     {
         try
@@ -671,9 +728,15 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     }
 
     /// <summary>The meters and figures the engine last reported.</summary>
-    private sealed record Meters(MeterReading Master, Dictionary<Guid, MeterReading> Strips, AudioCounters? Counters, LiveLatencySpec Live = default)
+    private sealed record Meters(
+        MeterReading Master,
+        Dictionary<Guid, MeterReading> Strips,
+        AudioCounters? Counters,
+        LiveLatencySpec Live,
+        MixerMeterReading MixerMaster,
+        Dictionary<Guid, MixerMeterReading> MixerStrips)
     {
-        public static Meters None { get; } = new(default, [], null);
+        public static Meters None { get; } = new(default, [], null, default, default, []);
 
         public Dictionary<Guid, MeterReading> Junctions { get; init; } = [];
     }

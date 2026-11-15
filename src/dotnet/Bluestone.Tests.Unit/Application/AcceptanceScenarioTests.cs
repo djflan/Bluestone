@@ -44,7 +44,7 @@ public sealed class AcceptanceScenarioTests
             history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.Track(track.Id), SignalNode.Rack(rack.Id)), Catalog.Lookup));
         }
 
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Rack(rack.Id), SignalNode.Mixer(channel.Id)), Catalog.Lookup));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Rack(rack.Id), SignalNode.Mixer(channel.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }, Catalog.Lookup));
         var project = history.Current;
 
         var result = SignalGraph.Evaluate(project, Catalog);

@@ -110,12 +110,12 @@ public sealed partial class ConnectionsViewModel : ObservableObject
                 var from = connection.Source == node ? string.Empty
                     : connection.Source.Kind == SignalNodeKind.ChainInput ? "Input: "
                     : $"After {SignalRoutingValidator.Describe(project, connection.Source)}: ";
-                Outgoing.Add(new ConnectionRow(connection.Id, $"{from}{Kind(connection.Kind)} → {SignalRoutingValidator.Describe(project, connection.Destination)}", Mapping(connection), false));
+                Outgoing.Add(new ConnectionRow(connection.Id, $"{from}{Kind(connection)} → {SignalRoutingValidator.Describe(project, connection.Destination)}", Mapping(connection), false));
             }
             else if (connection.Destination == node || (chain is not null && connection.Destination.IsInside(chain)))
             {
                 var into = connection.Destination == node ? string.Empty : $" (into {SignalRoutingValidator.Describe(project, connection.Destination)})";
-                Incoming.Add(new ConnectionRow(connection.Id, $"{Kind(connection.Kind)} ← {SignalRoutingValidator.Describe(project, connection.Source)}{into}", Mapping(connection), true));
+                Incoming.Add(new ConnectionRow(connection.Id, $"{Kind(connection)} ← {SignalRoutingValidator.Describe(project, connection.Source)}{into}", Mapping(connection), true));
             }
         }
 
@@ -169,11 +169,6 @@ public sealed partial class ConnectionsViewModel : ObservableObject
             }
         }
 
-        foreach (var channel in project.Mixer.Channels)
-        {
-            Destinations.Add(new DestinationOption(SignalNode.Mixer(channel.Id), SignalKind.Audio, $"Mixer: {channel.Name}"));
-        }
-
         Destinations.Add(new DestinationOption(SignalNode.Master, SignalKind.Audio, "Master"));
         Destination = Destinations.FirstOrDefault(d => d == destination);
         Channel ??= ChannelOption.All[0];
@@ -198,7 +193,10 @@ public sealed partial class ConnectionsViewModel : ObservableObject
         }
 
         var mapping = destination.Kind == SignalKind.Events && Channel?.Channel is { } forced ? ChannelMapping.ForceTo(forced) : ChannelMapping.Preserve;
-        var connection = SignalConnection.Create(destination.Kind, source.Node, destination.Node) with { Mapping = mapping };
+        var audioPurpose = destination.Kind == SignalKind.Audio && destination.Node.Kind == SignalNodeKind.DeviceInput
+            ? AudioRoutePurpose.Internal
+            : AudioRoutePurpose.Output;
+        var connection = SignalConnection.Create(destination.Kind, source.Node, destination.Node) with { Mapping = mapping, AudioPurpose = audioPurpose };
         if (_owner.Execute(RoutingCommands.Connect(connection, _owner.Devices.Lookup)))
         {
             Destination = null;
@@ -216,7 +214,12 @@ public sealed partial class ConnectionsViewModel : ObservableObject
         }
     }
 
-    private static string Kind(SignalKind kind) => kind == SignalKind.Events ? "Events" : "Audio";
+    private static string Kind(SignalConnection connection) => connection.Kind switch
+    {
+        SignalKind.Events => "Events",
+        SignalKind.Audio when connection.AudioPurpose == AudioRoutePurpose.Send => "Send",
+        _ => "Audio",
+    };
 
     private static string Mapping(SignalConnection connection)
     {

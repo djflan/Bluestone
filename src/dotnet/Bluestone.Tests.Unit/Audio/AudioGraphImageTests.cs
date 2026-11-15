@@ -60,6 +60,7 @@ public sealed class AudioGraphImageTests : IDisposable
         var image = AudioGraphImage.ToArray(description);
         var read = AudioGraphImage.Read(image);
 
+        Assert.Equal(AudioGraphImage.Version, BitConverter.ToInt32(image, 4));
         AssertSame(description, read);
         Assert.Equal(image, AudioGraphImage.ToArray(read));
         Assert.Equal(image.Length, AudioGraphImage.Measure(description));
@@ -134,8 +135,8 @@ public sealed class AudioGraphImageTests : IDisposable
         }, iter: 5_000);
     }
 
-    // Two audio tracks: a trimmed clip with gain and equal-power fades into a channel that goes through a bus, and a
-    // looping clip into a channel with a pre-fader send to a return; one more track is muted.
+    // A trimmed clip with gain and equal-power fades routes through a Group, and a looping clip has a pre-fader send
+    // to an Effect return; one more track is muted.
     private Project RichProject()
     {
         var tone = TestAudioFiles.Sine(Rate, 1, 440, Rate, amplitude: 0.5);
@@ -153,23 +154,33 @@ public sealed class AudioGraphImageTests : IDisposable
         {
             Loop = new ClipLoop(new Tick(0), new TickSpan(300)),
         };
-        var vocal = Track.Create("Vocal", TrackRole.Audio).WithClip(faded);
-        var pad = Track.Create("Pad", TrackRole.Audio).WithClip(looped);
-        var silent = Track.Create("Muted", TrackRole.Audio).WithClip(faded with { Id = ClipId.New() }).WithMuted(true);
-        var bus = MixerChannel.Create("Bus") with { GainDecibels = -2, Pan = 0.25 };
-        var reverb = MixerChannel.Create("Return") with { GainDecibels = -6 };
-        var vocalChannel = MixerChannel.Create("Vocal") with { Output = bus.Id, Pan = -0.5 };
-        var padChannel = MixerChannel.Create("Pad") with { GainDecibels = -40, Sends = [new MixerSend(reverb.Id, -3, preFader: true)] };
-        var mutedChannel = MixerChannel.Create("Muted");
+        var bus = Track.Create("Bus", TrackRole.Group)
+            .WithAudioStrip(new AudioStrip { GainDecibels = -2, Pan = 0.25 });
+        var reverb = Track.Create("Return", TrackRole.Effect)
+            .WithAudioStrip(new AudioStrip { GainDecibels = -6 });
+        var vocal = Track.Create("Vocal", TrackRole.Audio).WithClip(faded).WithGroup(bus.Id)
+            .WithAudioStrip(new AudioStrip { Pan = -0.5 });
+        var pad = Track.Create("Pad", TrackRole.Audio).WithClip(looped)
+            .WithAudioStrip(new AudioStrip { GainDecibels = -40 });
+        var silent = Track.Create("Muted", TrackRole.Audio).WithClip(faded with { Id = ClipId.New() }).WithMuted(true)
+            .WithAudioStrip(AudioStrip.Default);
         return Project.CreateNew() with
         {
-            Sequence = Sequence.CreateEmpty(Resolution).WithTrack(vocal).WithTrack(pad).WithTrack(silent),
-            Mixer = Mixer.Empty.With(bus).With(reverb).With(vocalChannel).With(padChannel).With(mutedChannel) with { MasterGainDecibels = -1 },
+            Sequence = Sequence.CreateEmpty(Resolution).WithTrack(vocal).WithTrack(pad).WithTrack(silent).WithTrack(bus).WithTrack(reverb),
+            MasterStrip = new AudioStrip { GainDecibels = -1 },
             Connections =
             [
-                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.Mixer(vocalChannel.Id)),
-                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(pad.Id), SignalNode.Mixer(padChannel.Id)),
-                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(silent.Id), SignalNode.Mixer(mutedChannel.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.Track(bus.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(bus.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(pad.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(pad.Id), SignalNode.Track(reverb.Id)) with
+                {
+                    AudioPurpose = AudioRoutePurpose.Send,
+                    SendLevelDecibels = -3,
+                    SendPreFader = true,
+                },
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(reverb.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(silent.Id), SignalNode.Master),
             ],
         };
     }
@@ -182,7 +193,11 @@ public sealed class AudioGraphImageTests : IDisposable
         var key = 0;
         Guid Key() => new($"00000000-0000-0000-0000-{++key:000000000000}");
         var builder = new AudioGraphDescriptionBuilder();
-        var channel = builder.AddStrip(new DescribedStrip(Key(), new MixerStripSettings(-6, 0.5, Muted: false, Soloed: true)));
+        var channel = builder.AddStrip(new DescribedStrip(Key(), new MixerStripSettings(-6, 0.5, Muted: false, Soloed: true))
+        {
+            GainAutomation = [new DescribedAutomationPoint(0, -6, true), new DescribedAutomationPoint(24_000, 3, false)],
+            PanAutomation = [new DescribedAutomationPoint(0, -1, true), new DescribedAutomationPoint(24_000, 1, false)],
+        });
         var bus = builder.AddStrip(new DescribedStrip(Key(), new MixerStripSettings(-1.5, -0.25, Muted: true)));
         var send = builder.AddStrip(new DescribedStrip(Key(), default));
         builder.RouteStrip(channel, bus);
@@ -228,13 +243,29 @@ public sealed class AudioGraphImageTests : IDisposable
         builder.AddMeterPoint(Key(), []);
         builder.AddMeterPoint(Key(), [synth, clips]);
         builder.AddMeterPoint(Key(), [effect]);
-        return builder.Build(-2.5, [Key(), Key()]);
+        return builder.Build(
+            -2.5,
+            [Key(), Key()],
+            masterPan: 0.25,
+            masterMuted: true,
+            masterGainAutomation: [new DescribedAutomationPoint(0, -12, true), new DescribedAutomationPoint(24_000, 0, false)],
+            masterPanAutomation: [new DescribedAutomationPoint(0, 1, true), new DescribedAutomationPoint(24_000, -1, false)]);
     }
 
     private static void AssertSame(AudioGraphDescription expected, AudioGraphDescription actual)
     {
         Assert.Equal(expected.MasterGainDecibels, actual.MasterGainDecibels);
-        Assert.Equal(expected.Strips, actual.Strips);
+        Assert.Equal(expected.MasterPan, actual.MasterPan);
+        Assert.Equal(expected.MasterMuted, actual.MasterMuted);
+        Assert.Equal(expected.MasterGainAutomation.ToArray(), actual.MasterGainAutomation.ToArray());
+        Assert.Equal(expected.MasterPanAutomation.ToArray(), actual.MasterPanAutomation.ToArray());
+        Assert.Equal(expected.Strips.Length, actual.Strips.Length);
+        foreach (var (e, a) in expected.Strips.Zip(actual.Strips))
+        {
+            Assert.Equal((e.Key, e.Settings), (a.Key, a.Settings));
+            Assert.Equal(e.GainAutomation.ToArray(), a.GainAutomation.ToArray());
+            Assert.Equal(e.PanAutomation.ToArray(), a.PanAutomation.ToArray());
+        }
         Assert.Equal(expected.Steps, actual.Steps);
         Assert.Equal(expected.MeterPoints.Select(p => (p.Key, string.Join(",", p.Nodes))), actual.MeterPoints.Select(p => (p.Key, string.Join(",", p.Nodes))));
         Assert.True(expected.Retained.SetEquals(actual.Retained));

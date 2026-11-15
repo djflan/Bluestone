@@ -8,6 +8,9 @@ public enum ChainOwnerKind
     /// <summary>Hosted by a track, as its device strip.</summary>
     Track,
 
+    /// <summary>Hosted by the project's mandatory Master strip.</summary>
+    Master,
+
     /// <summary>Stands alone in the project: a shared instrument or processing rack that tracks route into.</summary>
     Rack,
 }
@@ -31,9 +34,16 @@ public readonly record struct ChainOwner
 
     public static ChainOwner ForTrack(TrackId track) => new(ChainOwnerKind.Track, track);
 
+    public static ChainOwner Master { get; } = new(ChainOwnerKind.Master, default);
+
     public static ChainOwner Rack { get; } = new(ChainOwnerKind.Rack, default);
 
-    public override string ToString() => Kind == ChainOwnerKind.Track ? $"track {Track}" : "rack";
+    public override string ToString() => Kind switch
+    {
+        ChainOwnerKind.Track => $"track {Track}",
+        ChainOwnerKind.Master => "Master",
+        _ => "rack",
+    };
 }
 
 /// <summary>

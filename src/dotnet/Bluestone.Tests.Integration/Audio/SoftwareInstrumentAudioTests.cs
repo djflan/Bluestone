@@ -3,6 +3,7 @@ using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
 using Bluestone.Audio;
+using Bluestone.Audio.Plugins;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Mixing;
@@ -17,8 +18,8 @@ namespace Bluestone.Tests.Integration.Audio;
 
 /// <summary>
 /// A software-instrument track through the whole path: its notes become the instrument's feed (signal graph), the
-/// plugin device runs in a real worker (plugin bridge), and the project's audio connection takes its audio into a
-/// mixer channel and the master (project audio graph), rendered by the offline driver.
+/// plugin device runs in a real worker (plugin bridge), and the track-owned strip's Output reaches the Master
+/// (project audio graph), rendered by the offline driver.
 /// </summary>
 [Collection(PluginProcessTests.Name)]
 public sealed class SoftwareInstrumentAudioTests
@@ -27,10 +28,10 @@ public sealed class SoftwareInstrumentAudioTests
     private const int Block = 256;
 
     [Fact]
-    public async Task AnInstrumentTrack_WithTheReferenceSine_IsHeardThroughItsMixerChannel_WhileItsNotesPlay()
+    public async Task AnInstrumentTrack_WithTheReferenceSine_IsHeardThroughItsTrackStrip_WhileItsNotesPlay()
     {
         await using var host = new PluginTestHost();
-        var (session, device, channel) = InstrumentProject();
+        var (session, device, track) = InstrumentProject();
         await using var bridge = new PluginDeviceHost(host.Manager, session, [Sine], Rate, Block);
         await bridge.SyncAsync(session.Project, Ct);
         host.Track(bridge.InstanceOf(device.Id)!);
@@ -53,14 +54,14 @@ public sealed class SoftwareInstrumentAudioTests
         Assert.All(left[..(Rate / 2)], s => Assert.Equal(0f, s));
         Assert.True(left[(Rate / 2 + Block + 100)..(Rate - 100)].Max() > 0.2f);
         Assert.All(left[(Rate + Block + 2048)..], s => Assert.Equal(0f, s));
-        Assert.True(graphs.StripOf(channel.Id)!.Meter.Read().PeakLeft > 0f);
+        Assert.True(graphs.TrackStripOf(track)!.Meter.Read().PeakLeft > 0f);
     }
 
     [Fact]
-    public async Task AMixerEdit_WhileANoteIsHeld_KeepsTheSchedule_AndTheNoteSounding()
+    public async Task ATrackStripEdit_WhileANoteIsHeld_KeepsTheSchedule_AndTheNoteSounding()
     {
         await using var host = new PluginTestHost();
-        var (session, device, channel) = InstrumentProject(noteTicks: 1920);
+        var (session, device, track) = InstrumentProject(noteTicks: 1920);
         await using var bridge = new PluginDeviceHost(host.Manager, session, [Sine], Rate, Block);
         await bridge.SyncAsync(session.Project, Ct);
         host.Track(bridge.InstanceOf(device.Id)!);
@@ -75,7 +76,10 @@ public sealed class SoftwareInstrumentAudioTests
         var schedule = graphs.PluginNodeOf(device.Id)!.Schedule;
 
         // The note sounds from 0.5 s to 2.5 s; a fader move at 1 s rebuilds the graph.
-        var quieter = project with { Mixer = project.Mixer.With(channel with { GainDecibels = -1 }) };
+        var source = project.Sequence.FindTrack(track)!;
+        var sourceStrip = source.AudioStrip ?? AudioStrip.Default;
+        var quieterTrack = source.WithAudioStrip(sourceStrip with { GainDecibels = -1 });
+        var quieter = project with { Sequence = project.Sequence.WithTrack(quieterTrack) };
         engine.Publish(graphs.Build(quieter, SignalGraph.Evaluate(quieter, devices), devices, null).Graph);
         var after = driver.Render(Rate / 2, Block).Where((_, i) => i % 2 == 0).ToArray();
 
@@ -96,24 +100,26 @@ public sealed class SoftwareInstrumentAudioTests
         var result = new ProjectAudioGraph(Rate, Block, bridge.InstanceOf).Build(session.Project, SignalGraph.Evaluate(session.Project, devices), devices, null);
 
         Assert.Contains(result.Problems, p => p.Contains("44100 Hz", StringComparison.Ordinal));
-        Assert.Empty(result.Graph.Nodes);
+        Assert.Empty(result.Graph.Nodes.OfType<PluginNode>());
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false);
+        engine.Publish(result.Graph);
+        var output = new OfflineAudioDriver(engine).Render(Rate / 10, Block);
+        Assert.All(output, sample => Assert.Equal(0f, sample));
     }
 
-    private static (ProjectSession Session, DeviceInstance Device, MixerChannel Channel) InstrumentProject(long noteTicks = 480)
+    private static (ProjectSession Session, DeviceInstance Device, TrackId Track) InstrumentProject(long noteTicks = 480)
     {
         var session = new ProjectSession();
         var note = new NoteEvent(new Tick(480), new TickSpan(noteTicks), MidiChannel.FromIndex(0), new NoteNumber(69), new Velocity(127));
-        var track = Track.FromEvents(TrackId.New(), "Lead", [note]);
+        var track = Track.FromEvents(TrackId.New(), "Lead", [note]).WithAudioStrip(AudioStrip.Default);
         var device = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());
-        var channel = MixerChannel.Create("Lead");
         var project = session.Project with
         {
             Sequence = new Sequence(TempoMap.Constant(new Ppqn(480), Tempo.Default), MeterMap.Constant(new Ppqn(480), TimeSignature.CommonTime), [track], []),
-            Mixer = Mixer.Empty.With(channel),
-            Connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(channel.Id))],
+            Connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Master)],
         };
         project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [device] });
         session.Execute(new ProjectCommand("Set up", _ => project));
-        return (session, device, channel);
+        return (session, device, track.Id);
     }
 }

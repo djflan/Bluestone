@@ -15,4 +15,25 @@ public static class AutomationCommands
     /// <summary>Replaces a lane's points, e.g. after a point is added, moved, or deleted.</summary>
     public static IProjectCommand SetPoints(TrackId track, AutomationLaneId lane, string label, IReadOnlyCollection<AutomationPoint> points) =>
         ProjectCommands.EditTrack(label, track, t => t.FindLane(lane) is { } found && !found.Points.SequenceEqual(points) ? t.WithLane(found.WithPoints(points)) : t);
+
+    /// <summary>Adds a project Master fader or pan lane, unless that parameter already has a lane.</summary>
+    public static IProjectCommand AddMasterLane(AutomationLane lane) =>
+        new ProjectCommand("Add Master Automation Lane", project =>
+            !lane.Target.IsMaster || project.MasterAutomation.Any(existing => existing.Target == lane.Target)
+                ? project
+                : project with { MasterAutomation = project.MasterAutomation.Add(lane) });
+
+    public static IProjectCommand RemoveMasterLane(AutomationLaneId lane) =>
+        new ProjectCommand("Delete Master Automation Lane", project =>
+            project with { MasterAutomation = project.MasterAutomation.RemoveAll(existing => existing.Id == lane) });
+
+    /// <summary>Replaces a Master lane's points as one undoable edit.</summary>
+    public static IProjectCommand SetMasterPoints(AutomationLaneId lane, string label, IReadOnlyCollection<AutomationPoint> points) =>
+        new ProjectCommand(label, project =>
+        {
+            var found = project.MasterAutomation.FirstOrDefault(existing => existing.Id == lane);
+            return found is null || found.Points.SequenceEqual(points)
+                ? project
+                : project with { MasterAutomation = project.MasterAutomation.Replace(found, found.WithPoints(points)) };
+        });
 }

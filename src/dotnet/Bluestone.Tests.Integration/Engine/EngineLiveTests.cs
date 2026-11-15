@@ -159,6 +159,11 @@ public sealed class EngineLiveTests
             _files = Path.Combine(host.Directory, "engine-live");
             Directory.CreateDirectory(_files);
             var synth = Track.FromEvents(TrackId.New(), "Lead", []);
+            if (!external)
+            {
+                synth = synth.WithAudioStrip(AudioStrip.Default);
+            }
+
             var device = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());
             List<DeviceInstance> chain = [];
             if (transpose is { } semitones)
@@ -174,7 +179,11 @@ public sealed class EngineLiveTests
 
             Synth = synth.Id;
             List<Track> tracks = [synth];
-            List<SignalConnection> connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.Track(synth.Id), SignalNode.Master)];
+            List<SignalConnection> connections = [];
+            if (!external)
+            {
+                connections.Add(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(synth.Id), SignalNode.Master));
+            }
             if (withClip)
             {
                 var clip = Path.Combine(_files, "tone.wav");
@@ -197,7 +206,6 @@ public sealed class EngineLiveTests
             var project = Session.Project with
             {
                 Sequence = new Sequence(TempoMap.Constant(new Ppqn(480), Tempo.Default), MeterMap.Constant(new Ppqn(480), TimeSignature.CommonTime), [.. tracks], []),
-                Mixer = Mixer.Empty,
                 Connections = [.. connections],
             };
             project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(synth.Id)) with { Devices = [.. chain] });

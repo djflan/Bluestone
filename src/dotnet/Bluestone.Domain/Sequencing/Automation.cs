@@ -28,6 +28,18 @@ public enum AutomationParameter
     /// translated into the MIDI the profile maps it to (CC, RPN, NRPN, or SysEx) when the plan is compiled (ADR 0031).
     /// </summary>
     InstrumentParameter,
+
+    /// <summary>A track-owned audio strip's fader, expressed in normalized gain range.</summary>
+    AudioStripGain,
+
+    /// <summary>A track-owned audio strip's pan, from hard left to hard right.</summary>
+    AudioStripPan,
+
+    /// <summary>The project's Master fader, expressed in normalized gain range.</summary>
+    MasterGain,
+
+    /// <summary>The project's Master pan, from hard left to hard right.</summary>
+    MasterPan,
 }
 
 /// <summary>
@@ -108,13 +120,20 @@ public readonly record struct AutomationTarget
     /// <summary>True for an external instrument parameter target.</summary>
     public bool IsInstrument => Parameter == AutomationParameter.InstrumentParameter;
 
+    public bool IsAudioStrip => Parameter is AutomationParameter.AudioStripGain or AutomationParameter.AudioStripPan;
+
+    public bool IsMaster => Parameter is AutomationParameter.MasterGain or AutomationParameter.MasterPan;
+
     /// <summary>False for a target not made by one of the factories, such as <c>default</c>.</summary>
     public bool IsValid => Parameter switch
     {
         AutomationParameter.Controller => IsAutomatable(Controller),
         AutomationParameter.DeviceParameter => Device.Value != Guid.Empty,
         AutomationParameter.InstrumentParameter => Instrument.Value != Guid.Empty && !string.IsNullOrEmpty(Port) && !string.IsNullOrEmpty(InstrumentParameter),
-        _ => true,
+        AutomationParameter.PitchBend or AutomationParameter.ChannelPressure
+            or AutomationParameter.AudioStripGain or AutomationParameter.AudioStripPan
+            or AutomationParameter.MasterGain or AutomationParameter.MasterPan => true,
+        _ => false,
     };
 
     /// <exception cref="ArgumentException">The controller cannot be automated (see <see cref="IsAutomatable"/>).</exception>
@@ -126,6 +145,14 @@ public readonly record struct AutomationTarget
     public static AutomationTarget ForPitchBend(MidiChannel channel) => new(AutomationParameter.PitchBend, channel, default);
 
     public static AutomationTarget ForChannelPressure(MidiChannel channel) => new(AutomationParameter.ChannelPressure, channel, default);
+
+    public static AutomationTarget ForAudioStripGain() => new(AutomationParameter.AudioStripGain, default, default);
+
+    public static AutomationTarget ForAudioStripPan() => new(AutomationParameter.AudioStripPan, default, default);
+
+    public static AutomationTarget ForMasterGain() => new(AutomationParameter.MasterGain, default, default);
+
+    public static AutomationTarget ForMasterPan() => new(AutomationParameter.MasterPan, default, default);
 
     /// <exception cref="ArgumentException">The device ID is empty.</exception>
     public static AutomationTarget ForDevice(DeviceId device, ParameterId parameter) =>
@@ -188,7 +215,9 @@ public readonly record struct AutomationTarget
     public ControlValue AtMidi1Resolution(ControlValue value) => Parameter switch
     {
         AutomationParameter.PitchBend => ControlValue.FromFourteenBit(value.ToFourteenBit()),
-        AutomationParameter.DeviceParameter or AutomationParameter.InstrumentParameter => value,
+        AutomationParameter.DeviceParameter or AutomationParameter.InstrumentParameter
+            or AutomationParameter.AudioStripGain or AutomationParameter.AudioStripPan
+            or AutomationParameter.MasterGain or AutomationParameter.MasterPan => value,
         _ => ControlValue.FromSevenBit(value.ToSevenBit()),
     };
 
@@ -200,6 +229,8 @@ public readonly record struct AutomationTarget
         AutomationParameter.ChannelPressure => new ChannelPressureEvent(default, position, Channel, value),
         AutomationParameter.DeviceParameter => throw new InvalidOperationException("A device parameter is not a MIDI event."),
         AutomationParameter.InstrumentParameter => throw new InvalidOperationException("An instrument parameter is translated through its profile, not rendered as one event."),
+        AutomationParameter.AudioStripGain or AutomationParameter.AudioStripPan or AutomationParameter.MasterGain or AutomationParameter.MasterPan =>
+            throw new InvalidOperationException("Audio strip automation is rendered by the audio graph, not as a MIDI event."),
         _ => new ControllerEvent(default, position, Channel, Controller, value),
     };
 }
@@ -308,6 +339,8 @@ public sealed class AutomationLane
                 {
                     AutomationParameter.DeviceParameter => "A device target needs a device.",
                     AutomationParameter.InstrumentParameter => "An instrument target needs an instrument, a port, and a parameter.",
+                    AutomationParameter.AudioStripGain or AutomationParameter.AudioStripPan => "An audio strip automation target is invalid in this context.",
+                    AutomationParameter.MasterGain or AutomationParameter.MasterPan => "A Master automation target is invalid in this context.",
                     _ => $"Controller {target.Controller} cannot be automated.",
                 },
                 nameof(target));

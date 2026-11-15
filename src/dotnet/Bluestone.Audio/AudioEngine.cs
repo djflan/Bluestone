@@ -34,6 +34,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         _master = new float[2 * blockFrames];
         _tone = new float[2 * blockFrames];
         _graph = AudioGraph.Silent(blockFrames);
+        _graph.PrepareMeters(sampleRate);
         _streamer = streamFromDisk ? new DiskStreamer(this) : null;
     }
 
@@ -66,7 +67,10 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         set => Volatile.Write(ref _testTone, value);
     }
 
-    /// <summary>Swaps in a new graph; the audio thread uses it from its next block. Any thread.</summary>
+    /// <summary>
+    /// Prepares and swaps in a new graph; the audio thread uses it from its next block. Call from a control thread,
+    /// never from the audio render callback.
+    /// </summary>
     public void Publish(AudioGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -75,6 +79,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
             throw new ArgumentException($"The graph was built for {graph.BlockFrames}-frame blocks; this engine renders {BlockFrames}.", nameof(graph));
         }
 
+        graph.PrepareMeters(SampleRate);
         Volatile.Write(ref _graph, graph);
         _streamer?.Wake();
     }

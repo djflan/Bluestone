@@ -8,10 +8,13 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 11;
+    public const int Version = 12;
+
+    /// <summary>The highest mixer-meter display mode value in the wire protocol.</summary>
+    public const byte MaxMixerMeterMode = 5;
 
     /// <summary>The largest frame body either side accepts.</summary>
-    public const int MaxFrameBytes = 64 * 1024;
+    public const int MaxFrameBytes = 128 * 1024;
 
     /// <summary>The longest string (UTF-8 bytes) in a message.</summary>
     public const int MaxStringBytes = 4096;
@@ -276,6 +279,8 @@ public sealed partial class EngineChannel(Stream stream) : IDisposable
 
         public void Single(float value) => BinaryPrimitives.WriteSingleLittleEndian(Take(4), value);
 
+        public void Double(double value) => BinaryPrimitives.WriteDoubleLittleEndian(Take(8), value);
+
         public void Guid(Guid value)
         {
             if (!value.TryWriteBytes(Take(16)))
@@ -339,6 +344,8 @@ public sealed partial class EngineChannel(Stream stream) : IDisposable
         public long Int64() => BinaryPrimitives.ReadInt64LittleEndian(Take(8));
 
         public uint UInt32() => BinaryPrimitives.ReadUInt32LittleEndian(Take(4));
+
+        public double Double() => BinaryPrimitives.ReadDoubleLittleEndian(Take(8));
 
         public Guid Guid() => new(Take(16));
 

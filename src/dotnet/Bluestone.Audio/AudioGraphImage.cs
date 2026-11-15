@@ -16,11 +16,11 @@ namespace Bluestone.Audio;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Layout (version 3), native-endian, which is little-endian on every supported platform, every section 8-aligned:
-/// a 128-byte header (magic "BSGR", version, each section's count and offset, and the master gain), then nodes, clip
+/// Layout (version 5), native-endian, which is little-endian on every supported platform, every section 8-aligned:
+/// a 144-byte header (magic "BSGR", version, each section's count and offset, and the master settings), then nodes, clip
 /// regions, plugin events, plugin parameter changes, strips, steps, retained keys, strings, bytes (UTF-8 names and
 /// paths, and SysEx), plugin links (each plugin instance's block exchange file, generation, and shape, for the
-/// engine to attach to), and chain junction meter points with the node indices each sums. A plugin event is stored compactly, with its SysEx in the bytes section, not as the 272-byte
+/// engine to attach to), chain junction meter points with the node indices each sums, and sample-timed strip/Master automation. A plugin event is stored compactly, with its SysEx in the bytes section, not as the 272-byte
 /// <see cref="PluginEvent"/>.
 /// </para>
 /// <para>
@@ -33,11 +33,13 @@ namespace Bluestone.Audio;
 /// </remarks>
 public static class AudioGraphImage
 {
-    public const int Version = 3;
+    public const int Version = 5;
 
     private const uint Magic = 0x52475342; // "BSGR"
-    private const int HeaderSize = 128;
+    private const int HeaderSize = 144;
     private const int MasterGainAt = 120;
+    private const int MasterPanAt = 128;
+    private const int MasterMutedAt = 136;
 
     private const int NodeSection = 0;
     private const int RegionSection = 1;
@@ -51,7 +53,8 @@ public static class AudioGraphImage
     private const int LinkSection = 9;
     private const int MeterPointSection = 10;
     private const int MeterNodeSection = 11;
-    private const int SectionCount = 12;
+    private const int AutomationSection = 12;
+    private const int SectionCount = 13;
     private static readonly long MaxCollectWaitTicks = TimeSpan.FromMinutes(1).Ticks;
 
     private static readonly int[] ElementSizes =
@@ -68,6 +71,7 @@ public static class AudioGraphImage
         Unsafe.SizeOf<LinkEntry>(),
         Unsafe.SizeOf<MeterPointEntry>(),
         sizeof(int),
+        Unsafe.SizeOf<AutomationEntry>(),
     ];
 
     /// <summary>Writes <paramref name="description"/> to a new array.</summary>
@@ -130,6 +134,12 @@ public static class AudioGraphImage
         }
 
         var masterGain = BinaryPrimitives.ReadDoubleLittleEndian(image[MasterGainAt..]);
+        var masterPan = BinaryPrimitives.ReadDoubleLittleEndian(image[MasterPanAt..]);
+        var masterMuted = BinaryPrimitives.ReadInt32LittleEndian(image[MasterMutedAt..]);
+        if (masterMuted is not (0 or 1))
+        {
+            throw new InvalidDataException("The audio graph image is damaged: the Master mute flag is invalid.");
+        }
         var nodes = Section<NodeEntry>(image, counts, offsets, NodeSection);
         var regions = Section<RegionEntry>(image, counts, offsets, RegionSection);
         var events = Section<EventEntry>(image, counts, offsets, EventSection);
@@ -142,14 +152,30 @@ public static class AudioGraphImage
         var links = Section<LinkEntry>(image, counts, offsets, LinkSection);
         var meterPoints = Section<MeterPointEntry>(image, counts, offsets, MeterPointSection);
         var meterNodes = Section<int>(image, counts, offsets, MeterNodeSection);
+        var automation = Section<AutomationEntry>(image, counts, offsets, AutomationSection);
 
         try
         {
             var builder = new AudioGraphDescriptionBuilder();
-            foreach (var strip in strips)
+            var automationStart = 0;
+            for (var stripIndex = 0; stripIndex < strips.Length; stripIndex++)
             {
-                builder.AddStrip(new DescribedStrip(strip.Key, new MixerStripSettings(Finite(strip.GainDecibels), Finite(strip.Pan), strip.Muted != 0, strip.Soloed != 0)));
+                var strip = strips[stripIndex];
+                if (strip.FirstAutomation != automationStart || strip.AutomationCount < 0 || (long)strip.FirstAutomation + strip.AutomationCount > automation.Length)
+                {
+                    throw new InvalidDataException("The audio graph image is damaged: strip automation lies outside its section.");
+                }
+
+                var (gain, pan) = StripAutomation(automation, strip.FirstAutomation, strip.AutomationCount, stripIndex);
+                builder.AddStrip(new DescribedStrip(strip.Key, new MixerStripSettings(Finite(strip.GainDecibels), Finite(strip.Pan), strip.Muted != 0, strip.Soloed != 0))
+                {
+                    GainAutomation = gain,
+                    PanAutomation = pan,
+                });
+                automationStart += strip.AutomationCount;
             }
+
+            var (masterGainAutomation, masterPanAutomation) = ReadAutomation(automation, automationStart, automation.Length - automationStart, -1);
 
             var described = new DescribedNode[nodes.Length];
             for (var i = 0; i < nodes.Length; i++)
@@ -189,8 +215,20 @@ public static class AudioGraphImage
                     case DescribedStepKind.RouteStrip:
                         builder.RouteStrip(step.A, step.B);
                         break;
+                    case DescribedStepKind.RouteStripToNode:
+                        builder.RouteStripToNode(step.A, step.B);
+                        break;
+                    case DescribedStepKind.RouteStripToMaster:
+                        builder.RouteStripToMaster(step.A);
+                        break;
+                    case DescribedStepKind.UnrouteStrip:
+                        builder.UnrouteStrip(step.A);
+                        break;
                     case DescribedStepKind.SendStrip:
                         builder.SendStrip(step.A, step.B, Finite(step.Level), step.PreFader != 0);
+                        break;
+                    case DescribedStepKind.SendStripToNode:
+                        builder.SendStripToNode(step.A, step.B, Finite(step.Level), step.PreFader != 0);
                         break;
                     default:
                         throw new InvalidDataException($"The audio graph image is damaged: unknown step {step.Kind}.");
@@ -207,7 +245,7 @@ public static class AudioGraphImage
                 builder.AddMeterPoint(point.Key, Range(meterNodes, point.FirstNode, point.NodeCount).ToArray());
             }
 
-            return builder.Build(Finite(masterGain), retained.ToArray());
+            return builder.Build(Finite(masterGain), retained.ToArray(), Finite(masterPan), masterMuted != 0, masterGainAutomation, masterPanAutomation);
         }
         catch (ArgumentException ex)
         {
@@ -349,6 +387,56 @@ public static class AudioGraphImage
     private static float Finite(float value) =>
         float.IsFinite(value) ? value : throw new InvalidDataException("The audio graph image is damaged: a number is not finite.");
 
+    private static (ImmutableArray<DescribedAutomationPoint> Gain, ImmutableArray<DescribedAutomationPoint> Pan) StripAutomation(
+        ReadOnlySpan<AutomationEntry> entries,
+        int first,
+        int count,
+        int strip) => ReadAutomation(entries, first, count, strip);
+
+    private static (ImmutableArray<DescribedAutomationPoint> Gain, ImmutableArray<DescribedAutomationPoint> Pan) ReadAutomation(
+        ReadOnlySpan<AutomationEntry> entries,
+        int first,
+        int count,
+        int strip)
+    {
+        var range = Range(entries, first, count);
+        var gain = ImmutableArray.CreateBuilder<DescribedAutomationPoint>();
+        var pan = ImmutableArray.CreateBuilder<DescribedAutomationPoint>();
+        long lastGainFrame = -1;
+        long lastPanFrame = -1;
+        foreach (var entry in range)
+        {
+            if (entry.Strip != strip || entry.Kind is not (0 or 1) || entry.Frame < 0 || entry.Linear is not (0 or 1))
+            {
+                throw new InvalidDataException("The audio graph image is damaged: an automation point is invalid.");
+            }
+
+            var value = Finite(entry.Value);
+            if (entry.Kind == 0)
+            {
+                if (value is < -120 or > 24 || entry.Frame <= lastGainFrame)
+                {
+                    throw new InvalidDataException("The audio graph image is damaged: fader automation is out of range or unordered.");
+                }
+
+                lastGainFrame = entry.Frame;
+                gain.Add(new DescribedAutomationPoint(entry.Frame, value, entry.Linear != 0));
+            }
+            else
+            {
+                if (value is < -1 or > 1 || entry.Frame <= lastPanFrame)
+                {
+                    throw new InvalidDataException("The audio graph image is damaged: pan automation is out of range or unordered.");
+                }
+
+                lastPanFrame = entry.Frame;
+                pan.Add(new DescribedAutomationPoint(entry.Frame, value, entry.Linear != 0));
+            }
+        }
+
+        return (gain.ToImmutable(), pan.ToImmutable());
+    }
+
     private static ReadOnlySpan<T> Section<T>(ReadOnlySpan<byte> image, int[] counts, int[] offsets, int section)
         where T : struct =>
         MemoryMarshal.Cast<byte, T>(image.Slice(offsets[section], counts[section] * ElementSizes[section]));
@@ -363,6 +451,8 @@ public static class AudioGraphImage
         private readonly List<RegionEntry> _regions = [];
         private readonly List<EventEntry> _events = [];
         private readonly List<ParameterEntry> _parameters = [];
+        private readonly List<StripEntry> _strips = [];
+        private readonly List<AutomationEntry> _automation = [];
         private readonly List<StringEntry> _strings = [];
         private readonly List<LinkEntry> _links = [];
         private readonly List<MeterPointEntry> _meterPoints = [];
@@ -439,13 +529,34 @@ public static class AudioGraphImage
                 _meterNodes.AddRange(point.Nodes);
             }
 
+            for (var index = 0; index < description.Strips.Length; index++)
+            {
+                var strip = description.Strips[index];
+                var entry = new StripEntry
+                {
+                    Key = strip.Key,
+                    GainDecibels = strip.Settings.GainDecibels,
+                    Pan = strip.Settings.Pan,
+                    Muted = strip.Settings.Muted ? 1 : 0,
+                    Soloed = strip.Settings.Soloed ? 1 : 0,
+                    FirstAutomation = _automation.Count,
+                };
+                AddAutomation(index, 0, strip.GainAutomation);
+                AddAutomation(index, 1, strip.PanAutomation);
+                entry.AutomationCount = _automation.Count - entry.FirstAutomation;
+                _strips.Add(entry);
+            }
+
+            AddAutomation(-1, 0, description.MasterGainAutomation);
+            AddAutomation(-1, 1, description.MasterPanAutomation);
+
             _counts =
             [
                 _nodes.Count,
                 _regions.Count,
                 _events.Count,
                 _parameters.Count,
-                description.Strips.Length,
+                _strips.Count,
                 description.Steps.Length,
                 description.Retained.Count,
                 _strings.Count,
@@ -453,6 +564,7 @@ public static class AudioGraphImage
                 _links.Count,
                 _meterPoints.Count,
                 _meterNodes.Count,
+                _automation.Count,
             ];
             long position = HeaderSize;
             for (var section = 0; section < SectionCount; section++)
@@ -479,17 +591,13 @@ public static class AudioGraphImage
             }
 
             BinaryPrimitives.WriteDoubleLittleEndian(image[MasterGainAt..], _description.MasterGainDecibels);
+            BinaryPrimitives.WriteDoubleLittleEndian(image[MasterPanAt..], _description.MasterPan);
+            BinaryPrimitives.WriteInt32LittleEndian(image[MasterMutedAt..], _description.MasterMuted ? 1 : 0);
             CollectionsMarshal.AsSpan(_nodes).CopyTo(Section<NodeEntry>(image, NodeSection));
             CollectionsMarshal.AsSpan(_regions).CopyTo(Section<RegionEntry>(image, RegionSection));
             CollectionsMarshal.AsSpan(_events).CopyTo(Section<EventEntry>(image, EventSection));
             CollectionsMarshal.AsSpan(_parameters).CopyTo(Section<ParameterEntry>(image, ParameterSection));
-            var strips = Section<StripEntry>(image, StripSection);
-            for (var i = 0; i < strips.Length; i++)
-            {
-                var strip = _description.Strips[i];
-                strips[i] = new StripEntry { Key = strip.Key, GainDecibels = strip.Settings.GainDecibels, Pan = strip.Settings.Pan, Muted = strip.Settings.Muted ? 1 : 0, Soloed = strip.Settings.Soloed ? 1 : 0 };
-            }
-
+            CollectionsMarshal.AsSpan(_strips).CopyTo(Section<StripEntry>(image, StripSection));
             var steps = Section<StepEntry>(image, StepSection);
             for (var i = 0; i < steps.Length; i++)
             {
@@ -506,6 +614,15 @@ public static class AudioGraphImage
             CollectionsMarshal.AsSpan(_links).CopyTo(Section<LinkEntry>(image, LinkSection));
             CollectionsMarshal.AsSpan(_meterPoints).CopyTo(Section<MeterPointEntry>(image, MeterPointSection));
             CollectionsMarshal.AsSpan(_meterNodes).CopyTo(Section<int>(image, MeterNodeSection));
+            CollectionsMarshal.AsSpan(_automation).CopyTo(Section<AutomationEntry>(image, AutomationSection));
+        }
+
+        private void AddAutomation(int strip, int kind, ImmutableArray<DescribedAutomationPoint> points)
+        {
+            foreach (var point in points.IsDefault ? [] : points)
+            {
+                _automation.Add(new AutomationEntry { Strip = strip, Kind = kind, Frame = point.Frame, Value = point.Value, Linear = point.Linear ? 1 : 0 });
+            }
         }
 
         private Span<T> Section<T>(Span<byte> image, int section)
@@ -589,6 +706,19 @@ public static class AudioGraphImage
         public double Pan;
         public int Muted;
         public int Soloed;
+        public int FirstAutomation;
+        public int AutomationCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AutomationEntry
+    {
+        public long Frame;
+        public double Value;
+        public int Strip;
+        public int Kind;
+        public int Linear;
+        public int Padding;
     }
 
     [StructLayout(LayoutKind.Sequential)]

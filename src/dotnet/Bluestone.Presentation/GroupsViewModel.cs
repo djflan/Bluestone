@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Bluestone.Application.Editing;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -73,9 +74,43 @@ public sealed partial class GroupsViewModel : ObservableObject
     private void RemoveSelected()
     {
         var tracks = _owner.SelectedTracks.Where(t => t.IsInGroup).Select(t => t.Id).ToList();
-        if (tracks.Count > 0)
+        if (tracks.Count == 0)
         {
-            _owner.Execute(GroupCommands.SetGroup(tracks, null, _owner.Devices.Lookup));
+            return;
+        }
+
+        var selected = tracks.ToHashSet();
+        var routesBeingRestored = _owner.Project.ParkedConnections
+            .Where(connection => connection.Source.Kind == SignalNodeKind.Track && selected.Contains(connection.Source.AsTrack()))
+            .Select(connection => connection.Id)
+            .ToHashSet();
+
+        if (!_owner.Execute(GroupCommands.SetGroup(tracks, null, _owner.Devices.Lookup)))
+        {
+            return;
+        }
+
+        // Removing the group is still a successful edit when a parked route no longer validates. The command keeps that
+        // route parked; surface the partial outcome instead of throwing, which would roll back the whole group change.
+        var remaining = _owner.Project.ParkedConnections
+            .Where(connection => routesBeingRestored.Contains(connection.Id))
+            .ToList();
+        if (remaining.Count > 0)
+        {
+            var routes = string.Join(", ", remaining
+                .Select(connection => $"{SignalRoutingValidator.Describe(_owner.Project, connection.Source)} → {SignalRoutingValidator.Describe(_owner.Project, connection.Destination)}")
+                .Distinct()
+                .Take(3));
+            var more = remaining.Select(connection => $"{SignalRoutingValidator.Describe(_owner.Project, connection.Source)} → {SignalRoutingValidator.Describe(_owner.Project, connection.Destination)}")
+                .Distinct()
+                .Skip(3)
+                .Any();
+            var count = remaining.Count;
+            var details = routes.Length == 0 ? string.Empty : $" ({routes}{(more ? ", …" : string.Empty)})";
+            _owner.AddMessage(
+                MessageSeverity.Warning,
+                "Remove From Group",
+                $"Ungrouping succeeded, but {count} parked route{(count == 1 ? string.Empty : "s")} could not be restored and remain inactive{details}. No replacement route was created; resolve the destination conflict before reconnecting.");
         }
     }
 

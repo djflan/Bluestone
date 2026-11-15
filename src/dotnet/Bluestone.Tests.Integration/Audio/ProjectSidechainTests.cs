@@ -6,6 +6,7 @@ using Bluestone.Application.Sessions;
 using Bluestone.Audio;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
+using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
@@ -57,8 +58,9 @@ public sealed class ProjectSidechainTests
 
         // Lead plays 0.5 to 1 s through [Sine, Gain at half, Test Key]; Other plays 1.5 to 2 s through [Sine, Gain at half].
         var session = new ProjectSession();
-        var lead = Track.FromEvents(TrackId.New(), "Lead", [Note(480)]);
-        var other = Track.FromEvents(TrackId.New(), "Other", [Note(1440)]);
+        var lead = Track.FromEvents(TrackId.New(), "Lead", [Note(480)]).WithRole(TrackRole.Hybrid);
+        var mutedGroup = Track.Create("Muted output", TrackRole.Group).WithAudioStrip(new AudioStrip { IsMuted = true });
+        var other = Track.FromEvents(TrackId.New(), "Other", [Note(1440)]).WithRole(TrackRole.Hybrid).WithGroup(mutedGroup.Id);
         var leadSine = Plugin(Sine);
         var leadGain = HalfGain();
         var keyed = Plugin(key);
@@ -72,11 +74,13 @@ public sealed class ProjectSidechainTests
         };
         var project = session.Project with
         {
-            Sequence = new Sequence(TempoMap.Constant(new Ppqn(480), Tempo.Default), MeterMap.Constant(new Ppqn(480), TimeSignature.CommonTime), [lead, other], []),
+            Sequence = new Sequence(TempoMap.Constant(new Ppqn(480), Tempo.Default), MeterMap.Constant(new Ppqn(480), TimeSignature.CommonTime), [lead, other, mutedGroup], []),
             Connections =
             [
                 SignalConnection.Create(SignalKind.Audio, SignalNode.Track(lead.Id), SignalNode.Master),
-                SignalConnection.Create(SignalKind.Audio, sidechain, SignalNode.DeviceInput(keyed.Id, DeviceInputPort.Sidechain)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(other.Id), SignalNode.Track(mutedGroup.Id)),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(mutedGroup.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, sidechain, SignalNode.DeviceInput(keyed.Id, DeviceInputPort.Sidechain)) with { AudioPurpose = AudioRoutePurpose.Internal },
             ],
         };
         project = project

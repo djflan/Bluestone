@@ -51,7 +51,10 @@ public sealed class EngineAudioTests
         rig.Audio.WatchJunctions([rig.Synth.Value]);
         var rendered = await rig.RenderInEngineAsync();
         Assert.Equal(expected, rendered);
-        await WaitUntilAsync(() => rig.Audio.MeterOf(rig.Channel) is { PeakLeft: > 0 }, Patience, "the channel's meter from the engine");
+        await WaitUntilAsync(
+            () => rig.Audio.MixerMeterOf(rig.SynthTrack) is { } reading && reading.PeakRms.PeakLeft > 0,
+            Patience,
+            "the synth track strip's meter from the engine");
         await WaitUntilAsync(() => rig.Audio.JunctionMeterOf(rig.Synth.Value) is { PeakLeft: > 0 }, Patience, "the synth junction's meter from the engine");
 
         // The worker dies: Bluestone marks its exchange, and the engine plays the failure policy (silence) for it.
@@ -154,19 +157,19 @@ public sealed class EngineAudioTests
             // 480 PPQN at 120 BPM: 960 ticks a second. The clip plays from 0 to 0.5 s; the note from 0.5 s to 1 s.
             var audioTrack = Track.Create("Clip", TrackRole.Audio).WithClip(new AudioClip(ClipId.New(), Tick.Zero, new TickSpan(480), TickSpan.Zero, new AudioSource(clip, Rate / 2, Rate, 2)));
             var note = new NoteEvent(new Tick(480), new TickSpan(480), MidiChannel.FromIndex(0), new NoteNumber(69), new Velocity(127));
-            var synthTrack = Track.FromEvents(TrackId.New(), "Lead", [note]);
+            var synthTrack = Track.FromEvents(TrackId.New(), "Lead", [note])
+                .WithAudioStrip(new AudioStrip { GainDecibels = -3, Pan = 0.25 });
             var device = DeviceInstance.Create(PluginDeviceHost.DefinitionOf(Sine).ToReference());
-            var channel = MixerChannel.Create("Lead") with { GainDecibels = -3, Pan = 0.25 };
             Synth = device.Id;
-            Channel = channel.Id;
+            SynthTrack = synthTrack.Id;
             var project = Session.Project with
             {
                 Sequence = new Sequence(TempoMap.Constant(new Ppqn(480), Tempo.Default), MeterMap.Constant(new Ppqn(480), TimeSignature.CommonTime), [audioTrack, synthTrack], []),
-                Mixer = Mixer.Empty.With(channel) with { MasterGainDecibels = -1 },
+                MasterStrip = new AudioStrip { GainDecibels = -1 },
                 Connections =
                 [
                     SignalConnection.Create(SignalKind.Audio, SignalNode.Track(audioTrack.Id), SignalNode.Master),
-                    SignalConnection.Create(SignalKind.Audio, SignalNode.Track(synthTrack.Id), SignalNode.Mixer(channel.Id)),
+                    SignalConnection.Create(SignalKind.Audio, SignalNode.Track(synthTrack.Id), SignalNode.Master),
                 ],
             };
             project = project.WithChain(DeviceChain.Create(ChainOwner.ForTrack(synthTrack.Id)) with { Devices = [device] });
@@ -207,7 +210,7 @@ public sealed class EngineAudioTests
 
         public DeviceId Synth { get; }
 
-        public MixerChannelId Channel { get; }
+        public TrackId SynthTrack { get; }
 
         public static async Task<Rig> StartAsync(PluginTestHost host)
         {

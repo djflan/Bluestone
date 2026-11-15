@@ -3,6 +3,7 @@ using Bluestone.Application.Live;
 using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using Bluestone.Domain.Mixing;
+using Bluestone.Domain.Sequencing;
 
 namespace Bluestone.Application.Audio;
 
@@ -104,6 +105,12 @@ public interface IAudioPlayback : IDisposable
 
     /// <summary>A mixer channel's meter, or the master's for null; null when audio is off or the channel is not in the graph. Allocates nothing.</summary>
     MeterReading? MeterOf(MixerChannelId? channel);
+
+    /// <summary>A track strip's mixer-meter reading, or the Master's for null; null when audio is off or the strip is not in the graph.</summary>
+    MixerMeterReading? MixerMeterOf(TrackId? track);
+
+    /// <summary>Changes the mixer DSP mode and VU reference for the Master and all current and future strips.</summary>
+    void SetMixerMeterSettings(MixerMeterSettings settings);
 
     /// <summary>
     /// A chain junction's meter (ADR 0037): a chain's ID for its input, a device's for the point after it. Null when audio

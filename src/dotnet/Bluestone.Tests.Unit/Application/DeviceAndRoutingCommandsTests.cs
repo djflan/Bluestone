@@ -56,7 +56,7 @@ public sealed class DeviceAndRoutingCommandsTests
         var fx = TestDevices.Instance(TestDevices.MidiFx);
         var synth = TestDevices.Instance(TestDevices.Synth);
         var history = new EditHistory(setup.Current.WithChain(DeviceChain.Create(ChainOwner.ForTrack(a.Id)) with { Devices = [synth, fx] }));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Device(fx.Id), SignalNode.Track(b.Id)), Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Device(fx.Id), SignalNode.Track(b.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }, Definitions));
         var before = history.Current;
 
         var refused = Assert.Throws<CommandRefusedException>(() => history.Execute(DeviceCommands.MoveDevice(fx.Id, 0, Definitions)));
@@ -150,7 +150,7 @@ public sealed class DeviceAndRoutingCommandsTests
         history.Execute(DeviceCommands.InsertDevice(b.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
         history.Execute(DeviceCommands.InsertDevice(b.Id, ducker, Definitions));
         var before = history.Current.Connections.Length;
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)) with { AudioPurpose = AudioRoutePurpose.Internal }, Definitions));
 
         history.Execute(DeviceCommands.RemoveDevice(ducker.Id, Definitions));
 
@@ -166,7 +166,7 @@ public sealed class DeviceAndRoutingCommandsTests
         history.Execute(DeviceCommands.InsertDevice(a.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
         history.Execute(DeviceCommands.InsertDevice(b.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
         history.Execute(DeviceCommands.InsertDevice(b.Id, ducker, Definitions));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)), Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.DeviceInput(ducker.Id, DeviceInputPort.Sidechain)) with { AudioPurpose = AudioRoutePurpose.Internal }, Definitions));
 
         var same = TestDevices.Instance(TestDevices.Ducker);
         history.Execute(DeviceCommands.ReplaceDevice(ducker.Id, same, Definitions));
@@ -253,7 +253,7 @@ public sealed class DeviceAndRoutingCommandsTests
         history.Execute(RoutingCommands.AddMixerChannel(bus));
         history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.Track(a.Id), SignalNode.Rack(rack.Id)), Definitions));
         history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Events, SignalNode.Track(b.Id), SignalNode.Rack(rack.Id)), Definitions));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Rack(rack.Id), SignalNode.Mixer(bus.Id)), Definitions));
+        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Rack(rack.Id), SignalNode.Mixer(bus.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }, Definitions));
         Assert.Equal(3, history.Current.Connections.Length);
 
         history.Execute(DeviceCommands.RemoveRack(rack.Id));
@@ -300,7 +300,8 @@ public sealed class DeviceAndRoutingCommandsTests
         Assert.Equal(note.Id, track.ArrangedEvents.Single().Id);
         Assert.Equal(TrackOutputs.Read(before, keys.Id), TrackOutputs.Read(after, keys.Id));
         Assert.Equal(before.ChainOf(keys.Id), after.ChainOf(keys.Id));
-        Assert.Single(after.Mixer.Channels);
+        Assert.Empty(after.Mixer.Channels);
+        Assert.NotNull(track.AudioStrip);
         Assert.Contains(after.Connections, c => c.Kind == SignalKind.Audio && c.Source == SignalNode.Track(keys.Id));
     }
 
@@ -333,9 +334,14 @@ public sealed class DeviceAndRoutingCommandsTests
     [Fact]
     public void RoleAndOutputEdits_ThatWouldBreakRouting_AreRefused()
     {
-        var (history, a, b) = TwoTracks();
+        var a = Track.Create("a");
+        var b = Track.Create("b", TrackRole.Audio);
+        var history = new EditHistory(Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(a).WithTrack(b),
+            Connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.Track(b.Id), SignalNode.Master)],
+        });
         history.Execute(ProjectCommands.SetTrackOutput(a.Id, new TrackOutput { Endpoint = new EndpointReference("coremidi", "1", "MU2000") }));
-        history.Execute(TrackRoleCommands.SetRole(b.Id, TrackRole.Audio, Definitions));
 
         // An audio track has no events, so its events connection to hardware would carry nothing.
         Assert.Throws<CommandRefusedException>(() => history.Execute(TrackRoleCommands.SetRole(a.Id, TrackRole.Audio, Definitions)));

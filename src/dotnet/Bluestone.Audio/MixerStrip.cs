@@ -36,16 +36,66 @@ public readonly record struct MixerStripSettings(double GainDecibels = 0, double
 /// </summary>
 public sealed class MixerStripState
 {
-    private readonly Dictionary<MixerStripState, GainRamp> _sends = [];
+    private readonly Dictionary<object, GainRamp> _sends = [];
     private readonly GainRamp _gain = new();
+    private bool _muteStarted;
+    private float _muteLevel;
 
-    public AudioMeter Meter { get; } = new();
+    public MixerMeter Meter { get; } = new();
 
     /// <summary>Applies the gains, ramping from the previous block's; the first block starts at the target.</summary>
     internal void Apply(StereoBuffer block, float left, float right) => _gain.Apply(block, left, right);
 
+    /// <summary>Applies sample-timed fader and pan automation without allocating or taking a lock.</summary>
+    internal void ApplyAutomated(
+        StereoBuffer block,
+        in AudioRenderContext context,
+        double gainDecibels,
+        double pan,
+        bool unmuted,
+        DescribedAutomationPoint[] gainAutomation,
+        DescribedAutomationPoint[] panAutomation)
+    {
+        if (gainAutomation.Length == 0 && panAutomation.Length == 0)
+        {
+            var gain = unmuted ? PanLaw.DecibelsToGain(gainDecibels) : 0f;
+            var (left, right) = PanLaw.Gains(pan);
+            _gain.Apply(block, gain * left, gain * right);
+            _muteLevel = unmuted ? 1f : 0f;
+            _muteStarted = true;
+            return;
+        }
+
+        var targetMute = unmuted ? 1f : 0f;
+        var startMute = _muteStarted ? _muteLevel : targetMute;
+        var muteStep = (targetMute - startMute) / block.Frames;
+        var gainIndex = 0;
+        var panIndex = 0;
+        for (var i = 0; i < block.Frames; i++)
+        {
+            if (context.Wraps && i == context.WrapOffset)
+            {
+                gainIndex = 0;
+                panIndex = 0;
+            }
+
+            var frame = context.Wraps && i >= context.WrapOffset
+                ? context.WrapFrame + i - context.WrapOffset
+                : context.SongFrame + i;
+            var automatedGain = ValueAt(gainAutomation, frame, gainDecibels, ref gainIndex);
+            var automatedPan = ValueAt(panAutomation, frame, pan, ref panIndex);
+            var level = PanLaw.DecibelsToGain(automatedGain) * (startMute + ((i + 1) * muteStep));
+            var (left, right) = PanLaw.Gains(automatedPan);
+            block.Left[i] *= level * left;
+            block.Right[i] *= level * right;
+        }
+
+        _muteLevel = targetMute;
+        _muteStarted = true;
+    }
+
     /// <summary>The ramp state of this strip's send to <paramref name="target"/>. Control thread (graph building).</summary>
-    internal GainRamp SendTo(MixerStripState target)
+    internal GainRamp SendTo(object target)
     {
         lock (_sends)
         {
@@ -60,7 +110,7 @@ public sealed class MixerStripState
     }
 
     /// <summary>Forgets the ramp state of sends that are gone. Control thread; graphs already built keep theirs.</summary>
-    internal void KeepSendsTo(IReadOnlySet<MixerStripState> targets)
+    internal void KeepSendsTo(IReadOnlySet<object> targets)
     {
         lock (_sends)
         {
@@ -69,6 +119,34 @@ public sealed class MixerStripState
                 _sends.Remove(gone);
             }
         }
+    }
+
+    private static double ValueAt(DescribedAutomationPoint[] points, long frame, double fallback, ref int index)
+    {
+        if (points.Length == 0 || frame < points[0].Frame)
+        {
+            return fallback;
+        }
+
+        while (index + 1 < points.Length && points[index + 1].Frame <= frame)
+        {
+            index++;
+        }
+
+        var current = points[index];
+        if (!current.Linear || index + 1 == points.Length || points[index + 1].Frame <= current.Frame)
+        {
+            return current.Value;
+        }
+
+        var next = points[index + 1];
+        if (frame >= next.Frame)
+        {
+            return next.Value;
+        }
+
+        var amount = (frame - current.Frame) / (double)(next.Frame - current.Frame);
+        return current.Value + ((next.Value - current.Value) * amount);
     }
 }
 

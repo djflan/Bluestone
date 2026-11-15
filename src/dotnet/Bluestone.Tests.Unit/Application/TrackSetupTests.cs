@@ -84,20 +84,20 @@ public sealed class TrackSetupTests
     [Fact]
     public void DeliberateAudioRouting_IsLeftAlone()
     {
-        // The track already sends its audio to a mixer channel, so inserting an instrument changes no routing.
-        var track = Track.Create("Pad", TrackRole.Hybrid);
-        var channel = MixerChannel.Create("Pads");
-        var toChannel = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(channel.Id));
+        // The track already outputs through its parent Group, so inserting an instrument changes no routing.
+        var group = Track.Create("Pads", TrackRole.Group);
+        var track = Track.Create("Pad", TrackRole.Hybrid).WithGroup(group.Id);
+        var toGroup = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Track(group.Id));
+        var groupOutput = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(group.Id), SignalNode.Master);
         var history = new EditHistory(Project.CreateNew() with
         {
-            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track),
-            Mixer = Project.CreateNew().Mixer.With(channel),
-            Connections = [toChannel],
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track).WithTrack(group),
+            Connections = [toGroup, groupOutput],
         });
 
         history.Execute(DeviceCommands.InsertDevice(track.Id, TestDevices.Instance(TestDevices.Synth), Definitions));
 
-        Assert.Equal([toChannel], history.Current.Connections);
+        Assert.Equal([toGroup, groupOutput], history.Current.Connections);
     }
 
     [Fact]
@@ -107,13 +107,15 @@ public sealed class TrackSetupTests
         var synth = TestDevices.Instance(TestDevices.Synth);
         var history = new EditHistory(Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track) });
         history.Execute(DeviceCommands.InsertDevice(track.Id, synth, Definitions));
-        history.Execute(TrackSetup.SetAudioDestination([track.Id], null, Definitions));
-        var tap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Master);
+        var channel = MixerChannel.Create("Device tap");
+        history.Execute(RoutingCommands.AddMixerChannel(channel));
+        var tap = SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Mixer(channel.Id)) with { AudioPurpose = AudioRoutePurpose.Internal };
         history.Execute(RoutingCommands.Connect(tap, Definitions));
 
         history.Execute(DeviceCommands.InsertDevice(track.Id, TestDevices.Instance(TestDevices.Filter), Definitions));
 
-        Assert.Equal([tap], history.Current.Connections);
+        Assert.Contains(tap, history.Current.Connections);
+        Assert.Single(history.Current.Connections, c => c.AudioPurpose == AudioRoutePurpose.Output && c.Source == SignalNode.Track(track.Id));
     }
 
     [Fact]
@@ -129,25 +131,22 @@ public sealed class TrackSetupTests
     }
 
     [Fact]
-    public void SettingTheAudioDestination_RepointsAddsOrRemovesTheOutputsFirstAudioConnection()
+    public void GroupingSeveralTracks_RepointsTheirOutputsThroughTheGroupInOneUndoStep()
     {
         var history = Empty();
         var a = Track.Create("A", TrackRole.Hybrid);
         var b = Track.Create("B", TrackRole.Hybrid);
-        var channel = MixerChannel.Create("Bus");
+        var group = Track.Create("Bus", TrackRole.Group);
         history.Execute(TrackSetup.NewTrack(a, Definitions));
         history.Execute(TrackSetup.NewTrack(b, Definitions));
-        history.Execute(RoutingCommands.AddMixerChannel(channel));
-        history.Execute(TrackSetup.SetAudioDestination([b.Id], null, Definitions));
-        Assert.Empty(AudioFrom(history.Current, b.Id));
+        history.Execute(TrackSetup.NewTrack(group, Definitions));
+        history.Execute(GroupCommands.SetGroup([a.Id, b.Id], group.Id, Definitions));
 
-        history.Execute(TrackSetup.SetAudioDestination([a.Id, b.Id], SignalNode.Mixer(channel.Id), Definitions));
-
-        Assert.Equal("Change Audio Output (2 Tracks)", history.UndoLabel);
-        Assert.All([a.Id, b.Id], t => Assert.Equal(SignalNode.Mixer(channel.Id), Assert.Single(AudioFrom(history.Current, t)).Destination));
+        Assert.Equal("Add To Group", history.UndoLabel);
+        Assert.All([a.Id, b.Id], t => Assert.Equal(SignalNode.Track(group.Id), Assert.Single(AudioFrom(history.Current, t)).Destination));
         history.Undo();
         Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, a.Id)).Destination);
-        Assert.Empty(AudioFrom(history.Current, b.Id));
+        Assert.Equal(SignalNode.Master, Assert.Single(AudioFrom(history.Current, b.Id)).Destination);
     }
 
     [Fact]
@@ -155,37 +154,43 @@ public sealed class TrackSetupTests
     {
         var history = Empty();
         var track = Track.Create("Lead", TrackRole.Hybrid);
-        var bus = MixerChannel.Create("Bus");
-        var verb = MixerChannel.Create("Verb");
+        var effect = Track.Create("Verb", TrackRole.Effect);
         history.Execute(TrackSetup.NewTrack(track, Definitions));
-        history.Execute(RoutingCommands.AddMixerChannel(bus));
-        history.Execute(RoutingCommands.AddMixerChannel(verb));
-        var send = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(verb.Id));
+        history.Execute(TrackSetup.NewTrack(effect, Definitions));
+        var send = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Track(effect.Id)) with { AudioPurpose = AudioRoutePurpose.Send };
         history.Execute(RoutingCommands.Connect(send, Definitions));
 
-        history.Execute(TrackSetup.SetAudioDestination([track.Id], SignalNode.Mixer(bus.Id), Definitions));
+        history.Execute(TrackSetup.SetAudioDestination([track.Id], SignalNode.Master, Definitions));
 
-        Assert.Equal([SignalNode.Mixer(bus.Id), SignalNode.Mixer(verb.Id)], AudioFrom(history.Current, track.Id).Select(c => c.Destination));
-        Assert.Equal(SignalNode.Mixer(bus.Id), TrackSetup.PrimaryAudioOutput(history.Current, track.Id)!.Destination);
+        Assert.Equal([AudioRoutePurpose.Output, AudioRoutePurpose.Send], AudioFrom(history.Current, track.Id).Select(c => c.AudioPurpose));
+        Assert.Equal(SignalNode.Master, TrackSetup.PrimaryAudioOutput(history.Current, track.Id)!.Destination);
 
-        // Choosing the send's destination makes the send primary instead of sending the same audio there twice.
-        history.Execute(TrackSetup.SetAudioDestination([track.Id], SignalNode.Mixer(verb.Id), Definitions));
+        // A send to an Effect track cannot become the ordinary Output; the send remains a separate route.
+        Assert.Throws<CommandRefusedException>(() => history.Execute(TrackSetup.SetAudioDestination([track.Id], SignalNode.Track(effect.Id), Definitions)));
 
-        Assert.Equal([send], AudioFrom(history.Current, track.Id));
+        Assert.Contains(send, history.Current.Connections);
+        Assert.Equal(SignalNode.Master, TrackSetup.PrimaryAudioOutput(history.Current, track.Id)!.Destination);
     }
 
     [Fact]
     public void AnAudioDestinationThatWouldFeedBack_IsRefused_AndChangesNothing()
     {
-        var history = Empty();
-        var a = Track.Create("A", TrackRole.Hybrid);
-        var b = Track.Create("B", TrackRole.Hybrid);
-        history.Execute(TrackSetup.NewTrack(a, Definitions));
-        history.Execute(TrackSetup.NewTrack(b, Definitions));
-        history.Execute(TrackSetup.SetAudioDestination([b.Id], SignalNode.Track(a.Id), Definitions));
+        var a = Track.Create("A", TrackRole.Group);
+        var b = Track.Create("B", TrackRole.Group).WithGroup(a.Id);
+        var project = Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(a).WithTrack(b),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.Master),
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(b.Id), SignalNode.Track(a.Id)),
+            ],
+        };
+        var history = new EditHistory(project);
         var before = history.Current;
 
-        Assert.Throws<CommandRefusedException>(() => history.Execute(TrackSetup.SetAudioDestination([a.Id], SignalNode.Track(b.Id), Definitions)));
+        Assert.Throws<CommandRefusedException>(() => history.Execute(RoutingCommands.Connect(
+            SignalConnection.Create(SignalKind.Audio, SignalNode.Track(a.Id), SignalNode.Track(b.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }, Definitions)));
 
         Assert.Same(before, history.Current);
     }
@@ -193,12 +198,18 @@ public sealed class TrackSetupTests
     [Fact]
     public void RemovingTheDeviceWhoseTapWasTheOnlyPath_LeavesTheTrackUnrouted_RatherThanRoutingItAgainBehindTheMusiciansBack()
     {
-        var track = Track.Create("Lead", TrackRole.Hybrid);
+        var track = Track.Create("Lead", TrackRole.Instrument);
         var synth = TestDevices.Instance(TestDevices.Synth);
-        var history = new EditHistory(Project.CreateNew() with { Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track) });
-        history.Execute(DeviceCommands.InsertDevice(track.Id, synth, Definitions));
-        history.Execute(TrackSetup.SetAudioDestination([track.Id], null, Definitions));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Master), Definitions));
+        var channel = MixerChannel.Create("Device tap");
+        var project = (Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(track),
+            Mixer = Project.CreateNew().Mixer.With(channel),
+        }).WithChain(DeviceChain.Create(ChainOwner.ForTrack(track.Id)) with { Devices = [synth] }) with
+        {
+            Connections = [SignalConnection.Create(SignalKind.Audio, SignalNode.Device(synth.Id), SignalNode.Mixer(channel.Id)) with { AudioPurpose = AudioRoutePurpose.Internal }],
+        };
+        var history = new EditHistory(project);
 
         history.Execute(DeviceCommands.RemoveDevice(synth.Id, Definitions));
 
@@ -233,19 +244,21 @@ public sealed class TrackSetupTests
     }
 
     [Fact]
-    public void NoAudioOutput_RemovesTheSendsToo_SoNoSendBecomesThePrimaryOutput()
+    public void RemovingAnAudioOutput_IsRefused_AndNeverPromotesASendToAnOutput()
     {
         var history = Empty();
         var track = Track.Create("Lead", TrackRole.Hybrid);
-        var verb = MixerChannel.Create("Verb");
+        var effect = Track.Create("Verb", TrackRole.Effect);
         history.Execute(TrackSetup.NewTrack(track, Definitions));
-        history.Execute(RoutingCommands.AddMixerChannel(verb));
-        history.Execute(RoutingCommands.Connect(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Mixer(verb.Id)), Definitions));
+        history.Execute(TrackSetup.NewTrack(effect, Definitions));
+        var send = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(track.Id), SignalNode.Track(effect.Id)) with { AudioPurpose = AudioRoutePurpose.Send };
+        history.Execute(RoutingCommands.Connect(send, Definitions));
 
-        history.Execute(TrackSetup.SetAudioDestination([track.Id], null, Definitions));
+        Assert.Throws<CommandRefusedException>(() => history.Execute(TrackSetup.SetAudioDestination([track.Id], null, Definitions)));
 
-        Assert.Empty(AudioFrom(history.Current, track.Id));
-        Assert.Null(TrackSetup.PrimaryAudioOutput(history.Current, track.Id));
+        Assert.Single(AudioFrom(history.Current, track.Id), c => c.AudioPurpose == AudioRoutePurpose.Output);
+        Assert.Contains(send, history.Current.Connections);
+        Assert.Equal(SignalNode.Master, TrackSetup.PrimaryAudioOutput(history.Current, track.Id)!.Destination);
     }
 
     [Fact]

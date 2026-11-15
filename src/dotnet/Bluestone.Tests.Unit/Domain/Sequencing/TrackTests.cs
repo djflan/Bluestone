@@ -1,4 +1,5 @@
 using Bluestone.Domain.Midi;
+using Bluestone.Domain.Mixing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
 
@@ -171,6 +172,57 @@ public sealed class TrackTests
         Assert.False(original.IsMuted);
         Assert.Equal(("u", true, true, original.Id), (edited.Name, edited.IsMuted, edited.IsSoloed, edited.Id));
         Assert.Single(edited.ArrangedEvents);
+    }
+
+    [Theory]
+    [InlineData(TrackRole.Audio)]
+    [InlineData(TrackRole.Hybrid)]
+    [InlineData(TrackRole.Effect)]
+    [InlineData(TrackRole.Group)]
+    public void AudioCapableRoles_DefaultToAnAudioStrip(TrackRole role) =>
+        Assert.Equal(AudioStrip.Default, Track.Create("t", role).AudioStrip);
+
+    [Fact]
+    public void TrackEditsAndRoleChanges_PreserveExplicitAudioStripState()
+    {
+        var strip = new AudioStrip { GainDecibels = -7.5, Pan = 0.4, IsMuted = true, IsSoloed = true };
+        var extraLane = AutomationLane.Create(AutomationTarget.ForController(One, ControllerNumber.ModulationWheel));
+        var original = Track.Create("t")
+            .WithAudioStrip(strip)
+            .WithClip(Clip(0, 100, Note(0)))
+            .WithAutomation([AutomationLane.Create(AutomationTarget.ForPitchBend(One))]);
+
+        var edited = original
+            .WithName("renamed")
+            .WithMuted(true)
+            .WithSoloed(true)
+            .WithGroup(TrackId.New())
+            .WithFolded(true)
+            .WithClip(Clip(200, 100, Note(0)))
+            .ClearRange(Tick.Zero, new Tick(20))
+            .WithLane(extraLane)
+            .RemoveLane(extraLane.Id)
+            .RemoveClip(original.Clips[0].Id)
+            .WithRole(TrackRole.Hybrid)
+            .WithRole(TrackRole.Audio)
+            .WithRole(TrackRole.Effect)
+            .WithRole(TrackRole.Instrument);
+
+        Assert.Equal(strip, edited.AudioStrip);
+        Assert.Equal("renamed", edited.Name);
+        Assert.Equal(TrackRole.Instrument, edited.Role);
+    }
+
+    [Fact]
+    public void InstrumentAudioStrip_IsCreatedWhenPromotedAndRetainedWhenDemoted()
+    {
+        var instrument = Track.Create("Piano");
+        var audio = instrument.WithRole(TrackRole.Audio);
+        var demoted = audio.WithRole(TrackRole.Instrument);
+
+        Assert.Null(instrument.AudioStrip);
+        Assert.Equal(AudioStrip.Default, audio.AudioStrip);
+        Assert.Equal(AudioStrip.Default, demoted.AudioStrip);
     }
 
     [Fact]

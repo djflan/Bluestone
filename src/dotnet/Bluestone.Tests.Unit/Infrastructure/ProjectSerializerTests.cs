@@ -34,7 +34,7 @@ public sealed class ProjectSerializerTests
         var text = Encoding.UTF8.GetString(first);
 
         Assert.Equal(first, Serializer.Serialize(document));
-        Assert.StartsWith("{\n  \"format\": \"bluestone-project\",\n  \"formatVersion\": 5,", text, StringComparison.Ordinal);
+        Assert.StartsWith("{\n  \"format\": \"bluestone-project\",\n  \"formatVersion\": 6,", text, StringComparison.Ordinal);
         Assert.Contains("\"bytes\": \"F0 43 10 4C 00 00 7E 00 F7\"", text, StringComparison.Ordinal);
         Assert.Contains("\"channel\": 2", text, StringComparison.Ordinal);
         Assert.EndsWith("}\n", text, StringComparison.Ordinal);
@@ -135,8 +135,8 @@ public sealed class ProjectSerializerTests
     [InlineData("$.project.connections[1].mapping.remap[0].to", "0")]
     [InlineData("$.project.connections[0].source.type", "\"bus\"")]
     [InlineData("$.project.connections[0].kind", "\"light\"")]
-    [InlineData("$.project.mixer.channels[0].gain", "99")]
-    [InlineData("$.project.mixer.masterGain", "\"loud\"")]
+    [InlineData("$.project.sequence.tracks[1].audioStrip.gain", "99")]
+    [InlineData("$.project.masterStrip.gain", "\"loud\"")]
     [InlineData("$.project.loop.end", "0")]
     public void InvalidValues_AreReportedWithTheirPath(string path, string replacement)
     {

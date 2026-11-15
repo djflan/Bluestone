@@ -47,6 +47,7 @@
     <StreamGeometry x:Key="Icon.Monitor">M1.5,8.5 H4.5 L6,4 L9,13 L10.5,8.5 H14.5</StreamGeometry>
     <StreamGeometry x:Key="Icon.Messages">M2.5,3.5 H13.5 V10.5 H7 L4,13 V10.5 H2.5 Z M5,6 H11 M5,8 H9</StreamGeometry>
     <StreamGeometry x:Key="Icon.Browser">M2.5,3 H13.5 V13 H2.5 Z M9.5,3 V13 M10.8,5.5 H12.2 M10.8,7.5 H12.2 M10.8,9.5 H12.2</StreamGeometry>
+    <StreamGeometry x:Key="Icon.Mixer">M3,2.5 V13.5 M8,2.5 V13.5 M13,2.5 V13.5 M1.5,5 H4.5 M6.5,10 H9.5 M11.5,7 H14.5</StreamGeometry>
     <StreamGeometry x:Key="Icon.Devices">M1.5,4.5 H5 V11.5 H1.5 Z M6.25,4.5 H9.75 V11.5 H6.25 Z M11,4.5 H14.5 V11.5 H11 Z</StreamGeometry>
     <StreamGeometry x:Key="Icon.Lock">M4,7.5 H12 V13.5 H4 Z M5.5,7.5 V5.5 A2.5,2.5 0 0 1 10.5,5.5 V7.5</StreamGeometry>
     <StreamGeometry x:Key="Icon.Unlock">M4,7.5 H12 V13.5 H4 Z M5.5,7.5 V5.5 A2.5,2.5 0 0 1 10.3,4.6</StreamGeometry>
@@ -104,6 +105,68 @@
     <Setter Property="Background" Value="{StaticResource Gradient.Header}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="Border.mixerStrip">
+    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.Section}" />
+  </Style>
+  <Style Selector="Border.mixerStrip.selected">
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+  </Style>
+  <Style Selector="Border.mixerMaster">
+    <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.Section}" />
+  </Style>
+  <Style Selector="Border.mixerMaster.selected">
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+  </Style>
+  <Style Selector="Border.mixerRole">
+    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    <Setter Property="Padding" Value="4,1" />
+  </Style>
+  <Style Selector="Button.mixerMeterMode">
+    <Setter Property="Background" Value="{StaticResource Surface.Field}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.Row}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.mixerMeterMode:pointerover">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="Button.mixerMeterMode:pressed">
+    <Setter Property="Background" Value="{StaticResource State.Pressed}" />
+  </Style>
+  <Style Selector="Button.mixerMeterMode:focus">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+  </Style>
+  <Style Selector="TextBlock.mixerMeterStatus">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <Style Selector="TextBlock.mixerMeterStatus.warming">
+    <Setter Property="Foreground" Value="{StaticResource MixerMeter.Warming}" />
+  </Style>
+  <Style Selector="TextBlock.mixerMeterStatus.unavailable">
+    <Setter Property="Foreground" Value="{StaticResource MixerMeter.Unavailable}" />
+  </Style>
+  <Style Selector="Border.mixerSend">
+    <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.Row}" />
   </Style>
   <Style Selector="Border.hairline">
     <Setter Property="Background" Value="{StaticResource Line.Divider}" />
@@ -1456,6 +1519,15 @@
   <Style Selector="FlyoutPresenter.sourcePicker">
     <Setter Property="Padding" Value="0" />
     <Setter Property="Width" Value="260" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Overlay}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+  </Style>
+  <Style Selector="FlyoutPresenter.mixerMeterSettings">
+    <Setter Property="Padding" Value="{StaticResource Inset.Section}" />
+    <Setter Property="Width" Value="{StaticResource MixerMeter.SettingsFlyoutWidth}" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Background" Value="{StaticResource Surface.Overlay}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />

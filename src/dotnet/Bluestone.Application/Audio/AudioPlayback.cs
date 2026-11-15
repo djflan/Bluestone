@@ -4,6 +4,7 @@ using Bluestone.Audio;
 using Bluestone.Audio.Devices;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Mixing;
+using Bluestone.Domain.Sequencing;
 using Bluestone.Midi.Timing;
 using Bluestone.Plugins;
 
@@ -50,6 +51,8 @@ public sealed class AudioPlayback : IAudioPlayback
     private string? _waitingReason;
     private string _devicesTried = string.Empty;
     private bool _testTone;
+    private long _mixerMeterSettings = PackMixerMeterSettings(MixerMeterSettings.Default);
+    private int _mixerMeterSettingsUpdateQueued;
     private TimeSpan _liveSince;
     private TimeSpan _nextAsioRetry;
 
@@ -270,6 +273,47 @@ public sealed class AudioPlayback : IAudioPlayback
             ? (channel is { } id ? graph.StripOf(id)?.Meter.Read() : graph.Master.Meter.Read())
             : null;
 
+    public MixerMeterReading? MixerMeterOf(TrackId? track) =>
+        IsRunning && _graph is { } graph
+            ? (track is { } id ? graph.TrackStripOf(id)?.Meter.ReadLevel() : graph.Master.Meter.ReadLevel())
+            : null;
+
+    public void SetMixerMeterSettings(MixerMeterSettings settings)
+    {
+        settings.Validate();
+        Volatile.Write(ref _mixerMeterSettings, PackMixerMeterSettings(settings));
+        if (Interlocked.Exchange(ref _mixerMeterSettingsUpdateQueued, 1) == 0)
+        {
+            _ = Task.Run(ApplyMixerMeterSettings);
+        }
+    }
+
+    private void ApplyMixerMeterSettings()
+    {
+        while (true)
+        {
+            var packed = Volatile.Read(ref _mixerMeterSettings);
+            var settings = UnpackMixerMeterSettings(packed);
+            lock (_gate)
+            {
+                _graph?.SetMixerMeterSettings(settings);
+            }
+
+            Interlocked.Exchange(ref _mixerMeterSettingsUpdateQueued, 0);
+            if (Volatile.Read(ref _mixerMeterSettings) == packed ||
+                Interlocked.CompareExchange(ref _mixerMeterSettingsUpdateQueued, 1, 0) != 0)
+            {
+                return;
+            }
+        }
+    }
+
+    private static long PackMixerMeterSettings(MixerMeterSettings settings) =>
+        ((long)(byte)settings.Mode << 32) | (uint)(settings.VuReferenceDbfs + 36);
+
+    private static MixerMeterSettings UnpackMixerMeterSettings(long packed) =>
+        new((MixerMeterMode)(byte)(packed >> 32), (int)(packed & 0xFF) - 36);
+
     public MeterReading? JunctionMeterOf(Guid junction) =>
         IsRunning && _graph is { } graph && graph.JunctionMeterOf(junction) is { IsWatched: true } meter ? meter.Read() : null;
 
@@ -404,6 +448,7 @@ public sealed class AudioPlayback : IAudioPlayback
         {
             _engine = engine;
             _graph = new ProjectAudioGraph(rate, block, _instances);
+            _graph.SetMixerMeterSettings(UnpackMixerMeterSettings(Volatile.Read(ref _mixerMeterSettings)));
             _graph.LatencyChanged += (_, _) => _ = Task.Run(Rebuild);
             _graph.WatchJunctions(_watched);
         }

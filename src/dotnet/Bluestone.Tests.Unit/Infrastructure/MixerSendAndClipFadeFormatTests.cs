@@ -1,14 +1,15 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using Bluestone.Domain.Mixing;
+using Bluestone.Domain.Devices;
 using Bluestone.Domain.Projects;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
 using Bluestone.Infrastructure.Projects;
 
 namespace Bluestone.Tests.Unit.Infrastructure;
 
-/// <summary>Sends and audio clip gain and fades: optional fields added to format 4 without a version change.</summary>
+/// <summary>Format 6 audio send routes and persisted audio clip gain and fades.</summary>
 public sealed class MixerSendAndClipFadeFormatTests
 {
     private static readonly ProjectSerializer Serializer = ProjectSerializer.Default;
@@ -23,33 +24,55 @@ public sealed class MixerSendAndClipFadeFormatTests
     private static AudioClip Clip() => new(ClipId.New(), Tick.Zero, new TickSpan(960), TickSpan.Zero, new AudioSource("a.wav", 48_000, 48_000, 1));
 
     [Fact]
-    public void Sends_AreWrittenOnTheirChannel_AndReadBack()
+    public void AudioSendRoutes_AreWrittenOnTheConnection_AndReadBack()
     {
-        var reverb = MixerChannel.Create("Reverb");
-        var vocal = MixerChannel.Create("Vocal").WithSend(new MixerSend(reverb.Id, -9.5, preFader: true));
-        var project = Project.CreateNew() with { Mixer = new Mixer { Channels = [vocal, reverb] } };
+        var reverb = Track.Create("Reverb", TrackRole.Effect);
+        var vocal = Track.Create("Vocal", TrackRole.Audio);
+        var send = SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.Track(reverb.Id)) with
+        {
+            AudioPurpose = AudioRoutePurpose.Send,
+            SendLevelDecibels = -9.5,
+            SendPreFader = true,
+        };
+        var project = Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(vocal).WithTrack(reverb),
+            Connections = [send],
+        };
 
         var json = ToJson(project);
         var restored = FromJson(json);
 
-        var send = json["project"]!["mixer"]!["channels"]![0]!["sends"]![0]!.AsObject();
-        Assert.Equal(reverb.Id.Value.ToString("D"), (string)send["target"]!);
-        Assert.Equal(-9.5, (double)send["level"]!);
-        Assert.True((bool)send["preFader"]!);
-        Assert.Null(json["project"]!["mixer"]!["channels"]![1]!["sends"]);
-        Assert.Equal(project.Mixer.Channels, restored.Mixer.Channels);
+        var route = json["project"]!["connections"]![0]!.AsObject();
+        Assert.Equal("track", (string)route["destination"]!["type"]!);
+        Assert.Equal(reverb.Id.Value.ToString("D"), (string)route["destination"]!["id"]!);
+        Assert.Equal("send", (string)route["purpose"]!);
+        Assert.Equal(-9.5, (double)route["sendLevel"]!);
+        Assert.True((bool)route["preFader"]!);
+        Assert.Null(json["project"]!["mixer"]);
+        Assert.Equal(send, Assert.Single(restored.Connections));
     }
 
     [Fact]
-    public void ASendToItself_IsAFormatErrorAtTheMixer()
+    public void AFormat6SendWithoutPreFader_IsReadAsPostFader()
     {
-        var vocal = MixerChannel.Create("Vocal");
-        var json = ToJson(Project.CreateNew() with { Mixer = new Mixer { Channels = [vocal] } });
-        json["project"]!["mixer"]!["channels"]![0]!.AsObject()["sends"] = JsonNode.Parse($$"""[ { "target": "{{vocal.Id}}", "level": 0 } ]""");
+        var reverb = Track.Create("Reverb", TrackRole.Effect);
+        var vocal = Track.Create("Vocal", TrackRole.Audio);
+        var project = Project.CreateNew() with
+        {
+            Sequence = Sequence.CreateEmpty(Ppqn.Default).WithTrack(vocal).WithTrack(reverb),
+            Connections =
+            [
+                SignalConnection.Create(SignalKind.Audio, SignalNode.Track(vocal.Id), SignalNode.Track(reverb.Id)) with
+                {
+                    AudioPurpose = AudioRoutePurpose.Send,
+                },
+            ],
+        };
+        var json = ToJson(project);
+        json["project"]!["connections"]![0]!.AsObject().Remove("preFader");
 
-        var error = Assert.Throws<ProjectFormatException>(() => FromJson(json));
-
-        Assert.Equal("$.project.mixer", error.JsonPath);
+        Assert.False(Assert.Single(FromJson(json).Connections).SendPreFader);
     }
 
     [Fact]

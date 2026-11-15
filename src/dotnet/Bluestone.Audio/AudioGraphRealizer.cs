@@ -32,7 +32,9 @@ public sealed class AudioGraphRealizer : IDisposable
     private readonly ConcurrentDictionary<Guid, MixerStripState> _strips = new();
     private readonly ConcurrentDictionary<Guid, AudioMeter> _junctions = new();
     private readonly Lock _watchGate = new();
+    private readonly Lock _mixerMeterSettingsGate = new();
     private ImmutableHashSet<Guid> _watched = [];
+    private MixerMeterSettings _mixerMeterSettings = MixerMeterSettings.Default;
     private readonly Dictionary<Guid, PluginNode> _plugins = [];
     private readonly Dictionary<Guid, GainNode> _gains = [];
     private readonly Dictionary<Guid, (ImmutableArray<AudioClipRegion> Regions, ClipPlayerNode Node, IReadOnlyList<string> Problems)> _clips = [];
@@ -51,15 +53,35 @@ public sealed class AudioGraphRealizer : IDisposable
         _sampleRate = sampleRate;
         _blockFrames = blockFrames;
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
+        Master = new MixerStripState();
+        Master.Meter.Prepare(sampleRate);
     }
 
-    public MixerStripState Master { get; } = new();
+    public MixerStripState Master { get; }
 
     /// <summary>A plugin in the graph reported a new latency (any thread); realize the graph again to compensate for it.</summary>
     public event EventHandler? LatencyChanged;
 
     /// <summary>The meter and gain state of a strip, once a graph has included it. Any thread.</summary>
     public MixerStripState? StripOf(Guid key) => _strips.GetValueOrDefault(key);
+
+    /// <summary>
+    /// Applies mixer meter settings to the Master and every current strip. The settings are retained for future strips.
+    /// Control thread only; no rendering thread takes this lock.
+    /// </summary>
+    public void SetMixerMeterSettings(MixerMeterSettings settings)
+    {
+        settings.Validate();
+        lock (_mixerMeterSettingsGate)
+        {
+            _mixerMeterSettings = settings;
+            Master.Meter.Settings = settings;
+            foreach (var state in _strips.Values)
+            {
+                state.Meter.Settings = settings;
+            }
+        }
+    }
 
     /// <summary>Every strip state kept, by its channel's key. Any thread (meters are read while graphs change).</summary>
     public IEnumerable<KeyValuePair<Guid, MixerStripState>> Strips => _strips;
@@ -105,7 +127,15 @@ public sealed class AudioGraphRealizer : IDisposable
         var builder = new AudioGraphBuilder();
         foreach (var strip in description.Strips)
         {
-            builder.AddStrip(_strips.GetOrAdd(strip.Key, _ => new MixerStripState()), strip.Settings);
+            MixerStripState state;
+            lock (_mixerMeterSettingsGate)
+            {
+                state = _strips.GetOrAdd(strip.Key, _ => new MixerStripState());
+                state.Meter.Settings = _mixerMeterSettings;
+            }
+
+            state.Meter.Prepare(_sampleRate);
+            builder.AddStrip(state, strip.Settings, strip.GainAutomation, strip.PanAutomation);
         }
 
         var described = new HashSet<Guid>(description.Strips.Select(s => s.Key));
@@ -141,8 +171,20 @@ public sealed class AudioGraphRealizer : IDisposable
                 case DescribedStepKind.RouteStrip:
                     builder.RouteStrip(step.A, step.B);
                     break;
+                case DescribedStepKind.RouteStripToNode:
+                    builder.RouteStripToNode(step.A, step.B);
+                    break;
+                case DescribedStepKind.RouteStripToMaster:
+                    builder.RouteStripToMaster(step.A);
+                    break;
+                case DescribedStepKind.UnrouteStrip:
+                    builder.UnrouteStrip(step.A);
+                    break;
                 case DescribedStepKind.SendStrip:
                     builder.SendStrip(step.A, step.B, step.Level, step.PreFader);
+                    break;
+                case DescribedStepKind.SendStripToNode:
+                    builder.SendStripToNode(step.A, step.B, step.Level, step.PreFader);
                     break;
                 default:
                     throw new ArgumentException($"Unknown step {step.Kind}.", nameof(description));
@@ -174,7 +216,15 @@ public sealed class AudioGraphRealizer : IDisposable
 
         LetGo(description.Retained);
         PluginNodes = _plugins.ToImmutableDictionary();
-        var graph = builder.Build(_blockFrames, Master, description.MasterGainDecibels, _compensation);
+        var graph = builder.Build(
+            _blockFrames,
+            Master,
+            description.MasterGainDecibels,
+            _compensation,
+            description.MasterPan,
+            description.MasterMuted,
+            description.MasterGainAutomation,
+            description.MasterPanAutomation);
         return new AudioGraphRealization(graph, problems.Distinct().ToImmutableArray(), latency.ToImmutable());
     }
 

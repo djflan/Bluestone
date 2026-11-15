@@ -276,6 +276,7 @@ public partial class MainWindow : Window
             Control body = view.Kind switch
             {
                 WorkspaceViewKind.Browser => new BrowserView { DataContext = vm.Browser },
+                WorkspaceViewKind.Mixer => new MixerConsoleView { DataContext = vm.MixerConsole },
                 _ => new DeviceViewControl { DataContext = view.DeviceView },
             };
             var window = new ViewWindow(view, ViewWindow.Frame(view, body));
@@ -617,6 +618,12 @@ public partial class MainWindow : Window
         }
 
         vm.OnFrame();
+        if (vm.Workspace.Mixer.IsDetached
+            || (vm.IsEditorVisible && vm.LowerPane == LowerPane.Mixer && vm.Workspace.Mixer.IsDocked))
+        {
+            vm.MixerConsole.RefreshMeters(System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+
         var tick = vm.PlayheadTick;
         Playhead.X = Timeline.TickToX(tick);
         Ruler.PlayheadTick = tick;

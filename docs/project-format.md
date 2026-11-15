@@ -8,7 +8,7 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
 ```json
 {
   "format": "bluestone-project",
-  "formatVersion": 5,
+  "formatVersion": 6,
   "project": {
     "id": "0199b0f2-…",
     "name": "Demo",
@@ -20,6 +20,7 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
       "markers": [ { "tick": 3840, "name": "Verse" } ],
       "tracks": [
         { "id": "…", "name": "Rhythm", "muted": false, "soloed": false, "role": "group", "folded": true,
+          "audioStrip": { "gain": 0, "pan": 0, "muted": false, "soloed": false },
           "clips": [] },
         { "id": "…", "name": "Bass", "muted": false, "soloed": false, "role": "instrument", "group": "…",
           "clips": [
@@ -43,11 +44,14 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
               "points": [ { "tick": 0, "value": 2147483648, "curve": "linear" } ] }
           ] },
         { "id": "…", "name": "Vocals", "muted": false, "soloed": false, "role": "audio",
+          "audioStrip": { "gain": -3, "pan": 0, "muted": false, "soloed": false },
           "clips": [
             { "id": "…", "type": "audio", "start": 0, "length": 15360, "offset": 0,
               "source": { "location": "audio/vocals.wav", "sampleRate": 48000, "frames": 384000, "channels": 2 },
               "gain": -3, "fadeIn": 240, "fadeOut": 960, "fadeShape": "equalPower" }
-          ] }
+          ] },
+        { "id": "…", "name": "Room", "muted": false, "soloed": false, "role": "effect",
+          "audioStrip": { "gain": 0, "pan": 0, "muted": false, "soloed": false }, "clips": [] }
       ]
     },
     "instruments": [
@@ -76,7 +80,11 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
         "mapping": { "only": [ 1, 2 ], "force": 3 },
         "voice": { "bank": "normal", "program": 34 } },
       { "id": "…", "kind": "audio",
-        "source": { "type": "rack", "id": "…" }, "destination": { "type": "mixer", "id": "…" } }
+        "purpose": "output",
+        "source": { "type": "track", "id": "…" }, "destination": { "type": "master" } },
+      { "id": "…", "kind": "audio",
+        "purpose": "send", "sendLevel": -12, "preFader": false,
+        "source": { "type": "track", "id": "…" }, "destination": { "type": "track", "id": "…" } }
     ],
     "parkedConnections": [
       { "id": "…", "kind": "events",
@@ -84,11 +92,11 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
         "destination": { "type": "instrument", "id": "…", "port": "A" },
         "mapping": { "remap": [ { "from": 1, "to": 2 } ] } }
     ],
-    "mixer": { "masterGain": 0,
-      "channels": [ { "id": "…", "name": "Synth bus", "gain": -3.5, "pan": 0, "muted": false, "soloed": false,
-                      "sends": [ { "target": "…", "level": -12, "preFader": false } ] },
-                    { "id": "…", "name": "Reverb", "gain": 0, "pan": 0, "muted": false, "soloed": false,
-                      "output": "…" } ] }
+    "masterStrip": { "gain": 0, "pan": 0, "muted": false, "soloed": false },
+    "masterAutomation": [
+      { "id": "…", "target": { "type": "masterGain" },
+        "points": [ { "tick": 0, "value": 2147483648, "curve": "linear" } ] }
+    ]
   },
   "extensions": { "org.example.feature": { } }
 }
@@ -155,36 +163,59 @@ The format is read and written by `ProjectSerializer` in `Bluestone.Infrastructu
   an optional `endpoint`: the MIDI `provider` and its `key`, with the `name`, `manufacturer`, and
   `model` last seen as optional identity hints. Instruments are stored whether or not their profile or
   endpoints are currently available.
-- `chains` are device chains (ADR 0022). Each has one `owner`: a `track` (at most one chain per track)
-  or a free-standing `rack`, and an optional `name`. Devices are in processing order, each with a stable
+- `chains` are device chains (ADR 0022). Each has one `owner`: a `track` (at most one chain per track),
+  the project `master`, or a free-standing `rack`, and an optional `name`. Devices are in processing
+  order, each with a stable
   `id`, a `definition` reference (ID plus the name and version last seen, so a missing plugin can still
   be named), an optional `name`, normalized parameter `value`s, `bypassed` (written only when true), and
   an opaque plugin `state` (base64 `data`, with its `format`).
 - `connections` are the one routing model: `events` or `audio`, from a `source` (`track` or `rack`, the end of its
   chain; `chainInput`, a chain by its `id`, before its first device; or a `device` tap, after that device) to a
-  `destination` (`track`, `rack`, `deviceInput` with the device's `id` and the input's `port` (at most 64
-  characters), `instrument` with a `port`, `mixer` channel, or `master`, which has no `id`). An optional channel `mapping` has `only` (the channels that pass), then
+  `destination` (`track`, `rack`, `chainInput` for a chain's input, `deviceInput` with the device's `id` and the input's `port` (at most 64
+  characters), `instrument` with a `port`, or `master`, which has no `id`). Each audio connection has a `purpose`:
+  `output`, `send`, or `internal`. An output routes a strip to Master or its parent Group; a send copies signal to
+  an Effect track and carries `sendLevel` (dB) and `preFader` (before gain and pan when true); internal routes
+  express advanced junction, receiver, or sidechain connections. An optional channel `mapping` has `only` (the channels that pass), then
   `force` (one channel) or `remap` (`from` and `to` pairs), not both; `voice` selects a profile bank by ID and a
   `program`. Connections that do not validate are kept and reported, never dropped on load.
 - `parkedConnections` (optional; omitted when empty) are a grouped track's own outputs, set aside when it
   joined its group and put back when it leaves (ADR 0030). They have the shape of `connections` but are not
   routing: nothing plays or validates them. An ID may not appear in both lists.
-- `mixer` holds `masterGain` and the mixer channels, which are independent of tracks. Gains and send
-  levels are in dB, -120 to 24; `pan` is -1 to 1. A channel's `output` (optional) is the channel it feeds
-  instead of the master. Its `sends` (optional; omitted when empty, at most 64) copy its audio to other
-  channels: a `target` channel, a `level`, and `preFader` (taken before the fader and pan). A channel
-  sends to a target at most once and never to itself (a format error); a send to a missing channel or
-  one that closes a loop is kept and reported.
+- An audio-capable track may have an `audioStrip` with `gain` (dB, -120 to 24), `pan` (-1 to 1),
+  `muted`, and `soloed`. MIDI-only tracks have no audio strip. `masterStrip` is mandatory and has the
+  same controls. `masterAutomation` is optional project-level automation for the Master fader, pan,
+  or chain devices; track `automation` may also target its strip fader and pan. Meter display settings
+  are application preferences and are not project data.
 - `extensions` and any other unrecognised top-level properties are preserved on save. Unrecognised
   properties inside `project` are ignored and not saved.
 - Reading is strict: any invalid value fails with the JSON path of the problem.
 
 ## Versions and migrations
 
-`formatVersion` increases whenever the structure changes. Older files are upgraded in memory by a
-chain of migrations (`Format2To3Migration`, `Format3To4Migration`, `Format4To5Migration`) before they are read; saving always
-writes the current version. A file from a newer Bluestone is refused with an explanation and never
-overwritten.
+`formatVersion` increases whenever the structure changes. The current version is 6. Older files are
+upgraded in memory by a chain of migrations (`Format2To3Migration`, `Format3To4Migration`,
+`Format4To5Migration`, `Format5To6Migration`) before they are read; saving always writes the current
+version. A file from a newer Bluestone is refused with an explanation and never overwritten. Versions
+before 6 do not understand format 6 and must not be used to open and save it.
+
+Format 6 replaces format 5's independent mixer channels with track-owned audio strips, explicit
+`output`/`send`/`internal` audio-route purposes, and the mandatory `masterStrip`. The Master may own
+a device chain and project-level fader/pan/device automation. The Master chain processes its devices
+in order before the Master fader and pan.
+
+Format 5 projects migrate in memory. The old channel graph becomes track-owned Group buses and Effect
+returns: ordinary incoming outputs identify buses, incoming sends identify returns, and a channel
+that served both roles becomes a Group plus a neutral Effect return. Existing channel strip settings,
+send levels, pre/post-fader taps, and representable topology are carried into the new graph; Master
+gain becomes the Master strip gain. Legacy Device, Rack, and chain-input audio routes directly to
+Master become deterministic neutral Effect returns: the junction route remains Internal and the
+return has an ordinary Output to Master. Parked routes remain parked through that return. No Master
+chain or Master automation is invented. IDs for generated tracks are deterministic. The conversion
+is not lossless for every old graph: ambiguous multiple
+ordinary outputs, conflicting group membership, unrepresentable cycles, and malformed/self sends fail
+with a path-specific error instead of being silently flattened, dropped, or redirected. Supported
+channel topology is preserved, but blanket byte-for-byte or sample-for-sample equivalence is not
+promised. Meter mode and presentation remain app-local and are not changed by migration.
 
 Format 5 separated the arranger loop's range from whether it loops (`loop.enabled`) and added clip loops.
 A format 4 file had a `loop` only while looping was on, so it becomes an enabled loop; its clips have no

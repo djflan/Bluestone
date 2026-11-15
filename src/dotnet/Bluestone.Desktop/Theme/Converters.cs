@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Bluestone.Audio;
 using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Theme;
@@ -86,6 +87,29 @@ public sealed class EnumEqualsConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>Friendly labels for the mixer meter's global display mode.</summary>
+public sealed class MixerMeterModeLabelConverter : IValueConverter
+{
+    public static readonly MixerMeterModeLabelConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is MixerMeterMode mode
+            ? mode switch
+            {
+                MixerMeterMode.PeakRms => "Peak + RMS",
+                MixerMeterMode.Vu => "VU",
+                MixerMeterMode.K20 => "K-20",
+                MixerMeterMode.K14 => "K-14",
+                MixerMeterMode.K12 => "K-12",
+                MixerMeterMode.LufsS => "LUFS-S",
+                _ => "Peak + RMS",
+            }
+            : "Peak + RMS";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>A left margin of the given width, for indenting a group's members in the track list.</summary>
 public sealed class IndentConverter : IValueConverter
 {
@@ -153,6 +177,7 @@ public sealed class WorkspaceIconConverter : IValueConverter
         {
             WorkspaceViewKind.Inspector => "Icon.Inspector",
             WorkspaceViewKind.Browser => "Icon.Browser",
+            WorkspaceViewKind.Mixer => "Icon.Mixer",
             _ => "Icon.Devices",
         };
         return ThemeResources.Find(key);

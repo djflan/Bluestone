@@ -45,7 +45,7 @@ public sealed record RoleChangePlan
     /// <summary>Plain language for the user: why, and what changes. Empty for <see cref="RoleChangeOutcome.NoChange"/>.</summary>
     public string Message { get; init; } = string.Empty;
 
-    /// <summary>The conversion also adds a mixer channel and an audio connection from the track to it.</summary>
+    /// <summary>The conversion also adds a track strip and an Output route from the track to Master.</summary>
     public bool AddsAudioPath { get; init; }
 
     /// <summary>Applies the plan.</summary>
@@ -69,11 +69,22 @@ public sealed record RoleChangePlan
             return result;
         }
 
-        var channel = MixerChannel.Create(track.Name);
+        track = result.Sequence.FindTrack(Track)!;
+        var destination = track.Group is { } group ? SignalNode.Track(group) : SignalNode.Master;
+        var output = SignalNode.Track(Track);
+        var connections = result.Connections.Add(SignalConnection.Create(SignalKind.Audio, output, destination));
+        var parked = result.ParkedConnections;
+        if (destination != SignalNode.Master && !parked.Any(c =>
+                c.Kind == SignalKind.Audio && c.AudioPurpose == AudioRoutePurpose.Output && c.Source == output))
+        {
+            parked = parked.Add(SignalConnection.Create(SignalKind.Audio, output, SignalNode.Master));
+        }
+
         return result with
         {
-            Mixer = result.Mixer.With(channel),
-            Connections = result.Connections.Add(SignalConnection.Create(SignalKind.Audio, SignalNode.Track(Track), SignalNode.Mixer(channel.Id))),
+            Sequence = result.Sequence.WithTrack(track.WithAudioStrip(track.AudioStrip ?? AudioStrip.Default)),
+            Connections = connections,
+            ParkedConnections = parked,
         };
     }
 }
@@ -138,7 +149,7 @@ public static class TrackRoleConversion
             : Plan(
                 TrackRole.Hybrid,
                 RoleChangeOutcome.NeedsConfirmation,
-                "This instrument track has no audio output, so audio on it could not be heard. Make it a hybrid track and give it a mixer channel? Its notes, devices, and routing are not changed.",
+                "This instrument track has no audio output, so audio on it could not be heard. Make it a hybrid track and route its audio to Master? Its notes, devices, and existing routes are preserved.",
                 audioPath: true);
     }
 
@@ -149,8 +160,8 @@ public static class TrackRoleConversion
         ArgumentNullException.ThrowIfNull(definitions);
         var found = project.Sequence.FindTrack(track) ?? throw new KeyNotFoundException($"Track {track} is not in the project.");
         var role = found.Role;
-        RoleChangePlan Plan(RoleChangeOutcome outcome, string message = "") =>
-            new() { Track = track, From = role, To = requested, Outcome = outcome, Message = message };
+        RoleChangePlan Plan(RoleChangeOutcome outcome, string message = "", bool audioPath = false) =>
+            new() { Track = track, From = role, To = requested, Outcome = outcome, Message = message, AddsAudioPath = audioPath };
 
         if (requested == role)
         {
@@ -184,7 +195,11 @@ public static class TrackRoleConversion
             return Plan(RoleChangeOutcome.NeedsConfirmation, "This track has an instrument or MIDI effects, which an audio track does not use. They stay in its devices but will receive no notes. Change it anyway?");
         }
 
-        return Plan(RoleChangeOutcome.Automatic);
+        var needsAudioOutput = requested == TrackRole.Hybrid
+            && !project.Connections.Any(c => c.Kind == SignalKind.Audio
+                && c.AudioPurpose == AudioRoutePurpose.Output
+                && c.Source == SignalNode.Track(track));
+        return Plan(RoleChangeOutcome.Automatic, audioPath: needsAudioOutput);
     }
 
     /// <summary>

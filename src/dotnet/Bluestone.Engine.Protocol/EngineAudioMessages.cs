@@ -26,6 +26,12 @@ public sealed record SetAudio(long Request, bool Enabled, string? DeviceId, int 
     public override EngineMessageType Type => EngineMessageType.SetAudio;
 }
 
+/// <summary>Bluestone → engine: the mixer-meter DSP settings, retained across stream and graph changes.</summary>
+public sealed record SetMixerMeterSettings(byte Mode, int VuReferenceDbfs) : EngineMessage
+{
+    public override EngineMessageType Type => EngineMessageType.SetMixerMeterSettings;
+}
+
 /// <summary>Where the engine's audio output stands.</summary>
 public enum AudioDeviceState : byte
 {
@@ -81,8 +87,21 @@ public sealed record AudioGraphLoaded(long GraphId, bool Applied, int LatencyFra
     public override EngineMessageType Type => EngineMessageType.AudioGraphLoaded;
 }
 
-/// <summary>A meter's reading: linear peak and RMS levels per side.</summary>
-public readonly record struct MeterSpec(float PeakLeft, float PeakRight, float RmsLeft, float RmsRight);
+/// <summary>A mixer or junction meter's reading: legacy linear peak/RMS plus the selected mixer display value.</summary>
+public readonly record struct MeterSpec(float PeakLeft, float PeakRight, float RmsLeft, float RmsRight)
+{
+    /// <summary>The stable wire value of the mixer display mode (0–5); junction meters leave this at PeakRms.</summary>
+    public byte DisplayMode { get; init; }
+
+    /// <summary>Selected-mode value on the left, in that mode's unit.</summary>
+    public double LeftValue { get; init; }
+
+    /// <summary>Selected-mode value on the right, in that mode's unit.</summary>
+    public double RightValue { get; init; }
+
+    /// <summary>False during LUFS-S warm-up; true for all ready mixer readings.</summary>
+    public bool IsReady { get; init; }
+}
 
 /// <summary>A mixer strip's meter, by its channel's key.</summary>
 public readonly record struct StripMeter(Guid Key, MeterSpec Levels);

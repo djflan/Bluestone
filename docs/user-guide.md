@@ -97,11 +97,12 @@ The keyboard records, plays through devices, and appears in the MIDI monitor lik
 
 The inspector (I) edits the selection. With several tracks selected, compatible changes apply to all of them in one undo step and differing values show **Mixed**.
 
-- **Track** shows the instrument, device count, audio destination, and a type only where it matters.
+Selecting a mixer track also selects that track in the arranger and Inspector. The **Master** is independently selectable: selecting it leaves no arrangement track selected and shows the Master gain, pan, mute, solo, and chain in the Inspector. Selecting a track again restores that track's Inspector scope.
+
+- **Track** shows the instrument, device count, audio destination, and send count; sends are managed in Mixer. A type appears only where it matters.
 - **External MIDI** holds the current alpha's hardware output, profile, channel, transpose, program, and initialization workflow.
 - **Connections** exposes the underlying event and audio routes for advanced work. A route can start at the track's chain input (before its devices), after any device, or at its output.
 - **Racks** manages device chains that several tracks can share.
-- **Mixer** manages mixer channels and master gain.
 - **Recording** selects MIDI input, take mode, count-in, metronome output, and MIDI thru.
 
 Group tracks show their members beneath them. Use the group's arrow to fold or unfold them.
@@ -132,7 +133,13 @@ Open Settings with Ctrl/Cmd + ,. In **Audio**, choose the output device, sample 
 
 Audio input and recording are not implemented in the current alpha. Audio clips already present in a project can play, loop, stream from disk, use gain and fades, and route through the mixer and effects.
 
-**Window ▸ Mixer** on macOS, or **File ▸ Mixer…** on Windows and Linux, opens the mixer console, a separate window with a strip, sends, and meters for each channel.
+Open **Mixer** from the workspace toolbar or menu to show the track-owned mixer console. It can stay docked in the main window, collapse to a workspace-rail icon, or detach to its own window. Each arrangement track has a row identified by its track name; audio-capable tracks expose fader, pan, audio mute/solo, output, sends, and a meter. MIDI-only hardware tracks show their MIDI destination and routing status without an audio fader or meter. The mandatory **Master** strip is pinned at the right and has gain, pan, mute/solo, meter, and optional device-chain controls. Track fader and pan automation, and project-level Master fader/pan automation, are saved with the project.
+
+An ungrouped track's **Output** goes to Master; a grouped track's Output goes to its parent Group. **Send** routes copy audio to Effect tracks, before or after the source fader and pan. Effect tracks sum incoming sends at their chain input, process them through the chain once, then route through their strip to Master or a parent Group. Groups sum their direct members and process the sum through the Group chain and strip. Advanced **Internal** routes are available in Connections for device taps, receivers, and sidechains; they do not replace the ordinary Output or Send routes. Master devices run in chain order before the Master fader and pan.
+
+The mixer meter selector offers **Peak + RMS** (default: post-fader peak hold falling at 20 dB/s plus RMS with a 300 ms time constant), **VU** (average-rectified level with 300 ms ballistics), **K-20**, **K-14**, **K-12**, and **LUFS-S**. VU's application-local reference ranges from −36 to 0 dBFS (default −18 dBFS); it is not an acoustic SPL calibration. K-System 0 references are −20, −14, and −12 dBFS, respectively, and are not room calibrations. LUFS-S is ungated short-term loudness with standard stereo channel weighting over a trailing 3 seconds of K-weighted audio. It shows a warming-up/not-ready state until three seconds of valid samples are available and after a discontinuity. Meter mode, Bar/Round presentation, and VU reference are application-local preferences, not project data; Device View junction meters keep their separate display settings.
+
+The strip fader remains authoritative for track gain. A hand-off from the strip fader to bx_console AMEK 9099 remains deferred: no verified VST 3 class ID, parameter ID, parameter range, or normalized-to-dB conversion has been established. No vendor-specific mapping is supplied or implied, and naming the plugin does not imply vendor endorsement.
 
 Scanned VST 3 and CLAP plugins appear in the Browser. The system and per-user scan folders are listed in [plugin-hosting.md](plugin-hosting.md#the-plugin-library-and-the-plugins-view). **Settings ▸ Plugins** rescans, reports modules that failed, retries quarantined modules, chooses how plugins share worker processes, and enables automatic restart.
 

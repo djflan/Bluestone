@@ -40,6 +40,95 @@ public static class RoutingCommands
             ? p with { Connections = p.Connections.RemoveAll(c => c.Id == connection) }
             : p);
 
+    /// <summary>
+    /// Sets a track strip's ordinary output. Changing an existing route preserves its connection ID; invalid
+    /// Group/parent destinations and routing cycles are refused by the routing validator.
+    /// </summary>
+    public static IProjectCommand SetAudioOutput(TrackId source, SignalNode destination, DeviceDefinitionLookup definitions, string? mergeKey = null) =>
+        RoutingGuard.Command("Change Audio Output", definitions, project =>
+        {
+            var sourceNode = SignalNode.Track(source);
+            var existing = project.Connections.FirstOrDefault(connection =>
+                connection.Kind == SignalKind.Audio
+                && connection.AudioPurpose == AudioRoutePurpose.Output
+                && connection.Source == sourceNode);
+            if (existing is null)
+            {
+                var added = SignalConnection.Create(SignalKind.Audio, sourceNode, destination) with { AudioPurpose = AudioRoutePurpose.Output };
+                return project with { Connections = project.Connections.Add(added) };
+            }
+
+            return existing.Destination == destination
+                ? project
+                : project with { Connections = project.Connections.Replace(existing, existing with { Destination = destination }) };
+        }, mergeKey ?? $"audio-output:{source}");
+
+    /// <summary>Adds or updates a send to an Effect track, retaining the existing connection ID on updates.</summary>
+    public static IProjectCommand AddAudioSend(
+        TrackId source,
+        TrackId effect,
+        double levelDecibels,
+        bool preFader,
+        DeviceDefinitionLookup definitions,
+        string? mergeKey = null) =>
+        RoutingGuard.Command("Add Audio Send", definitions, project =>
+        {
+            var sourceNode = SignalNode.Track(source);
+            var destination = SignalNode.Track(effect);
+            var existing = project.Connections.FirstOrDefault(connection =>
+                connection.Kind == SignalKind.Audio
+                && connection.AudioPurpose == AudioRoutePurpose.Send
+                && connection.Source == sourceNode
+                && connection.Destination == destination);
+            if (existing is null)
+            {
+                var added = SignalConnection.Create(SignalKind.Audio, sourceNode, destination) with
+                {
+                    AudioPurpose = AudioRoutePurpose.Send,
+                    SendLevelDecibels = levelDecibels,
+                    SendPreFader = preFader,
+                };
+                return project with { Connections = project.Connections.Add(added) };
+            }
+
+            var updated = existing with { SendLevelDecibels = levelDecibels, SendPreFader = preFader };
+            return Equals(existing, updated) ? project : project with { Connections = project.Connections.Replace(existing, updated) };
+        }, mergeKey ?? $"audio-send:{source}:{effect}");
+
+    /// <summary>Changes a send's Effect destination or tap settings while retaining its connection ID.</summary>
+    public static IProjectCommand UpdateAudioSend(
+        ConnectionId send,
+        TrackId effect,
+        double levelDecibels,
+        bool preFader,
+        DeviceDefinitionLookup definitions,
+        string? mergeKey = null) =>
+        RoutingGuard.Command("Change Audio Send", definitions, project =>
+        {
+            var existing = project.Connections.FirstOrDefault(connection => connection.Id == send);
+            if (existing is not { Kind: SignalKind.Audio, AudioPurpose: AudioRoutePurpose.Send })
+            {
+                throw new KeyNotFoundException($"Audio send {send} is not in the project.");
+            }
+
+            var updated = existing with
+            {
+                Destination = SignalNode.Track(effect),
+                SendLevelDecibels = levelDecibels,
+                SendPreFader = preFader,
+            };
+            return Equals(existing, updated) ? project : project with { Connections = project.Connections.Replace(existing, updated) };
+        }, mergeKey ?? $"audio-send:{send}");
+
+    public static IProjectCommand RemoveAudioSend(ConnectionId send) =>
+        new ProjectCommand("Remove Audio Send", project =>
+        {
+            var existing = project.Connections.FirstOrDefault(connection => connection.Id == send);
+            return existing is { Kind: SignalKind.Audio, AudioPurpose: AudioRoutePurpose.Send }
+                ? project with { Connections = project.Connections.Remove(existing) }
+                : project;
+        });
+
     public static IProjectCommand AddInstrument(ExternalInstrument instrument)
     {
         ArgumentNullException.ThrowIfNull(instrument);

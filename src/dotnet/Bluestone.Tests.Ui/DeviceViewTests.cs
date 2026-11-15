@@ -11,6 +11,7 @@ using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
 using Bluestone.Desktop.Views;
 using Bluestone.Domain.Devices;
+using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
 
 namespace Bluestone.Tests.Ui;
@@ -76,12 +77,16 @@ public sealed class DeviceViewTests
     [Fact]
     public Task AnEmptyChain_IsOneCompositionBetweenItsBoundaries_ThatSayWhereTheSignalComesFromAndGoes() => HeadlessApp.RunAsync(async () =>
     {
-        await using var app = await AppUnderTest.OpenAsync();
+        var session = new ProjectSession();
+        var group = Track.Create("Bus", TrackRole.Group);
+        session.Execute(TrackSetup.NewTrack(group, Signal.DeviceCatalog.BuiltIn.Lookup));
+        await using var app = await AppUnderTest.OpenAsync(session);
         app.Window.Width = 1440;
         app.Window.Height = 900;
         app.ViewModel.Workspace.Browser.CollapseCommand.Execute(null);
         app.ViewModel.AddTrackCommand.Execute(null);
         app.Settle();
+        var track = app.ViewModel.Tracks.Single(t => t.Id != group.Id);
         var deviceView = app.Find<ContentControl>("DockedDeviceView");
         var slot = AppUnderTest.Within<Panel>(deviceView, p => p.Name == "EmptySlot");
         var input = AppUnderTest.Within<TextBlock>(deviceView, t => t.Name == "InputText");
@@ -95,14 +100,16 @@ public sealed class DeviceViewTests
         var outNode = output.TranslatePoint(default, deviceView)!.Value;
         Assert.True(inNode.X < slotAt.X && slotAt.X + slot.Bounds.Width < outNode.X, "IN, the empty slot, and OUT read left to right.");
 
+        app.Session.Execute(GroupCommands.SetGroup(track.Id, group.Id, Signal.DeviceCatalog.BuiltIn.Lookup));
+        app.Settle();
+
         app.Click(AppUnderTest.Within<Button>(deviceView, b => b.Name == "BrowseInstrumentsButton"));
         Assert.True(app.ViewModel.Workspace.Browser.IsDocked);
         Assert.Equal(Presentation.BrowserCategory.Instruments, app.ViewModel.Browser.SelectedCategory.Category);
 
-        app.ViewModel.Selection.Track.AudioDestination = app.ViewModel.Selection.Track.AudioDestinationChoices.Single(o => o.Destination is null && !o.IsMixed);
-        app.Settle();
-        Assert.Equal("Not routed", output.Text);
-        Assert.Contains("unrouted", output.Classes);
+        Assert.Equal(SignalNode.Track(group.Id), app.ViewModel.Selection.Track.AudioDestinationChoices.Single(o => o.Destination == SignalNode.Track(group.Id) && !o.IsMixed).Destination);
+        Assert.Equal("Bus", output.Text);
+        Assert.DoesNotContain("unrouted", output.Classes);
 
         // A device dragged over the empty chain lights the slot, and lands as the first device.
         var over = slot.TranslatePoint(new Point(slot.Bounds.Width / 2, slot.Bounds.Height / 2), app.Window)!.Value;
@@ -115,7 +122,7 @@ public sealed class DeviceViewTests
         app.Window.DragDrop(over, RawDragEventType.Drop, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
         app.Settle();
 
-        Assert.Equal(["Arpeggiator"], app.Session.Project.ChainOf(app.ViewModel.Tracks[0].Id)!.Devices.Select(d => d.DisplayName));
+        Assert.Equal(["Arpeggiator"], app.Session.Project.ChainOf(track.Id)!.Devices.Select(d => d.DisplayName));
         Assert.DoesNotContain("dropTarget", slot.Classes);
         Assert.False(slot.IsEffectivelyVisible);
         app.SaveFrame("device-view-unrouted");
@@ -525,6 +532,7 @@ public sealed class DeviceViewTests
             (Palette.MeterHot, "Meter.HotColor"),
             (Palette.MeterClip, "Meter.ClipColor"),
             (Palette.MeterTrack, "Meter.TrackColor"),
+            (Palette.MixerMeterPeakHold, "MixerMeter.PeakHoldColor"),
             (Palette.JunctionLamp, "Junction.LampColor"),
         };
 

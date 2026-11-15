@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Bluestone.Application.Editing;
+using Bluestone.Domain.Devices;
 using Bluestone.Domain.Routing;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -8,7 +9,7 @@ namespace Bluestone.Presentation;
 
 /// <summary>
 /// The inspector's Track section: what plays the selected tracks (the chain's instrument), their devices, and where their audio
-/// goes (the primary audio output, <see cref="TrackSetup.PrimaryAudioOutput"/>). Links open the chain in a Device View or the
+/// goes (the ordinary audio output). Links open the chain in a Device View or the
 /// Browser on its instruments. External MIDI settings stay in <see cref="SelectionViewModel"/>.
 /// </summary>
 public sealed partial class TrackSectionViewModel : ObservableObject
@@ -37,13 +38,13 @@ public sealed partial class TrackSectionViewModel : ObservableObject
     /// <summary>The track's output also sends audio elsewhere, beyond the primary output shown in "Audio to".</summary>
     public bool HasSends => Sound.AudioSendCount > 0;
 
-    public string SendsText => Sound.AudioSendCount == 1 ? "+1 send in Connections" : $"+{Sound.AudioSendCount} sends in Connections";
+    public string SendsText => Sound.AudioSendCount == 1 ? "+1 send in Mixer" : $"+{Sound.AudioSendCount} sends in Mixer";
 
-    /// <summary>A track in a group sends its sound through the group (ADR 0030), so its destination is not chosen here.</summary>
+    /// <summary>Only a single audio-capable track has an editable output; a group member is routed by its group.</summary>
     [ObservableProperty]
     public partial bool CanChooseAudioDestination { get; private set; } = true;
 
-    /// <summary>Where the selected tracks' audio goes: the master, a mixer channel, another track, or nowhere.</summary>
+    /// <summary>Valid output destinations for the selected track: its parent Group, or Master.</summary>
     public ObservableCollection<AudioDestinationOption> AudioDestinationChoices { get; } = [];
 
     [ObservableProperty]
@@ -56,7 +57,8 @@ public sealed partial class TrackSectionViewModel : ObservableObject
         {
             _tracks = tracks;
             Sound = tracks.Count == 1 ? tracks[0].Sound : TrackSound.Empty;
-            CanChooseAudioDestination = !tracks.Any(t => t.IsInGroup);
+            var selected = tracks.Count == 1 ? _owner.Project.Sequence.FindTrack(tracks[0].Id) : null;
+            CanChooseAudioDestination = selected?.AudioStrip is not null;
             SyncAudioDestinations();
         }
         finally
@@ -67,9 +69,9 @@ public sealed partial class TrackSectionViewModel : ObservableObject
 
     partial void OnAudioDestinationChanged(AudioDestinationOption? value)
     {
-        if (!_syncing && value is { IsMixed: false })
+        if (!_syncing && value is { IsMixed: false, Destination: { } destination } && _tracks.Count == 1)
         {
-            _owner.Execute(TrackSetup.SetAudioDestination([.. _tracks.Select(t => t.Id)], value.Destination, _owner.Devices.Lookup));
+            _owner.Execute(RoutingCommands.SetAudioOutput(_tracks[0].Id, destination, _owner.Devices.Lookup));
         }
     }
 
@@ -89,31 +91,31 @@ public sealed partial class TrackSectionViewModel : ObservableObject
     {
         var project = _owner.Project;
         AudioDestinationChoices.Clear();
-        AudioDestinationChoices.Add(new AudioDestinationOption(SignalNode.Master, "Master"));
-        foreach (var channel in project.Mixer.Channels)
+        if (_tracks.Count == 1 && project.Sequence.FindTrack(_tracks[0].Id) is { } track)
         {
-            AudioDestinationChoices.Add(new AudioDestinationOption(SignalNode.Mixer(channel.Id), channel.Name));
+            if (track.Group is { } group && project.Sequence.FindTrack(group) is { } parent)
+            {
+                AudioDestinationChoices.Add(new AudioDestinationOption(SignalNode.Track(parent.Id), parent.Name));
+            }
+            else
+            {
+                AudioDestinationChoices.Add(new AudioDestinationOption(SignalNode.Master, "Master"));
+            }
         }
 
-        AudioDestinationChoices.Add(AudioDestinationOption.None);
-        var current = _tracks.Select(t => t.Sound.AudioNode).Distinct().ToList();
-        if (current.Count > 1)
+        var current = _tracks.Select(t => project.Connections.FirstOrDefault(connection =>
+                connection.Kind == SignalKind.Audio
+                && connection.AudioPurpose == AudioRoutePurpose.Output
+                && connection.Source == SignalNode.Track(t.Id))?.Destination)
+            .Distinct()
+            .ToList();
+        if (_tracks.Count > 1 && current.Count > 1)
         {
-            AudioDestinationChoices.Insert(0, AudioDestinationOption.Mixed);
             AudioDestination = AudioDestinationOption.Mixed;
         }
-        else if (current.Count == 1)
+        else if (_tracks.Count == 1 && current.Count == 1)
         {
-            var node = current[0];
-            var match = AudioDestinationChoices.FirstOrDefault(o => o.Destination == node);
-            if (match is null && node is { } other)
-            {
-                // Another track or a rack: listed so the inspector shows it, and can be chosen again.
-                match = new AudioDestinationOption(other, TrackSound.NameOf(project, other));
-                AudioDestinationChoices.Insert(AudioDestinationChoices.Count - 1, match);
-            }
-
-            AudioDestination = match;
+            AudioDestination = AudioDestinationChoices.FirstOrDefault(option => option.Destination == current[0]);
         }
         else
         {
