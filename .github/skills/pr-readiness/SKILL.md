@@ -1,17 +1,20 @@
 ---
 name: pr-readiness
-description: 'Self-assessment that decides whether a change is ready for a pull request. Use before opening or updating a non-trivial PR (new behavior, changed defaults, concurrency, lifecycle, IPC, timing claims, multi-file changes), when asked "is this ready for a PR", "self-review", or "pre-PR check". Catches what reviewers otherwise find one round at a time.'
+description: 'Self-assessment that decides whether a change is ready for a pull request. Use before opening or updating any user-facing UI PR, even a visible-label typo, or a non-trivial PR (new behavior, changed defaults, concurrency, lifecycle, IPC, timing claims, multi-file changes), when asked "is this ready for a PR", "self-review", or "pre-PR check". Catches what reviewers otherwise find one round at a time.'
 ---
 
 # PR readiness
 
-Run this before opening a non-trivial pull request, and again before pushing a large follow-up. Its job is to find in
-one pass what review would otherwise find over several rounds. Do not request extra reviews to compensate: fix what
-this finds, then open the PR.
+Run this before opening or updating a non-trivial pull request, and again before pushing a large follow-up.
+For EVERY user-facing UI change, including visible-label typos and small follow-ups, the UI evidence and approval
+gate in step 8 is mandatory even when other readiness steps may be skipped. Its job is to find in one pass what
+review would otherwise find over several rounds. Do not request extra reviews to compensate: fix what this finds,
+then open the PR.
 
 **Non-trivial** means any of: new or changed behavior, a changed default, threads/locks/async, process or device
-lifecycle, IPC, timing or performance claims, or more than a few files. Typos, comment fixes, and dependency bumps can
-skip it.
+lifecycle, IPC, timing or performance claims, or more than a few files. Non-UI typos, comment fixes, and dependency
+bumps can skip it when none of those criteria apply. User-facing UI changes never skip the step 8 evidence and
+approval gate.
 
 ## Procedure
 
