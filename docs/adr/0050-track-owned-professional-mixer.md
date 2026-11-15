@@ -117,7 +117,8 @@ during migration. The ordinary workflow does not create Effect-to-Effect sends.
   meter tokens. **Bar** is the default presentation: signal fill and peak-hold marker share a linear
   bar scale. **Round** presents the same value and peak marker on a circular scale. Both use
   identical DSP, calibration, thresholds, numeric readout, and warm-up state; presentation changes
-  never alter audio or meter measurement.
+  never alter audio or meter measurement. (Amended: the Bar/Round presentation was removed; see
+  "Amendment: C2 mixer view" below.)
 - Put durable track/master data and route validation in `Bluestone.Domain`; edits and lifecycle
   transactions in `Bluestone.Application/Editing`; graph translation, plugin parameter scheduling,
   and master automation in `Bluestone.Application/Audio`; processing, delay, ramp, and meter state
@@ -314,4 +315,18 @@ merely because it was opened.
   exercised with the installed plugin.
 - The audio render graph changes ownership and edge processing, so timing, allocation, latency,
   meter, lifecycle, migration, and real-device verification remain required before release claims.
+
+## Amendment: C2 mixer view
+
+The console was rebuilt to the approved "C2" layout: a Bluestone-native strip with a per-device
+insert stack. The decisions above are unchanged; only the presentation changed.
+
+- Each strip has one LED-segment meter drawn by the shared `SignalIndicatorRenderer`. The meter
+  mode changes scale and ballistics, not the number of meters; meter DSP is unchanged. The Bar/Round
+  presentation preference is removed; older settings files still load and ignore it.
+- A slim filled gain bar shares the meter's dB scale; a horizontal pan ramp sits under the name. The
+  insert stack shows up to three devices with power (bypass) toggles and a flyout for the rest.
+- Reset is its own non-merging undo step. Continuous gestures still merge, using a time-based window.
+- Not built: per-strip width and spectrum views, an input-monitor control, a Master chain view from
+  the Master inserts, and keyboard jumps between strips. Record arm is view state only.
 

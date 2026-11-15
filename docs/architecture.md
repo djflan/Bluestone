@@ -452,8 +452,10 @@ digital scales with their 0 references at −20, −14, and −12 dBFS, and unga
 stereo channel weighting over the trailing three seconds of K-weighted energy). K-System references
 are digital scales, not room calibration; VU reference is not acoustic SPL calibration. LUFS-S shows
 a warming-up/not-ready state until three seconds of valid samples have accumulated and after a
-discontinuity. Meter mode, Bar/Round presentation, and VU reference are saved in application-local
-settings, not the project; they do not change Device View junction meters. A focused BenchmarkDotNet
+discontinuity. Each strip draws one LED-segment meter with the shared `SignalIndicatorRenderer`; the
+mode changes its scale and ballistics, not the meter count. Meter mode and VU reference are saved in
+application-local settings, not the project; they do not change Device View junction meters. The
+former Bar/Round presentation setting was removed; older settings files still load. A focused BenchmarkDotNet
 ShortRun covered warmed 128-frame Peak+RMS/VU/LUFS-S processing and build/preparation/reused-snapshot
 cases; it reported no managed render allocation. Three iterations had wide intervals and synthetic
 fan-out, so it does not measure device/plugin callbacks or establish an xrun, deadline, or performance
