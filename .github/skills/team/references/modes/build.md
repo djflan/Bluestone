@@ -131,8 +131,9 @@ Order matters: every edit happens before the final gates, and the PR reports the
 5. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
    `gh pr edit`. No user-facing UI PR is opened or updated until BOTH user approvals are recorded. Add a version
    token to the title only if the user asked.
-6. Check CI once. If a job fails, read its log, fix it in one follow-up commit, and push. Do not poll an unchanged
-   pending state; report that it is pending and finish.
+6. CI does not start on push. Once the review rounds are finished and the branch is pushed, start it once with
+   `gh workflow run ci.yml --ref <branch>` and check it once. If a job fails, read its log, fix it in one follow-up
+   commit, push, and run CI once more. Do not poll an unchanged pending state; report that it is pending and finish.
 
 ## Done
 

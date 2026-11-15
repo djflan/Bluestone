@@ -50,7 +50,8 @@ Tests load Bluestone's own test plugins (`src/native/crates/bluestone_test_plugi
 5. Update documentation, and add or update an ADR when you change a consequential design decision.
 6. For user-facing work, test the complete workflow, review the running UI at compact and normal sizes, use the shared tokens and controls, and state what was checked for keyboard use and accessibility. A headless frame proves rendering, not product coherence.
 7. Make sure build, tests, and `dotnet format --verify-no-changes` pass. CI runs them on Linux, macOS, and Windows, except the Core MIDI tests, which are unreliable on hosted runners; if you change the Core MIDI adapter, run them locally on a Mac. The audio device tests and the tests with installed plugins and plugin editors (`AudioDeviceTests`, `InstalledPluginTests`, `PluginEditorTests`) skip in CI, which has no audio devices or plugins; if you change that code, run them locally. A pull request that changes only documentation (Markdown, `docs/`, `.github/skills/`, issue templates) skips the build and tests; the checks still pass.
-8. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
+8. CI does not start on its own. Once a pull request's review rounds are done, a maintainer runs it on the branch with `gh workflow run ci.yml --ref <branch>` (or **Run workflow** on the Actions tab). The run reports the required `Build and test` checks on the branch's head commit; pushing again needs another run before merge. A fork's branch can't be run directly; a maintainer pushes the same commit to a branch in this repository and runs it there.
+9. Write commit messages as a short imperative summary, for example `Add WinMM MIDI output adapter for Windows`.
 
 ### Agent team
 
