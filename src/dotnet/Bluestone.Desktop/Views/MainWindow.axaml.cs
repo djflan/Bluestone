@@ -280,6 +280,9 @@ public partial class MainWindow : Window
                 _ => new DeviceViewControl { DataContext = view.DeviceView },
             };
             var window = new ViewWindow(view, ViewWindow.Frame(view, body));
+            // The main window's key bindings are not on a detached window's key route; undo and redo must still work there.
+            window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, CommandModifier), Command = InWorkspace(vm.UndoCommand) });
+            window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, CommandModifier | KeyModifiers.Shift), Command = InWorkspace(vm.RedoCommand) });
             if (!Place(window, view, screens))
             {
                 window.WindowStartupLocation = WindowStartupLocation.CenterOwner;

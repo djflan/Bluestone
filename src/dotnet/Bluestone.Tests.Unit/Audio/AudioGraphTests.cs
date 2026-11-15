@@ -134,6 +134,45 @@ public sealed class AudioGraphTests
     }
 
     [Fact]
+    public void PartialAutomation_RampsTheManualParameterInsteadOfJumping()
+    {
+        var left = new float[4];
+        var right = new float[4];
+        var context = new AudioRenderContext(4, Rate, true, 0, false);
+        DescribedAutomationPoint[] none = [];
+        DescribedAutomationPoint[] centrePan = [new(0, 0, false)];
+        DescribedAutomationPoint[] unityGain = [new(0, 0, false)];
+
+        void Render(MixerStripState state, double gainDecibels, double pan, DescribedAutomationPoint[] gain, DescribedAutomationPoint[] panLane)
+        {
+            left.AsSpan().Fill(1);
+            right.AsSpan().Fill(1);
+            state.ApplyAutomated(new StereoBuffer(left, right), context, gainDecibels, pan, true, gain, panLane);
+        }
+
+        // Pan automated, manual fader moves from 0 dB to -20 dB: the gain ramps across the block.
+        var faderState = new MixerStripState();
+        Render(faderState, 0, 0, none, centrePan);
+        Render(faderState, -20, 0, none, centrePan);
+        var target = PanLaw.DecibelsToGain(-20);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(1 + ((target - 1) * (i + 1) / 4.0), left[i], 5);
+            Assert.Equal(left[i], right[i]);
+        }
+
+        // Gain automated, manual pan moves from centre to hard right: the pan ramps across the block.
+        var panState = new MixerStripState();
+        Render(panState, 0, 0, unityGain, none);
+        Render(panState, 0, 1, unityGain, none);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(PanLaw.Gains((i + 1) / 4.0).Left, left[i], 5);
+            Assert.Equal(1f, right[i], 5);
+        }
+    }
+
+    [Fact]
     public void AutomationLookup_SkipsDenseElapsedPointsWithoutRenderAllocations()
     {
         var state = new MixerStripState();

@@ -40,6 +40,9 @@ public sealed class MixerStripState
     private readonly GainRamp _gain = new();
     private bool _muteStarted;
     private float _muteLevel;
+    private bool _levelStarted;
+    private double _lastGainLevel;
+    private double _lastPan;
 
     public MixerMeter Meter { get; } = new();
 
@@ -58,14 +61,23 @@ public sealed class MixerStripState
     {
         if (gainAutomation.Length == 0 && panAutomation.Length == 0)
         {
-            var gain = unmuted ? PanLaw.DecibelsToGain(gainDecibels) : 0f;
+            var faderGain = PanLaw.DecibelsToGain(gainDecibels);
+            var gain = unmuted ? faderGain : 0f;
             var (left, right) = PanLaw.Gains(pan);
             _gain.Apply(block, gain * left, gain * right);
             _muteLevel = unmuted ? 1f : 0f;
             _muteStarted = true;
+            RememberLevel(faderGain, pan);
             return;
         }
 
+        // The parameter without automation follows the manual control; ramp it across the block from the value last
+        // applied (automated or manual) so a fader or pan move doesn't jump while the other parameter is automated.
+        var manualGain = (double)PanLaw.DecibelsToGain(gainDecibels);
+        var startGain = _levelStarted ? _lastGainLevel : manualGain;
+        var startPan = _levelStarted ? _lastPan : pan;
+        var lastGain = startGain;
+        var lastPan = startPan;
         var targetMute = unmuted ? 1f : 0f;
         var startMute = _muteStarted ? _muteLevel : targetMute;
         var muteStep = (targetMute - startMute) / block.Frames;
@@ -84,10 +96,15 @@ public sealed class MixerStripState
             var frame = context.Wraps && i >= context.WrapOffset
                 ? context.WrapFrame + i - context.WrapOffset
                 : context.SongFrame + i;
-            var automatedGain = ValueAt(gainAutomation, frame, gainDecibels, ref gainIndex);
-            var automatedPan = ValueAt(panAutomation, frame, pan, ref panIndex);
-            var level = PanLaw.DecibelsToGain(automatedGain) * (startMute + ((i + 1) * muteStep));
-            var (left, right) = PanLaw.Gains(automatedPan);
+            var progress = (double)(i + 1) / block.Frames;
+            lastGain = gainAutomation.Length == 0
+                ? startGain + ((manualGain - startGain) * progress)
+                : PanLaw.DecibelsToGain(ValueAt(gainAutomation, frame, gainDecibels, ref gainIndex));
+            lastPan = panAutomation.Length == 0
+                ? startPan + ((pan - startPan) * progress)
+                : ValueAt(panAutomation, frame, pan, ref panIndex);
+            var level = (float)lastGain * (startMute + ((i + 1) * muteStep));
+            var (left, right) = PanLaw.Gains(lastPan);
             finalLeft = level * left;
             finalRight = level * right;
             block.Left[i] *= finalLeft;
@@ -97,10 +114,18 @@ public sealed class MixerStripState
         if (block.Frames > 0)
         {
             _gain.SetCurrent(finalLeft, finalRight);
+            RememberLevel(lastGain, lastPan);
         }
 
         _muteLevel = targetMute;
         _muteStarted = true;
+    }
+
+    private void RememberLevel(double gain, double pan)
+    {
+        _lastGainLevel = gain;
+        _lastPan = pan;
+        _levelStarted = true;
     }
 
     /// <summary>The ramp state of this strip's send to <paramref name="target"/>. Control thread (graph building).</summary>

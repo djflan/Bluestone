@@ -1495,6 +1495,31 @@ public sealed class MixerConsoleTests
         Assert.Same(app.ViewModel.MixerConsole, AppUnderTest.Within<MixerConsoleView>(app.Window, _ => true).DataContext);
     });
 
+    [Fact]
+    public Task DetachedMixer_CommandZ_UndoesAndShiftCommandZ_Redoes() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        ShowDockedMixer(app);
+        app.ViewModel.Workspace.Mixer.DetachCommand.Execute(null);
+        app.Settle();
+        var detached = Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+        app.Session.Execute(AudioStripCommands.SetTrackGain(audio.Id, -10, "test-setup:gain"));
+        app.Settle();
+        Assert.Equal(-10, GainOf(app, audio.Id));
+
+        // The keys go to the detached window, whose key route does not include the main window's bindings.
+        detached.KeyPress(Key.Z, AppUnderTest.Command, PhysicalKey.None, null);
+        detached.KeyRelease(Key.Z, AppUnderTest.Command, PhysicalKey.None, null);
+        app.Settle();
+        Assert.Equal(0, GainOf(app, audio.Id));
+
+        detached.KeyPress(Key.Z, AppUnderTest.Command | RawInputModifiers.Shift, PhysicalKey.None, null);
+        detached.KeyRelease(Key.Z, AppUnderTest.Command | RawInputModifiers.Shift, PhysicalKey.None, null);
+        app.Settle();
+        Assert.Equal(-10, GainOf(app, audio.Id));
+    });
+
     private static void AssertPeakHoldMarkersAreRendered(AppUnderTest app, IReadOnlyList<MixerMeterRail> faces, int minimumVisibleMarkers)
     {
         app.Window.UpdateLayout();
