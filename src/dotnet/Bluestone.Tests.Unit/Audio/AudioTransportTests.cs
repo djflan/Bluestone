@@ -164,6 +164,81 @@ public sealed class AudioTransportTests
         Assert.All(recorder.Blocks.Where(b => b.Jumped), b => Assert.Equal(0, b.Frame));
     }
 
+    [Theory]
+    [InlineData(40)]
+    [InlineData(-40)]
+    public void Follow_ATimelineAFewFramesAwayAcrossTheWrap_DoesNotRelocate(int offsetFrames)
+    {
+        // The timeline's position is already wrapped; when a block starts within the offset of the loop end, the audio
+        // and the timeline sit on opposite sides of the wrap, a loop length apart in raw frames but only the offset apart
+        // in the loop.
+        var (engine, recorder, driver) = Setup();
+        var timeline = new FakeTimeline { Playing = true, LoopStart = 0, LoopEnd = 0.01 };
+        engine.Transport.Follow(timeline, toleranceFrames: 48);
+        driver.Render(128, 64);
+
+        timeline.SongAtOrigin = (double)offsetFrames / Rate;
+        engine.Transport.TakeDrift();
+        driver.Render(1024 * 2, 64);
+
+        var blocks = recorder.Contexts.Where(c => c.Playing).ToList();
+        for (var i = 1; i < blocks.Count; i++)
+        {
+            var end = blocks[i - 1].EndFrame;
+            Assert.Equal(end >= 480 ? end - 480 : end, blocks[i].SongFrame);
+        }
+
+        Assert.All(blocks.Where(b => b.Jumped), b => Assert.Equal(0, b.SongFrame));
+        // The drift is measured in the loop too: the audio is the offset behind (or ahead of) the timeline throughout.
+        Assert.Equal(-offsetFrames, engine.Transport.TakeDrift().AverageFrames, 0);
+    }
+
+    [Fact]
+    public void Follow_Relocates_WhenTheTimelineJumpsWithinTheLoop()
+    {
+        var (engine, recorder, driver) = Setup();
+        var timeline = new FakeTimeline { Playing = true, LoopStart = 0, LoopEnd = 0.01 };
+        engine.Transport.Follow(timeline, toleranceFrames: 48);
+        driver.Render(128, 64);
+
+        // A seek from frame 128 to 328, both inside the loop.
+        timeline.SongAtOrigin = 200.0 / Rate;
+        driver.Render(64, 64);
+
+        Assert.Equal((328L, 64, true), recorder.Blocks[^1]);
+    }
+
+    [Fact]
+    public void Follow_ATimelineThatRoundsToTheLoopEnd_IsTheWrap_AndDoesNotRelocatePastTheEnd()
+    {
+        var (engine, recorder, driver) = Setup();
+        // A standing timeline: the first block starts at 428 and wraps, so the audio is at 12.
+        var timeline = new FakeTimeline { Playing = true, Rate = 0, SongAtOrigin = 428.0 / Rate, LoopStart = 0, LoopEnd = 0.01 };
+        engine.Transport.Follow(timeline, toleranceFrames: 48);
+        driver.Render(64, 64);
+
+        // 479.70 frames is inside the loop, but it rounds to frame 480, the loop end: that is frame 0, 12 from the audio.
+        timeline.SongAtOrigin = 479.70 / Rate;
+        driver.Render(64, 64);
+
+        Assert.Equal([(428L, 64, true), (12, 64, false)], recorder.Blocks);
+    }
+
+    [Fact]
+    public void Follow_Relocates_WhenTheTimelineJumpsWithinALoopNoLongerThanTwiceTheTolerance()
+    {
+        var (engine, recorder, driver) = Setup();
+        var timeline = new FakeTimeline { Playing = true, Rate = 0, LoopStart = 0, LoopEnd = 80.0 / Rate };
+        engine.Transport.Follow(timeline, toleranceFrames: 48);
+        driver.Render(64, 64);
+
+        // A seek from frame 64 to 4: 60 frames, but only 20 around the 80-frame loop.
+        timeline.SongAtOrigin = 4.0 / Rate;
+        driver.Render(64, 64);
+
+        Assert.Equal((4L, 64, true), recorder.Blocks[^1]);
+    }
+
     private static (AudioEngine Engine, RecordingNode Recorder, OfflineAudioDriver Driver) Setup()
     {
         var engine = new AudioEngine(Rate, Block, streamFromDisk: false);

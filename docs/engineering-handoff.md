@@ -223,3 +223,22 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
    verified: Copilot review of PR #95 flagged that device-parameter automation may not be chased to its value at the
    new position on play, seek, or loop wrap. Master-chain lanes use the same `ParameterChange` schedule as track
    device lanes, so any fix belongs to that shared path.
+8. **Playback responsiveness and loop wraps (branch `team/playback-responsiveness`), deferred or not built:**
+   - Plugin note events are dropped silently when a plugin block arrives late or is withdrawn
+     (`HostBlockExchange` withdraw path, `PluginBlockPipeline` Busy submit). Design: a `TryCollect` Withdrawn
+     status (a contract change; check it against ADR 0044 first), a per-slot event history, and undelivered events
+     carried into the next block at offset 0, with overflow counted in `InputEventsDropped`.
+   - The render-ahead `heardIn` estimate in `AudioOutput` has an error that skews audio against the timeline; the
+     loop-aware follow (ADR 0032) now tolerates the skew at the wrap but does not remove it.
+   - Every mixer or device parameter edit still runs a full sync and plan reload. Not built: a parameter fast path
+     (no Prepare/Compile/Load for pure parameter edits) and removing the second `SyncTracks` after a refresh (it
+     needs a "nothing changed" signal from `PlaybackController`). Plugin-editor edits (`PluginDeviceHost.RecordEdits`)
+     also sync once per batch.
+   - A synthetic unpaced cursor drag still takes about 190 ms from select to inspector with 2 LCD updates/s, and
+     select to inspector in engine mode did not improve.
+   - Between a reload in the pending-wrap window and the wrap, `PlaybackEngine.Position` reads the loop end rather
+     than the tick before it. Cosmetic.
+   - Engine mode stays opt-in on Windows and Linux (ADR 0047); both modes share `PlaybackEngine` and showed the same
+     lag and loop behavior.
+   - Not verified on hardware: MIDI output staying in the loop (the MIDI loopback received nothing), macOS and
+     Linux, and an audible check that notes are continuous at the wrap.

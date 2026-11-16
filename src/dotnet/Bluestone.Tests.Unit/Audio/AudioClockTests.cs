@@ -130,6 +130,56 @@ public sealed class AudioClockTests
         engine.Dispose();
     }
 
+    [Theory]
+    [InlineData(40)]
+    [InlineData(-40)]
+    public void Audio_LoopsWithTheMidiEngine_AFewFramesAway_WithoutRelocating(int nudgeFrames)
+    {
+        const int LoopTicks = 990;
+        const int LoopFrames = LoopTicks * Rate / 1000;
+        using var fixture = new PlaybackFixture();
+        fixture.Load(PlaybackFixture.Note(0, 10));
+        fixture.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(LoopTicks)));
+        var (engine, recorder, driver) = Follow(fixture);
+        fixture.Engine.Play(Tick.Zero);
+        fixture.PumpAt(0);
+        driver.StartTimestamp = Timestamp(PlaybackFixture.Start);
+
+        // A loop of 990 ms (47 520 frames, not a whole number of blocks), rendered in step with the MIDI engine's pumps.
+        // The MIDI engine moves a few frames off the audio early on, and just before every wrap an edit reloads the plan
+        // after the look-ahead has reached the loop end.
+        const int Step = 240;
+        for (var ms = 0; ms < 3200; ms += 5)
+        {
+            fixture.PumpAt(ms);
+            driver.Render(Step, Step);
+            if (ms == 50)
+            {
+                fixture.Engine.Nudge(TimeSpan.FromSeconds((double)nudgeFrames / Rate));
+            }
+
+            if ((ms + 25) % LoopTicks == 0)
+            {
+                fixture.PumpAt(ms + 4.5);
+                fixture.Load(PlaybackFixture.Note(0, 10));
+                fixture.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(LoopTicks)));
+            }
+        }
+
+        Assert.Equal(3, fixture.Engine.LoopWraps);
+        var blocks = recorder.Contexts.Where(c => c.Playing).ToList();
+        for (var i = 1; i < blocks.Count; i++)
+        {
+            var end = blocks[i - 1].EndFrame;
+            Assert.Equal(end >= LoopFrames ? end - LoopFrames : end, blocks[i].SongFrame);
+        }
+
+        // The start, and the second wrap, which falls on a block boundary (the others fall inside a block).
+        Assert.Equal(2, blocks.Count(b => b.Jumped));
+        Assert.All(blocks.Where(b => b.Jumped), b => Assert.Equal(0, b.SongFrame));
+        engine.Dispose();
+    }
+
     private static long Timestamp(TimeSpan clock) => (long)(clock.Ticks * (Stopwatch.Frequency / (double)TimeSpan.TicksPerSecond));
 
     private static (AudioEngine Engine, Recorder Recorder, OfflineAudioDriver Driver) Follow(PlaybackFixture fixture)

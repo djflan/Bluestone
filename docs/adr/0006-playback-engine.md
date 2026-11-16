@@ -35,7 +35,9 @@ for future delivery, others (WinMM, many network transports) only send immediate
   applies), so live input hears each track's instrument. Pedals (CC 64-69) are left out so a held
   sustain cannot latch live notes, and an unchanged state is not resent.
 - **Loops** are half-open; notes crossing the loop end are released there. A loop engages only when
-  the playhead is before its end. Controllers are not re-chased at the wrap.
+  the playhead is before its end, or when a plan reload re-anchored it exactly on the end before it
+  wrapped (`Cursor.WrapPending`): it then wraps at the end as if there had been no reload. Changing
+  the loop clears that state. Controllers are not re-chased at the wrap.
 - **Lateness policy.** After a stall, note starts more than `MaxNoteLateness` (250 ms) late are
   skipped; everything else is still sent so device state stays correct.
 - **Diagnostics.** `TimingStatistics` uses lock-free counters and a fixed lateness histogram

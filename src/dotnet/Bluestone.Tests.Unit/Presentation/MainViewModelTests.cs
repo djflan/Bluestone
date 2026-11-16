@@ -1,5 +1,7 @@
+using Bluestone.Application.Editing;
 using Bluestone.Application.Sessions;
 using Bluestone.Application.Status;
+using Bluestone.Domain.Devices;
 using Bluestone.Domain.Midi;
 using Bluestone.Domain.Routing;
 using Bluestone.Domain.Sequencing;
@@ -593,6 +595,41 @@ public sealed class MainViewModelTests : IAsyncLifetime
 
         Assert.Contains(browser.Items, i => i.Kind == BrowserItemKind.Device && i.Key == "bluestone.midi.transpose");
         Assert.Null(browser.SelectedItem);
+    }
+
+    [Fact]
+    public void Browser_KeepsItsItems_WhenAnEditChangesNothingItShows()
+    {
+        var browser = _vm.Browser;
+        var selected = browser.SelectedItem = browser.Items.First(i => i.Kind == BrowserItemKind.Device);
+        var before = browser.Items.ToList();
+        var changes = 0;
+        browser.Items.CollectionChanged += (_, _) => changes++;
+
+        _session.Execute(new ProjectCommand("Rename Project", p => p with { Name = "Renamed" }));
+
+        Assert.Equal("Renamed", _vm.ProjectName);
+        Assert.Equal(0, changes);
+        Assert.Equal(before.Count, browser.Items.Count);
+        Assert.All(before.Zip(browser.Items), pair => Assert.Same(pair.First, pair.Second));
+        Assert.Same(selected, browser.SelectedItem);
+    }
+
+    [Fact]
+    public void Browser_ReplacesAnItem_WhoseRackChanged_AndKeepsItSelected()
+    {
+        var browser = _vm.Browser;
+        var rack = DeviceChain.Create(ChainOwner.Rack, "Shared");
+        _session.Execute(DeviceCommands.AddRack(rack));
+        browser.ShowCategory(BrowserCategory.Racks);
+        var item = browser.SelectedItem = Assert.Single(browser.Items);
+
+        _session.Execute(DeviceCommands.RenameChain(rack.Id, "Drums Bus"));
+
+        var renamed = Assert.Single(browser.Items);
+        Assert.NotSame(item, renamed);
+        Assert.Equal(("Drums Bus", rack.Id.Value.ToString()), (renamed.Name, renamed.Key));
+        Assert.Same(renamed, browser.SelectedItem);
     }
 
     /// <summary>Inserts a device into the active Device View, as Return in the Browser does.</summary>

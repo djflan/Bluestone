@@ -420,9 +420,18 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
                 PublishAnchor(playing: false);
                 break;
             case LoopCommand loop:
+                var loopChanged = _loop != loop.Loop;
                 _loop = loop.Loop;
                 _wrapChase = loop.WrapChase;
-                if (_playing)
+                if (loopChanged)
+                {
+                    // A cursor waiting on the old loop's end has nothing to wrap to now.
+                    _immediate.WrapPending = false;
+                    _scheduled.WrapPending = false;
+                }
+
+                // An unchanged loop publishes nothing, so the anchor before an edit's Load stays the previous one.
+                if (_playing && loopChanged)
                 {
                     PublishAnchor(playing: true);
                 }
@@ -536,7 +545,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     {
         Interlocked.Increment(ref _anchorVersion);
         _previousAnchor = _anchor;
-        var engaged = _loop is { } loop && _immediate.AnchorTick < loop.End.Value ? loop : null;
+        var engaged = _loop is { } loop && _immediate.Engages(loop) ? loop : null;
         _anchor = new TransportAnchor(playing, _immediate.AnchorTime, _immediate.AnchorSongTime, _plan.TempoMap, engaged?.Start.Value ?? 0, engaged?.End.Value ?? 0);
         Interlocked.Increment(ref _anchorVersion);
     }
@@ -558,7 +567,9 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     {
         var firstUnprocessed = cursor.ProcessedThrough + 1;
         var time = TimeOf(in cursor, firstUnprocessed);
+        var wrapPending = _loop is { } loop && cursor.Engages(loop) && firstUnprocessed == loop.End.Value;
         cursor = Cursor.At(next, firstUnprocessed, time);
+        cursor.WrapPending = wrapPending;
     }
 
     /// <summary>True when the metronome sounds through an output of this delivery class.</summary>
@@ -577,9 +588,11 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
             }
 
             var loop = _loop;
-            var looping = loop is not null && cursor.AnchorTick < loop.End.Value && wraps < MaxLoopWrapsPerPump;
+            var looping = loop is not null && cursor.Engages(loop) && wraps < MaxLoopWrapsPerPump;
             var wrapTime = looping ? TimeOf(in cursor, loop!.End.Value) : Never;
-            if (looping && wrapTime <= cursor.AnchorTime)
+
+            // A cursor waiting on the end wraps at its own anchor time; that is not a loop too short to measure.
+            if (looping && wrapTime <= cursor.AnchorTime && cursor.AnchorTick < loop!.End.Value)
             {
                 // A loop too short to measure in TimeSpan resolution would never advance time.
                 looping = false;
@@ -890,6 +903,16 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
         public long ProcessedThrough;
         public long NextClick;
         public bool NextClickIsDownbeat;
+
+        /// <summary>
+        /// Set when a plan swap re-anchored a cursor that was in the loop exactly on the loop's end: it has processed
+        /// everything before the end but not yet wrapped, so the loop stays engaged and it wraps at the end.
+        /// </summary>
+        public bool WrapPending;
+
+        /// <summary>True when <paramref name="loop"/> engages for this cursor: it is before the end, or waiting on the end to wrap.</summary>
+        public readonly bool Engages(LoopRegion loop) =>
+            AnchorTick < loop.End.Value || (WrapPending && AnchorTick == loop.End.Value);
 
         public static Cursor At(PlaybackPlan plan, long tick, TimeSpan time)
         {
