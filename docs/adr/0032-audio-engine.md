@@ -123,7 +123,13 @@ and in the worst case within the buffer period; garbage-collection pauses during
   moment the block will be heard (the callback's time plus the device's output latency, plus the render-ahead queue
   in buffered mode) and starts there. After that the **device's sample clock advances the audio**: each block moves
   the song position by exactly its frames, so audio is continuous; it relocates only when the transport is more than
-  a tolerance away (a seek or a start; 10 ms or two blocks, whichever is larger).
+  a tolerance away (a seek or a start; 10 ms or twice the device buffer plus the block, whichever is larger).
+- When the audio and the transport are both inside an engaged loop, the difference is measured around the loop, to
+  the nearest pass: near the wrap one may have wrapped and the other not yet, a loop length apart in frames but only
+  a few frames apart in time, and that is not a seek. A transport position that rounds to exactly the loop end is
+  the loop start. A loop no longer than twice the tolerance is not measured this way. The cost: a deliberate seek
+  that lands within the tolerance of the audio's position, measured around the loop, does not relocate the audio, just
+  as a seek within the tolerance outside a loop never has.
 - The slow difference between the device's crystal and the system clock is measured (`TakeDrift`) and the MIDI
   transport is nudged towards the audio once a second (`PlaybackEngine.Nudge`, half the average difference). So the
   audio device's clock drives the transport while audio runs, MIDI stays aligned with what is heard, and audio never
