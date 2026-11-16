@@ -24,9 +24,10 @@ public interface IAudioTimeline
 /// block's frames, so audio is continuous. It is either driven directly (<see cref="Play"/>, <see cref="Stop"/>,
 /// <see cref="Locate"/>, <see cref="SetLoop"/>; tests and the offline driver) or follows an <see cref="IAudioTimeline"/>:
 /// once per block it compares its own position with the timeline's position at the moment the block will be heard,
-/// and only relocates when they differ by more than the tolerance (a seek, a start, a stop). The small, slow
-/// difference between the device clock and the timeline is measured (<see cref="TakeDrift"/>) so the timeline can be
-/// moved towards the audio, never the other way round. See ADR 0032.
+/// and only relocates when they differ by more than the tolerance (a seek, a start, a stop), measured around the loop
+/// when both are inside an engaged one. The small, slow difference between the device clock and the timeline is
+/// measured (<see cref="TakeDrift"/>) so the timeline can be moved towards the audio, never the other way round. See
+/// ADR 0032.
 /// </summary>
 public sealed class AudioTransport
 {
@@ -131,7 +132,7 @@ public sealed class AudioTransport
             return;
         }
 
-        var difference = _frame - expected;
+        var difference = Folded(_frame - expected, expected);
         if (Math.Abs(difference) > Volatile.Read(ref _toleranceFrames))
         {
             _frame = expected;
@@ -176,6 +177,25 @@ public sealed class AudioTransport
 
         Volatile.Write(ref _position, _frame);
         Volatile.Write(ref _isPlaying, _playing ? 1 : 0);
+    }
+
+    // The audio's difference from the timeline's (already wrapped) position. When both are inside the engaged loop it is
+    // measured around the loop, to the nearest pass: near the wrap one side may have wrapped and the other not yet, a
+    // loop length apart in frames but only a few frames apart in time.
+    private long Folded(long difference, long expected)
+    {
+        var length = _loopEnd - _loopStart;
+        if (length <= 0 || _frame < _loopStart || _frame >= _loopEnd || expected < _loopStart || expected >= _loopEnd)
+        {
+            return difference;
+        }
+
+        if (difference > length / 2)
+        {
+            return difference - length;
+        }
+
+        return difference < -(length / 2) ? difference + length : difference;
     }
 
     // A position moved ahead by some frames, wrapping into the loop when it is engaged.
