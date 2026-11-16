@@ -80,10 +80,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string? _workspacePath;
     private int _statusQueued;
 
-    // UI thread only: whether the change being executed may share a queued sync, and whether one is queued.
-    private bool _coalesceSync;
-    private bool _syncQueued;
-
     public MainViewModel(ProjectSession session, PlaybackController playback, EndpointDirectory endpoints, IUserInteraction ui, IUiDispatcher dispatcher, MidiMonitor? monitor = null, ComputerKeyboardViewModel? keyboard = null, PluginDeviceHost? plugins = null, ActivityLog? activities = null)
     {
         Activities = activities ?? new ActivityLog();
@@ -770,10 +766,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Runs an edit. An edit the model refuses (it would break routing or hide content) changes nothing and is explained in a message.</summary>
     internal bool Execute(IProjectCommand command, IProjectCommand? prepareUndo = null)
     {
-        // A merging edit is one value of a continuous gesture (a slider drag, a wheel turn); nothing reads the views right
-        // after it, so its sync can be coalesced with the rest of the gesture. Only on the UI thread, where the session's
-        // change notification runs inline and sees this flag.
-        _coalesceSync = command.MergeKey is not null && _dispatcher.CheckAccess();
         try
         {
             return _session.Execute(command, prepareUndo);
@@ -785,10 +777,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             // Controls bound two ways still show the refused value; show the project's again.
             SyncSelection();
             return false;
-        }
-        finally
-        {
-            _coalesceSync = false;
         }
     }
 
@@ -1640,34 +1628,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
-        var coalesce = _coalesceSync;
-        _coalesceSync = false;
-        if (coalesce)
-        {
-            // Latest wins: one queued sync covers however many gesture values arrive before it runs.
-            if (!_syncQueued)
-            {
-                _syncQueued = true;
-                _dispatcher.Post(SyncQueued);
-            }
-
-            return;
-        }
-
-        // Any other change syncs now (callers read the views right after it), which also covers a queued sync.
-        _syncQueued = false;
-        _ = SyncAndRefreshAsync();
-    }
-
-    private void SyncQueued()
-    {
-        if (!_syncQueued)
-        {
-            return;
-        }
-
-        // Cleared before syncing, so a change during the sync queues another.
-        _syncQueued = false;
         _ = SyncAndRefreshAsync();
     }
 

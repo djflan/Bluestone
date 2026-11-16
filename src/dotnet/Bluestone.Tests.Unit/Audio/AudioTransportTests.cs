@@ -208,6 +208,37 @@ public sealed class AudioTransportTests
         Assert.Equal((328L, 64, true), recorder.Blocks[^1]);
     }
 
+    [Fact]
+    public void Follow_ATimelineThatRoundsToTheLoopEnd_IsTheWrap_AndDoesNotRelocatePastTheEnd()
+    {
+        var (engine, recorder, driver) = Setup();
+        // A standing timeline: the first block starts at 428 and wraps, so the audio is at 12.
+        var timeline = new FakeTimeline { Playing = true, Rate = 0, SongAtOrigin = 428.0 / Rate, LoopStart = 0, LoopEnd = 0.01 };
+        engine.Transport.Follow(timeline, toleranceFrames: 48);
+        driver.Render(64, 64);
+
+        // 479.70 frames is inside the loop, but it rounds to frame 480, the loop end: that is frame 0, 12 from the audio.
+        timeline.SongAtOrigin = 479.70 / Rate;
+        driver.Render(64, 64);
+
+        Assert.Equal([(428L, 64, true), (12, 64, false)], recorder.Blocks);
+    }
+
+    [Fact]
+    public void Follow_Relocates_WhenTheTimelineJumpsWithinALoopNoLongerThanTwiceTheTolerance()
+    {
+        var (engine, recorder, driver) = Setup();
+        var timeline = new FakeTimeline { Playing = true, Rate = 0, LoopStart = 0, LoopEnd = 80.0 / Rate };
+        engine.Transport.Follow(timeline, toleranceFrames: 48);
+        driver.Render(64, 64);
+
+        // A seek from frame 64 to 4: 60 frames, but only 20 around the 80-frame loop.
+        timeline.SongAtOrigin = 4.0 / Rate;
+        driver.Render(64, 64);
+
+        Assert.Equal((4L, 64, true), recorder.Blocks[^1]);
+    }
+
     private static (AudioEngine Engine, RecordingNode Recorder, OfflineAudioDriver Driver) Setup()
     {
         var engine = new AudioEngine(Rate, Block, streamFromDisk: false);

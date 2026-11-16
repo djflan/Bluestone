@@ -366,6 +366,31 @@ public sealed class PlaybackEngineTests
     }
 
     [Fact]
+    public void Loop_PendingWrap_ThenLoopOffAndOnAgain_StaysDisengagedPastTheEnd()
+    {
+        using var f = new PlaybackFixture(null, Immediate);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.Engine.Play(Tick.Zero);
+        f.PumpAt(0);
+        f.PumpAt(99.5);
+        f.Load(Note(0, 10), Note(150, 10, 62));
+
+        f.Engine.SetLoop(null);
+        f.PumpAt(160);
+        Assert.Equal(new Tick(160), f.Engine.Position);
+
+        // The playhead is past the loop's end, so turning the loop back on does not pull it back.
+        f.Engine.SetLoop(new LoopRegion(Tick.Zero, new Tick(100)));
+        f.PumpAt(161);
+
+        Assert.Equal(new Tick(161), f.Engine.Position);
+        Assert.Equal(0, f.Engine.LoopWraps);
+        Assert.True(f.Engine.TryGetSongTimeAt(Start + TimeSpan.FromMilliseconds(161), out var heard));
+        Assert.Equal(TimeSpan.Zero, heard.LoopEnd);
+    }
+
+    [Fact]
     public void Loop_UnchangedLoopAfterAReload_KeepsThePreReloadAnchorAsPrevious()
     {
         using var f = new PlaybackFixture(null, Immediate);

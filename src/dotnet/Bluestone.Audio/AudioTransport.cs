@@ -122,6 +122,12 @@ public sealed class AudioTransport
         _loopStart = (long)Math.Round(position.LoopStartSeconds * sampleRate);
         _loopEnd = (long)Math.Round(position.LoopEndSeconds * sampleRate);
         _tempo = position.Tempo;
+        if (_loopEnd > _loopStart && expected == _loopEnd)
+        {
+            // The timeline wraps in seconds, so a position just before the loop end can round to it: that is the wrap.
+            expected = _loopStart;
+        }
+
         expected = Ahead(expected, compensationFrames);
         if (!_playing || compensationFrames != _compensation)
         {
@@ -181,11 +187,12 @@ public sealed class AudioTransport
 
     // The audio's difference from the timeline's (already wrapped) position. When both are inside the engaged loop it is
     // measured around the loop, to the nearest pass: near the wrap one side may have wrapped and the other not yet, a
-    // loop length apart in frames but only a few frames apart in time.
+    // loop length apart in frames but only a few frames apart in time. A loop no longer than twice the tolerance is not
+    // folded: every folded difference would be within the tolerance, so a seek inside it could never relocate.
     private long Folded(long difference, long expected)
     {
         var length = _loopEnd - _loopStart;
-        if (length <= 0 || _frame < _loopStart || _frame >= _loopEnd || expected < _loopStart || expected >= _loopEnd)
+        if (length <= 2L * Volatile.Read(ref _toleranceFrames) || _frame < _loopStart || _frame >= _loopEnd || expected < _loopStart || expected >= _loopEnd)
         {
             return difference;
         }

@@ -423,6 +423,12 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
                 var loopChanged = _loop != loop.Loop;
                 _loop = loop.Loop;
                 _wrapChase = loop.WrapChase;
+                if (loopChanged)
+                {
+                    // A cursor waiting on the old loop's end has nothing to wrap to now.
+                    _immediate.WrapPending = false;
+                    _scheduled.WrapPending = false;
+                }
 
                 // An unchanged loop publishes nothing, so the anchor before an edit's Load stays the previous one.
                 if (_playing && loopChanged)
