@@ -20,12 +20,13 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
     private readonly VirtualClock _clock = new(TimeSpan.FromSeconds(5));
     private readonly EndpointDirectory _endpoints = new([]);
     private readonly ProjectSession _session = new();
+    private readonly ImmediateDispatcher _dispatcher = new();
     private readonly MainViewModel _vm;
 
     public MixerConsoleViewModelTests()
     {
         var playback = new PlaybackController(_session, _endpoints, ProfileCatalog.Empty, _clock, startThread: false);
-        _vm = new MainViewModel(_session, playback, _endpoints, new FakeUi(), new ImmediateDispatcher());
+        _vm = new MainViewModel(_session, playback, _endpoints, new FakeUi(), _dispatcher);
     }
 
     public async ValueTask InitializeAsync() => await _vm.InitializeAsync();
@@ -124,6 +125,59 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
         Assert.False(changed.AudioStrip.IsSoloed);
         Assert.True(changed.IsMuted);
         Assert.True(changed.IsSoloed);
+    }
+
+    [Fact]
+    public async Task APanDrag_SyncsTheViewsOnceForTheValuesThatArriveTogether_EndingOnTheLastValue()
+    {
+        var audio = Track.Create("Audio", TrackRole.Audio);
+        await SeedAsync(audio);
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        var historyBefore = _session.History.UndoCount;
+        var syncs = 0;
+        _vm.PropertyChanged += (_, e) => syncs += e.PropertyName == nameof(MainViewModel.Project) ? 1 : 0;
+
+        _dispatcher.IsHolding = true;
+        row.Pan = 0.1;
+        row.Pan = 0.2;
+        row.Pan = 0.3;
+
+        // Every value is in the project at once, as one undo step; the views wait for the one queued sync.
+        Assert.Equal(0.3, _session.Project.Sequence.FindTrack(audio.Id)!.AudioStrip!.Pan, 6);
+        Assert.Equal(historyBefore + 1, _session.History.UndoCount);
+        Assert.True(_vm.UndoCommand.CanExecute(null));
+        Assert.Equal(0, syncs);
+
+        _dispatcher.Release();
+        await Settle();
+
+        Assert.Equal(1, syncs);
+        Assert.Same(_session.Project, _vm.Project);
+        Assert.True(_vm.IsDirty);
+        Assert.Equal(0.3, row.Pan, 6);
+    }
+
+    [Fact]
+    public async Task AnEditThatIsNotAGesture_SyncsAtOnce_EvenWithAGestureSyncQueued()
+    {
+        var audio = Track.Create("Audio", TrackRole.Audio);
+        await SeedAsync(audio);
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+
+        _dispatcher.IsHolding = true;
+        row.Pan = -0.5;
+        row.IsMuted = true;
+
+        // The mute is not merged into anything, so callers that read the views right after it see it.
+        Assert.Same(_session.Project, _vm.Project);
+        Assert.True(_session.Project.Sequence.FindTrack(audio.Id)!.AudioStrip!.IsMuted);
+
+        _dispatcher.Release();
+        await Settle();
+
+        Assert.Same(_session.Project, _vm.Project);
+        Assert.Equal(-0.5, row.Pan, 6);
+        Assert.True(row.IsMuted);
     }
 
     [Fact]
@@ -795,9 +849,33 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
 
     private sealed class ImmediateDispatcher : IUiDispatcher
     {
+        private readonly Queue<Action> _held = new();
+
+        /// <summary>Queues posted work, as the UI thread does while it is busy, until <see cref="Release"/>.</summary>
+        public bool IsHolding { get; set; }
+
         public bool CheckAccess() => true;
 
-        public void Post(Action action) => action();
+        public void Post(Action action)
+        {
+            if (IsHolding)
+            {
+                _held.Enqueue(action);
+            }
+            else
+            {
+                action();
+            }
+        }
+
+        public void Release()
+        {
+            IsHolding = false;
+            while (_held.TryDequeue(out var action))
+            {
+                action();
+            }
+        }
     }
 
     private sealed class FakeUi : IUserInteraction

@@ -188,25 +188,37 @@ public sealed partial class BrowserViewModel : ObservableObject
     /// <summary>Rebuilds the item list from the device catalog, the project's racks, and the installed hardware profiles.</summary>
     internal void Sync(DeviceCatalog catalog, Project project, ProfileCatalog profiles)
     {
+        // An item that would be built exactly as it is now is kept, so an edit that changes nothing here (a pan, a
+        // note) leaves the list as it is instead of rebuilding every row.
+        var previous = new Dictionary<(BrowserItemKind, string), BrowserItem>(_all.Count);
+        foreach (var item in _all)
+        {
+            previous.TryAdd((item.Kind, item.Key), item);
+        }
+
         _all.Clear();
         foreach (var definition in catalog.Definitions)
         {
-            _all.Add(new BrowserItem(BrowserItemKind.Device, definition.Id.Value, definition.Name, DeviceDescriptions.Kind(definition), DeviceDescriptions.Category(definition)) { Definition = definition });
+            _all.Add(Reuse(previous, new BrowserItem(BrowserItemKind.Device, definition.Id.Value, definition.Name, DeviceDescriptions.Kind(definition), DeviceDescriptions.Category(definition)) { Definition = definition }));
         }
 
         foreach (var rack in project.Chains.Where(c => c.Owner.Kind == ChainOwnerKind.Rack))
         {
             var count = rack.Devices.Length;
-            _all.Add(new BrowserItem(BrowserItemKind.Rack, rack.Id.Value.ToString(), DeviceViewViewModel.RackName(rack), $"Rack · {count} device{(count == 1 ? string.Empty : "s")}", "Rack") { Rack = rack.Id });
+            _all.Add(Reuse(previous, new BrowserItem(BrowserItemKind.Rack, rack.Id.Value.ToString(), DeviceViewViewModel.RackName(rack), $"Rack · {count} device{(count == 1 ? string.Empty : "s")}", "Rack") { Rack = rack.Id }));
         }
 
         foreach (var profile in profiles.Profiles)
         {
-            _all.Add(new BrowserItem(BrowserItemKind.HardwareProfile, profile.Id, profile.Name, $"MIDI profile · {profile.Manufacturer ?? "Hardware"}", "Hardware"));
+            _all.Add(Reuse(previous, new BrowserItem(BrowserItemKind.HardwareProfile, profile.Id, profile.Name, $"MIDI profile · {profile.Manufacturer ?? "Hardware"}", "Hardware")));
         }
 
         Retarget();
     }
+
+    private static BrowserItem Reuse(Dictionary<(BrowserItemKind, string), BrowserItem> previous, BrowserItem built) =>
+        previous.Remove((built.Kind, built.Key), out var old) && old.Name == built.Name && old.Detail == built.Detail && old.Group == built.Group
+            && Equals(old.Definition, built.Definition) && old.Rack == built.Rack ? old : built;
 
     /// <summary>Re-ranks for the active Device View's chain and says where an insertion would go.</summary>
     internal void Retarget()

@@ -215,10 +215,11 @@ public sealed record DeviceDefinition
         return null;
     }
 
+    // Bitwise tests, not HasFlag: this is read for every device on every sync, and HasFlag boxes in unoptimized builds.
     public DeviceCategory Category =>
-        Consumes.HasFlag(SignalKinds.Events) && Produces.HasFlag(SignalKinds.Events) ? DeviceCategory.MidiEffect
-        : Consumes.HasFlag(SignalKinds.Events) && Produces.HasFlag(SignalKinds.Audio) ? DeviceCategory.Instrument
-        : Consumes.HasFlag(SignalKinds.Audio) && Produces.HasFlag(SignalKinds.Audio) ? DeviceCategory.AudioEffect
+        (Consumes & SignalKinds.Events) == SignalKinds.Events && (Produces & SignalKinds.Events) == SignalKinds.Events ? DeviceCategory.MidiEffect
+        : (Consumes & SignalKinds.Events) == SignalKinds.Events && (Produces & SignalKinds.Audio) == SignalKinds.Audio ? DeviceCategory.Instrument
+        : (Consumes & SignalKinds.Audio) == SignalKinds.Audio && (Produces & SignalKinds.Audio) == SignalKinds.Audio ? DeviceCategory.AudioEffect
         : DeviceCategory.Other;
 
     public ParameterDescriptor? FindParameter(ParameterId id)

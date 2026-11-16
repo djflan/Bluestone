@@ -65,6 +65,8 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     private readonly ConcurrentDictionary<DeviceId, PluginInstance> _instances = new();
     private readonly ConcurrentDictionary<DeviceId, EventHandler<PluginStatusChangedEventArgs>> _handlers = new();
     private readonly ConcurrentDictionary<DeviceDefinitionId, ImmutableArray<WorkerParameter>> _parameters = new();
+    private int _parametersVersion;
+    private volatile ExtendedCatalog? _extended;
     // The value each running plugin parameter was last given by the host or recorded from the plugin. The project is
     // compared with this, not with the plugin's latest value, which runs ahead of the project while the plugin's own
     // edits are on their way to RecordEdits.
@@ -390,10 +392,25 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
     public DeviceCatalog Extend(DeviceCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-        return _plugins
+
+        // The same inputs give the same catalog instance, so a sync after every edit neither rebuilds every plugin's
+        // definition nor makes what is shown of them look changed. The version is read first: a parameter list that
+        // arrives meanwhile leaves this result stale-keyed, and the next call builds again.
+        var plugins = _plugins;
+        var version = Volatile.Read(ref _parametersVersion);
+        if (_extended is { } cached && ReferenceEquals(cached.From, catalog) && ReferenceEquals(cached.Plugins, plugins) && cached.ParametersVersion == version)
+        {
+            return cached.Result;
+        }
+
+        var result = plugins
             .Aggregate(catalog, (c, p) => c.With(DefinitionOf(p.Value, _parameters.GetValueOrDefault(p.Key, []))))
             .WithRenderer(new PluginEventRenderer(this));
+        _extended = new ExtendedCatalog(catalog, plugins, version, result);
+        return result;
     }
+
+    private sealed record ExtendedCatalog(DeviceCatalog From, ImmutableDictionary<DeviceDefinitionId, PluginIdentity> Plugins, int ParametersVersion, DeviceCatalog Result);
 
     public PluginInstance? InstanceOf(DeviceId device) => _instances.GetValueOrDefault(device);
 
@@ -694,6 +711,7 @@ public sealed class PluginDeviceHost : IAsyncDisposable, IPluginEditorHost
         if (!instance.Parameters.IsEmpty)
         {
             _parameters[device.Definition.Id] = instance.Parameters;
+            Interlocked.Increment(ref _parametersVersion);
         }
 
         instance.StatusChanged += Handler(device.Id);
