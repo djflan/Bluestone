@@ -36,13 +36,15 @@ Then read the mode's playbook and follow it exactly:
 - **Roster and staffing:** `references/roster.md`. Staff the smallest team that covers the risk.
 - **Models:** `references/model-selection.md`. You pick a model for every dispatch; agent files never pin one.
 - **Dispatch prompts and output formats:** `references/handoff.md`. Each dispatch must stand on its own.
+- **Governance:** `references/governance.md`. It is canonical for UI tiers, professional parity, disagreement, and
+  contract members.
 - **Parallelism:** dispatch independent read-only members together. Editing members get disjoint file ownership;
   never give two members the same file at once.
-- **UI acceptance and evidence:** quote the user's reference and hint language VERBATIM as acceptance checks
-  (for example, "like Studio One", "reuse X"), not loose inspiration. Show rendered directions and every review
-  screenshot beside the supplied references, with per-element critique. Only when no references are supplied may
-  an explicitly agreed baseline be used. Preserve the approved direction, final screenshots, reference comparisons,
-  and both user approval records in the PR.
+- **UI acceptance and evidence:** classify visible work as directional, material, or routine under `governance.md`.
+  Quote the user's relevant reference and hint language as acceptance checks and compare the evidence that tier
+  requires beside supplied references. Directional work has a user direction pick and final approval; material work
+  has a rendered proposal and final approval; routine work has visual evidence and internal review without automatic
+  user stops. Never lower the tier to avoid evidence.
 - **UI ownership:** Max stays the dedicated UI owner during a UI phase. Never divert him to view-model, API, or bug
   work; return non-UI blockers to Lucas/Mike or the owning specialist.
 - **Dispatching a member:** use the member's custom agent type when the client exposes it; otherwise use a
@@ -55,26 +57,25 @@ Then read the mode's playbook and follow it exactly:
 ## 3. Autonomy and hard stops
 
 `/team` runs autonomously between required hard stops until its mode is done (in build mode, until the pull request
-is open). Make reasonable technical assumptions, record them in the run log, and keep going; user UI approvals are
-not assumptions. Stop and report when:
+is open). Make reasonable technical assumptions, record them in the run log, and keep going; UI approvals required
+by the recorded tier are not assumptions. Stop and report when:
 
-- a new or reworked user-facing view is ready for a USER PICK among 2-4 RENDERED directions, before production
-  implementation; design-only scratch scenes may render the options, but production work waits for the pick;
-- a user-facing UI change has FINAL screenshots ready for explicit user approval, before opening or updating its PR;
+- directional UI is ready for the user's pick among 2-4 rendered directions, before production implementation;
+- directional or material UI has final screenshots ready for the user approval required before opening or updating
+  its PR;
 - continuing needs a decision that changes the requested outcome, adds a dependency, or reverses an ADR, and it can't
   be deferred;
 - the same problem has failed after two distinct attempts (report the evidence from both);
 - the working tree contains uncommitted changes you didn't make;
 - a required credential, device, or service is missing and no simulated check is meaningful;
-- you want to hire a new member (see Lucas's charter): propose the role and draft charter, and wait for the user to
-  confirm before creating or dispatching it. At the end of a run with a contract member, ask whether to keep, release,
-  or promote them.
+- you want to hire a new member: present the proposal in `governance.md` and wait for confirmation before creating a
+  charter, changing the roster, or dispatching the trial. At trial end, present the required performance review and
+  wait for the user's release, extend, or retain decision.
 
-The two UI approvals are required stops. Lucas may recommend a direction, but cannot choose or approve on the user's
-behalf. No user-facing UI PR is opened or updated until the user approves BOTH the chosen direction and the FINAL
-screenshots compared against the supplied references (or the explicitly agreed baseline when none were supplied).
-Rendering alone and internal review are not user approval. If the UI changes after approval, refresh the screenshots
-and obtain approval again.
+The applicable UI stops are defined by the recorded tier. Lucas may recommend but cannot choose or approve on the
+user's behalf. Directional work requires both the user's direction pick and final approval; material work requires
+final approval; routine work does not automatically stop for the user. Rendering and internal review are not user
+approval when approval is required. If approved UI changes materially, refresh the screenshots and approval.
 
 Never, in any mode:
 - force-push, push to or commit on `main`, rewrite published history, or delete branches you didn't create;

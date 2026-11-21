@@ -1,20 +1,20 @@
 ---
 name: pr-readiness
-description: 'Self-assessment that decides whether a change is ready for a pull request. Use before opening or updating any user-facing UI PR, even a visible-label typo, or a non-trivial PR (new behavior, changed defaults, concurrency, lifecycle, IPC, timing claims, multi-file changes), when asked "is this ready for a PR", "self-review", or "pre-PR check". Catches what reviewers otherwise find one round at a time.'
+description: 'Self-assessment that decides whether a change is ready for a pull request. Use before opening or updating a non-trivial PR and apply the proportional directional, material, or routine evidence gate to every user-facing UI PR. Use when asked "is this ready for a PR", "self-review", or "pre-PR check". Catches what reviewers otherwise find one round at a time.'
 ---
 
 # PR readiness
 
 Run this before opening or updating a non-trivial pull request, and again before pushing a large follow-up.
-For EVERY user-facing UI change, including visible-label typos and small follow-ups, the UI evidence and approval
-gate in step 8 is mandatory even when other readiness steps may be skipped. Its job is to find in one pass what
-review would otherwise find over several rounds. Do not request extra reviews to compensate: fix what this finds,
-then open the PR.
+For EVERY user-facing UI change, the proportional UI evidence gate in step 8 is mandatory even when other readiness
+steps may be skipped. Directional and material work require user decisions; routine corrections require visual
+evidence and internal review without an automatic user stop. Its job is to find in one pass what review would
+otherwise find over several rounds. Do not request extra reviews to compensate: fix what this finds, then open the PR.
 
 **Non-trivial** means any of: new or changed behavior, a changed default, threads/locks/async, process or device
 lifecycle, IPC, timing or performance claims, or more than a few files. Non-UI typos, comment fixes, and dependency
-bumps can skip it when none of those criteria apply. User-facing UI changes never skip the step 8 evidence and
-approval gate.
+bumps can skip it when none of those criteria apply. User-facing UI changes never skip the applicable step 8 evidence
+gate.
 
 ## Procedure
 
@@ -24,8 +24,8 @@ PR. Report the outcome in the PR's Verification section.
 ### 1. Diff review
 
 1. Read the whole diff against the merge base (`git --no-pager diff origin/main...HEAD`), not just the last commit.
-2. Run the `code-review` agent on the branch diff and fix every real finding. (Under `/team`, Grace's two-model review
-   is this review; see `.github/skills/team/references/modes/build.md`.) If it raises a class of problem (a
+2. Run the `code-review` agent on the branch diff and fix every real finding. (Under `/team`, Grace's risk-proportional
+   review is this review; see `.github/skills/team/references/modes/build.md`.) If it raises a class of problem (a
    race, an unhandled state), go to step 3 for the whole class.
 3. Look for leftovers: temporary CI changes, debug output, environment switches added for experiments, TODOs, files
    that should be gitignored.
@@ -110,17 +110,18 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
 - **PR body:** use `.github/pull_request_template.md` and keep its headings and checklist. List each command with
   its result. Say what was verified on hardware and what was simulated. Add the version token to the title only when
   asked.
-- **User-facing UI evidence:** the PR body ATTACHES the APPROVED rendered direction and FINAL screenshots at compact
-  and normal sizes. Show screenshots beside the supplied references, with per-element comparison against the user's
-  reference and hint language quoted VERBATIM. Only when no references were supplied may an explicitly agreed baseline
-  be used. Preserve the explicit user direction pick before implementation and FINAL screenshot approval in the PR
-  body (decision quotes or durable links), not only a session log. Rendering alone and internal review are not approval.
-  No user-facing UI PR is opened or updated until BOTH user approvals are recorded for the current UI. If the UI
-  changes after approval, recapture and obtain approval again.
+- **User-facing UI evidence:** use the canonical tiers in
+  `.github/skills/team/references/governance.md`. The PR records the tier and attaches its evidence beside supplied
+  references. Directional UI includes 2-4 rendered directions, the user's pick, final compact and normal screenshots,
+  comparisons, and final approval. Material UI includes the rendered proposal, final compact and normal screenshots,
+  comparisons, and final approval; alternatives are required only for a meaningful choice. Routine UI includes
+  appropriate before/after or final screenshots and internal review, without an automatic user stop. Only when no
+  references were supplied may the user explicitly agree a baseline. Rendering is not user approval when approval is
+  required. If approved UI changes materially, raise or preserve the tier, recapture, and obtain approval again.
 
 ## Ready means
 
 Every step is done, every finding is fixed or written into the PR as a known limitation, and nothing in the diff
 surprises you on a final read. If step 3 or 5 turned up more than a couple of problems, run steps 1–6 once more after
-fixing them. Problems cluster. Missing UI comparison screenshots or either required user approval is a blocker, never
-a known limitation.
+fixing them. Problems cluster. Missing UI evidence or user approval required by the recorded tier is a blocker, never
+a known limitation. An incorrectly low tier is also a blocker.

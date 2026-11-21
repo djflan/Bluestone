@@ -12,13 +12,12 @@ the family as unavailable, record that in the run log, and say so in the summary
 1. **Match the work, not the title.** Use the strongest reasoning model where a miss is expensive: an unsound design,
    a real-time race, or a missed review finding. Use a fast model for mechanical work, such as running known commands
    or formatting a PR body.
-2. **Diversity where it catches bugs.** A reviewer that shares the builder's model family tends to share its blind
-   spots.
-   - **build:** Grace runs twice, once on a Claude model and once on a GPT model. Mike's family is therefore always
-     covered by a reviewer from the other family.
-   - **review:** Grace runs twice, once on a Claude model and once on a GPT model, on the same pinned snapshot. If
-     one family is unavailable, say so and do not call the result a dual review.
-   - **council:** spread the members across at least two families where possible.
+2. **Diversity where it catches expensive bugs.** A reviewer that shares the builder's model family can share its
+   blind spots. Use one independent Grace review for ordinary localized work. Use Grace twice, on different available
+   model families and the same pinned snapshot, when the change is high-risk or broad: concurrency, real-time paths,
+   protocols or formats, security, data-loss risk, major cross-layer work, or a large diff where a miss is expensive.
+   If only one family is available, say so and never call the result dual review. In a council, spread members across
+   at least two families when it materially improves independent judgment.
 3. **Vision when there are pixels.** Max reviews screenshots, so he needs an image-capable model.
 4. **Long context only when needed.** Use a long-context tier only for a member who must read a very large diff or
    many ADRs at once.
@@ -32,7 +31,7 @@ These are defaults to adjust, not rules.
 | Member | Usual choice | Why |
 |---|---|---|
 | Mike | strong coding model | most of the code |
-| Grace | strongest reasoning, one Claude and one GPT | finds what Mike missed |
+| Grace | strong reasoning; strongest and cross-family for high-risk work | finds what the builder missed without doubling routine cost |
 | Theo, Milo | strongest reasoning | design and concurrency mistakes are costly |
 | Max | strong, image-capable | judges screenshots |
 | Caroline, Jules | strong general model | judgment on flows and product fit |
