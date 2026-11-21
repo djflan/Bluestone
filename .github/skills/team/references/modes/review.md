@@ -45,6 +45,9 @@ For each finding:
 
 Keep rejected findings out of the report, but count them.
 
+The review is not complete without a verdict from every required signer for the touched areas in
+`.github/skills/team/references/governance.md` ("Definition of done"). A missing signer is reported as a blocker.
+
 UI evidence and approvals required by the recorded tier are BLOCKING gates. Directional UI needs its alternatives,
 user pick, comparisons, and final approval; material UI needs its proposal, comparisons, and final approval; routine
 UI needs appropriate internal visual evidence. An incorrectly low tier is itself a finding. Rendering is not user
@@ -61,6 +64,7 @@ Critical / High / Medium / Low
 
 Claims check: <each claim in the PR body that the evidence does or does not support>
 UI gates: <recorded tier, required comparisons/evidence/approvals; blockers | not applicable>
+Sign-offs: <each required signer for the touched areas (governance.md), verdict on this SHA; missing ones are blockers>
 Not reviewed: <areas no one covered>
 Rejected: <count> findings (reasons in the run log)
 ```

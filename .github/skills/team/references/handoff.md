@@ -62,6 +62,25 @@ Not verified: <hardware, platforms, or paths you could not exercise, and why>
 Open: <anything deferred or unresolved>
 ```
 
+A build report is not a sign-off. Lucas never treats "done" from a builder as the team's verdict.
+
+## Sign-off (definition of done)
+
+Every required signer in `governance.md` ("Definition of done") returns this against the pinned commit:
+
+```text
+Signer: <member>  Area: <what you signed for>  Commit: <SHA>
+Acceptance checks:
+  - <check, quoted> → met | not met. Evidence: <command+result, screenshot path, probe, or file:line>
+Compared against: <approved direction / references, with paths>  (UI: plain state AND active state, compact AND normal)
+Verified claims: <any "unchanged" or "already satisfies" claim from the builder, and what you checked>
+Verdict: done | not done
+Blocking findings: <finding format above, or "none">
+```
+
+A signer who could not inspect what their area requires (for example the running app, a probe, or a platform)
+returns "not done" with the reason; they never sign off on a description.
+
 ## Council position
 
 ```text
@@ -76,5 +95,5 @@ What would change my mind: <one line>
 
 Lucas keeps one run log per `/team` invocation at `<session folder>/files/team/<YYYYMMDD-HHMM>-<slug>.md`. It is
 never written inside the repository. Sections: Request, Mode, Scope (outcome, acceptance checks, out of scope), Risk
-and UI tier, Team and models with staffing reasons, Decisions and material dissent, Findings and outcomes, Deferred,
-and Result.
+and UI tier, Team and models with staffing reasons, Decisions and material dissent, Findings and outcomes, Sign-offs
+(signer, area, commit, verdict, evidence), Deferred, and Result.

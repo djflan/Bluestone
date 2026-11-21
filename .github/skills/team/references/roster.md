@@ -37,7 +37,9 @@ Staff the smallest team that covers the risk. A member with nothing to look at i
 | `src/native/`, `Bluestone.Platform.*`, CoreMIDI, WinMM, ALSA, WASAPI, plugin host | Kenji |
 | User-visible docs, ADRs, release notes, release preparation, or a complex PR narrative | Sabrina |
 
-- **build:** Lucas directs. Add the member who owns the changed files and one independent reviewer. Add Alice for
+- **build:** Lucas directs. Add the member who owns the changed files and one independent reviewer, plus every
+  required signer for the touched areas (`governance.md`, "Definition of done"); staff them at intake, not at the end.
+  Add Alice for
   meaningful test design, lifecycle coverage, flaky-risk tests, or final gates; add Grace for non-trivial review;
   add specialists from the table only when their ownership or risk is present. Sabrina joins only when docs, release
   notes, or PR preparation are needed.

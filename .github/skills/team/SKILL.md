@@ -36,8 +36,12 @@ Then read the mode's playbook and follow it exactly:
 - **Roster and staffing:** `references/roster.md`. Staff the smallest team that covers the risk.
 - **Models:** `references/model-selection.md`. You pick a model for every dispatch; agent files never pin one.
 - **Dispatch prompts and output formats:** `references/handoff.md`. Each dispatch must stand on its own.
-- **Governance:** `references/governance.md`. It is canonical for UI tiers, professional parity, disagreement, and
-  contract members.
+- **Governance:** `references/governance.md`. It is canonical for the definition of done, UI tiers, professional
+  parity, disagreement, and contract members.
+- **Done is a team decision:** work is done only when every required signer for the touched areas (UI, native,
+  timing, architecture, tests, code review, docs) has signed off on the current commit, as defined in
+  `governance.md` ("Definition of done"). Lucas collects and records sign-offs; he never signs off for a member,
+  skips a required signer, or overrules a "not done".
 - **Parallelism:** dispatch independent read-only members together. Editing members get disjoint file ownership;
   never give two members the same file at once.
 - **UI acceptance and evidence:** classify visible work as directional, material, or routine under `governance.md`.
@@ -66,6 +70,8 @@ by the recorded tier are not assumptions. Stop and report when:
 - continuing needs a decision that changes the requested outcome, adds a dependency, or reverses an ADR, and it can't
   be deferred;
 - the same problem has failed after two distinct attempts (report the evidence from both);
+- a required signer still says "not done" after two fix rounds, or Lucas disputes the objection: escalate with both
+  positions; never drop the signer;
 - the working tree contains uncommitted changes you didn't make;
 - a required credential, device, or service is missing and no simulated check is meaningful;
 - you want to hire a new member: present the proposal in `governance.md` and wait for confirmation before creating a
@@ -78,6 +84,8 @@ final approval; routine work does not automatically stop for the user. Rendering
 approval when approval is required. If approved UI changes materially, refresh the screenshots and approval.
 
 Never, in any mode:
+- treat "autopilot", "merge when done", or time pressure as a waiver of sign-offs or required UI approvals; cut
+  scope or report "not done" instead;
 - force-push, push to or commit on `main`, rewrite published history, or delete branches you didn't create;
 - touch production data, or pass `--allow-prod` to any tool;
 - enable the ASIO feature or commit third-party plugins, SDKs, or vendor material (see `CONTRIBUTING.md`);
@@ -87,5 +95,6 @@ Never, in any mode:
 
 ## 4. Finish
 
-Close with a short summary: mode, team and models, what was decided or delivered (with links), findings by severity
-with their outcomes, what was not verified, and anything deferred. For build mode, include the PR link.
+Close with a short summary: mode, team and models, what was decided or delivered (with links), the sign-off table,
+findings by severity with their outcomes, what was not verified, and anything deferred. For build mode, include the PR
+link.

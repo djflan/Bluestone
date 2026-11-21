@@ -123,5 +123,6 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
 
 Every step is done, every finding is fixed or written into the PR as a known limitation, and nothing in the diff
 surprises you on a final read. If step 3 or 5 turned up more than a couple of problems, run steps 1–6 once more after
-fixing them. Problems cluster. Missing UI evidence or user approval required by the recorded tier is a blocker, never
+fixing them. Problems cluster. Under `/team`, ready also requires a current sign-off from every required signer for
+the touched areas (`.github/skills/team/references/governance.md`, "Definition of done"). Missing UI evidence or user approval required by the recorded tier is a blocker, never
 a known limitation. An incorrectly low tier is also a blocker.

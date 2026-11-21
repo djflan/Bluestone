@@ -78,7 +78,9 @@ stable tree; only read-only work (Caroline) may overlap another step.
 - Max (when the UI changed): launches the app and collects the evidence required by the recorded UI tier. For
   directional and material work, capture compact and normal screenshots and review them against the approved direction
   and supplied references with per-element critique. For routine work, capture appropriate before/after or final
-  evidence. Use realistic, populated content, long names, varied states, and signal playing where applicable.
+  evidence. Capture BOTH a plain, realistic state (a fresh or small project, stopped, nothing selected, the default
+  docked layout) AND populated, active states (long names, selection, playing, armed, signal present). A showcase
+  scene alone hides what a user sees on first launch.
   He reaches the feature the way a user would, starting from the app,
   and tries every option it offers; an option that looks the same as another, or a feature with no way to reach it,
   is a finding. A gallery or test harness is extra evidence, not a substitute. Caroline then checks keyboard use and accessibility on the same
@@ -94,10 +96,23 @@ stable tree; only read-only work (Caroline) may overlap another step.
 A failing check goes straight back to the owner of that slice. Fix it, then rerun that check before widening again.
 The full repository gates are not run here; they run once, on the final tree, in phase 6.
 
-For directional and material UI, after checks and fixes Max captures FINAL compact and normal screenshots beside the
-same references and stops for the user approval required by `.github/skills/team/references/governance.md`. For
-routine UI, preserve the internal
-evidence without an automatic user stop. If later edits materially change approved UI, recapture it and obtain the
+### Team sign-off
+
+Before anything is shown to the user as final, committed for review, or put in a PR, Lucas commits the batch, pins the
+SHA, and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
+done") in parallel, read-only, with the acceptance checks quoted verbatim and the approved direction and references
+attached. Each returns the sign-off format in `handoff.md`.
+
+- Any "not done" goes back to the owner of that slice; the same signer re-checks the fix on the new SHA.
+- A builder's claim that an acceptance check is "unchanged" or "already satisfied" is a claim for the signer to
+  verify, never a reason to skip it.
+- Lucas records every sign-off in the run log. He cannot sign off for a member or proceed past a "not done"; after
+  two fix rounds without agreement he escalates to the user under `governance.md`.
+
+For directional and material UI, only after every required signer has said "done" does Max capture FINAL compact and
+normal screenshots beside the same references and Lucas stops for the user approval required by
+`.github/skills/team/references/governance.md`. For routine UI, preserve the internal evidence and sign-offs without
+an automatic user stop. If later edits materially change approved UI, re-sign and recapture it and obtain the
 approval required by the tier before opening or updating the PR.
 
 ## 5. Review
@@ -115,7 +130,7 @@ approval required by the tier before opening or updating the PR.
    why. Group the rest by root cause.
 5. The owners fix all critical and high findings, and medium findings that are cheap or user-visible, then rerun the
    focused checks those fixes affect. Record the rest as known limitations; blocking UI gates cannot be waived as
-   known limitations.
+   known limitations. A fix that touches a signed-off area makes that sign-off stale: the same signer re-checks it.
 6. **At most 2 fix rounds.** Run a second review round only if the fixes were substantial or created a new class of
    risk. One exception, from `pr-readiness` ("Ready means"): if its states × actions or claims steps turned up more
    than a couple of problems, one more pass of steps 1–6 is allowed after fixing them.
@@ -144,16 +159,19 @@ Order matters: every edit happens before the final gates, and the PR reports the
    UI includes its proposal, final screenshots, comparisons, and final approval; routine UI includes its internal
    visual evidence and any applicable comparison. These must survive in the PR, not only the run log. If approval
    evidence no longer matches the current UI, return to Max and the user for refreshed screenshots and approval.
+   The body includes the sign-off table (signer, area, commit, verdict, evidence) from the run log.
 5. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
-   `gh pr edit`. Do not open or update a PR until all approvals required by the recorded UI tier are present. Add a
-   version token to the title only if the user asked.
+   `gh pr edit`. Do not open or update a PR until every required sign-off is current and all approvals required by
+   the recorded UI tier are present. Add a version token to the title only if the user asked.
 6. CI does not start on push. Once the review rounds are finished and the branch is pushed, start it once with
    `gh workflow run ci.yml --ref <branch>` and check it once. If a job fails, read its log, fix it in one follow-up
    commit, push, and run CI once more. Do not poll an unchanged pending state; report that it is pending and finish.
 
 ## Done
 
-The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
+Done is the team's verdict, not Lucas's: every required signer in `governance.md` has said "done" on the shipped
+commit. The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
 reported, every validated finding is fixed or listed as a known limitation, and the summary names the team, models,
-staffing reasons, and PR link. UI evidence and approvals match the recorded tier and current UI; missing required
-gates are blockers, not known limitations.
+staffing reasons, sign-offs, and PR link. UI evidence and approvals match the recorded tier and current UI; missing
+required gates or sign-offs are blockers, not known limitations. When the user has authorized a merge, merge only
+after all of this holds.

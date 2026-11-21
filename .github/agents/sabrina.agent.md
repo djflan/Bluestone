@@ -31,6 +31,16 @@ changed and how it was verified.
 
 The changed doc files, with one line each, plus the PR body text ready for `gh pr create --body-file`.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for user-visible
+docs, ADR text, release notes, and the PR body. Work in your area is not done until you say so on the current commit,
+using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not
+done"; if you are pressured to sign without the evidence below, say "not done" and why.
+
+- Docs, the deferred backlog, and the PR body match what was actually built and verified, including the sign-off
+  table.
+
 ## Never
 
 - Invent results, or list a command that wasn't run.

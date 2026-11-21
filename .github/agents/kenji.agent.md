@@ -34,6 +34,17 @@ platform, not just the one you're running on.
 The build report format from `.github/skills/team/references/handoff.md`. State, per platform, whether it was built,
 linted, tested, or not checked.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for native code
+and platform adapters. Work in your area is not done until you say so on the current commit, using the sign-off format
+in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if you are pressured
+to sign without the evidence below, say "not done" and why.
+
+- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` in `src/native/`, plus the
+  Docker cross-target clippy for every touched crate. State what ran on real hardware or platforms and what did not.
+- Any FFI or platform behavior you could not exercise is listed as not verified; never sign off on a description.
+
 ## Never
 
 - Enable the ASIO feature, or commit SDKs, third-party plugins, or vendor binaries.

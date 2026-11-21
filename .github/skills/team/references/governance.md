@@ -1,7 +1,66 @@
 # Team governance
 
-This file is the canonical policy for UI evidence, constructive disagreement, and contract members. Agent charters
-and mode playbooks summarize these rules and point here; they do not create competing versions.
+This file is the canonical policy for the definition of done, UI evidence, constructive disagreement, and contract
+members. Agent charters and mode playbooks summarize these rules and point here; they do not create competing
+versions.
+
+## Definition of done: team sign-off
+
+"Done" is a team decision, made the way a real development team makes it. Lucas does not decide it alone. Work is
+done only when every required signer for the areas the change touches has signed off, in writing, on the current
+commit. Lucas defines the acceptance checks, staffs the signers, collects the sign-offs, and records them. He cannot
+sign off for a specialist, skip a required signer, or overrule a "not done".
+
+### Required signers
+
+| The change touches | Required signers |
+|---|---|
+| Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls | Max (owner); an independent visual signer: Iris while she is on the roster for directional or material work, otherwise Caroline; Caroline for keyboard, focus, and accessibility |
+| A workflow, a default, terminology, or anything a musician sees and judges | Jules |
+| `src/native/`, `Bluestone.Platform.*`, the plugin host, platform MIDI or audio adapters | Kenji |
+| `Bluestone.Engine*`, playback, audio, signal, MIDI timing, IPC, threads, locks, or any timing or latency claim | Milo |
+| More than one project layer, a new abstraction, a protocol, a file format, or an ADR | Theo |
+| Lifecycle, concurrency, or changed behavior that needs new tests | Alice |
+| Any code change | Grace (the code review; two model families when risk requires it) |
+| User-visible docs, ADRs, release notes | Sabrina |
+
+The builder of a slice signs off their own slice, but the builder's own sign-off is never the only one for a visible
+or risky area: the independent signer in the table above must also sign. Lucas may add signers; he may not remove a
+required one. When a touched area has no staffed signer, staff one before calling the work done.
+
+### What a sign-off must contain
+
+Each signer returns the sign-off format in `handoff.md` against the pinned commit:
+
+- every acceptance check in their area marked **met** or **not met**, each with evidence (a command and its result,
+  a screenshot, a probe, or a code reference);
+- for UI: the running app inspected the way a user reaches it, not only a harness or gallery, in BOTH a plain,
+  realistic state (a fresh or small project, stopped, nothing selected) AND populated, active states (playing,
+  selected, armed, signal present), at compact and normal sizes. Each screenshot is placed side by side with the
+  approved direction or supplied references and critiqued per element. A visible difference that the approved
+  direction requires but that is missing is "not met";
+- any claim that something is "unchanged", "already satisfies the direction", or "out of scope" for an acceptance
+  check is verified by the signer against the reference, not taken from the builder's report;
+- a verdict: **done**, or **not done** with blocking findings in the `handoff.md` finding format.
+
+### When a signer says "not done"
+
+A "not done" blocks commit-for-review, opening or updating a PR, and merging. The owner fixes the findings and the
+same signer re-checks. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
+is out of scope, Lucas stops and escalates to the user with both positions in the constructive-disagreement format.
+He never resolves it by dropping the signer.
+
+### Sign-offs are not waivable by speed
+
+User instructions such as "autopilot", "merge when done", or "don't spend all night" set pace and authority to
+proceed; they never waive sign-offs or the UI approvals required by the tier. When time is short, cut scope and say
+so, or report that the work is not done. "Merge when done" means merge after every required sign-off and user
+approval is in place.
+
+### Recording
+
+The run log and the PR body carry a sign-off table: signer, area, commit, verdict, and the evidence link. A PR with a
+missing or stale sign-off (the signed commit is older than a change to that area) is not ready.
 
 ## UI change tiers
 
@@ -20,9 +79,11 @@ Required evidence and stops:
 3. Compare every direction beside the supplied references with a per-element critique. When no references were
    supplied, the user may explicitly agree to a baseline.
 4. Stop for the user's direction pick. Lucas and the team may recommend but never choose for the user.
-5. Implement the chosen direction, then inspect the running app at compact and normal sizes with realistic content
-   and relevant states.
-6. Show final screenshots beside the references and stop for the user's approval before opening or updating the PR.
+5. Implement the chosen direction, then inspect the running app at compact and normal sizes in a plain, realistic
+   state and in populated, active states.
+6. After the required team sign-offs (see "Definition of done"), show final screenshots beside the references and
+   stop for the user's approval before opening or updating the PR. Internal sign-off comes first, so the user never
+   has to find what the team missed.
 7. Preserve the direction pick, final approval, screenshots, and comparisons in the PR. Material visual changes
    after approval require refreshed screenshots and approval.
 
@@ -37,8 +98,9 @@ Required evidence and stops:
 2. Produce a rendered proposal and compare it beside the references or approved direction. Produce alternatives
    only when there is a meaningful product or visual choice; do not manufacture variants for ceremony.
 3. Implement after the proposal is agreed, inspect the running app at compact and normal sizes, and exercise the
-   affected workflow and states.
-4. Stop for final user approval before opening or updating the PR. Preserve the evidence and approval in the PR.
+   affected workflow and states, including a plain, realistic state.
+4. After the required team sign-offs, stop for final user approval before opening or updating the PR. Preserve the
+   evidence and approval in the PR.
 
 ### Routine UI
 

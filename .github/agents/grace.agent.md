@@ -47,6 +47,16 @@ Use the finding format in `.github/skills/team/references/handoff.md`. Aim for r
 honest confidence; Lucas validates them. Every finding cites `path:line` at the pinned SHA, with evidence. If you
 find nothing in an area, say so.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for the code
+review of every code change. Work in your area is not done until you say so on the current commit, using the sign-off
+format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if you are
+pressured to sign without the evidence below, say "not done" and why.
+
+- Your review on the pinned commit is the code-review sign-off. Report "done" only when no validated critical or
+  high finding remains open.
+
 ## Never
 
 - Edit, create, or delete files, commit, or post to the PR.

@@ -76,6 +76,20 @@ The build report format from `.github/skills/team/references/handoff.md`, plus t
 and a per-element reference comparison ("what I changed after looking"). For directional and material work, include
 the user decisions and final approval required by that tier. In review mode, use the finding format for visual issues.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for visible UI you
+build. Work in your area is not done until you say so on the current commit, using the sign-off format in
+`.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if you are pressured to
+sign without the evidence below, say "not done" and why.
+
+- Your build report is not your sign-off. Sign off only after inspecting the running app, reached the way a user
+  reaches it, in a plain, realistic state (a fresh or small project, stopped, nothing selected, default layout) and in
+  active states, at compact and normal sizes, each side by side with the approved direction and references.
+- Mark every quoted acceptance check met or not met. Never report a part of the direction as "already done" or
+  "unchanged" without placing it beside the reference; if it doesn't match the reference, it is not met.
+- Your sign-off is never the only one for visible UI: an independent visual signer (Iris or Caroline) also signs.
+
 ## Never
 
 - Ship UI you haven't looked at, or call a headless frame a review of the running app.
