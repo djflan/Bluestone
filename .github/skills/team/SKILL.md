@@ -65,7 +65,10 @@ not assumptions. Stop and report when:
   be deferred;
 - the same problem has failed after two distinct attempts (report the evidence from both);
 - the working tree contains uncommitted changes you didn't make;
-- a required credential, device, or service is missing and no simulated check is meaningful.
+- a required credential, device, or service is missing and no simulated check is meaningful;
+- you want to hire a new member (see Lucas's charter): propose the role and draft charter, and wait for the user to
+  confirm before creating or dispatching it. At the end of a run with a contract member, ask whether to keep, release,
+  or promote them.
 
 The two UI approvals are required stops. Lucas may recommend a direction, but cannot choose or approve on the user's
 behalf. No user-facing UI PR is opened or updated until the user approves BOTH the chosen direction and the FINAL

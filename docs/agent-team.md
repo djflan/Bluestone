@@ -51,6 +51,7 @@ issue goes to triage, and anything else goes to build. A bare number is looked u
 | **Kenji** | Native and platforms: Rust crates, FFI, CoreMIDI, WinMM, ALSA, WASAPI | `src/native/`, `Bluestone.Platform.*` |
 | **Jules** | DAW-fluent musician advocate: compares workflow, visual quality, and feel against Bitwig, Studio One, and other named DAWs | user-facing behavior, councils |
 | **Sabrina** | Docs and release: keeps docs true, writes the PR body | build (ship phase) |
+| **Iris** *(contract)* | Principal Product Designer: sets the visual language, specs custom controls, illumination, and theme presets; reviews Max's renders | identity and look-and-feel work, new control families |
 
 You can also call any member on their own, for example by picking **Max** from the agent list and asking for a UI
 pass. The agent list loads when a session starts, so open a new session after pulling changes to the charters.
@@ -90,5 +91,8 @@ Editing members are given separate files and run one at a time unless their work
 - **Who joins when:** edit `.github/skills/team/references/roster.md`.
 - **How models are chosen:** edit `.github/skills/team/references/model-selection.md`.
 - **A mode's steps:** edit `.github/skills/team/references/modes/<mode>.md`.
+- **Hiring:** Lucas may propose a new member when no one covers a role the work needs. He always asks you first.
+  Hires join as *contract* members, and at the end of the run you decide to keep them, release them, or have them
+  replace an existing member.
 - **Renaming a member:** rename the agent file, its `name:`, and its row in the roster, then search the skill for the
   old name.

@@ -38,6 +38,7 @@ These are defaults to adjust, not rules.
 | Caroline, Jules | strong general model | judgment on flows and product fit |
 | Kenji | strong coding model | Rust, FFI, and platform APIs |
 | Alice | strong coding model to write tests; fast model to only run gates | depends on the task |
+| Iris | strong, image-capable, a different family from Max | judges renders; different eyes from the builder |
 | Sabrina | fast model | docs and PR body from known facts |
 
 ## Record it

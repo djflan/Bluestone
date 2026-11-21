@@ -16,6 +16,10 @@ required reading, quality bar, output contract, and limits. Lucas reads a member
 | `kenji` | Kenji | Native and platforms | `src/native/`, `Bluestone.Platform.*` |
 | `jules` | Jules | Musician advocate | nothing |
 | `sabrina` | Sabrina | Docs and release | `docs/`, README, PR body |
+| `iris` | Iris (contract) | Principal Product Designer: visual language, custom control library, illumination and themes | design specs; design-only scratch scenes Lucas assigns |
+
+**Contract** members were hired by Lucas with the user's consent and are on trial. At the end of each run they join,
+Lucas asks the user to keep, release, or promote them.
 
 ## Staffing heuristics
 
@@ -25,6 +29,7 @@ Staff the smallest team that covers the risk. A member with nothing to look at i
 |---|---|
 | Any `.axaml`, `Theme/`, `Controls/`, `Views/`, or a visible behavior | Max, Caroline |
 | A new workflow, a default, terminology, or anything a musician sees | Jules |
+| Visual identity, a new control family, theme presets, or a look-and-feel direction | Iris (with Max) |
 | More than one project layer, a new abstraction, a protocol, or a format | Theo |
 | `Bluestone.Engine*`, `Playback`, `Audio`, `Signal`, `Midi` timing, IPC, threads, locks | Milo |
 | `src/native/`, `Bluestone.Platform.*`, CoreMIDI, WinMM, ALSA, WASAPI, plugin host | Kenji |
