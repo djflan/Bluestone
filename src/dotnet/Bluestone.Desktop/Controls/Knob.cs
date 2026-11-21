@@ -194,7 +194,8 @@ public sealed class Knob : Control
         }
 
         var center = new Point(Bounds.Width / 2, Bounds.Height / 2);
-        var radius = (size / 2) - 1.5;
+        // Inset so the 2 DIP focus outline (radius + 1.5) stays fully inside the bounds of clipped hosts.
+        var radius = (size / 2) - 2.5;
         var (fraction, origin) = Positions();
         var enabled = IsEnabled;
         var accent = enabled ? Accent : Palette.TextMuted;
