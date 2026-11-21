@@ -79,7 +79,9 @@ Blocking findings: <finding format above, or "none">
 ```
 
 A signer who could not inspect what their area requires (for example the running app, a probe, or a platform)
-returns "not done" with the reason; they never sign off on a description.
+returns "not done (unverifiable)" with what is missing, which triggers the missing-device stop; they never sign off on
+a description. Jules, who does not run the app, signs from the independent visual signer's plain-state and active-state
+screenshots of the running app, never from the builder's chosen scenes.
 
 ## Council position
 

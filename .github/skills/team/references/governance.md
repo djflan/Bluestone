@@ -15,18 +15,23 @@ sign off for a specialist, skip a required signer, or overrule a "not done".
 
 | The change touches | Required signers |
 |---|---|
-| Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls | Max (owner); an independent visual signer: Iris while she is on the roster for directional or material work, otherwise Caroline; Caroline for keyboard, focus, and accessibility |
-| A workflow, a default, terminology, or anything a musician sees and judges | Jules |
+| Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls | Max (owner); an independent visual signer (Iris for directional or material work whenever she is under contract or retained, otherwise Caroline); Caroline for keyboard, focus, and accessibility |
+| A workflow, a default, terminology, or anything a musician sees and judges | Jules (judges the independent visual signer's plain-state and active-state screenshots, since Jules does not run the app) |
 | `src/native/`, `Bluestone.Platform.*`, the plugin host, platform MIDI or audio adapters | Kenji |
 | `Bluestone.Engine*`, playback, audio, signal, MIDI timing, IPC, threads, locks, or any timing or latency claim | Milo |
 | More than one project layer, a new abstraction, a protocol, a file format, or an ADR | Theo |
 | Lifecycle, concurrency, or changed behavior that needs new tests | Alice |
 | Any code change | Grace (the code review; two model families when risk requires it) |
-| User-visible docs, ADRs, release notes | Sabrina |
+| User-visible docs, ADRs, release notes, the deferred backlog | Sabrina |
 
 The builder of a slice signs off their own slice, but the builder's own sign-off is never the only one for a visible
 or risky area: the independent signer in the table above must also sign. Lucas may add signers; he may not remove a
-required one. When a touched area has no staffed signer, staff one before calling the work done.
+required one. When a touched area has no staffed signer, staff one before calling the work done. Roster staffing
+heuristics and "smallest team" guidance never remove a required signer; they only decide who else joins.
+
+A sign-off is current when no later commit touched that signer's area. Any commit that touches a signed area,
+including review fixes, gate fixes, docs edits, and CI fixes after the PR is open, makes that sign-off stale; the same
+signer re-checks before the commit is pushed.
 
 ### What a sign-off must contain
 
@@ -46,7 +51,13 @@ Each signer returns the sign-off format in `handoff.md` against the pinned commi
 ### When a signer says "not done"
 
 A "not done" blocks commit-for-review, opening or updating a PR, and merging. The owner fixes the findings and the
-same signer re-checks. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
+same signer re-checks. Findings attached to a "not done" are outside Lucas's validate-and-drop and known-limitation
+paths: only the signer who raised them, or the user, can clear them, whatever their severity. A signer's "not done" is
+never an "ordinary delivery question" or "subjective polish" for Lucas to decide.
+
+When a signer cannot obtain the evidence their area requires (hardware, a platform, a quiet machine for probes), they
+return "not done (unverifiable)" with what is missing. That triggers the missing-device stop in `SKILL.md`: the user
+decides whether to accept the gap, which is then recorded as not verified in the PR. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
 is out of scope, Lucas stops and escalates to the user with both positions in the constructive-disagreement format.
 He never resolves it by dropping the signer.
 

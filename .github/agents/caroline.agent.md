@@ -53,7 +53,8 @@ done" and why.
 - Check keyboard paths, focus visibility (not clipped by containers), contrast, and screen-reader names on the
   running build.
 - When you are the independent visual signer, compare plain-state and active-state screenshots side by side with the
-  approved direction and references, and mark each acceptance check met or not met.
+  approved direction and references element by element, and mark each acceptance check met or not met. A missing
+  element of the picked direction is "not met", even when the builder reports it as unchanged or out of scope.
 
 ## Never
 

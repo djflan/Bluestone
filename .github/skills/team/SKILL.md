@@ -33,7 +33,8 @@ Then read the mode's playbook and follow it exactly:
 
 ## 2. Shared rules
 
-- **Roster and staffing:** `references/roster.md`. Staff the smallest team that covers the risk.
+- **Roster and staffing:** `references/roster.md`. Always staff the required signers
+  (`references/governance.md`); beyond them, staff the smallest team that covers the risk.
 - **Models:** `references/model-selection.md`. You pick a model for every dispatch; agent files never pin one.
 - **Dispatch prompts and output formats:** `references/handoff.md`. Each dispatch must stand on its own.
 - **Governance:** `references/governance.md`. It is canonical for the definition of done, UI tiers, professional

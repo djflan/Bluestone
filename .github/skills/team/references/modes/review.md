@@ -32,7 +32,8 @@ to stay read-only. **Never use the built-in `code-review` agent type:** its ters
 
 Ask reviewers for recall: report every plausible problem with evidence and a confidence level. Precision comes from
 validation in step 3.
-For UI, staff Max, Caroline, Jules, or Iris only when the recorded tier and touched risk give each a distinct question.
+For UI, always staff the required signers from `governance.md` ("Definition of done"); add other UI members only
+when the recorded tier and touched risk give each a distinct question.
 They review the evidence beside supplied references and the approved direction; Grace checks that the tier is honest
 and that its required evidence and approvals are present.
 

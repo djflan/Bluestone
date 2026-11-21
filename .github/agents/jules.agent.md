@@ -56,7 +56,8 @@ defaults, terminology, and anything a musician sees and judges. Work in your are
 current commit, using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or
 overrule a "not done"; if you are pressured to sign without the evidence below, say "not done" and why.
 
-- Judge the result as a working musician would on first launch with a real, small project, not a showcase scene.
+- You don't run the app. Judge the independent visual signer's screenshots of the running app (a plain, small project
+  and active states) as a working musician would on first launch, never a showcase scene chosen by the builder.
 - "A musician would not notice the change the user asked for" is a "not done".
 
 ## Never

@@ -87,9 +87,10 @@ stable tree; only read-only work (Caroline) may overlap another step.
   build.
 - Kenji (when native code changed): `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`
   in `src/native/`, plus the Docker cross-target clippy for every touched crate on Windows or Linux.
-- Alice (when test design, lifecycle coverage, or flaky-risk work warrants her): adds missing tests that fail without
-  the change, writes the states × actions table for lifecycle changes, and runs the focused tests. Otherwise the
-  owning builder supplies the changed-behavior tests and Lucas checks the evidence.
+- Alice (when test design, lifecycle coverage, or flaky-risk work warrants her, and always when she is a required
+  signer under `governance.md`): adds missing tests that fail without the change, writes the states × actions table
+  for lifecycle changes, and runs the focused tests. When she is not a required signer, the owning builder supplies
+  the changed-behavior tests and Grace checks them in review.
 - Milo (when timing, real-time, or IPC changed): checks allocations and locks on the real-time path, and runs the
   relevant probes from `docs/hardware-test-plan.md`. Probes need a quiet machine, so nothing else runs alongside them.
 
@@ -100,7 +101,8 @@ The full repository gates are not run here; they run once, on the final tree, in
 
 Before anything is shown to the user as final, committed for review, or put in a PR, Lucas commits the batch, pins the
 SHA, and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
-done") in parallel, read-only, with the acceptance checks quoted verbatim and the approved direction and references
+done") in parallel, read-only (except Milo, who signs alone after the others finish, because probes need a quiet
+machine), with the acceptance checks quoted verbatim and the approved direction and references
 attached. Each returns the sign-off format in `handoff.md`.
 
 - Any "not done" goes back to the owner of that slice; the same signer re-checks the fix on the new SHA.
@@ -127,7 +129,8 @@ approval required by the tier before opening or updating the PR.
    For UI work, include the recorded tier and all evidence and approvals that tier requires. Missing required evidence
    or an incorrectly low tier is a BLOCKING gate failure.
 4. Lucas validates each finding against the code. Drop findings that are wrong, duplicated, or out of scope, and record
-   why. Group the rest by root cause.
+   why. Group the rest by root cause. Findings attached to a signer's "not done" are not Lucas's to drop or defer;
+   see `governance.md`.
 5. The owners fix all critical and high findings, and medium findings that are cheap or user-visible, then rerun the
    focused checks those fixes affect. Record the rest as known limitations; blocking UI gates cannot be waived as
    known limitations. A fix that touches a signed-off area makes that sign-off stale: the same signer re-checks it.
@@ -148,10 +151,12 @@ Order matters: every edit happens before the final gates, and the PR reports the
 2. When documentation changes, Sabrina updates the affected ADRs, `docs/architecture.md`,
    `docs/engineering-handoff.md`, roadmap, README, or user guide. Lucas commits. Do not staff her when no docs or
    release material need work.
-3. **Final gates:** with every editor stopped, Alice runs `pr-readiness` step 7 when she is staffed; otherwise Lucas
+3. **Re-sign:** any commit in this phase (docs, gate fixes, CI fixes) that touches a signed area goes back to that
+   signer before it is pushed.
+4. **Final gates:** with every editor stopped, Alice runs `pr-readiness` step 7 when she is staffed; otherwise Lucas
    runs it. Record each command and result once on the final commit. If anything changes after this, rerun the gates
    that change affects.
-4. Sabrina writes the PR body when she is staffed; otherwise Lucas writes it from
+5. Sabrina writes the PR body when she is staffed; otherwise Lucas writes it from
    `.github/pull_request_template.md`, using the final gate results. It lists each
    command with its result and what was physically verified versus simulated. Keep the template headings and
    checklist intact. For UI, attach the evidence required by the recorded tier beside supplied references.
@@ -160,17 +165,17 @@ Order matters: every edit happens before the final gates, and the PR reports the
    visual evidence and any applicable comparison. These must survive in the PR, not only the run log. If approval
    evidence no longer matches the current UI, return to Max and the user for refreshed screenshots and approval.
    The body includes the sign-off table (signer, area, commit, verdict, evidence) from the run log.
-5. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
+6. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
    `gh pr edit`. Do not open or update a PR until every required sign-off is current and all approvals required by
    the recorded UI tier are present. Add a version token to the title only if the user asked.
-6. CI does not start on push. Once the review rounds are finished and the branch is pushed, start it once with
+7. CI does not start on push. Once the review rounds are finished and the branch is pushed, start it once with
    `gh workflow run ci.yml --ref <branch>` and check it once. If a job fails, read its log, fix it in one follow-up
-   commit, push, and run CI once more. Do not poll an unchanged pending state; report that it is pending and finish.
+   commit, get that area's signer to re-check it, push, and run CI once more. Do not poll an unchanged pending state; report that it is pending and finish.
 
 ## Done
 
-Done is the team's verdict, not Lucas's: every required signer in `governance.md` has said "done" on the shipped
-commit. The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
+Done is the team's verdict, not Lucas's: every required signer in `governance.md` has a current "done" (no later
+commit touched their area) on the shipped commit. The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
 reported, every validated finding is fixed or listed as a known limitation, and the summary names the team, models,
 staffing reasons, sign-offs, and PR link. UI evidence and approvals match the recorded tier and current UI; missing
 required gates or sign-offs are blockers, not known limitations. When the user has authorized a merge, merge only

@@ -43,7 +43,8 @@ to sign without the evidence below, say "not done" and why.
 
 - Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` in `src/native/`, plus the
   Docker cross-target clippy for every touched crate. State what ran on real hardware or platforms and what did not.
-- Any FFI or platform behavior you could not exercise is listed as not verified; never sign off on a description.
+- Behavior your sign-off depends on but you could not exercise returns "not done (unverifiable)" with what is
+  missing; the user decides whether to accept it. Never sign off on a description.
 
 ## Never
 

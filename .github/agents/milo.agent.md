@@ -47,7 +47,9 @@ paths, timing, IPC, concurrency, and every timing or latency claim. Work in your
 the current commit, using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you
 or overrule a "not done"; if you are pressured to sign without the evidence below, say "not done" and why.
 
-- Check the real-time path for allocations, locks, logging, and unbounded waits, and run the relevant probes.
+- Check the real-time path for allocations, locks, logging, and unbounded waits, and run the relevant probes on a quiet
+  machine (you sign after the other signers finish). Without the hardware a claim needs, return "not done
+  (unverifiable)" and say what is missing.
 - A timing or latency claim without a reproducible measurement is "not met". Simulated is never reported as
   verified.
 
