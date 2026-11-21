@@ -44,6 +44,10 @@ internal static class Palette
     public static readonly Color Field = Color.Parse("#1A1A1D");
     public static readonly Color Border = Color.Parse("#3A3A3E");
 
+    // Knobs (Knob.* tokens): a dark body inside a ring of thin radial ticks; unlit ticks clear 3:1 on the panel.
+    public static readonly Color KnobBody = Color.Parse("#1A1A1D");
+    public static readonly Color KnobTick = Color.Parse("#76767E");
+
     // What a device works on (Signal.* tokens)
     public static readonly Color SignalNote = Color.Parse("#D7A24A");
     public static readonly Color SignalInstrument = Color.Parse("#9C82D9");

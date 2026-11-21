@@ -159,6 +159,54 @@
   <Color x:Key="TrackRow.SelectedColor">#35373D</Color>
   <Color x:Key="Overlay.ScrimColor">#CC1C1E22</Color>
   <Color x:Key="Overlay.ReplaceColor">#F01C1E22</Color>
+
+  <!-- Lit keys (identity: ladder + focus). A latched key shows its state on its whole face, lit from below in its colour,
+       with a lit rim and a tight glow; no side LED. Glyphs use Key.LitInk, which clears 4.5:1 on both face stops. -->
+  <Color x:Key="Key.LitInkColor">#0B0D10</Color>
+  <SolidColorBrush x:Key="Key.LitInk" Color="{StaticResource Key.LitInkColor}" />
+  <Color x:Key="Key.Accent.TopColor">#447FC5</Color>
+  <Color x:Key="Key.Accent.BottomColor">#8BB5E8</Color>
+  <Color x:Key="Key.Accent.RimColor">#A6C6ED</Color>
+  <LinearGradientBrush x:Key="Key.Accent.Face" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Color="{StaticResource Key.Accent.TopColor}" Offset="0" />
+    <GradientStop Color="{StaticResource Key.Accent.BottomColor}" Offset="1" />
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="Key.Accent.Rim" Color="{StaticResource Key.Accent.RimColor}" />
+  <Color x:Key="Key.Record.TopColor">#CE4145</Color>
+  <Color x:Key="Key.Record.BottomColor">#EE888B</Color>
+  <Color x:Key="Key.Record.RimColor">#F2A4A6</Color>
+  <LinearGradientBrush x:Key="Key.Record.Face" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Color="{StaticResource Key.Record.TopColor}" Offset="0" />
+    <GradientStop Color="{StaticResource Key.Record.BottomColor}" Offset="1" />
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="Key.Record.Rim" Color="{StaticResource Key.Record.RimColor}" />
+  <Color x:Key="Key.Cycle.TopColor">#B59223</Color>
+  <Color x:Key="Key.Cycle.BottomColor">#DCC373</Color>
+  <Color x:Key="Key.Cycle.RimColor">#E4D193</Color>
+  <LinearGradientBrush x:Key="Key.Cycle.Face" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Color="{StaticResource Key.Cycle.TopColor}" Offset="0" />
+    <GradientStop Color="{StaticResource Key.Cycle.BottomColor}" Offset="1" />
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="Key.Cycle.Rim" Color="{StaticResource Key.Cycle.RimColor}" />
+  <Color x:Key="Key.Solo.TopColor">#CCB03E</Color>
+  <Color x:Key="Key.Solo.BottomColor">#EDD886</Color>
+  <Color x:Key="Key.Solo.RimColor">#F1E1A2</Color>
+  <LinearGradientBrush x:Key="Key.Solo.Face" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Color="{StaticResource Key.Solo.TopColor}" Offset="0" />
+    <GradientStop Color="{StaticResource Key.Solo.BottomColor}" Offset="1" />
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="Key.Solo.Rim" Color="{StaticResource Key.Solo.RimColor}" />
+
+  <!-- Knobs: a dark body inside thin radial ticks; unlit ticks clear 3:1 on the panel. -->
+  <Color x:Key="Knob.BodyColor">#1A1A1D</Color>
+  <Color x:Key="Knob.TickColor">#76767E</Color>
+
+  <!-- Focus lighting: the selected device panel is lit (accent pool from the top, lit edge); the rest stay calm. -->
+  <LinearGradientBrush x:Key="DevicePanel.SelectedFill" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Color="#2B3B50" Offset="0" />
+    <GradientStop Color="#27303B" Offset="0.22" />
+    <GradientStop Color="#252527" Offset="0.62" />
+  </LinearGradientBrush>
   <SolidColorBrush x:Key="Transport.Cycle" Color="{StaticResource Transport.CycleColor}" />
   <SolidColorBrush x:Key="Track.Mute" Color="{StaticResource Track.MuteColor}" />
   <SolidColorBrush x:Key="Track.Solo" Color="{StaticResource Track.SoloColor}" />
