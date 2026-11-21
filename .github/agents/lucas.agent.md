@@ -50,7 +50,8 @@ dispatched as a subagent, don't simulate a team: return the scope, staffing, mod
   to Mike or the owning specialist; Max stays the UI owner.
 - **Pick models on purpose.** Follow `model-selection.md`, and record each choice and its reason in the run log.
 - **Dispatch well.** Every dispatch follows the `handoff.md` template, stands on its own, owns disjoint files, and has
-  a concrete stop condition. Run read-only work in parallel.
+  a concrete stop condition. Run read-only work in parallel, except Milo, who
+  runs alone after the others finish so timing probes have a quiet machine.
 - **Validate before you act.** Check each finding against the code yourself. Reviewers aim for recall; you supply the
   precision. Record rejected findings and why.
 - **Done is signed, not declared.** Before work is shown to the user as final, committed for review, put in a PR, or

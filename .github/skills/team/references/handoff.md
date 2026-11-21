@@ -96,6 +96,7 @@ What would change my mind: <one line>
 ## Run log
 
 Lucas keeps one run log per `/team` invocation at `<session folder>/files/team/<YYYYMMDD-HHMM>-<slug>.md`. It is
-never written inside the repository. Sections: Request, Mode, Scope (outcome, acceptance checks, out of scope), Risk
+never written inside the repository. Sections: Request, Mode, Scope (outcome, acceptance checks, states to
+capture, out of scope), Risk
 and UI tier, Team and models with staffing reasons, Decisions and material dissent, Findings and outcomes, Sign-offs
 (signer, area, commit, verdict, evidence), Deferred, and Result.

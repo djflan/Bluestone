@@ -14,6 +14,8 @@ stops in `SKILL.md`, including the user UI decisions required by the directional
    record the supplied references, and classify the work as directional, material, or routine under
    `.github/skills/team/references/governance.md`.
    Only when no references were supplied may the user explicitly agree a comparison baseline.
+   For any change a user can see in the app, also list the states to capture (`governance.md`, "Evidence for
+   signers"): a plain, realistic state plus the populated and active states the change affects.
 2. Read only enough to find the owning code: repository instructions, the nearest owner, its caller, and its test.
    Use `.github/skills/team/references/roster.md` to staff the team.
 3. Classify technical risk as routine, elevated, or high. Pick the smallest team and a model for each member, and
@@ -101,8 +103,8 @@ The full repository gates are not run here; they run once, on the final tree, in
 
 Before anything is shown to the user as final, committed for review, or put in a PR, Lucas commits the batch, pins the
 SHA, has Max capture the states listed at intake (`governance.md`, "Evidence for signers"), and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
-done") read-only, in this order: the independent visual signer, Caroline, Kenji, Theo, Alice, and Grace in
-parallel; then Jules, from the capture set the visual signer checked; then Milo alone, because probes need a quiet
+done") read-only, in this order: every required signer except Jules and Milo (Max, the independent visual signer, Caroline,
+Kenji, Theo, Alice, Grace, Sabrina, as the table requires) in parallel; then Jules, from the capture set the visual signer checked; then Milo alone, because probes need a quiet
 machine; with the acceptance checks quoted verbatim and the approved direction and references
 attached. Each returns the sign-off format in `handoff.md`.
 
@@ -123,7 +125,8 @@ approval required by the tier before opening or updating the PR.
 1. Commit, then pin the snapshot: `git rev-parse HEAD`, and the diff `git --no-pager diff origin/main...HEAD`.
 2. Lucas reads the whole diff himself and sweeps it for leftovers (`pr-readiness` step 1, items 1 and 3): temporary CI
    changes, debug output, experiment switches, TODOs, and files that should be ignored.
-3. Dispatch, in parallel and read-only, on the pinned SHA:
+3. Dispatch read-only, on the pinned SHA, in parallel except Milo, who runs alone after the others finish because
+   timing probes need a quiet machine:
    - Grace once for ordinary localized work, or twice on different available model families for the high-risk and
      broad categories in `.github/skills/team/references/model-selection.md`;
    - every specialist who worked on or owns a touched area, reviewing only their area.

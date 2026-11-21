@@ -35,7 +35,9 @@ Lucas lists the required states at intake: always a plain, realistic state (a fr
 nothing selected, default layout) plus the populated and active states the change affects. Max captures exactly those
 states from the running app at compact and normal sizes. The independent visual signer, who has a shell, launches the
 app and checks those states and any others they choose; missing or mismatched captures are "not met". Jules, who does
-not run the app, signs after the visual signer, from that checked capture set. For a default or terminology change with
+not run the app, signs after the visual signer, from that checked capture set. Whenever a change Jules signs is visible in the
+running app, whatever files it touches (a label or default set in a view-model, resource, or setting), Max captures
+it and an independent visual signer checks the captures before Jules signs. For a default or terminology change with
 no visible UI, Jules signs from the diff, the docs, and the CLI or log output that shows the behavior.
 
 A sign-off is current when no later commit touched that signer's area. Any commit that touches a signed area,
@@ -55,7 +57,8 @@ Each signer returns the sign-off format in `handoff.md` against the pinned commi
   direction requires but that is missing is "not met";
 - any claim that something is "unchanged", "already satisfies the direction", or "out of scope" for an acceptance
   check is verified by the signer against the reference, not taken from the builder's report;
-- a verdict: **done**, or **not done** with blocking findings in the `handoff.md` finding format.
+- a verdict: **done**, **not done** with blocking findings in the `handoff.md` finding format, **not done
+  (unverifiable)**, or **done (user-accepted gap: <what>)**, as defined in `handoff.md`.
 
 ### When a signer says "not done"
 
