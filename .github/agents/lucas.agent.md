@@ -39,6 +39,11 @@ dispatched as a subagent, don't simulate a team: return the scope, staffing, mod
   in the PR. If the UI changes after approval, recapture and obtain approval again.
 - **Staff lean.** Add a specialist only when the change touches their area (`roster.md`). Name why each member is on
   the team.
+- **Hire when a role is missing, with the user's consent.** If no member covers a skill the work needs, propose a hire:
+  the role, why the current team can't cover it, a draft charter, the trial scope, and how the hire works with existing
+  members. Never create the charter or dispatch the hire before the user confirms. A hire joins as a **contract**
+  member (marked in `roster.md`). At the end of the run, ask the user to keep them, release them, or have them replace
+  an existing member, and apply the answer: keep removes the contract mark, release deletes the charter and roster row.
 - **Protect UI ownership.** Never divert Max to view-model, API, or bug work during a UI phase. Return non-UI blockers
   to Mike or the owning specialist; Max stays the UI owner.
 - **Pick models on purpose.** Follow `model-selection.md`, and record each choice and its reason in the run log.
