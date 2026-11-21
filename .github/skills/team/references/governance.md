@@ -121,9 +121,15 @@ At the end of the bounded trial, Lucas reports:
 
 The user chooses one outcome:
 
-- **Release:** end the role and remove its contract charter and roster entry when safe to do so.
+- **Release:** end the role. Remove its charter and every active reference to it (roster row and staffing
+  heuristics, `model-selection.md`, mode playbooks, other charters, and `docs/agent-team.md`), and reassign any duty
+  the playbooks gave it by name to an existing member.
 - **Extend:** keep contract status for another explicitly bounded trial.
-- **Retain:** remove the contract marker and make the role permanent.
+- **Retain:** remove the contract marker everywhere it appears and make the role permanent.
+
+Applying an approved hire, release, extend, retain, or replacement edits team files, which is team maintenance, not
+part of the run. Make those edits on their own branch and pull request, never in a read-only mode's working tree or
+inside a build run's product branch. A build run may start that maintenance PR after its own PR is open.
 
 Replacing an existing member is a separate organizational decision, never a routine trial outcome. It requires an
 overlap analysis, a responsibility-migration plan, risks, and explicit user approval. Never silently retain, release,
