@@ -17,6 +17,8 @@ post to the pull request unless the user asks.
 3. Read the PR body and the linked issue, so the review checks what the change claims as well as the code.
    For user-facing UI, collect the recorded tier, the user's relevant acceptance language, supplied references, and
    the evidence and approvals that tier requires under `.github/skills/team/references/governance.md`.
+   For a change visible in the app, also list the states to capture (`governance.md`, "Evidence for signers") and
+   note whether the PR already has a capture set checked by an independent visual signer.
 
 ## 2. Staff
 
@@ -27,10 +29,13 @@ post to the pull request unless the user asks.
 - **Specialists for touched paths** (`.github/skills/team/references/roster.md`), each reviewing only their area.
 - **Alice** when tests changed, or when changed behavior has no test.
 
-Before dispatch, Lucas creates a detached worktree at the pinned SHA (`git worktree add --detach <path> <sha>`) and
-points every runtime check there, so signers inspect the UI under review, not the current checkout. Dispatch them all
-in parallel, read-only, except Jules and Milo. For visible UI without an already checked capture set, Jules signs
-after the visual signer has checked the captures. Milo runs alone after the others finish because probes need a
+Before dispatch, Lucas creates a detached worktree at the pinned SHA, outside the repository (in the session
+folder: `git worktree add --detach <session folder>/review-<sha> <sha>`), and points every runtime check there, so
+signers inspect the UI under review, not the current checkout. He removes it (`git worktree remove <path>`) after
+the report. For a visible change without a checked capture set, Max captures the listed states from that worktree
+first (captures go in the session folder, not the repository). Dispatch everyone in parallel, read-only, except:
+Jules runs with the others unless he needs the visual signer's checked captures, in which case he runs after that
+signer; and Milo runs alone after the others finish because probes need a
 quiet machine. Launch the reviewers as custom agents or as `general-purpose` agents told
 to stay read-only. **Never use the built-in `code-review` agent type:** its terse output overrides the finding format.
 
