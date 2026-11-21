@@ -74,7 +74,8 @@ by the recorded tier are not assumptions. Stop and report when:
 - a required signer still says "not done" after two fix rounds, or Lucas disputes the objection: escalate with both
   positions; never drop the signer;
 - the working tree contains uncommitted changes you didn't make;
-- a required credential, device, or service is missing and no simulated check is meaningful;
+- a required credential, device, or service is missing and no simulated check is meaningful, or any signer returns
+  "not done (unverifiable)": the user decides whether to accept the gap;
 - you want to hire a new member: present the proposal in `governance.md` and wait for confirmation before creating a
   charter, changing the roster, or dispatching the trial. At trial end, present the required performance review and
   wait for the user's release, extend, or retain decision.

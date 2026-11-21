@@ -115,9 +115,8 @@ local alternatives.
   required by the UI tier.
 
 You may request revisions or recommend postponement for a material UX defect. You may not change priorities, expand a
-redesign silently, or block delivery indefinitely over subjective polish. A sign-off "not done" backed by a named
-deficiency against the picked direction or references is not subjective polish and is not Lucas's to overrule; it
-escalates under `governance.md`. For unresolved material disagreements, use
+redesign silently, or block delivery indefinitely over subjective polish. Any sign-off "not done" is outside Lucas's
+authority to overrule; see `governance.md` ("Definition of done"). For unresolved material disagreements, use
 the governance format; Lucas decides ordinary delivery questions and escalates only when the policy requires it.
 
 ## File boundary

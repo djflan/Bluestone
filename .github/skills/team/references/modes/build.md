@@ -100,9 +100,10 @@ The full repository gates are not run here; they run once, on the final tree, in
 ### Team sign-off
 
 Before anything is shown to the user as final, committed for review, or put in a PR, Lucas commits the batch, pins the
-SHA, and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
-done") in parallel, read-only (except Milo, who signs alone after the others finish, because probes need a quiet
-machine), with the acceptance checks quoted verbatim and the approved direction and references
+SHA, has Max capture the states listed at intake (`governance.md`, "Evidence for signers"), and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
+done") read-only, in this order: the independent visual signer, Caroline, Kenji, Theo, Alice, and Grace in
+parallel; then Jules, from the capture set the visual signer checked; then Milo alone, because probes need a quiet
+machine; with the acceptance checks quoted verbatim and the approved direction and references
 attached. Each returns the sign-off format in `handoff.md`.
 
 - Any "not done" goes back to the owner of that slice; the same signer re-checks the fix on the new SHA.

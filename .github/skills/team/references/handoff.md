@@ -74,14 +74,14 @@ Acceptance checks:
   - <check, quoted> → met | not met. Evidence: <command+result, screenshot path, probe, or file:line>
 Compared against: <approved direction / references, with paths>  (UI: plain state AND active state, compact AND normal)
 Verified claims: <any "unchanged" or "already satisfies" claim from the builder, and what you checked>
-Verdict: done | not done
+Verdict: done | not done | not done (unverifiable: <what is missing>) | done (user-accepted gap: <what>)
 Blocking findings: <finding format above, or "none">
 ```
 
 A signer who could not inspect what their area requires (for example the running app, a probe, or a platform)
 returns "not done (unverifiable)" with what is missing, which triggers the missing-device stop; they never sign off on
-a description. Jules, who does not run the app, signs from the independent visual signer's plain-state and active-state
-screenshots of the running app, never from the builder's chosen scenes.
+a description. Jules signs from the capture set the independent visual signer has checked, after that signer, or from the diff, docs,
+and CLI or log output when there is no visible UI (`governance.md`, "Evidence for signers").
 
 ## Council position
 

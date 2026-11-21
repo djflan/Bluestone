@@ -16,7 +16,7 @@ sign off for a specialist, skip a required signer, or overrule a "not done".
 | The change touches | Required signers |
 |---|---|
 | Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls | Max (owner); an independent visual signer (Iris for directional or material work whenever she is under contract or retained, otherwise Caroline); Caroline for keyboard, focus, and accessibility |
-| A workflow, a default, terminology, or anything a musician sees and judges | Jules (judges the independent visual signer's plain-state and active-state screenshots, since Jules does not run the app) |
+| A workflow, a default, terminology, or anything a musician sees and judges | Jules (see "Evidence for signers" below) |
 | `src/native/`, `Bluestone.Platform.*`, the plugin host, platform MIDI or audio adapters | Kenji |
 | `Bluestone.Engine*`, playback, audio, signal, MIDI timing, IPC, threads, locks, or any timing or latency claim | Milo |
 | More than one project layer, a new abstraction, a protocol, a file format, or an ADR | Theo |
@@ -28,6 +28,15 @@ The builder of a slice signs off their own slice, but the builder's own sign-off
 or risky area: the independent signer in the table above must also sign. Lucas may add signers; he may not remove a
 required one. When a touched area has no staffed signer, staff one before calling the work done. Roster staffing
 heuristics and "smallest team" guidance never remove a required signer; they only decide who else joins.
+
+### Evidence for signers
+
+Lucas lists the required states at intake: always a plain, realistic state (a fresh or small project, stopped,
+nothing selected, default layout) plus the populated and active states the change affects. Max captures exactly those
+states from the running app at compact and normal sizes. The independent visual signer, who has a shell, launches the
+app and checks those states and any others they choose; missing or mismatched captures are "not met". Jules, who does
+not run the app, signs after the visual signer, from that checked capture set. For a default or terminology change with
+no visible UI, Jules signs from the diff, the docs, and the CLI or log output that shows the behavior.
 
 A sign-off is current when no later commit touched that signer's area. Any commit that touches a signed area,
 including review fixes, gate fixes, docs edits, and CI fixes after the PR is open, makes that sign-off stale; the same
@@ -57,7 +66,8 @@ never an "ordinary delivery question" or "subjective polish" for Lucas to decide
 
 When a signer cannot obtain the evidence their area requires (hardware, a platform, a quiet machine for probes), they
 return "not done (unverifiable)" with what is missing. That triggers the missing-device stop in `SKILL.md`: the user
-decides whether to accept the gap, which is then recorded as not verified in the PR. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
+decides whether to accept the gap. An accepted gap turns the verdict into "done (user-accepted gap: <what>)", which
+counts as done and is listed as not verified in the PR and the sign-off table. Only the user can accept a gap. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
 is out of scope, Lucas stops and escalates to the user with both positions in the constructive-disagreement format.
 He never resolves it by dropping the signer.
 
