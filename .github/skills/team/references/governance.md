@@ -31,14 +31,15 @@ heuristics and "smallest team" guidance never remove a required signer; they onl
 
 ### Evidence for signers
 
-Lucas lists the required states at intake: always a plain, realistic state (a fresh or small project, stopped,
+For a change visible in the running app, Lucas lists the required states at intake: always a plain, realistic state (a fresh or small project, stopped,
 nothing selected, default layout) plus the populated and active states the change affects. Max captures exactly those
 states from the running app at compact and normal sizes. The independent visual signer, who has a shell, launches the
 app and checks those states and any others they choose; missing or mismatched captures are "not met". Jules, who does
 not run the app, signs after the visual signer, from that checked capture set. Whenever a change Jules signs is visible in the
 running app, whatever files it touches (a label or default set in a view-model, resource, or setting), Max captures
 it and an independent visual signer checks the captures before Jules signs. For a default or terminology change with
-no visible UI, Jules signs from the diff, the docs, and the CLI or log output that shows the behavior.
+no visible UI, Jules signs from the diff, the docs, and the CLI or log output that shows the behavior. Backend-only
+and docs-only work needs no captures; its signers use the diff, tests, and probes.
 
 A sign-off is current when no later commit touched that signer's area. Any commit that touches a signed area,
 including review fixes, gate fixes, docs edits, and CI fixes after the PR is open, makes that sign-off stale; the same

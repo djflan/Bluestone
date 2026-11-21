@@ -27,7 +27,10 @@ post to the pull request unless the user asks.
 - **Specialists for touched paths** (`.github/skills/team/references/roster.md`), each reviewing only their area.
 - **Alice** when tests changed, or when changed behavior has no test.
 
-Dispatch them all in parallel, read-only, except Milo, who runs alone after the others finish because probes need a
+Before dispatch, Lucas creates a detached worktree at the pinned SHA (`git worktree add --detach <path> <sha>`) and
+points every runtime check there, so signers inspect the UI under review, not the current checkout. Dispatch them all
+in parallel, read-only, except Jules and Milo. For visible UI without an already checked capture set, Jules signs
+after the visual signer has checked the captures. Milo runs alone after the others finish because probes need a
 quiet machine. Launch the reviewers as custom agents or as `general-purpose` agents told
 to stay read-only. **Never use the built-in `code-review` agent type:** its terse output overrides the finding format.
 

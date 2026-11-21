@@ -102,8 +102,8 @@ The full repository gates are not run here; they run once, on the final tree, in
 ### Team sign-off
 
 Before anything is shown to the user as final, committed for review, or put in a PR, Lucas commits the batch, pins the
-SHA, has Max capture the states listed at intake (`governance.md`, "Evidence for signers"), and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
-done") read-only, in this order: every required signer except Jules and Milo (Max, the independent visual signer, Caroline,
+SHA, has Max capture the states listed at intake when the change is visible in the app (`governance.md`, "Evidence for signers"), and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
+done") read-only, in this order: every required signer except Jules and Milo (each slice's builder, such as Max or Mike, plus the independent visual signer, Caroline,
 Kenji, Theo, Alice, Grace, Sabrina, as the table requires) in parallel; then Jules, from the capture set the visual signer checked; then Milo alone, because probes need a quiet
 machine; with the acceptance checks quoted verbatim and the approved direction and references
 attached. Each returns the sign-off format in `handoff.md`.
@@ -113,6 +113,9 @@ attached. Each returns the sign-off format in `handoff.md`.
   verify, never a reason to skip it.
 - Lucas records every sign-off in the run log. He cannot sign off for a member or proceed past a "not done"; after
   two fix rounds without agreement he escalates to the user under `governance.md`.
+
+Grace's sign-off here is the code review; the user's final approval is checked later, in the phase 5 review, not as
+part of this sign-off, so it is not a circular gate.
 
 For directional and material UI, only after every required signer has said "done" does Max capture FINAL compact and
 normal screenshots beside the same references and Lucas stops for the user approval required by
