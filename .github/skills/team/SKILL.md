@@ -43,7 +43,7 @@ Then read the mode's playbook and follow it exactly:
   timing, architecture, tests, code review, docs) has signed off on the current commit, as defined in
   `governance.md` ("Definition of done"). Lucas collects and records sign-offs; he never signs off for a member,
   skips a required signer, or overrules a "not done".
-- **Parallelism:** dispatch independent read-only members together. Editing members get disjoint file ownership;
+- **Parallelism:** dispatch independent read-only members together (except Milo, who runs alone; see the modes). Editing members get disjoint file ownership;
   never give two members the same file at once.
 - **UI acceptance and evidence:** classify visible work as directional, material, or routine under `governance.md`.
   Quote the user's relevant reference and hint language as acceptance checks and compare the evidence that tier

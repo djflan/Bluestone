@@ -15,7 +15,7 @@ sign off for a specialist, skip a required signer, or overrule a "not done".
 
 | The change touches | Required signers |
 |---|---|
-| Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls | Max (owner); an independent visual signer (Iris for directional or material work whenever she is under contract or retained, otherwise Caroline); Caroline for keyboard, focus, and accessibility |
+| Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls, or any other change visible in the running app | Max (owner); an independent visual signer (Iris for directional or material work whenever she is under contract or retained, otherwise Caroline); Caroline for keyboard, focus, and accessibility |
 | A workflow, a default, terminology, or anything a musician sees and judges | Jules (see "Evidence for signers" below) |
 | `src/native/`, `Bluestone.Platform.*`, the plugin host, platform MIDI or audio adapters | Kenji |
 | `Bluestone.Engine*`, playback, audio, signal, MIDI timing, IPC, threads, locks, or any timing or latency claim | Milo |
