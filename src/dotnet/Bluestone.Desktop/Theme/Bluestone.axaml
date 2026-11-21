@@ -634,32 +634,45 @@
   <Style Selector="Border.transport > StackPanel > :is(Button):pressed /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource TrackRow.Hover}" />
   </Style>
+  <!-- Latched transport keys light their whole face (lit from below, lit rim, tight glow); no side LED. -->
   <Style Selector="Border.transport ToggleButton.play:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Transport.Play}" />
+    <Setter Property="Background" Value="{StaticResource Key.Accent.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Accent.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #8C4C8DDB" />
   </Style>
   <Style Selector="Border.transport ToggleButton.play:checked">
-    <Setter Property="Foreground" Value="{StaticResource Transport.PlayForeground}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
   <Style Selector="Border.transport ToggleButton.record">
     <Setter Property="Foreground" Value="{StaticResource Transport.RecordIdle}" />
   </Style>
   <Style Selector="Border.transport ToggleButton.record:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Transport.Record}" />
+    <Setter Property="Background" Value="{StaticResource Key.Record.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Record.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #8CE5484D" />
   </Style>
   <Style Selector="Border.transport ToggleButton.record:checked">
-    <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
   <Style Selector="Border.transport ToggleButton.cycle:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Transport.CycleOn}" />
+    <Setter Property="Background" Value="{StaticResource Key.Cycle.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Cycle.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #80C9A227" />
   </Style>
   <Style Selector="Border.transport ToggleButton.cycle:checked">
-    <Setter Property="Foreground" Value="{StaticResource Transport.CycleForeground}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
   <Style Selector="Border.transport ToggleButton.mode:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+    <Setter Property="Background" Value="{StaticResource Key.Accent.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Accent.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #8C4C8DDB" />
   </Style>
   <Style Selector="Border.transport ToggleButton.mode:checked">
-    <Setter Property="Foreground" Value="{StaticResource Transport.ModeForeground}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
 
   <!-- Computer keyboard: an accent-lit toggle with a slide-out LCD readout of octave and velocity. -->
@@ -791,25 +804,34 @@
     <Setter Property="Background" Value="{StaticResource Control.Hover}" />
   </Style>
   <Style Selector="ToggleButton.trackButton.mute:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Track.Mute}" />
+    <Setter Property="Background" Value="{StaticResource Key.Accent.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Accent.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #734C8DDB" />
   </Style>
   <Style Selector="ToggleButton.trackButton.mute:checked">
-    <Setter Property="Foreground" Value="{StaticResource Text.OnAccent}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
   <Style Selector="ToggleButton.trackButton.solo:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Track.Solo}" />
+    <Setter Property="Background" Value="{StaticResource Key.Solo.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Solo.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #73E3C345" />
   </Style>
   <Style Selector="ToggleButton.trackButton.solo:checked">
-    <Setter Property="Foreground" Value="{StaticResource Track.SoloForeground}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
   <Style Selector="ToggleButton.trackButton.arm">
     <Setter Property="Foreground" Value="{StaticResource Track.ArmIdle}" />
   </Style>
   <Style Selector="ToggleButton.trackButton.arm:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource State.Error}" />
+    <Setter Property="Background" Value="{StaticResource Key.Record.Face}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Key.Record.Rim}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 0 5 0 #73E5484D" />
   </Style>
   <Style Selector="ToggleButton.trackButton.arm:checked">
-    <Setter Property="Foreground" Value="{StaticResource Text.OnAccent}" />
+    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
   </Style>
 
   <!-- Status chips -->
@@ -1475,8 +1497,14 @@
     <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
     <Setter Property="ClipToBounds" Value="True" />
   </Style>
+  <!-- Focus lighting: the selected device is lit (accent pool, lit edge, glowing knob ticks); the others stay calm. -->
   <Style Selector="Border.devicePanel.selected">
     <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="Background" Value="{StaticResource DevicePanel.SelectedFill}" />
+    <Setter Property="BoxShadow" Value="inset 0 0 6 0 #594C8DDB" />
+  </Style>
+  <Style Selector="Border.devicePanel.selected controls|Knob">
+    <Setter Property="Glow" Value="1" />
   </Style>
   <Style Selector="Border.devicePanel.unavailable">
     <Setter Property="Background" Value="{StaticResource State.ErrorSurface}" />
@@ -1543,6 +1571,12 @@
   <Style Selector="Button.power PathIcon">
     <Setter Property="Width" Value="11" />
     <Setter Property="Height" Value="11" />
+  </Style>
+  <!-- Power: no side lamp. The glyph itself glows in the accent while on and is dim and unlit when bypassed. -->
+  <Style Selector="Button.power:not(.off) PathIcon">
+    <Setter Property="Effect">
+      <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="5" OffsetX="0" OffsetY="0" Opacity="0.85" />
+    </Setter>
   </Style>
   <Style Selector="Button.power.off">
     <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />

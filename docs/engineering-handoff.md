@@ -242,3 +242,9 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
      lag and loop behavior.
    - Not verified on hardware: MIDI output staying in the loop (the MIDI loopback received nothing), macOS and
      Linux, and an audible check that notes are continuous at the wrap.
+9. **Identity: ladder LEDs and focus lighting (branch `feature/identity-ladder-focus`), deferred or not built:**
+   theme presets (Studio Blue, Amber, Mono), which need `DynamicResource` plumbing because the theme uses only
+   `StaticResource` today; a user glow-intensity setting; recessed value wells behind knobs; a mixer groove fill;
+   taller LED segments on the junction meters between devices (they break an existing segment-sizing check and a
+   pixel baseline); and a true exponential falloff for lit-key, power-glyph and selected-panel glows (they use
+   Avalonia's Gaussian blur; only the knob halo uses the exponential falloff).

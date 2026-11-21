@@ -129,6 +129,35 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task AKnob_LightsItsTicksFromItsOrigin_AndOnlyTheSelectedDeviceGlows() => HeadlessApp.RunAsync(async () =>
+    {
+        // Ticks light from the origin to the value: a unipolar knob from its start, a bipolar one from its centre tick.
+        const int count = 21;
+        int[] Lit(double fraction, double origin) => [.. Enumerable.Range(0, count).Where(i => Knob.IsTickLit(i, count, fraction, origin))];
+        Assert.Equal([0], Lit(0, 0));
+        Assert.Equal(Enumerable.Range(0, count), Lit(1, 0));
+        Assert.Equal([10], Lit(0.5, 0.5));
+        Assert.Equal([10, 11, 12, 13, 14, 15], Lit(0.75, 0.5));
+        Assert.Equal([5, 6, 7, 8, 9, 10], Lit(0.25, 0.5));
+        Assert.Equal(21, Knob.TickCount(34));
+        Assert.Equal(15, Knob.TickCount(20));
+
+        // Focus lighting: the selected device's knobs glow; every other device's knobs stay calm.
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var vm = app.ViewModel.DeviceView!;
+        var knobs = deviceView.GetVisualDescendants().OfType<Knob>().Where(k => k.IsEffectivelyVisible).ToList();
+        var owners = knobs.Select(k => vm.Devices.Single(d => d.Parameters.Contains((Presentation.ParameterViewModel)k.DataContext!))).ToList();
+        Assert.True(owners.Distinct().Count() > 1, "The chain needs knobs on two devices.");
+        foreach (var device in owners.Distinct())
+        {
+            vm.SelectedDevice = device;
+            app.Settle();
+            Assert.All(knobs.Zip(owners), pair => Assert.Equal(pair.Second == device ? 1 : 0, pair.First.Glow));
+        }
+    });
+
+    [Fact]
     public Task AKnob_NudgesASteppedParameterOneStep_AndAContinuousOneFinely() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);
@@ -534,6 +563,8 @@ public sealed class DeviceViewTests
             (Palette.MeterTrack, "Meter.TrackColor"),
             (Palette.MixerMeterPeakHold, "MixerMeter.PeakHoldColor"),
             (Palette.JunctionLamp, "Junction.LampColor"),
+            (Palette.KnobBody, "Knob.BodyColor"),
+            (Palette.KnobTick, "Knob.TickColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));
