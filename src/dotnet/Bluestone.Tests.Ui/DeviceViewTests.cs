@@ -469,6 +469,39 @@ public sealed class DeviceViewTests
         Assert.Same(selected, view.SelectedDevice);
     });
 
+    [Fact]
+    public Task JunctionAndOutMeters_ShowWhatSettingsDisplaySays_AverageWithThePeakHeld_OrThePeakAlone() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var seam = deviceView.GetVisualDescendants().OfType<ChainJunction>().Single(s => s.Signal == view.Devices[1].Arriving);
+        var outLadder = deviceView.GetVisualDescendants().OfType<ChainOutMeter>().Single().GetVisualDescendants().OfType<LedLadderMeter>().Single();
+        foreach (var signal in new[] { seam.Signal!, view.LastJunction! })
+        {
+            SetInternal(signal, nameof(Bluestone.Presentation.JunctionSignal.CanCarryAudio), true);
+
+            // Peak −6 dB, average −20 dB.
+            signal.Levels.Update(new Bluestone.Audio.MeterReading(0.5f, 0.5f, 0.1f, 0.1f), System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+
+        app.Settle();
+        Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.RmsAndPeak, view.Display.LevelStyle);
+        foreach (var ladder in new[] { seam.Ladder, outLadder })
+        {
+            Assert.Equal(-20, ladder.LeftValue, 1);
+            Assert.Equal(-6, ladder.LeftPeakHold, 1);
+        }
+
+        view.Display.LevelStyle = Bluestone.Presentation.JunctionLevelStyle.Peak;
+        app.Settle();
+        foreach (var ladder in new[] { seam.Ladder, outLadder })
+        {
+            Assert.Equal(-6, ladder.LeftValue, 1);
+            Assert.True(double.IsNaN(ladder.LeftPeakHold), "Peak alone has no held cell.");
+        }
+    });
+
     private static void SetInternal(object target, string property, object value) =>
         (target.GetType().GetProperty(property) ?? throw new InvalidOperationException($"{target.GetType().Name}.{property} was not found.")).SetValue(target, value);
 
@@ -533,8 +566,6 @@ public sealed class DeviceViewTests
             (Palette.MeterTrack, "Meter.TrackColor"),
             (Palette.MixerMeterPeakHold, "MixerMeter.PeakHoldColor"),
             (Palette.JunctionLamp, "Junction.LampColor"),
-            (Palette.KnobBody, "Knob.BodyColor"),
-            (Palette.KnobTick, "Knob.TickColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));

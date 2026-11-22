@@ -25,7 +25,7 @@ public sealed class TextKey : ToggleButton
 
     static TextKey()
     {
-        AffectsRender<TextKey>(TextProperty, IsCheckedProperty, IsPointerOverProperty, IsPressedProperty, IsEnabledProperty);
+        AffectsRender<TextKey>(TextProperty, IsCheckedProperty, IsPointerOverProperty, IsPressedProperty, IsEffectivelyEnabledProperty);
         CursorProperty.OverrideDefaultValue<TextKey>(new Cursor(StandardCursorType.Hand));
         AffectsMeasure<TextKey>(TextProperty);
     }
@@ -64,7 +64,7 @@ public sealed class TextKey : ToggleButton
         ConsolePaint.HLine(context, ConsolePaint.Alpha(ConsolePaint.White, on ? 0.10 : 0.06), r.X + 2, r.Right - 2, r.Y + 0.5);
         context.DrawRectangle(null, ConsolePaint.Pen(on ? ConsolePaint.Alpha(Palette.Accent, 0.45) : ConsolePaint.Alpha(ConsolePaint.Black, 0.55)), new RoundedRect(r.Deflate(0.5), Radius));
         var label = Label(IsChecked == true);
-        using (context.PushOpacity(IsEnabled ? 1 : 0.45))
+        using (context.PushOpacity(IsEffectivelyEnabled ? 1 : 0.45))
         {
             context.DrawText(label, new Point(r.X + Math.Round((r.Width - label.Width) / 2), r.Y + ((r.Height - label.Height) / 2)));
         }

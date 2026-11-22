@@ -5,25 +5,6 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Bluestone.Presentation;
 
-/// <summary>Where a Device View's signal indicators (a junction's level and note lamp) sit, top to bottom of the panels.</summary>
-public enum JunctionIndicatorPosition
-{
-    /// <summary>Flush with the top of the device, beside its header.</summary>
-    Top,
-
-    /// <summary>In the middle of the upper half of the device's body.</summary>
-    UpperHalf,
-
-    /// <summary>In the middle of the lower half of the device's body (the default).</summary>
-    LowerHalf,
-
-    /// <summary>At the bottom of the device.</summary>
-    Bottom,
-
-    /// <summary>Centred on the device's body: Medium and Large, which are too tall for the half positions to differ from Top and Bottom.</summary>
-    Middle,
-}
-
 /// <summary>What a junction's level shows.</summary>
 public enum JunctionLevelStyle
 {
@@ -34,39 +15,10 @@ public enum JunctionLevelStyle
     Peak,
 }
 
-/// <summary>How much a signal indicator shows: the junction's slim level, a mixer-strip level, or an expanded view's.</summary>
-public enum SignalIndicatorSize
-{
-    /// <summary>The slim level the Device View's junctions have always drawn: 1 px segments, no scale (the default).</summary>
-    Compact,
-
-    /// <summary>2 dB segments with a 0 dB tick.</summary>
-    Medium,
-
-    /// <summary>A dB scale, a held-peak readout, and a clip light that stays on until cleared.</summary>
-    Large,
-}
-
-/// <summary>The shape of a Medium or Large level's LEDs: segments, or round dots (with their own, coarser pitch).</summary>
-public enum LedShape
-{
-    Bar,
-    Round,
-}
-
 /// <summary>How Bluestone draws things that are a matter of taste, not of the project. One set for the whole application.</summary>
 public sealed record DisplaySettings
 {
-    public JunctionIndicatorPosition IndicatorPosition { get; init; } = JunctionIndicatorPosition.LowerHalf;
-
     public JunctionLevelStyle LevelStyle { get; init; } = JunctionLevelStyle.RmsAndPeak;
-
-    public SignalIndicatorSize IndicatorSize { get; init; } = SignalIndicatorSize.Compact;
-
-    public LedShape LedShape { get; init; } = LedShape.Bar;
-
-    /// <summary>Where Medium and Large indicators sit: Top, Middle, or Bottom. Compact uses <see cref="IndicatorPosition"/>.</summary>
-    public JunctionIndicatorPosition LargeIndicatorPosition { get; init; } = JunctionIndicatorPosition.Middle;
 
     /// <summary>The colours signal indicators' levels run through. The clip lamp is not part of it.</summary>
     public SignalGradient SignalGradient { get; init; } = SignalGradient.Default;
@@ -79,7 +31,7 @@ public sealed class DisplaySettingsStore(string path)
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new LenientEnum<JunctionIndicatorPosition>(), new LenientEnum<JunctionLevelStyle>(), new LenientEnum<SignalIndicatorSize>(), new LenientEnum<LedShape>() },
+        Converters = { new LenientEnum<JunctionLevelStyle>() },
     };
 
     public string Path { get; } = path ?? throw new ArgumentNullException(nameof(path));
@@ -94,14 +46,11 @@ public sealed class DisplaySettingsStore(string path)
                 return new DisplaySettings();
             }
 
-            // Each preference on its own: one unknown value does not reset the others.
+            // Each preference on its own: one unknown value does not reset the others. Keys this version no longer has (the
+            // old indicator positions, sizes, and LED shapes) are ignored.
             return new DisplaySettings
             {
-                IndicatorPosition = DisplayViewModel.Positions.Any(p => p.Position == settings.IndicatorPosition) ? settings.IndicatorPosition : JunctionIndicatorPosition.LowerHalf,
                 LevelStyle = Enum.IsDefined(settings.LevelStyle) ? settings.LevelStyle : JunctionLevelStyle.RmsAndPeak,
-                IndicatorSize = Enum.IsDefined(settings.IndicatorSize) ? settings.IndicatorSize : SignalIndicatorSize.Compact,
-                LedShape = Enum.IsDefined(settings.LedShape) ? settings.LedShape : LedShape.Bar,
-                LargeIndicatorPosition = DisplayViewModel.LargePositions.Any(p => p.Position == settings.LargeIndicatorPosition) ? settings.LargeIndicatorPosition : JunctionIndicatorPosition.Middle,
 
                 // The converter reads an invalid gradient as null; an explicit null stays null too.
                 SignalGradient = settings.SignalGradient ?? SignalGradient.Default,
@@ -147,26 +96,8 @@ public sealed class DisplaySettingsStore(string path)
     }
 }
 
-/// <summary>A choice of indicator position, with what the musician reads.</summary>
-public sealed record IndicatorPositionOption(JunctionIndicatorPosition Position, string Name)
-{
-    public override string ToString() => Name;
-}
-
 /// <summary>A choice of level style, with what the musician reads.</summary>
 public sealed record LevelStyleOption(JunctionLevelStyle Style, string Name)
-{
-    public override string ToString() => Name;
-}
-
-/// <summary>A choice of indicator size, with what the musician reads.</summary>
-public sealed record IndicatorSizeOption(SignalIndicatorSize Size, string Name)
-{
-    public override string ToString() => Name;
-}
-
-/// <summary>A choice of LED shape, with what the musician reads.</summary>
-public sealed record LedShapeOption(LedShape Shape, string Name)
 {
     public override string ToString() => Name;
 }
@@ -177,53 +108,11 @@ public sealed partial class DisplayViewModel : ObservableObject
     private DisplaySettingsStore? _store;
     private bool _loading;
 
-    public static IReadOnlyList<IndicatorPositionOption> Positions { get; } =
-    [
-        new(JunctionIndicatorPosition.Top, "Top of the device"),
-        new(JunctionIndicatorPosition.UpperHalf, "Upper half"),
-        new(JunctionIndicatorPosition.LowerHalf, "Lower half"),
-        new(JunctionIndicatorPosition.Bottom, "Bottom of the device"),
-    ];
-
-    /// <summary>The positions Medium and Large can take: they fill too much of the device for a half to differ from its end.</summary>
-    public static IReadOnlyList<IndicatorPositionOption> LargePositions { get; } =
-    [
-        new(JunctionIndicatorPosition.Top, "Top of the device"),
-        new(JunctionIndicatorPosition.Middle, "Middle of the device"),
-        new(JunctionIndicatorPosition.Bottom, "Bottom of the device"),
-    ];
-
     public static IReadOnlyList<LevelStyleOption> LevelStyles { get; } =
     [
         new(JunctionLevelStyle.RmsAndPeak, "Average level, with the peak held"),
         new(JunctionLevelStyle.Peak, "Peak level"),
     ];
-
-    public static IReadOnlyList<IndicatorSizeOption> Sizes { get; } =
-    [
-        new(SignalIndicatorSize.Compact, "Compact"),
-        new(SignalIndicatorSize.Medium, "Medium, with a 0 dB mark"),
-        new(SignalIndicatorSize.Large, "Large, with a dB scale, peak readout, and clip light"),
-    ];
-
-    public static IReadOnlyList<LedShapeOption> LedShapes { get; } =
-    [
-        new(LedShape.Bar, "Bars"),
-        new(LedShape.Round, "Round"),
-    ];
-
-    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). Where every Device View draws its Compact junctions' levels and note lamps.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SeamIndicatorPosition))]
-    public partial JunctionIndicatorPosition IndicatorPosition { get; set; } = JunctionIndicatorPosition.LowerHalf;
-
-    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). Where every Device View draws its Medium and Large indicators: Top, Middle, or Bottom.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SeamIndicatorPosition))]
-    public partial JunctionIndicatorPosition LargeIndicatorPosition { get; set; } = JunctionIndicatorPosition.Middle;
-
-    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). The position the seams use: Compact's own, or Medium and Large's.</summary>
-    public JunctionIndicatorPosition SeamIndicatorPosition => IndicatorSize == SignalIndicatorSize.Compact ? IndicatorPosition : LargeIndicatorPosition;
 
     /// <summary>What every Device View's junction levels show.</summary>
     [ObservableProperty]
@@ -236,15 +125,6 @@ public sealed partial class DisplayViewModel : ObservableObject
         get => LevelStyles.First(s => s.Style == LevelStyle);
         set => LevelStyle = value?.Style ?? JunctionLevelStyle.RmsAndPeak;
     }
-
-    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). How much every Device View's junction indicators show.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SeamIndicatorPosition))]
-    public partial SignalIndicatorSize IndicatorSize { get; set; } = SignalIndicatorSize.Compact;
-
-    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). The LEDs of Medium and Large junction indicators (Compact always draws its slim segments).</summary>
-    [ObservableProperty]
-    public partial LedShape LedShape { get; set; } = LedShape.Bar;
 
     /// <summary>The colours every signal indicator's level runs through, bottom to top. The clip lamp keeps its own colour.</summary>
     [ObservableProperty]
@@ -444,11 +324,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         try
         {
             var settings = store.Load();
-            IndicatorPosition = settings.IndicatorPosition;
             LevelStyle = settings.LevelStyle;
-            IndicatorSize = settings.IndicatorSize;
-            LedShape = settings.LedShape;
-            LargeIndicatorPosition = settings.LargeIndicatorPosition;
             SignalGradient = settings.SignalGradient;
         }
         finally
@@ -457,15 +333,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         }
     }
 
-    partial void OnIndicatorPositionChanged(JunctionIndicatorPosition value) => Save();
-
     partial void OnLevelStyleChanged(JunctionLevelStyle value) => Save();
-
-    partial void OnIndicatorSizeChanged(SignalIndicatorSize value) => Save();
-
-    partial void OnLedShapeChanged(LedShape value) => Save();
-
-    partial void OnLargeIndicatorPositionChanged(JunctionIndicatorPosition value) => Save();
 
     partial void OnSignalGradientChanged(SignalGradient value)
     {
@@ -483,7 +351,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         {
             try
             {
-                store.Save(new DisplaySettings { IndicatorPosition = IndicatorPosition, LevelStyle = LevelStyle, IndicatorSize = IndicatorSize, LedShape = LedShape, LargeIndicatorPosition = LargeIndicatorPosition, SignalGradient = SignalGradient });
+                store.Save(new DisplaySettings { LevelStyle = LevelStyle, SignalGradient = SignalGradient });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

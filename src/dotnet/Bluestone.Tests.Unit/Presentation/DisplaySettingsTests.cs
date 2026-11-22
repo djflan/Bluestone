@@ -2,7 +2,7 @@ using Bluestone.Presentation;
 
 namespace Bluestone.Tests.Unit.Presentation;
 
-/// <summary>Settings ▸ Display: one application-wide choice of where junction indicators sit, saved as soon as it changes.</summary>
+/// <summary>Settings ▸ Display: application-wide choices of what levels show and the colours they run through, saved as soon as they change.</summary>
 public sealed class DisplaySettingsTests : IDisposable
 {
     private readonly string _directory = Directory.CreateTempSubdirectory("bluestone-display-").FullName;
@@ -15,113 +15,55 @@ public sealed class DisplaySettingsTests : IDisposable
     public void TheStore_RoundTrips_AndAMissingDamagedOrUnknownFileGivesTheDefault()
     {
         var store = new DisplaySettingsStore(File());
-        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
+        Assert.Equal(new DisplaySettings(), store.Load());
 
-        store.Save(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.UpperHalf });
-        Assert.Equal(JunctionIndicatorPosition.UpperHalf, store.Load().IndicatorPosition);
-        Assert.Contains("\"upperHalf\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
-
-        System.IO.File.WriteAllText(File(), "{ not json");
-        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
-        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"belowHeader\" }");
-        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
-        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"sideways\" }");
-        Assert.Equal(JunctionIndicatorPosition.LowerHalf, store.Load().IndicatorPosition);
-
-        // One unknown value does not reset the others.
-        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"top\", \"levelStyle\": \"loud\" }");
-        Assert.Equal(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Top }, store.Load());
         store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak });
         Assert.Equal(JunctionLevelStyle.Peak, store.Load().LevelStyle);
         Assert.Contains("\"peak\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
+
+        System.IO.File.WriteAllText(File(), "{ not json");
+        Assert.Equal(new DisplaySettings(), store.Load());
+        System.IO.File.WriteAllText(File(), "{ \"levelStyle\": \"loud\" }");
+        Assert.Equal(new DisplaySettings(), store.Load());
+        System.IO.File.WriteAllText(File(), "{ \"levelStyle\": 7 }");
+        Assert.Equal(new DisplaySettings(), store.Load());
     }
 
     [Fact]
     public void TheViewModel_LoadsWithoutSaving_AndSavesEveryChange()
     {
         var store = new DisplaySettingsStore(File());
-        store.Save(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Top });
+        store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak });
         var written = System.IO.File.GetLastWriteTimeUtc(File());
         var display = new DisplayViewModel();
 
         display.Use(store);
-        Assert.Equal(JunctionIndicatorPosition.Top, display.IndicatorPosition);
+        Assert.Equal(JunctionLevelStyle.Peak, display.LevelStyle);
         Assert.Equal(written, System.IO.File.GetLastWriteTimeUtc(File()));
 
-        display.IndicatorPosition = JunctionIndicatorPosition.Bottom;
-        Assert.Equal(JunctionIndicatorPosition.Bottom, new DisplaySettingsStore(File()).Load().IndicatorPosition);
-        Assert.Equal(4, DisplayViewModel.Positions.Count);
-
-        display.LevelStyleChoice = DisplayViewModel.LevelStyles.Single(l => l.Style == JunctionLevelStyle.Peak);
-        Assert.Equal(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Bottom, LevelStyle = JunctionLevelStyle.Peak }, new DisplaySettingsStore(File()).Load());
+        display.LevelStyleChoice = DisplayViewModel.LevelStyles.Single(l => l.Style == JunctionLevelStyle.RmsAndPeak);
+        Assert.Equal(new DisplaySettings(), new DisplaySettingsStore(File()).Load());
     }
 
     [Fact]
-    public void IndicatorSizeAndLedShape_RoundTrip_AndOldOrUnknownValuesGiveCompactBars()
+    public void OldFiles_WithTheRemovedIndicatorSettings_StillLoad_AndKeepWhatStillApplies()
     {
+        // A file from before the gradient, with every indicator key one meter design replaced: they are ignored.
         var store = new DisplaySettingsStore(File());
-        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"top\" }");
-        Assert.Equal(new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.Top }, store.Load());
-
-        store.Save(new DisplaySettings { IndicatorSize = SignalIndicatorSize.Large, LedShape = LedShape.Round });
-        Assert.Equal(new DisplaySettings { IndicatorSize = SignalIndicatorSize.Large, LedShape = LedShape.Round }, store.Load());
-        Assert.Contains("\"large\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
-
-        System.IO.File.WriteAllText(File(), "{ \"indicatorSize\": \"huge\", \"ledShape\": \"star\", \"levelStyle\": \"peak\" }");
-        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak }, store.Load());
-        System.IO.File.WriteAllText(File(), "{ \"indicatorSize\": 7, \"ledShape\": 9 }");
-        Assert.Equal(new DisplaySettings(), store.Load());
-    }
-
-    [Fact]
-    public void TheLegacyIndicatorSettings_StillSave_AndOldFilesWithThemStillLoad()
-    {
-        var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
-        display.IndicatorSize = SignalIndicatorSize.Medium;
-        display.LedShape = LedShape.Round;
-        Assert.Equal(new DisplaySettings { IndicatorSize = SignalIndicatorSize.Medium, LedShape = LedShape.Round }, new DisplaySettingsStore(File()).Load());
-
-        // A file from before the gradient (every old key, no gradient) loads with the default gradient.
         System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"top\", \"levelStyle\": \"peak\", \"indicatorSize\": \"large\", \"ledShape\": \"round\", \"largeIndicatorPosition\": \"bottom\" }");
-        var loaded = store.Load();
-        Assert.Equal(JunctionLevelStyle.Peak, loaded.LevelStyle);
-        Assert.Equal(SignalGradient.Default, loaded.SignalGradient);
-    }
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak }, store.Load());
 
-    [Fact]
-    public void MediumAndLarge_HaveTheirOwnTopMiddleOrBottom_AndCompactKeepsItsFour()
-    {
-        Assert.Equal([JunctionIndicatorPosition.Top, JunctionIndicatorPosition.Middle, JunctionIndicatorPosition.Bottom], DisplayViewModel.LargePositions.Select(p => p.Position));
-        Assert.DoesNotContain(DisplayViewModel.Positions, p => p.Position == JunctionIndicatorPosition.Middle);
-
-        var store = new DisplaySettingsStore(File());
+        // Unknown values in them do not matter either, and saving drops them.
+        System.IO.File.WriteAllText(File(), "{ \"indicatorSize\": 7, \"ledShape\": \"star\", \"levelStyle\": \"peak\" }");
         var display = new DisplayViewModel();
         display.Use(store);
-        display.IndicatorPosition = JunctionIndicatorPosition.UpperHalf;
-        Assert.Equal(JunctionIndicatorPosition.UpperHalf, display.SeamIndicatorPosition);
-
-        // At Medium the seams take the Medium and Large position (Middle by default), and Compact's choice is kept for later.
-        var notified = new List<string?>();
-        display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
-        display.IndicatorSize = SignalIndicatorSize.Medium;
-        Assert.Equal(JunctionIndicatorPosition.Middle, display.SeamIndicatorPosition);
-        Assert.Contains(nameof(DisplayViewModel.SeamIndicatorPosition), notified);
-
-        display.LargeIndicatorPosition = JunctionIndicatorPosition.Bottom;
-        Assert.Equal(JunctionIndicatorPosition.Bottom, display.SeamIndicatorPosition);
-        Assert.Equal(
-            new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.UpperHalf, IndicatorSize = SignalIndicatorSize.Medium, LargeIndicatorPosition = JunctionIndicatorPosition.Bottom },
-            store.Load());
-
-        display.IndicatorSize = SignalIndicatorSize.Compact;
-        Assert.Equal(JunctionIndicatorPosition.UpperHalf, display.SeamIndicatorPosition);
-
-        // A position that does not apply to its size reads as that size's default.
-        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"middle\", \"largeIndicatorPosition\": \"upperHalf\" }");
+        display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
+        var saved = System.IO.File.ReadAllText(File());
+        Assert.DoesNotContain("indicatorSize", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("ledShape", saved, StringComparison.Ordinal);
         Assert.Equal(new DisplaySettings(), store.Load());
     }
+
     [Fact]
     public void TheGradient_RoundTrips_AndAnInvalidOneGivesTheDefaultWithoutResettingTheOthers()
     {
@@ -146,7 +88,7 @@ public sealed class DisplaySettingsTests : IDisposable
         foreach (var json in invalid)
         {
             System.IO.File.WriteAllText(File(), $"{{ \"levelStyle\": \"peak\", \"signalGradient\": {json}, \"indicatorSize\": \"large\" }}");
-            Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, IndicatorSize = SignalIndicatorSize.Large }, store.Load());
+            Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak }, store.Load());
         }
 
         // Out-of-range and unsorted positions are clamped and sorted, not rejected.

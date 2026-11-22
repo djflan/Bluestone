@@ -96,7 +96,7 @@ public sealed class SettingsTests : IDisposable
             }
 
             Assert.Equal(2, store.Load().SignalGradient.Stops.Length);
-            Assert.False(ActionKey("Remove gradient stop").IsEnabled);
+            Assert.False(ActionKey("Remove gradient stop").IsEffectivelyEnabled);
             Assert.Equal(2, editor.Handles.Count);
 
             app.Click(ActionKey("Reset gradient to default"));

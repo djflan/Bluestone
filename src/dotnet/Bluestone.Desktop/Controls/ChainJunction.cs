@@ -43,6 +43,9 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
     public static readonly StyledProperty<TimeSpan> LampReleaseProperty = AvaloniaProperty.Register<ChainJunction, TimeSpan>(nameof(LampRelease), TimeSpan.FromMilliseconds(220));
 
+    /// <summary>What the ladder shows (Settings ▸ Display): the average level with the peak held, or the peak alone.</summary>
+    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainJunction, JunctionLevelStyle>(nameof(LevelStyle));
+
     internal const double IconY = 14;
     internal const double IconSize = 15;
     internal const double LadderTop = 44;
@@ -125,6 +128,8 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
     public TimeSpan LampRelease { get => GetValue(LampReleaseProperty); set => SetValue(LampReleaseProperty, value); }
 
+    public JunctionLevelStyle LevelStyle { get => GetValue(LevelStyleProperty); set => SetValue(LevelStyleProperty, value); }
+
     /// <summary>The ladder showing the signal here.</summary>
     internal LedLadderMeter Ladder => _ladder;
 
@@ -138,7 +143,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
     /// <summary>What the seam carries now, in words, for its tooltip and screen readers.</summary>
     internal string Describe() => Signal is not { } signal ? string.Empty
-        : SignalIndicatorRenderer.Describe(signal.Label, signal.CanCarryNotes, signal.NotesHeld, signal.CanCarryAudio, signal.Levels, signal.IsRouted ? signal.Routes : null, clipLatched: false);
+        : SignalDescription.Describe(signal.Label, signal.CanCarryNotes, signal.NotesHeld, signal.CanCarryAudio, signal.Levels, signal.IsRouted ? signal.Routes : null);
 
     private double Center => Math.Round(Bounds.Width / 2);
 
@@ -190,6 +195,10 @@ public sealed class ChainJunction : Control, ICustomHitTest
         else if (change.Property == IsQuietProperty)
         {
             _ladder.Opacity = IsQuiet ? 0.55 : 1;
+        }
+        else if (change.Property == LevelStyleProperty)
+        {
+            OnFrame();
         }
     }
 
@@ -451,10 +460,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
         _ladder.IsReady = ready;
         if (ready)
         {
-            _ladder.LeftValue = levels.PeakLeft;
-            _ladder.RightValue = levels.PeakRight;
-            _ladder.LeftPeakHold = levels.HoldLeft;
-            _ladder.RightPeakHold = levels.HoldRight;
+            LadderLevels.Show(_ladder, levels, LevelStyle);
         }
 
         _ladder.IsClipped = signal.CanCarryAudio && levels.Clipped;

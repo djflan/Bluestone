@@ -17,6 +17,9 @@ public sealed class ChainOutMeter : Control
 {
     public static readonly StyledProperty<JunctionSignal?> SignalProperty = AvaloniaProperty.Register<ChainOutMeter, JunctionSignal?>(nameof(Signal));
 
+    /// <summary>What the ladder shows (Settings ▸ Display): the average level with the peak held, or the peak alone.</summary>
+    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainOutMeter, JunctionLevelStyle>(nameof(LevelStyle));
+
     private const double LadderWidth = 22;
     private const double WellHeight = 22;
     private const double WellGap = 10;
@@ -41,6 +44,8 @@ public sealed class ChainOutMeter : Control
     }
 
     public JunctionSignal? Signal { get => GetValue(SignalProperty); set => SetValue(SignalProperty, value); }
+
+    public JunctionLevelStyle LevelStyle { get => GetValue(LevelStyleProperty); set => SetValue(LevelStyleProperty, value); }
 
     /// <summary>The held peak shown in the well, in dBFS ("−∞" while silent).</summary>
     internal string ReadoutText => _readoutText;
@@ -68,6 +73,10 @@ public sealed class ChainOutMeter : Control
         if (change.Property == SignalProperty)
         {
             Subscribe(VisualRoot is not null ? Signal : null);
+            OnFrame();
+        }
+        else if (change.Property == LevelStyleProperty)
+        {
             OnFrame();
         }
     }
@@ -100,10 +109,7 @@ public sealed class ChainOutMeter : Control
         _ladder.IsReady = ready;
         if (ready)
         {
-            _ladder.LeftValue = levels!.PeakLeft;
-            _ladder.RightValue = levels.PeakRight;
-            _ladder.LeftPeakHold = levels.HoldLeft;
-            _ladder.RightPeakHold = levels.HoldRight;
+            LadderLevels.Show(_ladder, levels!, LevelStyle);
         }
 
         _ladder.IsClipped = levels?.Clipped == true;
