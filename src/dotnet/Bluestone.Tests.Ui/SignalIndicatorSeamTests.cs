@@ -5,7 +5,6 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.VisualTree;
 using Bluestone.Audio;
 using Bluestone.Desktop.Controls;
 using Bluestone.Presentation;
@@ -14,9 +13,9 @@ using CommunityToolkit.Mvvm.Input;
 namespace Bluestone.Tests.Ui;
 
 /// <summary>
-/// A junction seam at the size chosen in Settings ▸ Display: Compact drawn by the seam as always (its pixels are held by
-/// <see cref="SignalIndicatorTests"/>), Medium and Large a hosted <see cref="SignalIndicator"/> on the junction's own levels
-/// and notes, placed in the panel's height clear of the seam's +, and gone again back at Compact.
+/// A standalone junction seam (no longer hosted by the Device View, which draws <see cref="ChainJunction"/>): its pixels are held by
+/// <see cref="SignalIndicatorTests"/>; a hosted <see cref="SignalIndicator"/> clears its clip light on a click and resyncs
+/// when reattached.
 /// </summary>
 public sealed class SignalIndicatorSeamTests
 {
@@ -24,131 +23,6 @@ public sealed class SignalIndicatorSeamTests
 
     private static readonly MethodInfo UpdateSignal = typeof(JunctionSignal).GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic)
         ?? throw new InvalidOperationException("JunctionSignal.Update(bool, MeterReading?, long) was not found.");
-
-    public static TheoryData<SignalIndicatorSize, LedShape, JunctionIndicatorPosition> Placements()
-    {
-        var data = new TheoryData<SignalIndicatorSize, LedShape, JunctionIndicatorPosition>();
-        foreach (var size in new[] { SignalIndicatorSize.Medium, SignalIndicatorSize.Large })
-        {
-            foreach (var shape in Enum.GetValues<LedShape>())
-            {
-                foreach (var position in DisplayViewModel.LargePositions.Select(p => p.Position))
-                {
-                    data.Add(size, shape, position);
-                }
-            }
-        }
-
-        return data;
-    }
-
-    [Theory]
-    [MemberData(nameof(Placements))]
-    public Task MediumAndLarge_HostAnIndicatorOnTheJunctionsLevels_InsideThePanelAndClearOfThePlus(SignalIndicatorSize size, LedShape shape, JunctionIndicatorPosition position) => HeadlessApp.RunAsync(() =>
-    {
-        var (window, link, seam, signal) = Show(size, shape, position);
-        try
-        {
-            var indicator = Assert.IsType<SignalIndicator>(seam.Indicator);
-            Assert.Same(signal.Levels, indicator.Levels);
-            Assert.Equal(size, indicator.Variant);
-            Assert.Equal(shape, indicator.LedShape);
-            Assert.Equal(size == SignalIndicatorSize.Large, indicator.IsHitTestVisible);
-            Assert.Equal("After Polysynth level", Avalonia.Automation.AutomationProperties.GetName(indicator));
-
-            // The seam widens to the indicator and its inset; the panel's height stays as it is.
-            Assert.Equal(212, link.Bounds.Height);
-            Assert.Equal(indicator.Bounds.Width + 8, link.Bounds.Width);
-            Assert.InRange(indicator.Bounds.Top, 1, 211);
-            Assert.InRange(indicator.Bounds.Bottom, 1, 211);
-            var plus = seam.Targets.Plus;
-            Assert.False(plus.Intersects(indicator.Bounds), $"The + at {plus} overlaps the indicator at {indicator.Bounds}.");
-            Assert.InRange(plus.Top, 0, 212 - plus.Height);
-
-            // It shows the notes the junction carries as they come and go.
-            UpdateSignal.Invoke(signal, [true, new MeterReading(0.5f, 0.45f, 0.25f, 0.22f), Now]);
-            Assert.True(indicator.NotesHeld);
-            UpdateSignal.Invoke(signal, [false, new MeterReading(0.5f, 0.45f, 0.25f, 0.22f), Now + 1]);
-            Assert.False(indicator.NotesHeld);
-        }
-        finally
-        {
-            window.Close();
-        }
-
-        return Task.CompletedTask;
-    });
-
-    [Fact]
-    public Task MediumAndLarge_EveryOfferedPosition_PlacesTheIndicatorSomewhereDifferent() => HeadlessApp.RunAsync(() =>
-    {
-        foreach (var size in new[] { SignalIndicatorSize.Medium, SignalIndicatorSize.Large })
-        {
-            foreach (var shape in Enum.GetValues<LedShape>())
-            {
-                var (window, _, seam, _) = Show(size, shape, JunctionIndicatorPosition.Top);
-                try
-                {
-                    var tops = new List<double>();
-                    foreach (var position in DisplayViewModel.LargePositions.Select(p => p.Position))
-                    {
-                        seam.IndicatorPosition = position;
-                        window.UpdateLayout();
-                        tops.Add(Assert.IsType<SignalIndicator>(seam.Indicator).Bounds.Top);
-                    }
-
-                    // Top above Middle above Bottom: no offered choice is a duplicate of another.
-                    Assert.True(tops[0] < tops[1] && tops[1] < tops[2], $"{size} {shape}: tops {string.Join(", ", tops)} must strictly increase.");
-                }
-                finally
-                {
-                    window.Close();
-                }
-            }
-        }
-
-        return Task.CompletedTask;
-    });
-
-    [Fact]
-    public Task BackAtCompact_TheSeamHostsNothing_AndIsTheGapWideAgain() => HeadlessApp.RunAsync(() =>
-    {
-        var (window, link, seam, _) = Show(SignalIndicatorSize.Compact, LedShape.Bar, JunctionIndicatorPosition.LowerHalf);
-        try
-        {
-            Assert.Null(seam.Indicator);
-            Assert.Equal(20, link.Bounds.Width);
-
-            seam.IndicatorSize = SignalIndicatorSize.Large;
-            window.UpdateLayout();
-            var indicator = Assert.IsType<SignalIndicator>(seam.Indicator);
-            Assert.True(link.Bounds.Width > 20);
-            var plus = seam.Targets.Plus;
-            seam.LedShape = LedShape.Round;
-            window.UpdateLayout();
-            Assert.Same(indicator, seam.Indicator);
-            Assert.Equal(LedShape.Round, indicator.LedShape);
-            Assert.False(seam.Targets.Plus.Intersects(indicator.Bounds), "The + should move clear of the taller round level.");
-            Assert.NotEqual(plus, seam.Targets.Plus);
-
-            seam.IndicatorSize = SignalIndicatorSize.Compact;
-            window.UpdateLayout();
-            Assert.Null(seam.Indicator);
-            Assert.Null(indicator.Parent);
-            Assert.DoesNotContain(indicator, seam.GetVisualChildren());
-            Assert.Equal(20, link.Bounds.Width);
-
-            seam.IndicatorSize = SignalIndicatorSize.Medium;
-            seam.Signal = null;
-            Assert.Null(seam.Indicator);
-        }
-        finally
-        {
-            window.Close();
-        }
-
-        return Task.CompletedTask;
-    });
 
     [Fact]
     public Task Large_ClickingTheIndicatorClearsItsClipLight_AndDoesNotInsert() => HeadlessApp.RunAsync(() =>

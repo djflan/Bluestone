@@ -58,9 +58,9 @@
   <Color x:Key="Meter.MidColor">#3D5BFF</Color>
   <Color x:Key="Meter.HotColor">#FF2E93</Color>
   <Color x:Key="Meter.ClipColor">#FF3036</Color>
-  <Color x:Key="Meter.TrackColor">#222225</Color>
+  <Color x:Key="Meter.TrackColor">#0C0F13</Color>
   <!-- Mixer-only DSP display. These roles intentionally do not change Device View junction meters. -->
-  <Color x:Key="MixerMeter.TrackColor">#333338</Color>
+  <Color x:Key="MixerMeter.TrackColor">#0C0F13</Color>
   <Color x:Key="MixerMeter.FillColor">#4FB3B0</Color>
   <Color x:Key="MixerMeter.HotColor">#E0A43A</Color>
   <Color x:Key="MixerMeter.PeakHoldColor">#F2F2F2</Color>
@@ -129,6 +129,8 @@
   <SolidColorBrush x:Key="Line.BorderStrong" Color="{StaticResource Line.BorderStrongColor}" />
   <SolidColorBrush x:Key="Line.Edge" Color="{StaticResource Line.EdgeColor}" />
   <SolidColorBrush x:Key="Text.Primary" Color="{StaticResource Text.PrimaryColor}" />
+  <!-- The selected card's title: a touch brighter than primary text, under its lit header. -->
+  <SolidColorBrush x:Key="Text.Bright" Color="#F2F6FA" />
   <SolidColorBrush x:Key="Text.Secondary" Color="{StaticResource Text.SecondaryColor}" />
   <SolidColorBrush x:Key="Text.Muted" Color="{StaticResource Text.MutedColor}" />
   <SolidColorBrush x:Key="Text.Disabled" Color="{StaticResource Text.DisabledColor}" />
@@ -148,53 +150,55 @@
   <SolidColorBrush x:Key="Signal.Other" Color="{StaticResource Signal.OtherColor}" />
 
   <!-- Domain surfaces and controls: the transport, LCD, arrangement lanes, and track rows. -->
-  <Color x:Key="Transport.CycleColor">#C9A227</Color>
+  <Color x:Key="Transport.CycleColor">#3CCBF4</Color>
   <Color x:Key="Track.MuteColor">#4C8DDB</Color>
   <Color x:Key="Track.SoloColor">#E3C345</Color>
-  <Color x:Key="Lcd.Color">#141416</Color>
-  <Color x:Key="Lcd.TextColor">#ECEDEF</Color>
-  <Color x:Key="Lcd.LabelColor">#74767D</Color>
-  <Color x:Key="Lcd.EdgeColor">#0B0B0C</Color>
-  <Color x:Key="Lcd.RuleColor">#2A2A2E</Color>
-  <Color x:Key="Lane.AutomationColor">#1D1D1F</Color>
-  <Color x:Key="Lane.RulerColor">#2B2B2E</Color>
-  <Color x:Key="Lane.HeaderColor">#1F1F21</Color>
-  <Color x:Key="Lane.BackgroundColor">#222224</Color>
-  <Color x:Key="Control.ForegroundColor">#C9C9CD</Color>
-  <Color x:Key="Control.HoverColor">#47474C</Color>
-  <Color x:Key="Control.PressedColor">#2C2C2F</Color>
-  <Color x:Key="Control.IdleColor">#9A9AA0</Color>
-  <Color x:Key="Control.CheckedForegroundColor">#7DB2EE</Color>
-  <Color x:Key="Control.LinkHoverColor">#8CB8EC</Color>
+  <Color x:Key="Lcd.Color">#0C0F13</Color>
+  <Color x:Key="Lcd.TextColor">#DADCE0</Color>
+  <Color x:Key="Lcd.LabelColor">#6C7078</Color>
+  <Color x:Key="Lcd.EdgeColor">#07090C</Color>
+  <Color x:Key="Lcd.RuleColor">#1C2027</Color>
+  <Color x:Key="Lane.AutomationColor">#101318</Color>
+  <Color x:Key="Lane.RulerColor">#1C2027</Color>
+  <Color x:Key="Lane.HeaderColor">#181C22</Color>
+  <Color x:Key="Lane.BackgroundColor">#12151A</Color>
+  <Color x:Key="Control.ForegroundColor">#A0A4AB</Color>
+  <Color x:Key="Control.HoverColor">#2A3039</Color>
+  <Color x:Key="Control.PressedColor">#11141A</Color>
+  <Color x:Key="Control.IdleColor">#6C7078</Color>
+  <Color x:Key="Control.CheckedForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Control.LinkHoverColor">#63D5F6</Color>
   <Color x:Key="Control.DangerBorderColor">#6B2C2F</Color>
   <Color x:Key="Control.DangerForegroundColor">#E8797C</Color>
   <Color x:Key="Control.PanicColor">#E07A7D</Color>
-  <Color x:Key="Transport.PlayColor">#2F5E3E</Color>
-  <Color x:Key="Transport.PlayForegroundColor">#7EE09D</Color>
-  <Color x:Key="Transport.RecordColor">#6A2427</Color>
-  <Color x:Key="Transport.RecordIdleColor">#C0585B</Color>
-  <Color x:Key="Transport.RecordForegroundColor">#FF6B6F</Color>
-  <Color x:Key="Transport.CycleOnColor">#5A4A16</Color>
-  <Color x:Key="Transport.CycleForegroundColor">#F2CF5B</Color>
-  <Color x:Key="Transport.ModeForegroundColor">#8CBDF2</Color>
-  <Color x:Key="Transport.KeysColor">#1F4A5A</Color>
-  <Color x:Key="Transport.KeysForegroundColor">#6FD8F2</Color>
-  <Color x:Key="Transport.KeysEdgeColor">#2A5563</Color>
-  <Color x:Key="Transport.KeysIdleColor">#22343A</Color>
-  <Color x:Key="Transport.InputIdleColor">#2A3A2E</Color>
-  <Color x:Key="Transport.InputActiveColor">#5BE08A</Color>
+  <Color x:Key="Transport.PlayColor">#1A3A44</Color>
+  <Color x:Key="Transport.PlayForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.RecordColor">#4A1C1F</Color>
+  <Color x:Key="Transport.RecordIdleColor">#A0A4AB</Color>
+  <Color x:Key="Transport.RecordForegroundColor">#E5484D</Color>
+  <Color x:Key="Transport.CycleOnColor">#1A3A44</Color>
+  <Color x:Key="Transport.CycleForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.ModeForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.KeysColor">#1A3A44</Color>
+  <Color x:Key="Transport.KeysForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.KeysEdgeColor">#07090C</Color>
+  <Color x:Key="Transport.KeysIdleColor">#1C2A30</Color>
+  <Color x:Key="Transport.InputIdleColor">#1C2A30</Color>
+  <Color x:Key="Transport.InputActiveColor">#3CCBF4</Color>
   <Color x:Key="Track.OfflineColor">#9A6B6D</Color>
   <Color x:Key="Track.SoloForegroundColor">#2A2300</Color>
-  <Color x:Key="Track.ArmIdleColor">#A0585A</Color>
-  <Color x:Key="Tab.CheckedColor">#2A2B2F</Color>
-  <Color x:Key="Tab.FocusColor">#33343A</Color>
-  <Color x:Key="List.AlternateColor">#28282B</Color>
-  <Color x:Key="List.CellHoverColor">#303035</Color>
-  <Color x:Key="TrackRow.Color">#262628</Color>
-  <Color x:Key="TrackRow.HoverColor">#2C2C2F</Color>
-  <Color x:Key="TrackRow.SelectedColor">#35373D</Color>
-  <Color x:Key="Overlay.ScrimColor">#CC1C1E22</Color>
-  <Color x:Key="Overlay.ReplaceColor">#F01C1E22</Color>
+  <Color x:Key="Track.ArmIdleColor">#A0A4AB</Color>
+  <Color x:Key="Tab.CheckedColor">#1A3A44</Color>
+  <Color x:Key="Tab.RimColor">#803CCBF4</Color>
+  <Color x:Key="Tab.CheckedForegroundColor">#63D5F6</Color>
+  <Color x:Key="Tab.FocusColor">#2A3039</Color>
+  <Color x:Key="List.AlternateColor">#15191E</Color>
+  <Color x:Key="List.CellHoverColor">#2A3039</Color>
+  <Color x:Key="TrackRow.Color">#181C22</Color>
+  <Color x:Key="TrackRow.HoverColor">#1D2229</Color>
+  <Color x:Key="TrackRow.SelectedColor">#1F2A33</Color>
+  <Color x:Key="Overlay.ScrimColor">#CC0C0F13</Color>
+  <Color x:Key="Overlay.ReplaceColor">#F0181C22</Color>
 
   <!-- Lit keys (identity: ladder + focus). A latched key shows its state on its whole face, lit from below in its colour,
        with a lit rim and a tight glow; no side LED. Glyphs use Key.LitInk, which clears 4.5:1 on both face stops. -->
@@ -234,8 +238,8 @@
   <SolidColorBrush x:Key="Key.Solo.Rim" Color="{StaticResource Key.Solo.RimColor}" />
 
   <!-- Knobs: a dark body inside thin radial ticks; unlit ticks clear 3:1 on the panel. -->
-  <Color x:Key="Knob.BodyColor">#1A1A1D</Color>
-  <Color x:Key="Knob.TickColor">#76767E</Color>
+  <Color x:Key="Knob.BodyColor">#2A2F37</Color>
+  <Color x:Key="Knob.TickColor">#6C7078</Color>
 
   <!-- Focus lighting: the selected device panel is lit (accent pool from the top, lit edge); the rest stay calm. -->
   <LinearGradientBrush x:Key="DevicePanel.SelectedFill" StartPoint="0%,0%" EndPoint="0%,100%">
@@ -282,6 +286,8 @@
   <SolidColorBrush x:Key="Track.SoloForeground" Color="{StaticResource Track.SoloForegroundColor}" />
   <SolidColorBrush x:Key="Track.ArmIdle" Color="{StaticResource Track.ArmIdleColor}" />
   <SolidColorBrush x:Key="Tab.Checked" Color="{StaticResource Tab.CheckedColor}" />
+  <SolidColorBrush x:Key="Tab.Rim" Color="{StaticResource Tab.RimColor}" />
+  <SolidColorBrush x:Key="Tab.CheckedForeground" Color="{StaticResource Tab.CheckedForegroundColor}" />
   <SolidColorBrush x:Key="Tab.Focus" Color="{StaticResource Tab.FocusColor}" />
   <SolidColorBrush x:Key="List.Alternate" Color="{StaticResource List.AlternateColor}" />
   <SolidColorBrush x:Key="List.CellHover" Color="{StaticResource List.CellHoverColor}" />
@@ -291,18 +297,18 @@
   <SolidColorBrush x:Key="Overlay.Scrim" Color="{StaticResource Overlay.ScrimColor}" />
   <SolidColorBrush x:Key="Overlay.Replace" Color="{StaticResource Overlay.ReplaceColor}" />
 
-  <!-- The control bar and pane headers have a faint top-lit gradient, like hardware panels. -->
+  <!-- The control bar and pane headers: slate chrome, faintly lit from above. -->
   <LinearGradientBrush x:Key="Gradient.Bar" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#323235" />
-    <GradientStop Offset="1" Color="#2A2A2D" />
+    <GradientStop Offset="0" Color="#1E232A" />
+    <GradientStop Offset="1" Color="#1A1E25" />
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="Gradient.Header" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#2E2E31" />
-    <GradientStop Offset="1" Color="#28282B" />
+    <GradientStop Offset="0" Color="#1E232A" />
+    <GradientStop Offset="1" Color="#1A1E25" />
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="Gradient.Button" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#3E3E42" />
-    <GradientStop Offset="1" Color="#363639" />
+    <GradientStop Offset="0" Color="#323740" />
+    <GradientStop Offset="1" Color="#2B3038" />
   </LinearGradientBrush>
 
   <!-- Typography. -->
@@ -436,20 +442,22 @@
 
   <!-- Device panels: one fixed height, a few fixed widths (DevicePanelSize). -->
   <x:Double x:Key="DevicePanel.Height">212</x:Double>
-  <x:Double x:Key="DevicePanel.HeaderHeight">30</x:Double>
+  <x:Double x:Key="DevicePanel.HeaderHeight">32</x:Double>
   <x:Double x:Key="DevicePanel.CollapsedWidth">30</x:Double>
-  <x:Double x:Key="DevicePanel.SmallWidth">152</x:Double>
-  <x:Double x:Key="DevicePanel.MediumWidth">216</x:Double>
-  <x:Double x:Key="DevicePanel.LargeWidth">280</x:Double>
-  <x:Double x:Key="DevicePanel.Gap">20</x:Double>
-  <x:Double x:Key="DevicePanel.KnobCellWidth">64</x:Double>
-  <x:Double x:Key="DevicePanel.KnobCellHeight">66</x:Double>
-  <x:Double x:Key="DevicePanel.SwitchWidth">128</x:Double>
+  <x:Double x:Key="DevicePanel.SmallWidth">168</x:Double>
+  <x:Double x:Key="DevicePanel.MediumWidth">236</x:Double>
+  <x:Double x:Key="DevicePanel.LargeWidth">320</x:Double>
+  <x:Double x:Key="DevicePanel.Gap">34</x:Double>
+  <x:Double x:Key="DevicePanel.KnobCellWidth">66</x:Double>
+  <x:Double x:Key="DevicePanel.KnobCellHeight">80</x:Double>
+  <x:Double x:Key="DevicePanel.SwitchWidth">120</x:Double>
   <x:Double x:Key="DevicePanel.SwitchHeight">24</x:Double>
   <x:Double x:Key="DevicePanel.LampSize">6</x:Double>
-  <x:Double x:Key="DevicePanel.KnobSize">34</x:Double>
+  <x:Double x:Key="DevicePanel.KnobSize">38</x:Double>
   <x:Double x:Key="DevicePanel.NodeSize">10</x:Double>
   <x:Double x:Key="DevicePanel.NodeWidth">56</x:Double>
+  <x:Double x:Key="DevicePanel.InWidth">26</x:Double>
+  <x:Double x:Key="DevicePanel.OutWidth">86</x:Double>
   <x:Double x:Key="DevicePanel.FooterHeight">22</x:Double>
   <!-- A junction between devices (ADR 0037): a segmented level with a small glowing MIDI icon under it. -->
   <x:Double x:Key="Junction.LinkY">105</x:Double>

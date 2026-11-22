@@ -57,11 +57,10 @@
     <Panel Grid.Row="1" x:Name="ChainArea" Classes="chainCanvas" DragDrop.AllowDrop="True">
       <ScrollViewer x:Name="ChainScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                     IsVisible="{Binding HasChain}">
-        <StackPanel x:Name="ChainRow" Orientation="Horizontal" Margin="12,12,24,12" VerticalAlignment="Top">
-          <!-- Input boundary: the track's signal bundle comes in here. -->
-          <Border Classes="chainNode" ToolTip.Tip="Chain input: notes, controls, and audio arriving at this chain" AutomationProperties.Name="Chain input">
-            <StackPanel Spacing="4" VerticalAlignment="Center">
-              <Ellipse Classes="nodeDot" />
+        <StackPanel x:Name="ChainRow" Orientation="Horizontal" Classes="chainRow">
+          <!-- Input boundary: the track's signal bundle comes in here; its junction (the first device's) shows it. -->
+          <Border Classes="chainNode input" ToolTip.Tip="Chain input: notes, controls, and audio arriving at this chain" AutomationProperties.Name="Chain input">
+            <StackPanel Classes="nodeFoot">
               <TextBlock Text="IN" Classes="nodeLabel" />
               <TextBlock x:Name="InputText" Text="{Binding InputText}" Classes="nodeDetail" />
             </StackPanel>
@@ -76,31 +75,26 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:DevicePanelViewModel">
                 <StackPanel Orientation="Horizontal">
-                  <!-- The seam arriving at the device (ADR 0037): the signal's hairline, its note lamp, and its level. -->
+                  <!-- The junction arriving at the device (ADR 0037): its MIDI port, lit while notes pass, and its level ladder. -->
                   <Border Classes="chainLink" Classes.bypassed="{Binding IsBypassed}">
-                    <controls:JunctionSeam Signal="{Binding Arriving}" IsQuiet="{Binding IsBypassed}"
-                                           IndicatorPosition="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.SeamIndicatorPosition, FallbackValue=LowerHalf}"
-                                           LevelStyle="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.LevelStyle, FallbackValue=RmsAndPeak}"
-                                           IndicatorSize="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.IndicatorSize, FallbackValue=Compact}"
-                                           LedShape="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.LedShape, FallbackValue=Bar}"
-                                           InsertCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).InsertAtJunctionCommand, FallbackValue={x:Null}}"
-                                           RouteCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).RouteFromJunctionCommand, FallbackValue={x:Null}}" />
+                    <controls:ChainJunction Signal="{Binding Arriving}" IsQuiet="{Binding IsBypassed}"
+                                            InsertCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).InsertAtJunctionCommand, FallbackValue={x:Null}}"
+                                            RouteCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).RouteFromJunctionCommand, FallbackValue={x:Null}}" />
                   </Border>
                   <Border Classes="devicePanel" Classes.selected="{Binding IsSelected}" Classes.bypassed="{Binding IsBypassed}"
                           Classes.unavailable="{Binding NeedsAttention}" Classes.collapsed="{Binding IsCollapsed}"
                           Width="{Binding Size, Converter={x:Static theme:DevicePanelWidthConverter.Instance}}"
                           AutomationProperties.Name="{Binding Name}">
+                    <controls:DeviceCardPanel IsSelected="{Binding IsSelected}" HasHeader="{Binding !IsCollapsed}">
                     <Panel>
                       <!-- Expanded: header, controls, footer. -->
                       <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCollapsed}">
                         <Border Classes="deviceHeader">
                           <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                            <Border Grid.ColumnSpan="5" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" />
-                            <Button Classes="power" Classes.off="{Binding IsBypassed}" Command="{Binding ToggleBypassedCommand}"
-                                    ToolTip.Tip="On or bypassed. A bypassed device passes every signal through unchanged."
-                                    AutomationProperties.Name="Bypass device">
-                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
-                            </Button>
+                            <!-- Power: the glyph itself is lit while the device is on; no lamp beside it. -->
+                            <controls:PowerGlyph Classes="devicePower" Bloom="True" IsChecked="{Binding !IsBypassed, Mode=OneWay}" Command="{Binding ToggleBypassedCommand}"
+                                                 ToolTip.Tip="On or bypassed. A bypassed device passes every signal through unchanged."
+                                                 AutomationProperties.Name="Bypass device" />
                             <TextBlock Grid.Column="1" Classes="deviceName grip" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Kind}" />
                             <!-- The sidechain (ADR 0037): outlined while nothing keys it, the key's colour once something does. -->
                             <Button Grid.Column="2" Classes="scChip" Classes.keyed="{Binding Sidechain.HasSource, FallbackValue=False}" IsVisible="{Binding Sidechain, Converter={x:Static ObjectConverters.IsNotNull}}"
@@ -175,19 +169,16 @@
                             <ItemsControl.ItemTemplate>
                               <DataTemplate x:DataType="vm:ParameterViewModel">
                                 <Panel>
+                                  <!-- Label above, the arc-ring knob, the value below. -->
                                   <StackPanel Classes="knobCell" ToolTip.Tip="{Binding Name}" IsVisible="{Binding !IsSwitch}">
-                                    <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}" Step="{Binding KnobStep}"
-                                                   Accent="{Binding $parent[ItemsControl].((vm:DevicePanelViewModel)DataContext).Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}, FallbackValue={StaticResource Accent.Color}}"
-                                                   AutomationProperties.Name="{Binding Name}" />
                                     <TextBlock Classes="knobLabel" Text="{Binding Name}" />
+                                    <controls:Knob Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" DefaultValue="{Binding DefaultPlain}" Step="{Binding KnobStep}"
+                                                   Accent="{x:Static theme:Palette.Accent}" AutomationProperties.Name="{Binding Name}" />
                                     <TextBlock Classes="knobValue" Text="{Binding ValueText}" />
                                   </StackPanel>
-                                  <ToggleButton Classes="paramSwitch" IsVisible="{Binding IsSwitch}" IsChecked="{Binding IsOn}" ToolTip.Tip="{Binding Name}" AutomationProperties.Name="{Binding Name}">
-                                    <Grid ColumnDefinitions="Auto,*">
-                                      <Border Classes="switchLamp" />
-                                      <TextBlock Grid.Column="1" Classes="switchLabel" Text="{Binding Name}" />
-                                    </Grid>
-                                  </ToggleButton>
+                                  <!-- On/off parameters: a flat mode key, lit while on. -->
+                                  <controls:TextKey Classes="paramSwitch" IsVisible="{Binding IsSwitch}" IsChecked="{Binding IsOn}" Text="{Binding Name}"
+                                                    ToolTip.Tip="{Binding Name}" AutomationProperties.Name="{Binding Name}" />
                                 </Panel>
                               </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -248,11 +239,8 @@
 
                       <!-- Collapsed: a narrow strip with the name running up it. Click to expand. -->
                       <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsCollapsed}">
-                        <Border Grid.Row="0" Classes="roleStripe" Background="{Binding Role, Converter={x:Static theme:DeviceRoleColorConverter.Instance}}" VerticalAlignment="Top" />
-                        <Button Grid.Row="1" Classes="power" Classes.off="{Binding IsBypassed}" Command="{Binding ToggleBypassedCommand}" HorizontalAlignment="Center" Margin="0,6,0,2"
-                                AutomationProperties.Name="Bypass device">
-                          <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
-                        </Button>
+                        <controls:PowerGlyph Grid.Row="1" Classes="devicePower" Bloom="True" IsChecked="{Binding !IsBypassed, Mode=OneWay}" Command="{Binding ToggleBypassedCommand}"
+                                             HorizontalAlignment="Center" Margin="0,10,0,4" AutomationProperties.Name="Bypass device" />
                         <Button Grid.Row="2" Classes="collapsedName" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="{Binding Name, StringFormat='{}{0}: expand in this view'}"
                                 AutomationProperties.Name="Expand device">
                           <LayoutTransformControl>
@@ -264,6 +252,7 @@
                         </Button>
                       </Grid>
                     </Panel>
+                    </controls:DeviceCardPanel>
                   </Border>
                 </StackPanel>
               </DataTemplate>
@@ -273,9 +262,7 @@
           <!-- An empty chain: the place a first device goes, between the boundaries. -->
           <StackPanel Orientation="Horizontal" IsVisible="{Binding IsEmpty}">
             <Border Classes="chainLink">
-              <controls:JunctionSeam Signal="{Binding Input}" IndicatorPosition="{Binding Display.SeamIndicatorPosition}" LevelStyle="{Binding Display.LevelStyle}"
-                                 IndicatorSize="{Binding Display.IndicatorSize}" LedShape="{Binding Display.LedShape}"
-                                     InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
+              <controls:ChainJunction Signal="{Binding Input}" InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
             </Border>
             <Panel x:Name="EmptySlot" Classes="emptySlot" AutomationProperties.Name="Empty chain">
               <Rectangle Classes="slotOutline" />
@@ -289,18 +276,19 @@
             </Panel>
           </StackPanel>
 
-          <Border x:Name="TrailLink" Classes="chainLink">
-            <controls:JunctionSeam Signal="{Binding LastJunction}" IndicatorPosition="{Binding Display.SeamIndicatorPosition}" LevelStyle="{Binding Display.LevelStyle}"
-                                 IndicatorSize="{Binding Display.IndicatorSize}" LedShape="{Binding Display.LedShape}"
-                                 InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
+          <!-- The point after the last device: a bare gap (its level is the Out card's), with the insertion + and routed tap. -->
+          <Border x:Name="TrailLink" Classes="chainLink trail">
+            <controls:ChainJunction Signal="{Binding LastJunction}" IsCompact="True" InsertCommand="{Binding InsertAtJunctionCommand}" RouteCommand="{Binding RouteFromJunctionCommand}" />
           </Border>
-          <!-- Output boundary: what leaves the chain for the track's destination. -->
-          <Border Classes="chainNode" ToolTip.Tip="{Binding OutputDetail, StringFormat='Chain output: everything the chain passes on, to {0}'}" AutomationProperties.Name="Chain output">
-            <StackPanel Spacing="4" VerticalAlignment="Center">
-              <Ellipse Classes="nodeDot" Classes.routed="{Binding IsRouted}" />
-              <TextBlock Text="OUT" Classes="nodeLabel" />
-              <TextBlock x:Name="OutputText" Text="{Binding OutputText}" Classes="nodeDetail" Classes.unrouted="{Binding !IsRouted}" />
-            </StackPanel>
+          <!-- Output boundary: the Out card, what leaves the chain for the track's destination. -->
+          <Border Classes="chainNode output" ToolTip.Tip="{Binding OutputDetail, StringFormat='Chain output: everything the chain passes on, to {0}'}" AutomationProperties.Name="Chain output">
+            <controls:DeviceCardPanel>
+              <Grid RowDefinitions="32,*,Auto">
+                <TextBlock Text="Out" Classes="outTitle" />
+                <controls:ChainOutMeter Grid.Row="1" Classes="outMeter" Signal="{Binding LastJunction}" AutomationProperties.Name="Chain output level" />
+                <TextBlock Grid.Row="2" x:Name="OutputText" Text="{Binding OutputText}" Classes="nodeDetail" Classes.unrouted="{Binding !IsRouted}" />
+              </Grid>
+            </controls:DeviceCardPanel>
           </Border>
         </StackPanel>
       </ScrollViewer>

@@ -1,8 +1,11 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.VisualTree;
 using Bluestone.Application.Audio;
 using Bluestone.Audio.Devices;
+using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Views;
 using Bluestone.Presentation;
 
@@ -28,44 +31,82 @@ public sealed class SettingsTests : IDisposable
         new(audio, new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json")), new ImmediateDispatcher(), () => []);
 
     [Fact]
-    public Task TheDisplayPage_ChoosesTheIndicatorSizeAndLeds_AndEveryDeviceViewSeamFollows() => HeadlessApp.RunAsync(async () =>
+    public Task TheDisplayPage_AddsMovesAndRemovesGradientStops_AndSavesEachEdit() => HeadlessApp.RunAsync(async () =>
     {
-        var session = new Bluestone.Application.Sessions.ProjectSession();
-        session.Execute(Bluestone.Application.Editing.ProjectCommands.AddTrack(Bluestone.Domain.Sequencing.Track.Create("Lead", Bluestone.Domain.Sequencing.TrackRole.Instrument)));
-        await using var app = await AppUnderTest.OpenAsync(session);
+        await using var app = await AppUnderTest.OpenAsync();
         app.Window.Width = 1440;
         app.Window.Height = 900;
-        app.ViewModel.Select(app.ViewModel.Tracks[0]);
-        app.Settle();
-        app.ViewModel.DeviceView!.InsertAt(0, Bluestone.Signal.DeviceCatalog.BuiltIn.Definitions.Single(d => d.Name == "Transpose"));
-        app.Settle();
-        app.Window.ShowSettings(SettingsPage.Display);
-        app.Settle();
+        var store = new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json"));
+        var display = app.ViewModel.Display;
+        display.Use(store);
+        Desktop.App.FollowSignalGradient(display);
+        try
+        {
+            app.Window.ShowSettings(SettingsPage.Display);
+            app.Settle();
+            var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+            var editor = AppUnderTest.Within<SignalGradientEditor>(page, _ => true);
+            TextKey ActionKey(string name) => AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == name);
+            string[] Names() => [.. editor.Handles.Select(h => Avalonia.Automation.AutomationProperties.GetName(h) ?? string.Empty)];
+            Assert.Equal(["Gradient stop 1 at 0%", "Gradient stop 2 at 40%", "Gradient stop 3 at 62%", "Gradient stop 4 at 78%", "Gradient stop 5 at 86%", "Gradient stop 6 at 100%"], Names());
+            Assert.Contains(page.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Clip (fixed)");
 
-        var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
-        var leds = AppUnderTest.ComboNamed(page, "Signal indicator LED shape");
-        var compactPosition = AppUnderTest.ComboNamed(page, "Signal indicator position");
-        var largePosition = AppUnderTest.ComboNamed(page, "Medium and Large signal indicator position");
-        Assert.False(leds.IsEffectivelyVisible, "Compact has no LED choice to make.");
-        Assert.True(compactPosition.IsEffectivelyVisible);
-        Assert.False(largePosition.IsEffectivelyVisible);
+            // Add: a stop in the widest gap (0% to 40%), selected, saved, and on every meter.
+            app.Click(ActionKey("Add gradient stop"));
+            Assert.False(ActionKey("Add gradient stop").IsChecked, "An action key springs back.");
+            Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal("Gradient stop 2 at 20%", Names()[1]);
+            Assert.Equal("20%", AppUnderTest.Within<TextBlock>(page, t => t.Name == "StopPositionText").Text);
+            Assert.Equal(7, Desktop.Theme.MeterGradient.Stops.Count);
 
-        app.Choose(AppUnderTest.ComboNamed(page, "Signal indicator size"), o => o is IndicatorSizeOption { Size: SignalIndicatorSize.Large });
-        Assert.True(leds.IsEffectivelyVisible);
-        Assert.False(compactPosition.IsEffectivelyVisible, "Compact's half positions do not apply to Large.");
-        Assert.True(largePosition.IsEffectivelyVisible);
-        Assert.Equal(3, largePosition.ItemCount);
-        app.Choose(largePosition, o => o is IndicatorPositionOption { Position: JunctionIndicatorPosition.Top });
-        app.Choose(leds, o => o is LedShapeOption { Shape: LedShape.Round });
-        Assert.True(File.Exists(app.SaveFrame("settings-display-large-round")));
-        Assert.Equal((SignalIndicatorSize.Large, LedShape.Round), (app.ViewModel.Display.IndicatorSize, app.ViewModel.Display.LedShape));
+            // Move: drag the new stop to 30%, then nudge it with the keyboard (1%, and 5% with Shift).
+            var handle = editor.Handles[1];
+            var from = new Point(handle.Bounds.Center.X, handle.Bounds.Center.Y);
+            app.Drag(editor, from, new Point(editor.XAt(0.3), from.Y));
+            Assert.Equal(0.3, store.Load().SignalGradient.Stops[1].Position, 2);
+            Assert.True(editor.Handles[1].IsFocused);
+            app.Press(Key.Right);
+            Assert.Equal(0.31, store.Load().SignalGradient.Stops[1].Position, 3);
+            app.Press(Key.Right, RawInputModifiers.Shift);
+            Assert.Equal(0.36, store.Load().SignalGradient.Stops[1].Position, 3);
+            Assert.Equal("Gradient stop 2 at 36%", Names()[1]);
+            Assert.Equal(0.36, Desktop.Theme.MeterGradient.Stops[1].Position, 3);
 
-        app.Window.Settings.Close();
-        app.Settle();
-        var seams = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Desktop.Controls.JunctionSeam>().Where(s => s.Signal is not null).ToList();
-        Assert.NotEmpty(seams);
-        Assert.All(seams, s => Assert.Equal(LedShape.Round, Assert.IsType<Desktop.Controls.SignalIndicator>(s.Indicator).LedShape));
-        Assert.All(seams, s => Assert.Equal(JunctionIndicatorPosition.Top, s.IndicatorPosition));
+            // A swatch recolours the selected stop.
+            app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Colour #4CB873"));
+            Assert.Equal(new SignalGradientStop("#4CB873", 0.36), store.Load().SignalGradient.Stops[1]);
+            app.Window.MouseMove(new Point(1300, 800), RawInputModifiers.None);
+            await app.SettleTransitionsAsync();
+            var frame = app.SaveFrame("settings-display-gradient-editor");
+            Assert.True(File.Exists(frame));
+            var copyTo = Environment.GetEnvironmentVariable("BLUESTONE_GRADIENT_EDITOR_PNG");
+            if (!string.IsNullOrEmpty(copyTo))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(copyTo)!);
+                File.Copy(frame, copyTo, overwrite: true);
+            }
+
+            // Remove: the selected stop goes; at two stops the key is disabled.
+            app.Click(ActionKey("Remove gradient stop"));
+            Assert.Equal(6, store.Load().SignalGradient.Stops.Length);
+            Assert.DoesNotContain(store.Load().SignalGradient.Stops, s => s.Colour == "#4CB873");
+            while (display.CanRemoveGradientStop)
+            {
+                app.Click(ActionKey("Remove gradient stop"));
+            }
+
+            Assert.Equal(2, store.Load().SignalGradient.Stops.Length);
+            Assert.False(ActionKey("Remove gradient stop").IsEnabled);
+            Assert.Equal(2, editor.Handles.Count);
+
+            app.Click(ActionKey("Reset gradient to default"));
+            Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
+            Assert.Equal(6, editor.Handles.Count);
+        }
+        finally
+        {
+            display.ResetGradientCommand.Execute(null);
+        }
     });
 
     [Theory]

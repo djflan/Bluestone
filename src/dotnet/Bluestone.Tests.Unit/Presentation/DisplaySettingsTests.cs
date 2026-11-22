@@ -46,10 +46,9 @@ public sealed class DisplaySettingsTests : IDisposable
 
         display.Use(store);
         Assert.Equal(JunctionIndicatorPosition.Top, display.IndicatorPosition);
-        Assert.Equal("Top of the device", display.IndicatorPositionChoice.Name);
         Assert.Equal(written, System.IO.File.GetLastWriteTimeUtc(File()));
 
-        display.IndicatorPositionChoice = DisplayViewModel.Positions.Single(p => p.Position == JunctionIndicatorPosition.Bottom);
+        display.IndicatorPosition = JunctionIndicatorPosition.Bottom;
         Assert.Equal(JunctionIndicatorPosition.Bottom, new DisplaySettingsStore(File()).Load().IndicatorPosition);
         Assert.Equal(4, DisplayViewModel.Positions.Count);
 
@@ -75,22 +74,20 @@ public sealed class DisplaySettingsTests : IDisposable
     }
 
     [Fact]
-    public void TheViewModel_OffersLedShapesOnlyAboveCompact_AndSavesBoth()
+    public void TheLegacyIndicatorSettings_StillSave_AndOldFilesWithThemStillLoad()
     {
         var store = new DisplaySettingsStore(File());
         var display = new DisplayViewModel();
         display.Use(store);
-        Assert.Equal(SignalIndicatorSize.Compact, display.IndicatorSize);
-        Assert.False(display.HasLedShape);
-
-        var notified = new List<string?>();
-        display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
-        display.IndicatorSizeChoice = DisplayViewModel.Sizes.Single(s => s.Size == SignalIndicatorSize.Medium);
-        Assert.True(display.HasLedShape);
-        Assert.Contains(nameof(DisplayViewModel.HasLedShape), notified);
-
-        display.LedShapeChoice = DisplayViewModel.LedShapes.Single(l => l.Shape == LedShape.Round);
+        display.IndicatorSize = SignalIndicatorSize.Medium;
+        display.LedShape = LedShape.Round;
         Assert.Equal(new DisplaySettings { IndicatorSize = SignalIndicatorSize.Medium, LedShape = LedShape.Round }, new DisplaySettingsStore(File()).Load());
+
+        // A file from before the gradient (every old key, no gradient) loads with the default gradient.
+        System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"top\", \"levelStyle\": \"peak\", \"indicatorSize\": \"large\", \"ledShape\": \"round\", \"largeIndicatorPosition\": \"bottom\" }");
+        var loaded = store.Load();
+        Assert.Equal(JunctionLevelStyle.Peak, loaded.LevelStyle);
+        Assert.Equal(SignalGradient.Default, loaded.SignalGradient);
     }
 
     [Fact]
@@ -104,17 +101,15 @@ public sealed class DisplaySettingsTests : IDisposable
         display.Use(store);
         display.IndicatorPosition = JunctionIndicatorPosition.UpperHalf;
         Assert.Equal(JunctionIndicatorPosition.UpperHalf, display.SeamIndicatorPosition);
-        Assert.True(display.IsCompact);
 
         // At Medium the seams take the Medium and Large position (Middle by default), and Compact's choice is kept for later.
         var notified = new List<string?>();
         display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
         display.IndicatorSize = SignalIndicatorSize.Medium;
-        Assert.False(display.IsCompact);
         Assert.Equal(JunctionIndicatorPosition.Middle, display.SeamIndicatorPosition);
         Assert.Contains(nameof(DisplayViewModel.SeamIndicatorPosition), notified);
 
-        display.LargeIndicatorPositionChoice = DisplayViewModel.LargePositions.Single(p => p.Position == JunctionIndicatorPosition.Bottom);
+        display.LargeIndicatorPosition = JunctionIndicatorPosition.Bottom;
         Assert.Equal(JunctionIndicatorPosition.Bottom, display.SeamIndicatorPosition);
         Assert.Equal(
             new DisplaySettings { IndicatorPosition = JunctionIndicatorPosition.UpperHalf, IndicatorSize = SignalIndicatorSize.Medium, LargeIndicatorPosition = JunctionIndicatorPosition.Bottom },
@@ -211,5 +206,76 @@ public sealed class DisplaySettingsTests : IDisposable
 
         Assert.Equal(2, display.SignalGradient.Stops.Length);
         Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, SignalGradient = display.SignalGradient }, store.Load());
+    }
+    [Fact]
+    public void TheEditor_AddsInTheWidestGap_RemovesTheSelectedStop_AndKeepsTwo()
+    {
+        var store = new DisplaySettingsStore(File());
+        var display = new DisplayViewModel();
+        display.Use(store);
+
+        // Default's widest gap is 0 to 0.40, so the new stop goes at 0.20 and is selected.
+        display.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(1, display.SelectedGradientStopIndex);
+        Assert.Equal(new SignalGradientStop("#34C6F4", 0.2), display.SelectedGradientStop);
+        Assert.Equal("20%", display.SelectedGradientStopPercent);
+        Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
+
+        display.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.False(display.AddGradientStopInLargestGapCommand.CanExecute(null));
+
+        display.SelectedGradientStopIndex = 3;
+        var removed = display.SelectedGradientStop;
+        display.RemoveSelectedGradientStopCommand.Execute(null);
+        Assert.Equal(2, display.SelectedGradientStopIndex);
+        Assert.DoesNotContain(removed, store.Load().SignalGradient.Stops);
+        Assert.True(display.AddGradientStopInLargestGapCommand.CanExecute(null));
+
+        var notified = new List<string?>();
+        display.RemoveSelectedGradientStopCommand.CanExecuteChanged += (_, _) => notified.Add("can remove");
+        while (display.CanRemoveGradientStop)
+        {
+            display.RemoveSelectedGradientStopCommand.Execute(null);
+        }
+
+        Assert.Equal(2, store.Load().SignalGradient.Stops.Length);
+        Assert.False(display.RemoveSelectedGradientStopCommand.CanExecute(null));
+        Assert.Contains("can remove", notified);
+        Assert.InRange(display.SelectedGradientStopIndex, 0, 1);
+    }
+
+    [Fact]
+    public void TheEditor_NudgesAndRecoloursTheSelectedStop_AndFollowsItWhenItPassesANeighbour()
+    {
+        var store = new DisplaySettingsStore(File());
+        var display = new DisplayViewModel();
+        display.Use(store);
+
+        display.NudgeGradientStop(1, 0.01);
+        Assert.Equal(1, display.SelectedGradientStopIndex);
+        Assert.Equal(0.41, store.Load().SignalGradient.Stops[1].Position);
+        Assert.Equal("41%", display.SelectedGradientStopPercent);
+
+        // Past the 0.62 stop: the selection follows the stop to its new place.
+        display.MoveAndSelectGradientStop(1, 0.7);
+        Assert.Equal(2, display.SelectedGradientStopIndex);
+        Assert.Equal(new SignalGradientStop("#34C6F4", 0.7), display.SelectedGradientStop);
+        display.NudgeGradientStop(2, -0.05);
+        Assert.Equal(0.65, store.Load().SignalGradient.Stops[2].Position);
+
+        var notified = new List<string?>();
+        display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
+        display.SelectedGradientStopColour = "#12";
+        Assert.Equal("#34C6F4", display.SelectedGradientStopColour);
+        display.SelectedGradientStopColour = "ff8800";
+        Assert.Equal("#FF8800", store.Load().SignalGradient.Stops[2].Colour);
+        Assert.Contains(nameof(DisplayViewModel.SelectedGradientStopColour), notified);
+        display.ChooseGradientStopColourCommand.Execute("#7C6BFF");
+        Assert.Equal("#7C6BFF", display.SelectedGradientStopColour);
+        Assert.DoesNotContain("#FF3640", DisplayViewModel.GradientSwatches);
+
+        display.ResetGradientCommand.Execute(null);
+        Assert.Equal(0, display.SelectedGradientStopIndex);
+        Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
     }
 }

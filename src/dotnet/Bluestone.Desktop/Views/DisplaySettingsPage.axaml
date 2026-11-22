@@ -1,41 +1,130 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Bluestone.Presentation"
+             xmlns:views="using:Bluestone.Desktop.Views"
+             xmlns:controls="using:Bluestone.Desktop.Controls"
              x:Class="Bluestone.Desktop.Views.DisplaySettingsPage"
              x:DataType="vm:DisplayViewModel"
              AutomationProperties.Name="Display settings">
+  <UserControl.Styles>
+    <Style Selector="StackPanel.gradientTools">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="{StaticResource Space.S}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="controls|TextKey.action">
+      <Setter Property="Height" Value="{StaticResource Height.Control}" />
+    </Style>
+    <Style Selector="TextBox.hex">
+      <Setter Property="Width" Value="92" />
+      <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.readout">
+      <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="MinWidth" Value="40" />
+    </Style>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+      <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.swatch">
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Background" Value="{StaticResource Console.Well}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.swatch:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Console.Well}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+    <Style Selector="Button.swatch:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Console.Well}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
+    </Style>
+    <Style Selector="Button.swatch > Border">
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    </Style>
+  </UserControl.Styles>
+
   <!-- Display preferences for the whole application, saved as soon as they change. -->
   <StackPanel Classes="settingsGroups">
     <StackPanel Classes="settingsGroup">
+      <TextBlock Classes="overline" Text="SIGNAL METERS" />
+
+      <!-- The gradient as a meter draws it, its stops' handles under it; the clip lamp beside it is fixed. -->
+      <Grid ColumnDefinitions="*,Auto">
+        <views:SignalGradientEditor x:Name="GradientEditor" VerticalAlignment="Top" />
+        <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="4" VerticalAlignment="Top">
+          <controls:RecessedWell Width="22" Height="22" Padding="4" HorizontalAlignment="Center">
+            <Border Background="{StaticResource Console.Clip}" CornerRadius="1.5" AutomationProperties.Name="Clip lamp (fixed colour)" />
+          </controls:RecessedWell>
+          <TextBlock Classes="caption" Text="Clip (fixed)" />
+        </StackPanel>
+      </Grid>
+
+      <!-- The selected stop: its colour and position, and the gradient's actions. -->
+      <Grid ColumnDefinitions="Auto,*,Auto" Classes="settingRow">
+        <StackPanel Classes="gradientTools">
+          <controls:RecessedWell Width="24" Height="24" Padding="4">
+            <Border CornerRadius="1.5" Background="{Binding SelectedGradientStopColour, Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+          </controls:RecessedWell>
+          <TextBox x:Name="StopColourBox" Classes="hex" Text="{Binding SelectedGradientStopColour}" MaxLength="7"
+                   AutomationProperties.Name="Selected stop colour (hex)" />
+          <TextBlock x:Name="StopPositionText" Classes="readout" Text="{Binding SelectedGradientStopPercent}"
+                     AutomationProperties.Name="Selected stop position" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Classes="gradientTools">
+          <controls:TextKey x:Name="AddStopKey" Classes="action" Text="Add stop" Command="{Binding AddGradientStopInLargestGapCommand}" IsEnabled="{Binding CanAddGradientStop}"
+                            AutomationProperties.Name="Add gradient stop" />
+          <controls:TextKey x:Name="RemoveStopKey" Classes="action" Text="Remove stop" Command="{Binding RemoveSelectedGradientStopCommand}" IsEnabled="{Binding CanRemoveGradientStop}"
+                            AutomationProperties.Name="Remove gradient stop" />
+          <controls:TextKey x:Name="ResetGradientKey" Classes="action" Text="Reset to default" Command="{Binding ResetGradientCommand}"
+                            AutomationProperties.Name="Reset gradient to default" />
+        </StackPanel>
+      </Grid>
+
+      <ItemsControl x:Name="Swatches" ItemsSource="{x:Static vm:DisplayViewModel.GradientSwatches}" AutomationProperties.Name="Stop colour swatches">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel ItemSpacing="6" LineSpacing="6" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="x:String">
+            <Button Classes="swatch" Command="{Binding $parent[UserControl].((vm:DisplayViewModel)DataContext).ChooseGradientStopColourCommand}"
+                    CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='Colour {0}'}" ToolTip.Tip="{Binding}">
+              <Border Background="{Binding Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                 Text="Every level meter runs through these colours from silence to full scale. Drag a stop's handle (or focus it and press Left or Right, with Shift for bigger steps) to change where its colour begins; put two stops at the same place for a hard edge. The clip lamp above the meter is always red." />
+    </StackPanel>
+
+    <StackPanel Classes="settingsGroup">
       <TextBlock Classes="overline" Text="DEVICE VIEW" />
-      <Grid Classes="settingRow" ColumnDefinitions="180,*">
-        <TextBlock Classes="label" Text="Indicator size" />
-        <ComboBox x:Name="IndicatorSizeBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Sizes}" SelectedItem="{Binding IndicatorSizeChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator size" />
-      </Grid>
-      <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding HasLedShape}">
-        <TextBlock Classes="label" Text="LEDs" />
-        <ComboBox x:Name="LedShapeBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LedShapes}" SelectedItem="{Binding LedShapeChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator LED shape" />
-      </Grid>
-      <!-- Compact has four positions; Medium and Large fill too much of the device for the halves to differ from its ends. -->
-      <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding IsCompact}">
-        <TextBlock Classes="label" Text="Position" />
-        <ComboBox x:Name="IndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.Positions}" SelectedItem="{Binding IndicatorPositionChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal indicator position" />
-      </Grid>
-      <Grid Classes="settingRow" ColumnDefinitions="180,*" IsVisible="{Binding HasLedShape}">
-        <TextBlock Classes="label" Text="Position" />
-        <ComboBox x:Name="LargeIndicatorPositionBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LargePositions}" SelectedItem="{Binding LargeIndicatorPositionChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Medium and Large signal indicator position" />
-      </Grid>
       <Grid Classes="settingRow" ColumnDefinitions="180,*">
         <TextBlock Classes="label" Text="Levels show" />
         <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
                   HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
       </Grid>
       <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose how much the indicators show, where they sit along the devices' height, and whether a level follows the average loudness (with the peak held above it) or the peaks, in every Device View. Medium and Large widen the space between devices to fit and sit at the top, middle, or bottom; at Large, click a lit clip light (or focus it and press Enter) to clear it." />
+                 Text="Between devices, each point in a chain shows its audio level and, under it, a MIDI icon that glows while notes are held there. Choose whether a level follows the average loudness (with the peak held above it) or the peaks." />
     </StackPanel>
   </StackPanel>
 </UserControl>

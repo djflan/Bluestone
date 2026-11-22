@@ -12,25 +12,25 @@ internal static class Palette
     public static readonly Color Divider = Color.Parse("#0A0C0F");
 
     // Arrangement and editor surfaces
-    public static readonly Color Lane = Color.Parse("#222224");
-    public static readonly Color LaneAlt = Color.Parse("#252528");
-    public static readonly Color LaneSelected = Color.Parse("#2D2E33");
-    public static readonly Color LaneDivider = Color.Parse("#19191B");
-    public static readonly Color AutomationLane = Color.Parse("#1D1D1F");
-    public static readonly Color Ruler = Color.Parse("#2B2B2E");
-    public static readonly Color RulerEdge = Color.Parse("#3A3A3E");
-    public static readonly Color GridBar = Color.Parse("#3C3C41");
-    public static readonly Color GridBeat = Color.Parse("#2E2E33");
-    public static readonly Color GridStep = Color.Parse("#28282C");
+    public static readonly Color Lane = Color.Parse("#12151A");
+    public static readonly Color LaneAlt = Color.Parse("#14171C");
+    public static readonly Color LaneSelected = Color.Parse("#1A2128");
+    public static readonly Color LaneDivider = Color.Parse("#0A0C0F");
+    public static readonly Color AutomationLane = Color.Parse("#101318");
+    public static readonly Color Ruler = Color.Parse("#1C2027");
+    public static readonly Color RulerEdge = Color.Parse("#2A2F37");
+    public static readonly Color GridBar = Color.Parse("#262A31");
+    public static readonly Color GridBeat = Color.Parse("#1C2026");
+    public static readonly Color GridStep = Color.Parse("#171A1F");
 
     // Piano roll rows
-    public static readonly Color WhiteKeyRow = Color.Parse("#2B2B2F");
-    public static readonly Color BlackKeyRow = Color.Parse("#212124");
-    public static readonly Color OctaveLine = Color.Parse("#17171A");
+    public static readonly Color WhiteKeyRow = Color.Parse("#1A1E24");
+    public static readonly Color BlackKeyRow = Color.Parse("#14171C");
+    public static readonly Color OctaveLine = Color.Parse("#0A0C0F");
     public static readonly Color WhiteKey = Color.Parse("#DADADC");
-    public static readonly Color WhiteKeyPressed = Color.Parse("#9FC3EE");
-    public static readonly Color BlackKey = Color.Parse("#141416");
-    public static readonly Color KeyLabel = Color.Parse("#55555B");
+    public static readonly Color WhiteKeyPressed = Color.Parse("#8FE2F8");
+    public static readonly Color BlackKey = Color.Parse("#0C0F13");
+    public static readonly Color KeyLabel = Color.Parse("#4E535B");
 
     public static readonly Color Text = Color.Parse("#DADCE0");
     public static readonly Color TextSecondary = Color.Parse("#A0A4AB");
@@ -38,15 +38,15 @@ internal static class Palette
     public static readonly Color Accent = Color.Parse("#3CCBF4");
     public static readonly Color Selection = Color.Parse("#E9EEF6");
     public static readonly Color Playhead = Color.Parse("#E6E6E8");
-    public static readonly Color Cycle = Color.Parse("#C9A227");
+    public static readonly Color Cycle = Color.Parse("#3CCBF4");
     public static readonly Color Record = Color.Parse("#E5484D");
     public static readonly Color Focus = Color.Parse("#63D5F6");
     public static readonly Color Field = Color.Parse("#11141A");
     public static readonly Color Border = Color.Parse("#2E333B");
 
     // Knobs (Knob.* tokens): a dark body inside a ring of thin radial ticks; unlit ticks clear 3:1 on the panel.
-    public static readonly Color KnobBody = Color.Parse("#1A1A1D");
-    public static readonly Color KnobTick = Color.Parse("#76767E");
+    public static readonly Color KnobBody = Color.Parse("#2A2F37");
+    public static readonly Color KnobTick = Color.Parse("#6C7078");
 
     // What a device works on (Signal.* tokens)
     public static readonly Color SignalNote = Color.Parse("#D7A24A");
@@ -59,9 +59,9 @@ internal static class Palette
     public static readonly Color MeterMid = Color.Parse("#3D5BFF");
     public static readonly Color MeterHot = Color.Parse("#FF2E93");
     public static readonly Color MeterClip = Color.Parse("#FF3036");
-    public static readonly Color MeterTrack = Color.Parse("#222225");
+    public static readonly Color MeterTrack = Color.Parse("#0C0F13");
     // Mixer-only DSP display (kept separate from Device View junction meters).
-    public static readonly Color MixerMeterTrack = Color.Parse("#333338");
+    public static readonly Color MixerMeterTrack = Color.Parse("#0C0F13");
     public static readonly Color MixerMeterFill = Color.Parse("#4FB3B0");
     public static readonly Color MixerMeterHot = Color.Parse("#E0A43A");
     public static readonly Color MixerMeterPeakHold = Color.Parse("#F2F2F2");
@@ -91,11 +91,11 @@ internal static class Palette
     /// <summary>Track colours, muted so dense arrangements stay readable; status is never conveyed by these alone.</summary>
     public static readonly Color[] Tracks =
     [
-        Color.Parse("#4F95D9"),
-        Color.Parse("#45A97A"),
-        Color.Parse("#D49A3A"),
-        Color.Parse("#C76563"),
-        Color.Parse("#9479CC"),
+        Color.Parse("#3D7FD6"),
+        Color.Parse("#3FA86B"),
+        Color.Parse("#C99A2E"),
+        Color.Parse("#C8534F"),
+        Color.Parse("#8A63D2"),
         Color.Parse("#3EA9AC"),
         Color.Parse("#CF7AAB"),
         Color.Parse("#A3AC48"),

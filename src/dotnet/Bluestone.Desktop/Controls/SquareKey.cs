@@ -108,7 +108,7 @@ public sealed class SquareKey : ToggleButton
                     Speaker(context, r, ink);
                     break;
                 default:
-                    var text = Letter(ink, 9);
+                    var text = Letter(ink, size < 15 ? 9 : 10);
                     context.DrawText(text, new Point(r.X + Math.Round((r.Width - text.Width) / 2), r.Y + ((r.Height - text.Height) / 2)));
                     break;
             }

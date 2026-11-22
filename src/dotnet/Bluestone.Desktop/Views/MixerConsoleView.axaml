@@ -211,7 +211,8 @@
                             <Button Grid.Column="1" Classes="mixerRow micro" IsVisible="{Binding HasAudioStrip}"
                                     AutomationProperties.Name="{Binding SendsAutomationName}" ToolTip.Tip="Show every send and its level, or add one">
                               <Panel>
-                                <TextBlock Text="No sends" IsVisible="{Binding !Sends.Count}" />
+                                <!-- No sends: nothing on the strip until it is hovered or focused, then a quiet "+ Send". -->
+                                <TextBlock Text="+ SEND" Classes="mixerSendHint" IsVisible="{Binding !Sends.Count}" />
                                 <TextBlock Text="{Binding Sends.Count, StringFormat='{}{0} SENDS'}" IsVisible="{Binding Sends.Count}" />
                               </Panel>
                               <Button.Flyout>

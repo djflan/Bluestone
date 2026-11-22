@@ -216,6 +216,7 @@ public partial class App : Avalonia.Application
             LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
         viewModel.Display.Use(new DisplaySettingsStore(DisplaySettingsPath));
+        FollowSignalGradient(viewModel.Display);
         viewModel.MixerConsole.UseSettingsStore(new MixerMeterDisplaySettingsStore(MixerMeterSettingsPath));
         var initialized = viewModel.InitializeAsync();
         ComposeAudio(window, session, playback, devices, viewModel);
@@ -232,6 +233,25 @@ public partial class App : Avalonia.Application
         }
 
         return viewModel;
+    }
+
+    /// <summary>
+    /// Every meter draws <paramref name="display"/>'s signal gradient: the saved one now, and each edit as it is made (the
+    /// meters redraw on <see cref="Theme.MeterGradient.Changed"/>).
+    /// </summary>
+    internal static void FollowSignalGradient(DisplayViewModel display)
+    {
+        static void Apply(SignalGradient gradient) =>
+            Theme.MeterGradient.Use(gradient.Stops.Select(s => (s.Position, Color.Parse(s.Colour))));
+
+        Apply(display.SignalGradient);
+        display.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DisplayViewModel.SignalGradient))
+            {
+                Apply(display.SignalGradient);
+            }
+        };
     }
 
     /// <summary>Whether the real-time work runs in the engine process: <paramref name="setting"/> "0" or "1", else by platform.</summary>

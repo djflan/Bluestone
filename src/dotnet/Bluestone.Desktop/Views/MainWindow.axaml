@@ -44,165 +44,57 @@
   <DockPanel>
   <!-- The window's menu, shown here where the platform has no menu bar of its own (Windows, most Linux desktops). -->
   <NativeMenuBar x:Name="MenuBar" DockPanel.Dock="Top" Background="{StaticResource Surface.Chrome}" />
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
 
-    <!-- Control bar: view toggles and undo on the left, transport and LCD in the centre, panic on the right. -->
-    <Border Grid.Row="0" Classes="bar" BorderThickness="0,0,0,1" Height="50">
-      <Grid ColumnDefinitions="*,Auto,*" Margin="8,0">
-        <StackPanel x:Name="WorkspaceTools" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-          <ToggleButton Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I)" AutomationProperties.Name="Inspector">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
-          </ToggleButton>
-          <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
-                        ToolTip.Tip="Show or hide the Browser (Shift+B)" AutomationProperties.Name="Browser">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
-          </ToggleButton>
-          <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
-                        ToolTip.Tip="Open the track mixer" AutomationProperties.Name="Mixer">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" />
-          </ToggleButton>
-          <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the detail region: devices and editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
-          </ToggleButton>
-          <Border Classes="separator" Height="18" />
-          <Button Classes="tool" Command="{Binding UndoCommand}" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Undo}" />
-          </Button>
-          <Button Classes="tool" Command="{Binding RedoCommand}" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)" AutomationProperties.Name="Redo">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Redo}" />
-          </Button>
+    <!-- Top bar (Machined): the project's name, then glyph tools in recessed gutters; settings and panic at the right. -->
+    <Border Grid.Row="0" Classes="bar topBar">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,0">
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,18,0">
+          <TextBlock Classes="projectTitle" Text="{Binding ProjectName}" />
+          <TextBlock Classes="projectState" Text="edited" IsVisible="{Binding IsDirty}" />
+        </StackPanel>
+        <StackPanel x:Name="WorkspaceTools" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <controls:GutterPanel Classes="toolGutter">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I)" AutomationProperties.Name="Inspector">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
+              </ToggleButton>
+              <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
+                            ToolTip.Tip="Show or hide the Browser (Shift+B)" AutomationProperties.Name="Browser">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
+              </ToggleButton>
+              <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
+                            ToolTip.Tip="Open the track mixer" AutomationProperties.Name="Mixer">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" />
+              </ToggleButton>
+              <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the detail region: devices and editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
+              </ToggleButton>
+            </StackPanel>
+          </controls:GutterPanel>
+          <controls:GutterPanel Classes="toolGutter">
+            <StackPanel Orientation="Horizontal">
+              <Button Classes="tool" Command="{Binding UndoCommand}" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Undo}" />
+              </Button>
+              <Button Classes="tool" Command="{Binding RedoCommand}" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)" AutomationProperties.Name="Redo">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Redo}" />
+              </Button>
+            </StackPanel>
+          </controls:GutterPanel>
         </StackPanel>
 
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <Border Classes="transport">
-            <StackPanel Orientation="Horizontal" Spacing="1">
-              <Button Command="{Binding ReturnToStartCommand}" ToolTip.Tip="Go to start (Home)" AutomationProperties.Name="Go to start">
-                <PathIcon Data="{StaticResource Icon.Start}" Width="12" Height="12" />
+        <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <controls:GutterPanel Classes="toolGutter">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton x:Name="SettingsButton" Classes="tool" Click="OnSettingsButtonClick" ToolTip.Tip="Settings: audio and plugins (Ctrl/Cmd+,)" AutomationProperties.Name="Settings">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Settings}" />
+              </ToggleButton>
+              <Button Classes="tool" Command="{Binding PanicCommand}" ToolTip.Tip="Panic: silence every output (Ctrl/Cmd+.)" AutomationProperties.Name="Panic, silence all outputs">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Panic}" Foreground="{StaticResource Control.Panic}" />
               </Button>
-              <Button Command="{Binding PreviousBarCommand}" ToolTip.Tip="Back one bar (,)" AutomationProperties.Name="Rewind one bar">
-                <PathIcon Data="{StaticResource Icon.Rewind}" Width="14" Height="14" />
-              </Button>
-              <Button Command="{Binding NextBarCommand}" ToolTip.Tip="Forward one bar (.)" AutomationProperties.Name="Forward one bar">
-                <PathIcon Data="{StaticResource Icon.Forward}" Width="14" Height="14" />
-              </Button>
-              <Button Command="{Binding StopCommand}" ToolTip.Tip="Stop; press again to go to the start" AutomationProperties.Name="Stop">
-                <PathIcon Data="{StaticResource Icon.Stop}" Width="11" Height="11" />
-              </Button>
-              <ToggleButton Classes="play" IsChecked="{Binding IsPlaying, Mode=OneWay}" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play or stop (Space)" AutomationProperties.Name="{Binding PlayButtonText}">
-                <PathIcon Data="{StaticResource Icon.Play}" Width="13" Height="13" />
-              </ToggleButton>
-              <ToggleButton Classes="record" IsChecked="{Binding IsRecording, Mode=OneWay}" Command="{Binding RecordCommand}" ToolTip.Tip="Record into the armed or selected track (R)" AutomationProperties.Name="Record">
-                <PathIcon Data="{StaticResource Icon.Record}" Width="12" Height="12" />
-              </ToggleButton>
             </StackPanel>
-          </Border>
-          <Border Classes="transport">
-            <StackPanel Orientation="Horizontal" Spacing="1">
-              <ToggleButton x:Name="LoopButton" Classes="cycle" IsChecked="{Binding Loop.IsEnabled, Mode=OneWay}" Command="{Binding Loop.ToggleCommand}" ToolTip.Tip="{Binding Loop.ToggleTip}" AutomationProperties.Name="Loop">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Cycle}" Width="15" Height="15" />
-              </ToggleButton>
-            </StackPanel>
-          </Border>
-
-          <!-- LCD -->
-          <Border Classes="lcd" Height="40" Padding="12,2">
-            <StackPanel Orientation="Horizontal" Spacing="18" VerticalAlignment="Center">
-              <StackPanel VerticalAlignment="Center" Spacing="0">
-                <TextBlock Text="{Binding PositionText}" Classes="lcd" FontSize="19" FontWeight="Medium" MinWidth="118" AutomationProperties.Name="Position in bars, beats, and ticks" />
-                <TextBlock Text="BAR  BEAT  TICK" Classes="lcdLabel" />
-              </StackPanel>
-              <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding TimeText}" Classes="lcd" FontSize="13" MinWidth="84" Margin="0,3,0,2" AutomationProperties.Name="Elapsed time" />
-                <TextBlock Text="TIME" Classes="lcdLabel" />
-              </StackPanel>
-              <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
-              <StackPanel VerticalAlignment="Center">
-                <TextBox x:Name="TempoBox" Classes="lcd" Text="{Binding TempoText, Mode=OneWay}" FontSize="15" Width="56" Margin="0,1,0,1"
-                         ToolTip.Tip="Tempo in BPM. Click to type a new tempo." AutomationProperties.Name="Tempo" />
-                <TextBlock Text="TEMPO" Classes="lcdLabel" />
-              </StackPanel>
-              <StackPanel VerticalAlignment="Center">
-                <TextBox x:Name="MeterBox" Classes="lcd" Text="{Binding MeterText, Mode=OneWay}" FontSize="15" Width="40" Margin="0,1,0,1"
-                         ToolTip.Tip="Time signature. Click to type, e.g. 3/4." AutomationProperties.Name="Time signature" />
-                <TextBlock Text="SIGNATURE" Classes="lcdLabel" />
-              </StackPanel>
-              <Border Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" />
-              <StackPanel x:Name="LoopFields" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Classes.loopOff="{Binding !Loop.IsEnabled}">
-                <StackPanel VerticalAlignment="Center">
-                  <TextBox x:Name="LoopStartBox" Classes="lcd" Text="{Binding Loop.StartText, Mode=OneWay}" FontSize="13" Width="62" Margin="0,3,0,2" PlaceholderText="–"
-                           ToolTip.Tip="Loop start as bar.beat.tick. Type a position; the length stays." AutomationProperties.Name="Loop start" />
-                  <TextBlock Text="LOOP START" Classes="lcdLabel" />
-                </StackPanel>
-                <StackPanel VerticalAlignment="Center">
-                  <TextBox x:Name="LoopLengthBox" Classes="lcd" Text="{Binding Loop.LengthText, Mode=OneWay}" FontSize="13" Width="62" Margin="0,3,0,2" PlaceholderText="–"
-                           ToolTip.Tip="Loop length as bars.beats.ticks (or ticks with a t suffix). The start stays." AutomationProperties.Name="Loop length" />
-                  <TextBlock Text="LENGTH" Classes="lcdLabel" />
-                </StackPanel>
-              </StackPanel>
-              <Border x:Name="LoopFieldsRule" Width="1" Background="{StaticResource Lcd.Rule}" Margin="0,4" IsVisible="{Binding #LoopFields.IsVisible}" />
-              <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
-                <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputIdle}" IsVisible="{Binding !HasInputActivity}" />
-                <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputActive}" IsVisible="{Binding HasInputActivity}" />
-                <TextBlock Text="IN" Classes="lcdLabel" HorizontalAlignment="Center" />
-              </StackPanel>
-            </StackPanel>
-          </Border>
-
-          <Border Classes="transport">
-            <StackPanel Orientation="Horizontal" Spacing="1">
-              <ToggleButton Classes="mode" IsChecked="{Binding IsCountInEnabled, Mode=OneWay}" Command="{Binding ToggleCountInCommand}" ToolTip.Tip="Count in before recording" AutomationProperties.Name="Count-in">
-                <TextBlock Text="1234" FontSize="9.5" FontWeight="Bold" LetterSpacing="-0.3" />
-              </ToggleButton>
-              <ToggleButton Classes="mode" IsChecked="{Binding IsMetronomeEnabled, Mode=OneWay}" Command="{Binding ToggleMetronomeCommand}" ToolTip.Tip="Metronome click (K)" AutomationProperties.Name="Metronome">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Metronome}" Width="15" Height="15" />
-              </ToggleButton>
-            </StackPanel>
-          </Border>
-
-          <!-- Computer keyboard: play and record notes from the keyboard. -->
-          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                      DataContext="{Binding Keyboard}" x:DataType="vm:ComputerKeyboardViewModel"
-                      IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
-            <Border Classes="transport">
-              <StackPanel Orientation="Horizontal" Spacing="1">
-                <ToggleButton Classes="keys" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
-                              ToolTip.Tip="Computer keyboard (`): play notes with A–' (white) and W E T Y U O P (black). Z/X octave, C/V velocity."
-                              AutomationProperties.Name="Computer keyboard">
-                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" Width="16" Height="16" />
-                </ToggleButton>
-              </StackPanel>
-            </Border>
-            <Border Classes="keysReadout" Classes.on="{Binding IsEnabled}" AutomationProperties.Name="Computer keyboard octave and velocity">
-              <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <Ellipse Classes="keysActivity" Classes.on="{Binding IsSounding}" VerticalAlignment="Center" />
-                <StackPanel VerticalAlignment="Center" ToolTip.Tip="MIDI channel of the armed or selected track">
-                  <TextBlock Text="{Binding ChannelText}" Classes="keysValue" MinWidth="14" />
-                  <TextBlock Text="CH" Classes="lcdLabel" />
-                </StackPanel>
-                <StackPanel VerticalAlignment="Center" ToolTip.Tip="Octave of the A key (Z/X)">
-                  <TextBlock Text="{Binding OctaveText}" Classes="keysValue" MinWidth="26" />
-                  <TextBlock Text="OCT" Classes="lcdLabel" />
-                </StackPanel>
-                <StackPanel VerticalAlignment="Center" Spacing="2" ToolTip.Tip="Velocity (C/V)">
-                  <TextBlock Text="{Binding VelocityText}" Classes="keysValue" />
-                  <ProgressBar Classes="keysMeter" Value="{Binding VelocityFraction}" />
-                </StackPanel>
-                <StackPanel VerticalAlignment="Center" MinWidth="30">
-                  <TextBlock Text="{Binding LastNoteText}" Classes="keysValue" Foreground="{StaticResource Lcd.Text}" />
-                  <TextBlock Text="NOTE" Classes="lcdLabel" />
-                </StackPanel>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </StackPanel>
-
-        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="2" VerticalAlignment="Center">
-          <ToggleButton x:Name="SettingsButton" Classes="tool" Click="OnSettingsButtonClick" ToolTip.Tip="Settings: audio and plugins (Ctrl/Cmd+,)" AutomationProperties.Name="Settings">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Settings}" />
-          </ToggleButton>
-          <Button Classes="tool" Command="{Binding PanicCommand}" ToolTip.Tip="Panic: silence every output (Ctrl/Cmd+.)" AutomationProperties.Name="Panic, silence all outputs">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.Panic}" Foreground="{StaticResource Control.Panic}" />
-          </Button>
+          </controls:GutterPanel>
         </StackPanel>
       </Grid>
     </Border>
@@ -330,9 +222,9 @@
                     <Grid ColumnDefinitions="3,24,Auto,*,Auto" AutomationProperties.Name="{Binding Name}"
                           Margin="{Binding Indent, Converter={x:Static theme:IndentConverter.Instance}}">
                       <Border Background="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
-                      <TextBlock Grid.Column="1" Text="{Binding Number}" Classes="muted" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      <Border Grid.Column="2" Width="26" Height="26" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,8,0"
-                              Background="{Binding ColorIndex, Converter={x:Static theme:TrackTintConverter.Instance}, ConverterParameter=0.28}">
+                      <TextBlock Grid.Column="1" Text="{Binding Number}" Classes="trackNumber" />
+                      <Border Grid.Column="2" Width="22" Height="22" CornerRadius="3" VerticalAlignment="Center" Margin="0,0,8,0" IsVisible="{Binding IsGroup}"
+                              Background="{Binding ColorIndex, Converter={x:Static theme:TrackTintConverter.Instance}, ConverterParameter=0.22}">
                         <Panel>
                           <PathIcon Classes="stroke" Data="{StaticResource Icon.Piano}" Width="15" Height="15" IsVisible="{Binding !IsGroup}"
                                     Foreground="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
@@ -341,14 +233,14 @@
                         </Panel>
                       </Border>
                       <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="2" Margin="0,0,4,0" Classes.mutedByGroup="{Binding IsMutedByGroup}">
-                        <TextBox Classes="inline" Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Track name" />
+                        <TextBox Classes="inline trackName" Text="{Binding Name, UpdateSourceTrigger=LostFocus}" AutomationProperties.Name="Track name" />
                         <StackPanel Orientation="Horizontal" Spacing="4" ToolTip.Tip="{Binding RouteText}" AutomationProperties.Name="{Binding HealthText}">
                           <PathIcon Data="{StaticResource Icon.Check}" Width="8" Height="8" Foreground="{StaticResource State.Success}" IsVisible="{Binding IsReady}" />
                           <PathIcon Data="{StaticResource Icon.Warning}" Width="8" Height="8" Foreground="{StaticResource State.Warning}" IsVisible="{Binding NeedsAttention}" />
                           <PathIcon Data="{StaticResource Icon.Offline}" Width="8" Height="8" Foreground="{StaticResource Track.Offline}" IsVisible="{Binding IsOffline}" />
                           <PathIcon Data="{StaticResource Icon.Dot}" Width="8" Height="8" Foreground="{StaticResource Text.Muted}" IsVisible="{Binding IsIdle}" />
-                          <TextBlock Text="{Binding StatusLine}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding !IsGroup}" />
-                          <TextBlock Text="{Binding MembersText}" Classes="muted" FontSize="10.5" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding IsGroup}" />
+                          <TextBlock Text="{Binding StatusLine}" Classes="trackSubtitle" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding !IsGroup}" />
+                          <TextBlock Text="{Binding MembersText}" Classes="trackSubtitle" TextTrimming="CharacterEllipsis" MaxWidth="110" IsVisible="{Binding IsGroup}" />
                         </StackPanel>
                       </StackPanel>
                       <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2" Margin="0,0,8,0" VerticalAlignment="Center">
@@ -392,11 +284,10 @@
                             </MenuFlyout>
                           </Button.Flyout>
                         </Button>
-                        <ToggleButton Classes="trackButton mute" Content="M" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute (M)" AutomationProperties.Name="Mute" />
-                        <ToggleButton Classes="trackButton solo" Content="S" IsChecked="{Binding IsSoloed}" ToolTip.Tip="Solo (S)" AutomationProperties.Name="Solo" />
-                        <ToggleButton Classes="trackButton arm" IsChecked="{Binding IsArmed}" IsVisible="{Binding !IsGroup}" ToolTip.Tip="Arm for recording" AutomationProperties.Name="Record arm">
-                          <PathIcon Data="{StaticResource Icon.Record}" Width="8" Height="8" />
-                        </ToggleButton>
+                        <!-- Compact square keys: dark face with a light letter; on, a solid colour fill. -->
+                        <controls:SquareKey Classes="trackKey mute" Glyph="M" Size="16" OnColor="{x:Static theme:Palette.Mute}" IsChecked="{Binding IsMuted}" ToolTip.Tip="Mute (M)" AutomationProperties.Name="Mute" />
+                        <controls:SquareKey Classes="trackKey solo" Glyph="S" Size="16" OnColor="{x:Static theme:Palette.Solo}" IsChecked="{Binding IsSoloed}" ToolTip.Tip="Solo (S)" AutomationProperties.Name="Solo" />
+                        <controls:SquareKey Classes="trackKey arm" Kind="Record" Size="16" OnColor="{x:Static theme:Palette.Record}" IsChecked="{Binding IsArmed}" IsVisible="{Binding !IsGroup}" ToolTip.Tip="Arm for recording" AutomationProperties.Name="Record arm" />
                       </StackPanel>
                     </Grid>
                     </Border>
@@ -463,7 +354,8 @@
 
         <!-- Lower pane header: tabs and the active editor's tools -->
         <Border x:Name="EditorHeader" Grid.Row="2" Classes="header" BorderThickness="0,1,0,1">
-          <Grid ColumnDefinitions="Auto,*,Auto" Height="28">
+          <Grid ColumnDefinitions="Auto,*,Auto" Height="32">
+            <controls:GutterPanel Classes="tabGutter" Margin="14,0,0,0">
             <StackPanel Orientation="Horizontal">
               <!-- Docked Device Views, each its own tab; "+" opens another that follows the selection. -->
               <ItemsControl x:Name="DeviceTabs" ItemsSource="{Binding Workspace.DetailTabs}">
@@ -526,6 +418,7 @@
                 </StackPanel>
               </RadioButton>
             </StackPanel>
+            </controls:GutterPanel>
 
             <!-- Piano roll tools -->
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="8,0" VerticalAlignment="Center" DataContext="{Binding Editor}" x:DataType="vm:EditorViewModel"
@@ -716,8 +609,137 @@
     <!-- Settings takes the workspace's place while it is open; the workspace is hidden, not changed, and comes back as it was. -->
     <views:SettingsView x:Name="SettingsHost" Grid.Row="1" IsVisible="False" />
 
+    <!--
+      Transport (Machined): the loop in its well at the left; then the time readout in its own inset well, one recessed
+      gutter of plain glyphs (lit aqua when on, record red), and tempo and signature wells; the click and keyboard last.
+    -->
+    <Border x:Name="TransportBar" Grid.Row="2" Classes="bar transportBar">
+      <Grid ColumnDefinitions="Auto,*,Auto,*" Margin="16,0">
+        <controls:RecessedWell Classes="field loop" IsVisible="{Binding #LoopFields.IsVisible}">
+          <StackPanel x:Name="LoopFields" Classes.loopOff="{Binding !Loop.IsEnabled}">
+            <TextBlock Text="LOOP" Classes="fieldLabel" />
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBox x:Name="LoopStartBox" Classes="lcd field" Text="{Binding Loop.StartText, Mode=OneWay}" Width="58" PlaceholderText="–"
+                       ToolTip.Tip="Loop start as bar.beat.tick. Type a position; the length stays." AutomationProperties.Name="Loop start" />
+              <TextBlock Text="+" Classes="fieldValue dim" />
+              <TextBox x:Name="LoopLengthBox" Classes="lcd field" Text="{Binding Loop.LengthText, Mode=OneWay}" Width="58" PlaceholderText="–"
+                       ToolTip.Tip="Loop length as bars.beats.ticks (or ticks with a t suffix). The start stays." AutomationProperties.Name="Loop length" />
+            </StackPanel>
+          </StackPanel>
+        </controls:RecessedWell>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <!-- The time readout: position large, elapsed time under its label at the right. -->
+          <controls:RecessedWell Classes="timeWell" Radius="4">
+            <Grid ColumnDefinitions="Auto,Auto" VerticalAlignment="Center">
+              <TextBlock Text="{Binding PositionText}" Classes="lcd position" AutomationProperties.Name="Position in bars, beats, and ticks" />
+              <StackPanel Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="BARS" Classes="fieldLabel" HorizontalAlignment="Right" />
+                <TextBlock Text="{Binding TimeText}" Classes="lcd elapsed" HorizontalAlignment="Right" AutomationProperties.Name="Elapsed time" />
+              </StackPanel>
+            </Grid>
+          </controls:RecessedWell>
+
+          <controls:GutterPanel Classes="transport">
+            <StackPanel Orientation="Horizontal">
+              <Button Command="{Binding PreviousBarCommand}" ToolTip.Tip="Back one bar (,)" AutomationProperties.Name="Rewind one bar">
+                <PathIcon Data="{StaticResource Icon.Rewind}" Width="14" Height="14" />
+              </Button>
+              <Button Command="{Binding NextBarCommand}" ToolTip.Tip="Forward one bar (.)" AutomationProperties.Name="Forward one bar">
+                <PathIcon Data="{StaticResource Icon.Forward}" Width="14" Height="14" />
+              </Button>
+              <Button Command="{Binding ReturnToStartCommand}" ToolTip.Tip="Go to start (Home)" AutomationProperties.Name="Go to start">
+                <PathIcon Data="{StaticResource Icon.Start}" Width="12" Height="12" />
+              </Button>
+              <Button Classes="stop" Classes.active="{Binding !IsPlaying}" Command="{Binding StopCommand}" ToolTip.Tip="Stop; press again to go to the start" AutomationProperties.Name="Stop">
+                <PathIcon Data="{StaticResource Icon.Stop}" Width="11" Height="11" />
+              </Button>
+              <ToggleButton Classes="play" IsChecked="{Binding IsPlaying, Mode=OneWay}" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play or stop (Space)" AutomationProperties.Name="{Binding PlayButtonText}">
+                <PathIcon Data="{StaticResource Icon.Play}" Width="14" Height="14" />
+              </ToggleButton>
+              <ToggleButton Classes="record" IsChecked="{Binding IsRecording, Mode=OneWay}" Command="{Binding RecordCommand}" ToolTip.Tip="Record into the armed or selected track (R)" AutomationProperties.Name="Record">
+                <PathIcon Data="{StaticResource Icon.Record}" Width="13" Height="13" />
+              </ToggleButton>
+              <ToggleButton x:Name="LoopButton" Classes="cycle" IsChecked="{Binding Loop.IsEnabled, Mode=OneWay}" Command="{Binding Loop.ToggleCommand}" ToolTip.Tip="{Binding Loop.ToggleTip}" AutomationProperties.Name="Loop">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Cycle}" Width="17" Height="17" />
+              </ToggleButton>
+            </StackPanel>
+          </controls:GutterPanel>
+
+          <controls:RecessedWell Classes="field">
+            <StackPanel>
+              <TextBlock Text="TEMPO" Classes="fieldLabel" />
+              <TextBox x:Name="TempoBox" Classes="lcd field" Text="{Binding TempoText, Mode=OneWay}" Width="56"
+                       ToolTip.Tip="Tempo in BPM. Click to type a new tempo." AutomationProperties.Name="Tempo" />
+            </StackPanel>
+          </controls:RecessedWell>
+          <controls:RecessedWell Classes="field">
+            <StackPanel>
+              <TextBlock Text="SIG" Classes="fieldLabel" />
+              <TextBox x:Name="MeterBox" Classes="lcd field" Text="{Binding MeterText, Mode=OneWay}" Width="38"
+                       ToolTip.Tip="Time signature. Click to type, e.g. 3/4." AutomationProperties.Name="Time signature" />
+            </StackPanel>
+          </controls:RecessedWell>
+
+          <controls:GutterPanel Classes="transport">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton Classes="mode" IsChecked="{Binding IsMetronomeEnabled, Mode=OneWay}" Command="{Binding ToggleMetronomeCommand}" ToolTip.Tip="Metronome click (K)" AutomationProperties.Name="Metronome">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Metronome}" Width="15" Height="15" />
+              </ToggleButton>
+              <ToggleButton Classes="mode text" IsChecked="{Binding IsCountInEnabled, Mode=OneWay}" Command="{Binding ToggleCountInCommand}" ToolTip.Tip="Count in before recording" AutomationProperties.Name="Count-in">
+                <TextBlock Text="Pre" />
+              </ToggleButton>
+            </StackPanel>
+          </controls:GutterPanel>
+
+          <!-- MIDI input activity: the IN glyph lights while notes arrive. -->
+          <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
+            <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputIdle}" IsVisible="{Binding !HasInputActivity}" />
+            <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputActive}" IsVisible="{Binding HasInputActivity}" />
+            <TextBlock Text="IN" Classes="fieldLabel" HorizontalAlignment="Center" />
+          </StackPanel>
+
+          <!-- Computer keyboard: play and record notes from the keyboard. -->
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                      DataContext="{Binding Keyboard}" x:DataType="vm:ComputerKeyboardViewModel"
+                      IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <controls:GutterPanel Classes="transport">
+              <StackPanel Orientation="Horizontal">
+                <ToggleButton Classes="keys" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
+                              ToolTip.Tip="Computer keyboard (`): play notes with A–' (white) and W E T Y U O P (black). Z/X octave, C/V velocity."
+                              AutomationProperties.Name="Computer keyboard">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" Width="16" Height="16" />
+                </ToggleButton>
+              </StackPanel>
+            </controls:GutterPanel>
+            <Border Classes="keysReadout" Classes.on="{Binding IsEnabled}" AutomationProperties.Name="Computer keyboard octave and velocity">
+              <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Ellipse Classes="keysActivity" Classes.on="{Binding IsSounding}" VerticalAlignment="Center" />
+                <StackPanel VerticalAlignment="Center" ToolTip.Tip="MIDI channel of the armed or selected track">
+                  <TextBlock Text="{Binding ChannelText}" Classes="keysValue" MinWidth="14" />
+                  <TextBlock Text="CH" Classes="lcdLabel" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center" ToolTip.Tip="Octave of the A key (Z/X)">
+                  <TextBlock Text="{Binding OctaveText}" Classes="keysValue" MinWidth="26" />
+                  <TextBlock Text="OCT" Classes="lcdLabel" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center" Spacing="2" ToolTip.Tip="Velocity (C/V)">
+                  <TextBlock Text="{Binding VelocityText}" Classes="keysValue" />
+                  <ProgressBar Classes="keysMeter" Value="{Binding VelocityFraction}" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center" MinWidth="30">
+                  <TextBlock Text="{Binding LastNoteText}" Classes="keysValue" Foreground="{StaticResource Lcd.Text}" />
+                  <TextBlock Text="NOTE" Classes="lcdLabel" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+
     <!-- Status bar -->
-    <Border Grid.Row="2" Background="{StaticResource Surface.Chrome}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,1,0,0" Height="22">
+    <Border Grid.Row="3" Background="{StaticResource Surface.Chrome}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,1,0,0" Height="22">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,0">
         <TextBlock Text="{Binding OutputsText}" Classes="muted" VerticalAlignment="Center" />
         <TextBlock Grid.Column="1" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0"

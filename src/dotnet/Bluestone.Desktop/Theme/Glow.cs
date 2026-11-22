@@ -94,6 +94,38 @@ internal static class Glow
         }
     }
 
+    /// <summary>A wide, soft halo with its own reach and alpha (a selected card's light on the desk), cached like the tiers.</summary>
+    public static void Halo(DrawingContext context, Rect rect, double radius, Color color, double alpha, double reach)
+    {
+        var key = (color.ToUInt32(), -alpha, reach);
+        if (!Pens.TryGetValue(key, out var cached))
+        {
+            var n = Math.Max(4, (int)Math.Ceiling(reach * 2));
+            var tau = reach * Tau;
+            var peak = Math.Min(0.95, alpha * TightBoost);
+            var target = new double[n + 2];
+            for (var i = 1; i <= n; i++)
+            {
+                target[i] = peak * Math.Exp(-(reach * (i - 0.5) / n) / tau);
+            }
+
+            cached = new IPen[n];
+            for (var i = n; i >= 1; i--)
+            {
+                var layer = Math.Clamp(1 - ((1 - target[i]) / (1 - target[i + 1])), 0, 1);
+                cached[i - 1] = new ImmutablePen(new ImmutableSolidColorBrush(Palette.Alpha(color, layer)), 0);
+            }
+
+            Pens[key] = cached;
+        }
+
+        for (var i = cached.Length; i >= 1; i--)
+        {
+            var grow = reach * i / cached.Length;
+            context.DrawRectangle(cached[i - 1].Brush, null, new RoundedRect(rect.Inflate(grow), radius + grow));
+        }
+    }
+
     public static void Ellipse(DrawingContext context, Point centre, double radius, Color color, double tier)
     {
         var brushes = BrushesFor(color, tier);

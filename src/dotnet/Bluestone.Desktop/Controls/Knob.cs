@@ -41,18 +41,11 @@ public sealed class Knob : Control
     /// </summary>
     public static readonly StyledProperty<string?> ValueTextProperty = AvaloniaProperty.Register<Knob, string?>(nameof(ValueText));
 
-    /// <summary>
-    /// How strongly the lit ticks glow (0-1): a tight halo with an exponential falloff. 0 (the default) keeps the knob calm;
-    /// the selected device panel raises it, so the device you are working on is lit and the rest stay quiet.
-    /// </summary>
-    public static readonly StyledProperty<double> GlowProperty = AvaloniaProperty.Register<Knob, double>(nameof(Glow));
-
     /// <summary>What a reset runs; when unset, the value returns to <see cref="DefaultValue"/>.</summary>
     public static readonly StyledProperty<ICommand?> ResetCommandProperty = AvaloniaProperty.Register<Knob, ICommand?>(nameof(ResetCommand));
 
-    private const double SweepDegrees = 270;
-    private const double StartDegrees = 135;
     private const double PixelsForFullRange = 160;
+    private readonly ArcKnobCache _paint = new();
     private double? _preview;
     private KnobAutomationPeer? _peer;
     private Point _dragStart;
@@ -60,7 +53,7 @@ public sealed class Knob : Control
 
     static Knob()
     {
-        AffectsRender<Knob>(ValueProperty, MinimumProperty, MaximumProperty, AccentProperty, GlowProperty, IsFocusedProperty, IsEnabledProperty);
+        AffectsRender<Knob>(ValueProperty, MinimumProperty, MaximumProperty, AccentProperty, IsFocusedProperty, IsEnabledProperty);
         FocusableProperty.OverrideDefaultValue<Knob>(true);
         CursorProperty.OverrideDefaultValue<Knob>(new Cursor(StandardCursorType.SizeNorthSouth));
     }
@@ -99,12 +92,6 @@ public sealed class Knob : Control
     {
         get => GetValue(AccentProperty);
         set => SetValue(AccentProperty, value);
-    }
-
-    public double Glow
-    {
-        get => GetValue(GlowProperty);
-        set => SetValue(GlowProperty, value);
     }
 
     public string? ValueText
@@ -165,22 +152,6 @@ public sealed class Knob : Control
         ? Math.Clamp(Minimum + (Math.Round((value - Minimum) / Step) * Step), Minimum, Maximum)
         : Math.Clamp(value, Minimum, Maximum);
 
-    /// <summary>How many radial ticks a knob of this size draws over its 270° sweep: 21, or 15 below 30 DIP.</summary>
-    internal static int TickCount(double size) => size >= 30 ? 21 : 15;
-
-    /// <summary>
-    /// Whether tick <paramref name="index"/> of <paramref name="count"/> is lit: every tick from the origin (the start, or the
-    /// centre of a bipolar range) up to the value. The origin tick is always lit, so a value at its origin still shows a mark.
-    /// </summary>
-    internal static bool IsTickLit(int index, int count, double fraction, double origin)
-    {
-        var at = index / (double)(count - 1);
-        var half = 0.5 / (count - 1);
-        var lo = Math.Min(origin, fraction) - half;
-        var hi = Math.Max(origin, fraction) + half;
-        return at >= lo && at < hi;
-    }
-
     /// <summary>The fraction of the range a value sits at, and the fill's origin (the centre of a bipolar range).</summary>
     internal (double Fraction, double Origin) Positions() =>
         (Math.Clamp((Shown - Minimum) / Range, 0, 1), Minimum < 0 && Maximum > 0 ? -Minimum / Range : 0);
@@ -193,62 +164,17 @@ public sealed class Knob : Control
             return;
         }
 
-        var center = new Point(Bounds.Width / 2, Bounds.Height / 2);
-        // Inset so the 2 DIP focus outline (radius + 1.5) stays fully inside the bounds of clipped hosts.
-        var radius = (size / 2) - 2.5;
+        // The Machined arc-ring knob (ArcKnobPaint): a dark track ring, the value arc in the accent with a restrained glow, a
+        // satin cap and a short pointer. A bipolar range draws its arc from the top centre.
+        var center = new Point(Math.Round(Bounds.Width / 2), Math.Round(Bounds.Height / 2));
+        var radius = (size / 2) - 1;
         var (fraction, origin) = Positions();
-        var enabled = IsEnabled;
-        var accent = enabled ? Accent : Palette.TextMuted;
-        var count = TickCount(size);
-        var tickLength = size >= 30 ? 4 : 3;
-        var inner = radius - tickLength;
-
-        // The body sits inside the tick ring with a 1.5 DIP gap, so every tick reads on the panel.
-        context.DrawEllipse(new SolidColorBrush(Palette.KnobBody), new Pen(new SolidColorBrush(Palette.Border), 1), center, inner - 1.5, inner - 1.5);
-
-        // Thin radial ticks over the sweep: lit (accent) from the origin to the value, unlit ticks visible (≥3:1).
-        var unlit = new Pen(new SolidColorBrush(enabled ? Palette.KnobTick : Palette.TextMuted, enabled ? 1 : 0.5), 1.2, lineCap: PenLineCap.Round);
-        var lit = new Pen(new SolidColorBrush(accent), 1.6, lineCap: PenLineCap.Round);
-        var glow = enabled ? Math.Clamp(Glow, 0, 1) : 0;
-
-        // A tight halo on lit ticks only: two wider strokes whose opacity falls off as e^(−r/τ), τ ≈ reach/3 (reach 3 DIP).
-        IPen? near = null, far = null;
-        if (glow > 0)
-        {
-            near = new Pen(new SolidColorBrush(accent, 0.34 * glow * Math.Exp(-1.0)), 3.6, lineCap: PenLineCap.Round);
-            far = new Pen(new SolidColorBrush(accent, 0.34 * glow * Math.Exp(-2.0)), 6.0, lineCap: PenLineCap.Round);
-        }
-
-        for (var i = 0; i < count; i++)
-        {
-            var angle = Radians(StartDegrees + (SweepDegrees * i / (count - 1)));
-            var from = PointAt(center, inner, angle);
-            var to = PointAt(center, radius, angle);
-            if (IsTickLit(i, count, fraction, origin))
-            {
-                if (far is not null && near is not null)
-                {
-                    context.DrawLine(far, from, to);
-                    context.DrawLine(near, from, to);
-                }
-
-                context.DrawLine(lit, from, to);
-            }
-            else
-            {
-                context.DrawLine(unlit, from, to);
-            }
-        }
-
-        var pointerAngle = Radians(StartDegrees + (SweepDegrees * fraction));
-        var pointerFrom = PointAt(center, (inner - 1.5) * 0.3, pointerAngle);
-        var tip = PointAt(center, inner - 3, pointerAngle);
-        context.DrawLine(new Pen(new SolidColorBrush(enabled ? Palette.Text : Palette.TextMuted), 1.6, lineCap: PenLineCap.Round), pointerFrom, tip);
+        ArcKnobPaint.Draw(context, center, radius, fraction, Math.Abs(origin - 0.5) < 0.01, Accent, !IsEnabled, _paint);
 
         if (IsFocused)
         {
-            // Focus is a solid 2 DIP outline just outside the ticks, never a glow.
-            context.DrawEllipse(null, new Pen(new SolidColorBrush(Palette.Focus), 2), center, radius + 1.5, radius + 1.5);
+            // Focus is a solid outline just outside the ring, never a glow; inset so clipped hosts keep all of it.
+            context.DrawEllipse(null, ConsolePaint.Pen(Palette.Focus, 1.5), center, radius + 0.25, radius + 0.25);
         }
     }
 

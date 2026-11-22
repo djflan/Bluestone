@@ -308,7 +308,9 @@ public sealed class MixerConsoleTests
         var mixer = ShowTallDockedMixer(app);
         var source = app.ViewModel.MixerConsole.Tracks.Single(row => row.Id == audio.Id);
         var strip = StripOf(mixer, audio.Name);
-        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "No sends" && text.IsEffectivelyVisible);
+        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "+ SEND" && text.IsEffectivelyVisible);
+        // An empty strip shows no sends line until it is hovered or focused.
+        Assert.Equal(0, strip.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Text == "+ SEND").Opacity);
 
         var sends = OpenFlyout(app, Visible<Button>(strip, "No sends, add a send"));
         app.Choose(AppUnderTest.ComboNamed(sends, "New send destination"), item =>
@@ -325,7 +327,7 @@ public sealed class MixerConsoleTests
         app.Settle();
         Assert.DoesNotContain(app.Session.Project.Connections, connection => connection.AudioPurpose == AudioRoutePurpose.Send);
         Assert.Empty(source.Sends);
-        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "No sends" && text.IsEffectivelyVisible);
+        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "+ SEND" && text.IsEffectivelyVisible);
     });
 
     [Fact]

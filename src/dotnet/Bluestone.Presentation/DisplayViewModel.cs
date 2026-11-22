@@ -212,31 +212,17 @@ public sealed partial class DisplayViewModel : ObservableObject
         new(LedShape.Round, "Round"),
     ];
 
-    /// <summary>Where every Device View draws its Compact junctions' levels and note lamps.</summary>
+    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). Where every Device View draws its Compact junctions' levels and note lamps.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IndicatorPositionChoice), nameof(SeamIndicatorPosition))]
+    [NotifyPropertyChangedFor(nameof(SeamIndicatorPosition))]
     public partial JunctionIndicatorPosition IndicatorPosition { get; set; } = JunctionIndicatorPosition.LowerHalf;
 
-    /// <summary><see cref="IndicatorPosition"/> as a list choice, for the Settings page.</summary>
-    public IndicatorPositionOption IndicatorPositionChoice
-    {
-        get => Positions.FirstOrDefault(p => p.Position == IndicatorPosition) ?? Positions[2];
-        set => IndicatorPosition = value?.Position ?? JunctionIndicatorPosition.LowerHalf;
-    }
-
-    /// <summary>Where every Device View draws its Medium and Large indicators: Top, Middle, or Bottom.</summary>
+    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). Where every Device View draws its Medium and Large indicators: Top, Middle, or Bottom.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(LargeIndicatorPositionChoice), nameof(SeamIndicatorPosition))]
+    [NotifyPropertyChangedFor(nameof(SeamIndicatorPosition))]
     public partial JunctionIndicatorPosition LargeIndicatorPosition { get; set; } = JunctionIndicatorPosition.Middle;
 
-    /// <summary><see cref="LargeIndicatorPosition"/> as a list choice, for the Settings page.</summary>
-    public IndicatorPositionOption LargeIndicatorPositionChoice
-    {
-        get => LargePositions.FirstOrDefault(p => p.Position == LargeIndicatorPosition) ?? LargePositions[1];
-        set => LargeIndicatorPosition = value?.Position ?? JunctionIndicatorPosition.Middle;
-    }
-
-    /// <summary>The position the seams use: Compact's own, or Medium and Large's.</summary>
+    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). The position the seams use: Compact's own, or Medium and Large's.</summary>
     public JunctionIndicatorPosition SeamIndicatorPosition => IndicatorSize == SignalIndicatorSize.Compact ? IndicatorPosition : LargeIndicatorPosition;
 
     /// <summary>What every Device View's junction levels show.</summary>
@@ -251,39 +237,117 @@ public sealed partial class DisplayViewModel : ObservableObject
         set => LevelStyle = value?.Style ?? JunctionLevelStyle.RmsAndPeak;
     }
 
-    /// <summary>How much every Device View's junction indicators show.</summary>
+    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). How much every Device View's junction indicators show.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IndicatorSizeChoice), nameof(HasLedShape), nameof(IsCompact), nameof(SeamIndicatorPosition))]
+    [NotifyPropertyChangedFor(nameof(SeamIndicatorPosition))]
     public partial SignalIndicatorSize IndicatorSize { get; set; } = SignalIndicatorSize.Compact;
 
-    /// <summary><see cref="IndicatorSize"/> as a list choice, for the Settings page.</summary>
-    public IndicatorSizeOption IndicatorSizeChoice
-    {
-        get => Sizes.First(s => s.Size == IndicatorSize);
-        set => IndicatorSize = value?.Size ?? SignalIndicatorSize.Compact;
-    }
-
-    /// <summary>The LEDs of Medium and Large junction indicators (Compact always draws its slim segments).</summary>
+    /// <summary>Legacy (one meter design now; removed once the Device View no longer reads it). The LEDs of Medium and Large junction indicators (Compact always draws its slim segments).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(LedShapeChoice))]
     public partial LedShape LedShape { get; set; } = LedShape.Bar;
-
-    /// <summary><see cref="LedShape"/> as a list choice, for the Settings page.</summary>
-    public LedShapeOption LedShapeChoice
-    {
-        get => LedShapes.First(s => s.Shape == LedShape);
-        set => LedShape = value?.Shape ?? LedShape.Bar;
-    }
-
-    /// <summary>Whether the LED shape applies: only Medium and Large have a choice.</summary>
-    public bool HasLedShape => IndicatorSize != SignalIndicatorSize.Compact;
-
-    /// <summary>Whether Compact's four positions apply (otherwise Medium and Large's three do).</summary>
-    public bool IsCompact => IndicatorSize == SignalIndicatorSize.Compact;
 
     /// <summary>The colours every signal indicator's level runs through, bottom to top. The clip lamp keeps its own colour.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedGradientStop), nameof(SelectedGradientStopPercent), nameof(SelectedGradientStopColour), nameof(CanAddGradientStop), nameof(CanRemoveGradientStop))]
+    [NotifyCanExecuteChangedFor(nameof(AddGradientStopInLargestGapCommand), nameof(RemoveSelectedGradientStopCommand))]
     public partial SignalGradient SignalGradient { get; set; } = SignalGradient.Default;
+
+    /// <summary>Colours offered as one-click swatches for a gradient stop: the Machined meter and signal colours. Clip red is the clip lamp's alone.</summary>
+    public static IReadOnlyList<string> GradientSwatches { get; } =
+        ["#34C6F4", "#3FE0D8", "#4FB3B0", "#4CB873", "#3D5BFF", "#7C6BFF", "#B65CFF", "#E070C8", "#FF2E93", "#E0A43A", "#E3C345", "#DADCE0"];
+
+    /// <summary>The stop the editor is working on (its index in <see cref="SignalGradient"/>'s stops).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedGradientStop), nameof(SelectedGradientStopPercent), nameof(SelectedGradientStopColour))]
+    public partial int SelectedGradientStopIndex { get; set; }
+
+    /// <summary>The selected stop.</summary>
+    public SignalGradientStop SelectedGradientStop => SignalGradient.Stops[Math.Clamp(SelectedGradientStopIndex, 0, SignalGradient.Stops.Length - 1)];
+
+    /// <summary>The selected stop's position as the editor shows it, for example "40%".</summary>
+    public string SelectedGradientStopPercent => FormatPercent(SelectedGradientStop.Position);
+
+    /// <summary>
+    /// The selected stop's colour as "#RRGGBB". Setting it to six hex digits (with or without the '#') recolours the stop;
+    /// anything else is ignored, so a half-typed value never reaches the meters.
+    /// </summary>
+    public string SelectedGradientStopColour
+    {
+        get => SelectedGradientStop.Colour;
+        set
+        {
+            var colour = value is { Length: 6 } ? "#" + value : value?.Trim();
+            if (SignalGradient.IsColour(colour))
+            {
+                SetGradientStopColour(Math.Clamp(SelectedGradientStopIndex, 0, SignalGradient.Stops.Length - 1), colour!);
+            }
+        }
+    }
+
+    /// <summary>Whether a stop can be removed: a gradient keeps at least <see cref="SignalGradient.MinStops"/>.</summary>
+    public bool CanRemoveGradientStop => SignalGradient.Stops.Length > SignalGradient.MinStops;
+
+    /// <summary>Whether a stop can be added: a gradient has at most <see cref="SignalGradient.MaxStops"/>.</summary>
+    public bool CanAddGradientStop => SignalGradient.Stops.Length < SignalGradient.MaxStops;
+
+    /// <summary>"40%": a position in [0, 1] as a whole percentage.</summary>
+    public static string FormatPercent(double position) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Math.Round(position * 100):0}%");
+
+    /// <summary>Adds a stop at the middle of the widest gap between stops (the colour already there) and selects it.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddGradientStop))]
+    private void AddGradientStopInLargestGap()
+    {
+        var stops = SignalGradient.Stops;
+        var at = 0;
+        for (var i = 1; i < stops.Length - 1; i++)
+        {
+            if (stops[i + 1].Position - stops[i].Position > stops[at + 1].Position - stops[at].Position)
+            {
+                at = i;
+            }
+        }
+
+        var index = AddGradientStop((stops[at].Position + stops[at + 1].Position) / 2);
+        if (index >= 0)
+        {
+            SelectedGradientStopIndex = index;
+        }
+    }
+
+    /// <summary>Removes the selected stop and selects its neighbour below (or the first).</summary>
+    [RelayCommand(CanExecute = nameof(CanRemoveGradientStop))]
+    private void RemoveSelectedGradientStop()
+    {
+        var index = Math.Clamp(SelectedGradientStopIndex, 0, SignalGradient.Stops.Length - 1);
+        if (RemoveGradientStop(index))
+        {
+            SelectedGradientStopIndex = Math.Max(0, index - 1);
+        }
+    }
+
+    /// <summary>Recolours the selected stop with a swatch colour ("#RRGGBB").</summary>
+    [RelayCommand]
+    private void ChooseGradientStopColour(string? colour) => SelectedGradientStopColour = colour ?? string.Empty;
+
+    /// <summary>Moves the stop at <paramref name="index"/> to <paramref name="position"/> and selects it wherever it lands.</summary>
+    public void MoveAndSelectGradientStop(int index, double position)
+    {
+        var landed = MoveGradientStop(index, position);
+        if (landed >= 0)
+        {
+            SelectedGradientStopIndex = landed;
+        }
+    }
+
+    /// <summary>Nudges the stop at <paramref name="index"/> by <paramref name="delta"/> (0.01 is 1%) and selects it wherever it lands.</summary>
+    public void NudgeGradientStop(int index, double delta)
+    {
+        if (index >= 0 && index < SignalGradient.Stops.Length)
+        {
+            MoveAndSelectGradientStop(index, Math.Round((SignalGradient.Stops[index].Position + delta) * 1000) / 1000);
+        }
+    }
 
     /// <summary>
     /// Adds a stop at <paramref name="position"/> (clamped to [0, 1]) in the colour the gradient already has there, so
@@ -366,7 +430,11 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     /// <summary>Puts the gradient back to <see cref="SignalGradient.Default"/>.</summary>
     [RelayCommand]
-    private void ResetGradient() => SignalGradient = SignalGradient.Default;
+    private void ResetGradient()
+    {
+        SignalGradient = SignalGradient.Default;
+        SelectedGradientStopIndex = 0;
+    }
 
     /// <summary>Reads the saved settings from <paramref name="store"/> and saves every later change there.</summary>
     public void Use(DisplaySettingsStore store)
@@ -399,7 +467,15 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     partial void OnLargeIndicatorPositionChanged(JunctionIndicatorPosition value) => Save();
 
-    partial void OnSignalGradientChanged(SignalGradient value) => Save();
+    partial void OnSignalGradientChanged(SignalGradient value)
+    {
+        if (SelectedGradientStopIndex >= value.Stops.Length)
+        {
+            SelectedGradientStopIndex = value.Stops.Length - 1;
+        }
+
+        Save();
+    }
 
     private void Save()
     {

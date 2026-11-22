@@ -143,7 +143,7 @@ public sealed class SignalIndicatorTests
         SetInternal(signal, nameof(JunctionSignal.CanCarryNotes), true);
         SetInternal(signal, nameof(JunctionSignal.CanCarryAudio), true);
         var seam = new JunctionSeam { Signal = signal, LevelStyle = style, LampPlacement = placement, IndicatorPosition = position };
-        var link = new Border { Classes = { "chainLink" }, Child = seam };
+        var link = new Border { Classes = { "chainLink" }, Width = 20, Child = seam };
         var host = new Border
         {
             Background = (IBrush)Avalonia.Application.Current!.FindResource("Surface.Base")!,
