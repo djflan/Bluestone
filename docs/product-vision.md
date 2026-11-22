@@ -1,5 +1,22 @@
 # Bluestone product vision
 
+## Guiding principle
+
+**Build software that feels like somebody cared.**\
+Express sincerity through engineering.
+
+Great software is more than code that works. It is an expression of craftsmanship, empathy, and a genuine respect for the people who use it.
+
+We believe care should be evident in every detail: in interfaces that feel intuitive, in interactions that respect the user's time, in thoughtful decisions that simplify the complex, and in the quiet satisfaction of something working exactly as it should.
+
+We do not pursue polish merely for appearances, nor complexity for the sake of sophistication. We believe that every decision, however small, is an opportunity to demonstrate that someone's experience matters.
+
+Technology should empower creativity, not stand in its way. Our responsibility is not simply to build something capable, but to build something worthy of the trust, time, and imagination people invest in it.
+
+**This is sincerity expressed through engineering.**
+
+*The measure of our work is not merely what our software can do, but how it makes people feel while doing it.*
+
 ## Product definition
 
 Bluestone is a modern, device-centric digital audio workstation built for tight timing and accuracy. It treats hardware instruments, software instruments, effects, and note processors as first-class creative devices within one modular environment. Bluestone on its own is a complete virtual studio; plugins and hardware join it as peers, never as prerequisites.
@@ -114,5 +131,6 @@ Before accepting a product change, ask:
 4. Can a musician understand the result without learning Bluestone's internals?
 5. Does it strengthen the product's visual and interaction coherence?
 6. Can its behavior be verified automatically and, where necessary, on real hardware?
+7. Will the musician using it feel that somebody cared about their experience?
 
 If a change fails one of these tests, its design is incomplete or its tradeoff must be recorded explicitly.
