@@ -18,7 +18,10 @@ stops in `SKILL.md`, including the user UI decisions required by the directional
    signers"): a plain, realistic state plus the populated and active states the change affects.
 2. Read only enough to find the owning code: repository instructions, the nearest owner, its caller, and its test.
    Use `.github/skills/team/references/roster.md` to staff the team.
-3. Classify technical risk as routine, elevated, or high. Pick the smallest team and a model for each member, and
+3. Record the change size (light, normal, or full) under `governance.md`, "Change size". A light change uses only
+   the signers, the single review round, and the validation limits defined there; the steps below apply within
+   them.
+   Classify technical risk as routine, elevated, or high. Pick the smallest team and a model for each member, and
    record one-line staffing reasons (`.github/skills/team/references/roster.md` and
    `.github/skills/team/references/model-selection.md`).
 4. Choose the branch. If the working tree has uncommitted changes you didn't make, stop and report; never stash or

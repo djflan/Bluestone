@@ -11,6 +11,35 @@ done only when every required signer for the areas the change touches has signed
 commit. Lucas defines the acceptance checks, staffs the signers, collects the sign-offs, and records them. He cannot
 sign off for a specialist, skip a required signer, or overrule a "not done".
 
+### Change size: light, normal, full
+
+Lucas records a size at intake, next to the UI tier. The user may name one ("light", "normal", "full"); otherwise
+Lucas picks it from the change. Effort must stay proportional: a look-and-feel change does not get the process of an
+engine change.
+
+| Size | Use it for |
+|---|---|
+| **Light** | Look and feel, visual polish, copy, docs, and settings that only change appearance. No change to the engine, playback, native code, IPC, timing, file formats, project state, or concurrency. |
+| **Normal** | The default for features and fixes that are not light and not full. |
+| **Full** | Engine, playback, native, IPC, timing or latency claims, file formats, concurrency, or data-loss risk. |
+
+Light changes follow these rules. They override the rest of this section where they conflict.
+
+- **Signers:** Max (owner, with captures), one Grace code review on a single model, and Sabrina only when user docs or
+  ADRs changed. Caroline signs only when keyboard, focus, or screen-reader behavior changes. Other signers from the
+  table below join only if the diff actually reaches their area.
+- **One review round.** Fix critical and high findings. Fix a medium only when it is cheap and user-visible. Every
+  other finding goes into the PR's limitations and `docs/engineering-handoff.md` section 7, not into another round.
+- **Validation:** focused tests while building, then the full repository gates once on the final tree. Run them
+  again only if code changes after that. No local stress, load, or performance runs. A flaky timing or allocation
+  test is loosened or skipped with a reason and noted; it is not investigated in this change.
+- **Unverifiable evidence:** a "not done (unverifiable)" that only means the signer could not see the running app or
+  a device is recorded as a gap in the PR and the sign-off table. It does not stop the run, and the user's merge
+  instruction counts as accepting it.
+
+In every size, a fix makes only the sign-off of the signer whose area it changes stale. That signer re-checks it.
+Signers whose area the fix does not change keep their sign-off.
+
 ### Required signers
 
 | The change touches | Required signers |
@@ -42,9 +71,9 @@ it and an independent visual signer checks the captures before Jules signs. For 
 no visible UI, Jules signs from the diff, the docs, and the CLI or log output that shows the behavior. Backend-only
 and docs-only work needs no captures; its signers use the diff, tests, and probes.
 
-A sign-off is current when no later commit touched that signer's area. Any commit that touches a signed area,
+A sign-off is current when no later commit changed that signer's area. Any commit that changes a signed area,
 including review fixes, gate fixes, docs edits, and CI fixes after the PR is open, makes that sign-off stale; the same
-signer re-checks before the commit is pushed.
+signer re-checks before the commit is pushed. A commit that only changes other areas leaves it current.
 
 ### What a sign-off must contain
 
@@ -70,8 +99,8 @@ paths: only the signer who raised them, or the user, can clear them, whatever th
 never an "ordinary delivery question" or "subjective polish" for Lucas to decide.
 
 When a signer cannot obtain the evidence their area requires (hardware, a platform, a quiet machine for probes), they
-return "not done (unverifiable)" with what is missing. That triggers the missing-device stop in `SKILL.md`: the user
-decides whether to accept the gap. An accepted gap turns the verdict into "done (user-accepted gap: <what>)", which
+return "not done (unverifiable)" with what is missing. Outside light changes (see "Change size"), that triggers the
+missing-device stop in `SKILL.md`: the user decides whether to accept the gap. An accepted gap turns the verdict into "done (user-accepted gap: <what>)", which
 counts as done and is listed as not verified in the PR and the sign-off table. Only the user can accept a gap. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
 is out of scope, Lucas stops and escalates to the user with both positions in the constructive-disagreement format.
 He never resolves it by dropping the signer.

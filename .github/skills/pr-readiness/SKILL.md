@@ -79,8 +79,9 @@ For every number or guarantee in the README, docs, ADRs, PR body, and user-facin
 
 - Every changed behavior has a test that fails without the change.
 - Timing-sensitive tests must survive a busy 2–3 core CI runner. Judge by the best case or a bounded median, never by
-  one wall-clock sample. Allocation tests must tolerate one-time runtime work. Stress anything new that is flaky-prone
-  locally (for example 10 runs with every core busy).
+  one wall-clock sample. Allocation tests must tolerate one-time runtime work. Make them robust by design; don't run
+  local stress or load loops unless the change touches a timing or real-time path. A flaky test in a light change
+  (`.github/skills/team/references/governance.md`, "Change size") is loosened or skipped with a reason, not chased.
 - Tests that need hardware, devices, or installed plugins skip with a reason.
 
 ### 7. Repository gates

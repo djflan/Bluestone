@@ -80,6 +80,10 @@ pass. The agent list loads when a session starts, so open a new session after pu
   picked. A "not done" blocks; Lucas can't overrule it, only escalate it to you. "Autopilot" or "merge when
   done" never waives sign-offs. The rules are in
   [governance.md](../.github/skills/team/references/governance.md) ("Definition of done").
+- **Change size:** add "light", "normal", or "full" to a request, or let Lucas pick. A light change (look and feel,
+  copy, docs) needs only Max, one code review, and Sabrina if docs changed. It gets one review round, fixes only
+  critical and high findings, runs the full gates once, and does no local stress testing. Gaps that only lack
+  running-app evidence are listed in the PR instead of stopping the run. See "Change size" in governance.md.
 - **UI references and evidence:** your reference and hint language is quoted as acceptance checks (for example,
   "like Studio One", "reuse X"), not loose inspiration. Directions and review screenshots appear beside your supplied
   references, with per-element critique. An explicitly agreed baseline is allowed only when no references were
