@@ -71,6 +71,7 @@ public sealed class WorkspaceToolbarTests
             Assert.True(app.Window.Settings.IsOpen);
             Assert.True(settings.IsChecked is true);
             AssertCheckedFace(app, settings);
+            await app.SettleTransitionsAsync();
             var settingsFrame = app.SaveFrame($"toolbar-A-settings-{size}");
             using var settingsImage = SKBitmap.Decode(settingsFrame);
             Assert.NotNull(settingsImage);
@@ -329,7 +330,8 @@ public sealed class WorkspaceToolbarTests
         var origin = app.InWindow(face, default);
         var topEdge = new Point(origin.X + (face.Bounds.Width / 2), origin.Y + 0.5);
         var interior = new Point(origin.X + 2.5, origin.Y + 5.5);
-        Assert.True(Near(PixelAt(app, image, topEdge), ResourceColor(app, "Accent")), "The rendered face needs an aqua outline.");
+        var outline = PixelAt(app, image, topEdge);
+        Assert.True(Near(outline, ResourceColor(app, "Accent")), $"The rendered face needs an aqua outline; got {outline} at {topEdge}.");
         Assert.True(Near(PixelAt(app, image, interior), ResourceColor(app, "State.SelectedSubtle")), "The rendered face needs a subdued fill.");
 
         var lightIcon = ResourceColor(app, "Text.Primary");
