@@ -107,94 +107,59 @@
     <Setter Property="BorderThickness" Value="0,0,0,1" />
   </Style>
   <!--
-    Track-owned mixer: dense fixed-pitch strips separated by hairlines; Master sits in a sunken, pinned column. A selected
-    strip is outlined in the accent (an overlay, so the strip's geometry does not shift) and its name block is tinted.
+    Track-owned mixer, the Machined console: narrow slate strips on a dark bed, each band cut into the panel (recessed
+    insert well and readouts, gain LEDs in their gutter beside the fader, the LED ladder meter in its well), with the
+    track-colour name plate at the foot. A selected strip lifts slightly and takes a thin accent outline (its panel).
+    Master is pinned at the right past a dark seam.
   -->
   <Style Selector="Border.mixerStrip">
-    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
-    <Setter Property="BorderThickness" Value="0,0,1,0" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="Border.mixerMaster">
-    <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="Background" Value="{StaticResource Console.Bed}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="1,0,0,0" />
-  </Style>
-  <Style Selector="Border.mixerSelection">
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
-    <Setter Property="BorderThickness" Value="{StaticResource Inset.MixerSelected}" />
-    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="Margin" Value="{StaticResource Inset.MixerMaster}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.MixerMasterSeam}" />
   </Style>
   <Style Selector="Border.mixerBand">
-    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
-    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Margin" Value="{StaticResource Inset.MixerBandTop}" />
   </Style>
-  <Style Selector="Border.mixerSunken">
-    <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
-    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+  <Style Selector="controls|RecessedWell.mixerInsertWell">
+    <Setter Property="Height" Value="{StaticResource Mixer.InsertWellHeight}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.MixerInsertWell}" />
+    <Setter Property="Radius" Value="3" />
   </Style>
-  <Style Selector="Border.mixerMaster Border.mixerSunken">
-    <Setter Property="Background" Value="{StaticResource Surface.Base}" />
-  </Style>
+  <!-- The full insert list in a flyout. -->
   <Style Selector="Border.mixerInsertStack">
-    <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
+    <Setter Property="Background" Value="{StaticResource Console.Well}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
-    <Setter Property="Padding" Value="1" />
-    <Setter Property="Height" Value="{StaticResource Mixer.InsertStackHeight}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.MixerInsertWell}" />
   </Style>
   <Style Selector="Grid.mixerInsertRow">
     <Setter Property="Height" Value="{StaticResource Mixer.InsertRowHeight}" />
-    <Setter Property="Background" Value="{StaticResource Surface.Field}" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
-  <!-- A bypassed insert reads as off without colour: its name turns italic and quiet, and its power glyph dims. -->
+  <Style Selector="controls|PowerGlyph.mixerInsertPower">
+    <Setter Property="GlyphSize" Value="8" />
+    <Setter Property="Width" Value="9" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <!-- A bypassed insert reads as off: its glyph goes dark and its name drops to the muted role. -->
   <Style Selector="Grid.mixerInsertRow.bypassed TextBlock">
     <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
-    <Setter Property="FontStyle" Value="Italic" />
   </Style>
-  <Style Selector="Border.mixerInsertStack.list">
-    <Setter Property="Height" Value="NaN" />
-  </Style>
-  <!-- An insert's on/off switch: lit when the device processes, dim when bypassed. -->
-  <Style Selector="ToggleButton.mixerInsertPower">
-    <Setter Property="Width" Value="{StaticResource Mixer.InsertPowerWidth}" />
-    <Setter Property="Height" Value="{StaticResource Mixer.InsertRowHeight}" />
-    <Setter Property="MinHeight" Value="0" />
-    <Setter Property="Padding" Value="0" />
-    <Setter Property="CornerRadius" Value="{StaticResource Radius.None}" />
-    <Setter Property="Background" Value="Transparent" />
-    <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
-    <Setter Property="HorizontalContentAlignment" Value="Center" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-  </Style>
-  <Style Selector="ToggleButton.mixerInsertPower PathIcon">
-    <Setter Property="Width" Value="{StaticResource FontSize.Micro}" />
-    <Setter Property="Height" Value="{StaticResource FontSize.Micro}" />
-  </Style>
-  <Style Selector="ToggleButton.mixerInsertPower:checked">
-    <Setter Property="Foreground" Value="{StaticResource Signal.Audio}" />
-  </Style>
-  <Style Selector="ToggleButton.mixerInsertPower:checked /template/ ContentPresenter, ToggleButton.mixerInsertPower /template/ ContentPresenter">
-    <Setter Property="Background" Value="Transparent" />
-  </Style>
-  <Style Selector="ToggleButton.mixerInsertPower:pointerover /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource State.Hover}" />
-  </Style>
-  <Style Selector="ToggleButton.mixerInsertPower:focus-visible /template/ ContentPresenter">
-    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
-    <Setter Property="BorderThickness" Value="1" />
-  </Style>
-  <!-- Quiet, row-shaped buttons inside a strip: an insert's name, the strip name block, the output chip. -->
+  <!-- Quiet, row-shaped buttons inside a strip: an insert's name, the name plate, the route, the count line. -->
   <Style Selector="Button.mixerRow">
     <Setter Property="MinHeight" Value="0" />
-    <Setter Property="Padding" Value="{StaticResource Inset.MixerRow}" />
-    <Setter Property="CornerRadius" Value="{StaticResource Radius.None}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
-    <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Value}" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="VerticalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -203,9 +168,6 @@
   <Style Selector="Button.mixerRow:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource State.Hover}" />
   </Style>
-  <Style Selector="Button.mixerRow:pointerover">
-    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
-  </Style>
   <Style Selector="Button.mixerRow:pressed /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource State.Pressed}" />
   </Style>
@@ -213,23 +175,59 @@
     <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
-  <Style Selector="Button.mixerRow.name">
-    <Setter Property="Padding" Value="{StaticResource Inset.MixerName}" />
-    <Setter Property="VerticalContentAlignment" Value="Bottom" />
+  <Style Selector="Button.mixerRow.insertName">
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
   </Style>
-  <Style Selector="Button.mixerRow.name:pointerover /template/ ContentPresenter">
+  <Style Selector="Button.mixerRow.insertName TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Value}" />
+  </Style>
+  <Style Selector="Button.mixerRow.insertName:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="Transparent" />
   </Style>
-  <Style Selector="Button.mixerRow.chip">
-    <Setter Property="Padding" Value="{StaticResource Inset.MixerRole}" />
-    <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
-    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
-    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+  <Style Selector="Button.mixerRow.insertName:pointerover">
+    <Setter Property="Foreground" Value="{StaticResource Accent.Hover}" />
+  </Style>
+  <Style Selector="Button.mixerRow.name">
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.None}" />
+    <Setter Property="Padding" Value="{StaticResource Inset.MixerPlateName}" />
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+  </Style>
+  <!-- The kind line sits over the select button's top padding; it is a label only, so the whole plate stays one target. -->
+  <!-- The console controls draw their own focus ring in their own shape, so not the default adorner on their bounds. -->
+  <Style Selector=":is(controls|MixerValueControl), controls|SquareKey, controls|PowerGlyph, controls|TextKey">
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+  <Style Selector="StackPanel.mixerPlateKind">
+    <Setter Property="Margin" Value="{StaticResource Inset.MixerPlateText}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style Selector="Button.mixerRow.name:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="Button.mixerRow.route">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="4,0,4,2" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Route}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+  </Style>
+  <Style Selector="TextBlock.mixerRoute">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="4,0,4,2" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Route}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+  </Style>
+  <Style Selector="Button.mixerRow.route:pointerover">
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="Button.mixerRow.route:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="Button.mixerRow.micro">
-    <Setter Property="Padding" Value="0" />
-    <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
-    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Scale}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
     <Setter Property="HorizontalAlignment" Value="Left" />
   </Style>
   <Style Selector="Button.mixerRow.micro:pointerover /template/ ContentPresenter">
@@ -239,62 +237,41 @@
     <Setter Property="Foreground" Value="{StaticResource Control.LinkHover}" />
   </Style>
   <Style Selector="Button.mixerRow.micro.add">
-    <Setter Property="Foreground" Value="{StaticResource Accent.Hover}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Value}" />
   </Style>
   <Style Selector="Button.mixerRow.micro.cue">
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="Padding" Value="{StaticResource Inset.MixerRow}" />
   </Style>
-  <!-- "+2 more", "+1": what the strip holds beyond its visible slots. -->
+  <!-- "+2 more": what the strip holds beyond its visible slots. -->
   <Style Selector="TextBlock.mixerMore">
     <Setter Property="Foreground" Value="{StaticResource Accent.Hover}" />
   </Style>
-  <!-- Micro labels inside strips sit on tinted surfaces, so they use the secondary text role for contrast. -->
-  <Style Selector="Border.mixerStrip TextBlock.micro, Border.mixerMaster TextBlock.micro">
-    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  <!-- The console type ramp: small caps captions, mono values, the strip name. -->
+  <Style Selector="TextBlock.mixerCaption">
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="LineHeight" Value="10" />
   </Style>
-  <!-- The name block: a colour notch, "01 · AUDIO", and the name. Tinted when the track is selected. -->
-  <Style Selector="Grid.mixerName">
-    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
-    <Setter Property="Height" Value="{StaticResource Mixer.NameHeight}" />
-  </Style>
-  <Style Selector="StackPanel.mixerNumberLine">
-    <Setter Property="Margin" Value="{StaticResource Inset.MixerName}" />
-  </Style>
-  <Style Selector="Border.mixerMaster Grid.mixerName">
-    <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
-  </Style>
-  <Style Selector="Grid.mixerName.selected">
-    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
-  </Style>
-  <Style Selector="Grid.mixerName:pointerover">
-    <Setter Property="Background" Value="{StaticResource State.Hover}" />
-  </Style>
-  <Style Selector="Grid.mixerName.selected:pointerover">
-    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+  <Style Selector="TextBlock.mixerNote">
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Route}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="TextBlock.mixerStripName">
-    <Setter Property="FontSize" Value="{StaticResource FontSize.Title}" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Name}" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     <Setter Property="TextWrapping" Value="NoWrap" />
   </Style>
-  <!-- A long name drops to the small size and may take two lines before it is trimmed. -->
-  <Style Selector="TextBlock.mixerStripName.long">
-    <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
-    <Setter Property="TextWrapping" Value="Wrap" />
-    <Setter Property="MaxLines" Value="2" />
-  </Style>
-  <Style Selector="Border.mixerSelectedBadge">
-    <Setter Property="Width" Value="{StaticResource Icon.SizeLarge}" />
-    <Setter Property="Height" Value="{StaticResource Icon.SizeLarge}" />
-    <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
-    <Setter Property="Background" Value="{StaticResource Accent}" />
+  <Style Selector="TextBlock.mixerStripName.selected">
+    <Setter Property="Foreground" Value="{StaticResource Console.SelectedText}" />
   </Style>
   <Style Selector="TextBlock.mixerValue">
     <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
-    <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
+    <Setter Property="FontSize" Value="{StaticResource Console.FontSize.Value}" />
     <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
@@ -302,9 +279,62 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />
     <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
   </Style>
-  <!-- A clipped strip's peak readout takes the clip colour; the lit clip light above the meter is the shape cue. -->
+  <Style Selector="TextBlock.mixerValue.peak">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <!-- A clipped strip's peak readout takes the clip colour; the lit clip lamp atop the meter is the shape cue. -->
   <Style Selector="TextBlock.mixerValue.clipped">
-    <Setter Property="Foreground" Value="{StaticResource Meter.Clip}" />
+    <Setter Property="Foreground" Value="{StaticResource Console.Clip}" />
+  </Style>
+  <!-- Pan, keys and readouts. -->
+  <Style Selector="StackPanel.mixerControls, StackPanel.mixerMidi">
+    <Setter Property="Margin" Value="{StaticResource Inset.MixerBandTop}" />
+  </Style>
+  <Style Selector="Grid.mixerPanRow">
+    <Setter Property="Height" Value="{StaticResource Mixer.PanRowHeight}" />
+  </Style>
+  <Style Selector="Grid.mixerPanRow controls|PanKnob">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style Selector="TextBlock.mixerPanCaption">
+    <Setter Property="Margin" Value="28,2,0,0" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style Selector="TextBlock.mixerPanValue">
+    <Setter Property="Margin" Value="28,12,0,0" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style Selector="StackPanel.mixerKeys">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="1" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Height" Value="{StaticResource Mixer.KeyRowHeight}" />
+  </Style>
+  <Style Selector="StackPanel.mixerKeys controls|SquareKey">
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style Selector="Grid.mixerReadouts">
+    <Setter Property="Height" Value="{StaticResource Mixer.ReadoutRowHeight}" />
+  </Style>
+  <Style Selector="controls|RecessedWell.mixerReadout">
+    <Setter Property="Height" Value="{StaticResource Mixer.ReadoutHeight}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Radius" Value="2" />
+  </Style>
+  <Style Selector="controls|RecessedWell.mixerReadout TextBlock">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <!-- The fader zone, which gives up height first. -->
+  <Style Selector="Grid.mixerRails">
+    <Setter Property="Margin" Value="{StaticResource Inset.MixerStrip}" />
+    <Setter Property="MinHeight" Value="{StaticResource Mixer.MinimumRailsHeight}" />
+  </Style>
+  <Style Selector="controls|TrackFooterBand.mixerPlate">
+    <Setter Property="Height" Value="{StaticResource Mixer.FooterPlateHeight}" />
+    <Setter Property="Margin" Value="{StaticResource Inset.MixerPlate}" />
   </Style>
   <!-- While a strip is clipped its whole meter column is a reset button: no chrome, only a focus ring and a hover wash. -->
   <Style Selector="Button.mixerClip">
@@ -352,23 +382,6 @@
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
-  <!-- The strip body: pan, buttons, readouts, then the star-sized rails, which give up height first. -->
-  <Style Selector="Grid.mixerBody">
-    <Setter Property="Margin" Value="{StaticResource Inset.MixerStrip}" />
-    <Setter Property="RowSpacing" Value="{StaticResource Space.S}" />
-  </Style>
-  <Style Selector="controls|MixerPanRamp.mixerPan">
-    <Setter Property="Height" Value="{StaticResource Mixer.PanRampHeight}" />
-  </Style>
-  <Style Selector="Border.mixerReadouts">
-    <Setter Property="Padding" Value="{StaticResource Inset.MixerReadout}" />
-  </Style>
-  <Style Selector="TextBlock.mixerUnit">
-    <Setter Property="IsVisible" Value="False" />
-  </Style>
-  <Style Selector="Border.mixerRails">
-    <Setter Property="MinHeight" Value="{StaticResource Mixer.MinimumRailsHeight}" />
-  </Style>
   <Style Selector="LayoutTransformControl.mixerStatus">
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="VerticalAlignment" Value="Center" />
@@ -378,33 +391,10 @@
     <Setter Property="Height" Value="{StaticResource Mixer.CueHeight}" />
   </Style>
   <!--
-    Height tiers (MixerConsoleView sets them from the strips-area height). "tight": readouts drop to one line with unit
-    suffixes, the name block and body spacing tighten, and the rails shrink. "short": the processing band also folds
-    into a one-line cue that still reaches every device and send.
+    Height tiers (MixerConsoleView sets them from the strips-area height). "tight": the fader zone may shrink further.
+    "short": the insert well and count line also fold into a one-line cue that still reaches every device and send.
   -->
-  <Style Selector=":is(UserControl).tight Grid.mixerBody">
-    <Setter Property="Margin" Value="{StaticResource Inset.MixerBodyTight}" />
-    <Setter Property="RowSpacing" Value="{StaticResource Space.XS}" />
-  </Style>
-  <Style Selector=":is(UserControl).tight Grid.mixerName">
-    <Setter Property="Height" Value="{StaticResource Mixer.TightNameHeight}" />
-  </Style>
-  <Style Selector=":is(UserControl).tight Button.mixerRow.name">
-    <Setter Property="Padding" Value="{StaticResource Inset.MixerNameTight}" />
-  </Style>
-  <Style Selector=":is(UserControl).tight StackPanel.mixerNumberLine">
-    <Setter Property="Margin" Value="{StaticResource Inset.MixerNameTight}" />
-  </Style>
-  <Style Selector=":is(UserControl).tight TextBlock.mixerStripName.long">
-    <Setter Property="MaxLines" Value="1" />
-  </Style>
-  <Style Selector=":is(UserControl).tight TextBlock.mixerCaption">
-    <Setter Property="IsVisible" Value="False" />
-  </Style>
-  <Style Selector=":is(UserControl).tight TextBlock.mixerUnit">
-    <Setter Property="IsVisible" Value="True" />
-  </Style>
-  <Style Selector=":is(UserControl).tight Border.mixerRails">
+  <Style Selector=":is(UserControl).tight Grid.mixerRails">
     <Setter Property="MinHeight" Value="{StaticResource Mixer.TightRailsHeight}" />
   </Style>
   <Style Selector=":is(UserControl).short Border.mixerBand.processing">

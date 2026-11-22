@@ -109,9 +109,8 @@ public sealed class SignalIndicatorRendererTests
     [Fact]
     public void Readout_OverFullScale_ReadsAtFourAndAHalfToOneOnAPanel()
     {
-        // WCAG's contrast for 9 px text: the readout's clip tint against the panel it sits on (the clip colour itself is 4.17:1).
+        // WCAG's contrast for 9 px text: the readout's clip tint against the panel it sits on.
         var clip = Bluestone.Desktop.Theme.Palette.MeterClip;
-        Assert.True(Contrast(clip, Bluestone.Desktop.Theme.Palette.Panel) < 4.5);
         var contrast = Contrast(SignalIndicatorRenderer.ReadoutOverColor(clip), Bluestone.Desktop.Theme.Palette.Panel);
         Assert.True(contrast >= 4.5, $"{contrast:0.00}:1");
 

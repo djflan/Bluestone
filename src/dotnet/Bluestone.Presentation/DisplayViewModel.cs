@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Bluestone.Presentation;
 
@@ -66,6 +67,9 @@ public sealed record DisplaySettings
 
     /// <summary>Where Medium and Large indicators sit: Top, Middle, or Bottom. Compact uses <see cref="IndicatorPosition"/>.</summary>
     public JunctionIndicatorPosition LargeIndicatorPosition { get; init; } = JunctionIndicatorPosition.Middle;
+
+    /// <summary>The colours signal indicators' levels run through. The clip lamp is not part of it.</summary>
+    public SignalGradient SignalGradient { get; init; } = SignalGradient.Default;
 }
 
 /// <summary>Reads and writes <see cref="DisplaySettings"/> as a small JSON file. A missing or unreadable file gives the defaults.</summary>
@@ -98,6 +102,9 @@ public sealed class DisplaySettingsStore(string path)
                 IndicatorSize = Enum.IsDefined(settings.IndicatorSize) ? settings.IndicatorSize : SignalIndicatorSize.Compact,
                 LedShape = Enum.IsDefined(settings.LedShape) ? settings.LedShape : LedShape.Bar,
                 LargeIndicatorPosition = DisplayViewModel.LargePositions.Any(p => p.Position == settings.LargeIndicatorPosition) ? settings.LargeIndicatorPosition : JunctionIndicatorPosition.Middle,
+
+                // The converter reads an invalid gradient as null; an explicit null stays null too.
+                SignalGradient = settings.SignalGradient ?? SignalGradient.Default,
             };
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
@@ -274,6 +281,93 @@ public sealed partial class DisplayViewModel : ObservableObject
     /// <summary>Whether Compact's four positions apply (otherwise Medium and Large's three do).</summary>
     public bool IsCompact => IndicatorSize == SignalIndicatorSize.Compact;
 
+    /// <summary>The colours every signal indicator's level runs through, bottom to top. The clip lamp keeps its own colour.</summary>
+    [ObservableProperty]
+    public partial SignalGradient SignalGradient { get; set; } = SignalGradient.Default;
+
+    /// <summary>
+    /// Adds a stop at <paramref name="position"/> (clamped to [0, 1]) in the colour the gradient already has there, so
+    /// the gradient looks the same until the stop is changed. Returns the new stop's index, or -1 at <see cref="SignalGradient.MaxStops"/>.
+    /// </summary>
+    public int AddGradientStop(double position)
+    {
+        if (double.IsNaN(position) || SignalGradient.Stops.Length >= SignalGradient.MaxStops)
+        {
+            return -1;
+        }
+
+        position = Math.Clamp(position, 0, 1);
+        var (r, g, b) = SignalGradient.Evaluate(position);
+        var stop = new SignalGradientStop($"#{r:X2}{g:X2}{b:X2}", position);
+
+        // After any stops already at this position, so an existing hard edge keeps its order.
+        var index = 0;
+        while (index < SignalGradient.Stops.Length && SignalGradient.Stops[index].Position <= position)
+        {
+            index++;
+        }
+
+        SignalGradient = SignalGradient.Create(SignalGradient.Stops.Insert(index, stop));
+        return index;
+    }
+
+    /// <summary>Removes the stop at <paramref name="index"/>. Returns false for an index out of range, or at <see cref="SignalGradient.MinStops"/>.</summary>
+    public bool RemoveGradientStop(int index)
+    {
+        if (index < 0 || index >= SignalGradient.Stops.Length || SignalGradient.Stops.Length <= SignalGradient.MinStops)
+        {
+            return false;
+        }
+
+        SignalGradient = SignalGradient.Create(SignalGradient.Stops.RemoveAt(index));
+        return true;
+    }
+
+    /// <summary>
+    /// Moves the stop at <paramref name="index"/> to <paramref name="position"/> (clamped to [0, 1]); moving it past a
+    /// neighbour reorders the stops. Returns the stop's new index, or -1 for an index out of range or a position that is not a number.
+    /// </summary>
+    public int MoveGradientStop(int index, double position)
+    {
+        if (index < 0 || index >= SignalGradient.Stops.Length || double.IsNaN(position))
+        {
+            return -1;
+        }
+
+        position = Math.Clamp(position, 0, 1);
+        var stops = SignalGradient.Stops;
+        var moved = stops[index] with { Position = position };
+
+        // Where the moved stop lands among the others: after those below or at its position, as Create's stable sort places it.
+        var newIndex = 0;
+        for (var i = 0; i < stops.Length; i++)
+        {
+            if (i != index && (stops[i].Position < position || (stops[i].Position == position && i < index)))
+            {
+                newIndex++;
+            }
+        }
+
+        SignalGradient = SignalGradient.Create(stops.SetItem(index, moved));
+        return newIndex;
+    }
+
+    /// <summary>Sets the colour ("#RRGGBB") of the stop at <paramref name="index"/>. Returns false for an index out of range or a colour that is not "#RRGGBB".</summary>
+    public bool SetGradientStopColour(int index, string colour)
+    {
+        if (index < 0 || index >= SignalGradient.Stops.Length || !SignalGradient.IsColour(colour))
+        {
+            return false;
+        }
+
+        SignalGradient = SignalGradient.Create(SignalGradient.Stops.SetItem(index, SignalGradient.Stops[index] with { Colour = colour }));
+        return true;
+    }
+
+    /// <summary>Puts the gradient back to <see cref="SignalGradient.Default"/>.</summary>
+    [RelayCommand]
+    private void ResetGradient() => SignalGradient = SignalGradient.Default;
+
     /// <summary>Reads the saved settings from <paramref name="store"/> and saves every later change there.</summary>
     public void Use(DisplaySettingsStore store)
     {
@@ -287,6 +381,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             IndicatorSize = settings.IndicatorSize;
             LedShape = settings.LedShape;
             LargeIndicatorPosition = settings.LargeIndicatorPosition;
+            SignalGradient = settings.SignalGradient;
         }
         finally
         {
@@ -304,13 +399,15 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     partial void OnLargeIndicatorPositionChanged(JunctionIndicatorPosition value) => Save();
 
+    partial void OnSignalGradientChanged(SignalGradient value) => Save();
+
     private void Save()
     {
         if (!_loading && _store is { } store)
         {
             try
             {
-                store.Save(new DisplaySettings { IndicatorPosition = IndicatorPosition, LevelStyle = LevelStyle, IndicatorSize = IndicatorSize, LedShape = LedShape, LargeIndicatorPosition = LargeIndicatorPosition });
+                store.Save(new DisplaySettings { IndicatorPosition = IndicatorPosition, LevelStyle = LevelStyle, IndicatorSize = IndicatorSize, LedShape = LedShape, LargeIndicatorPosition = LargeIndicatorPosition, SignalGradient = SignalGradient });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

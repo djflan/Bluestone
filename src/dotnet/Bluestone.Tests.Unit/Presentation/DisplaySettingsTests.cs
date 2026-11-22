@@ -127,4 +127,89 @@ public sealed class DisplaySettingsTests : IDisposable
         System.IO.File.WriteAllText(File(), "{ \"indicatorPosition\": \"middle\", \"largeIndicatorPosition\": \"upperHalf\" }");
         Assert.Equal(new DisplaySettings(), store.Load());
     }
+    [Fact]
+    public void TheGradient_RoundTrips_AndAnInvalidOneGivesTheDefaultWithoutResettingTheOthers()
+    {
+        var store = new DisplaySettingsStore(File());
+        Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
+
+        var gradient = SignalGradient.Create([new("#000000", 0), new("#FF0000", 0.5), new("#FF0000", 0.5), new("#FFFFFF", 1)]);
+        store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, SignalGradient = gradient });
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, SignalGradient = gradient }, store.Load());
+        Assert.Contains("\"colour\": \"#FF0000\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
+
+        string[] invalid =
+        [
+            "[{ \"colour\": \"#000000\", \"position\": 0 }]",
+            "[{ \"colour\": \"#000000\", \"position\": 0 }, { \"colour\": \"blue\", \"position\": 1 }]",
+            "[{ \"colour\": \"#000000\", \"position\": 0 }, { \"colour\": \"#FFFFFF\", \"position\": \"top\" }]",
+            "[{ \"colour\": \"#000000\" }, { \"colour\": \"#FFFFFF\", \"position\": 1 }]",
+            "\"rainbow\"",
+            "{ \"stops\": [] }",
+            "null",
+        ];
+        foreach (var json in invalid)
+        {
+            System.IO.File.WriteAllText(File(), $"{{ \"levelStyle\": \"peak\", \"signalGradient\": {json}, \"indicatorSize\": \"large\" }}");
+            Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, IndicatorSize = SignalIndicatorSize.Large }, store.Load());
+        }
+
+        // Out-of-range and unsorted positions are clamped and sorted, not rejected.
+        System.IO.File.WriteAllText(File(), "{ \"signalGradient\": [{ \"colour\": \"#ffffff\", \"position\": 2 }, { \"colour\": \"#000000\", \"position\": -1 }] }");
+        Assert.Equal(SignalGradient.Create([new("#000000", 0), new("#FFFFFF", 1)]), store.Load().SignalGradient);
+    }
+
+    [Fact]
+    public void TheViewModel_EditsTheGradient_AndSavesEveryEdit()
+    {
+        var store = new DisplaySettingsStore(File());
+        var display = new DisplayViewModel();
+        display.Use(store);
+        Assert.Equal(SignalGradient.Default, display.SignalGradient);
+        var notified = new List<string?>();
+        display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
+
+        // A new stop takes the colour already there, so the gradient looks the same.
+        var before = display.SignalGradient.Evaluate(0.2);
+        Assert.Equal(1, display.AddGradientStop(0.2));
+        Assert.Equal(7, display.SignalGradient.Stops.Length);
+        Assert.Equal(new SignalGradientStop("#34C6F4", 0.2), display.SignalGradient.Stops[1]);
+        Assert.Equal(before, display.SignalGradient.Evaluate(0.2));
+        Assert.Contains(nameof(DisplayViewModel.SignalGradient), notified);
+        Assert.Equal(display.SignalGradient, store.Load().SignalGradient);
+
+        Assert.True(display.SetGradientStopColour(1, "#ff0000"));
+        Assert.Equal(new SignalGradientStop("#FF0000", 0.2), store.Load().SignalGradient.Stops[1]);
+        Assert.False(display.SetGradientStopColour(1, "red"));
+        Assert.False(display.SetGradientStopColour(9, "#FF0000"));
+
+        // Moving past a neighbour reorders; the returned index follows the stop.
+        Assert.Equal(2, display.MoveGradientStop(1, 0.5));
+        Assert.Equal(new SignalGradientStop("#FF0000", 0.5), store.Load().SignalGradient.Stops[2]);
+        // At a tie it keeps its order relative to the stop already there.
+        Assert.Equal(5, display.MoveGradientStop(2, 1.5));
+        Assert.Equal(new SignalGradientStop("#FF0000", 1), store.Load().SignalGradient.Stops[5]);
+        Assert.Equal(-1, display.MoveGradientStop(7, 0.5));
+
+        Assert.True(display.RemoveGradientStop(5));
+        Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
+        Assert.False(display.RemoveGradientStop(-1));
+
+        Assert.Equal(5, display.AddGradientStop(0.9));
+        Assert.Equal(6, display.AddGradientStop(0.95));
+        Assert.Equal(-1, display.AddGradientStop(0.5));
+        Assert.Equal(8, store.Load().SignalGradient.Stops.Length);
+
+        display.ResetGradientCommand.Execute(null);
+        Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
+
+        // Never fewer than two stops; the other preferences are kept alongside.
+        display.LevelStyle = JunctionLevelStyle.Peak;
+        while (display.RemoveGradientStop(0))
+        {
+        }
+
+        Assert.Equal(2, display.SignalGradient.Stops.Length);
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, SignalGradient = display.SignalGradient }, store.Load());
+    }
 }

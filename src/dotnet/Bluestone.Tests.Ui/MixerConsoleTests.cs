@@ -11,7 +11,6 @@ using Avalonia.Media.Imaging;
 using Bluestone.Application.Editing;
 using Bluestone.Audio;
 using Bluestone.Desktop.Controls;
-using Bluestone.Desktop.Theme;
 using Bluestone.Desktop.Views;
 using Bluestone.Domain.Devices;
 using Bluestone.Domain.Mixing;
@@ -139,25 +138,25 @@ public sealed class MixerConsoleTests
         Assert.False(app.ViewModel.MixerConsole.Tracks.Single(row => row.Id == midi.Id).HasAudioStrip);
         Assert.True(app.ViewModel.MixerConsole.Tracks.Single(row => row.Id == effect.Id).HasAudioStrip);
 
-        Assert.Equal(2, mixer.GetLogicalDescendants().OfType<MixerGainBar>().Count(bar => bar.IsEffectivelyVisible && AutomationProperties.GetName(bar) != "Master gain"));
+        Assert.Equal(2, mixer.GetLogicalDescendants().OfType<ConsoleFader>().Count(bar => bar.IsEffectivelyVisible && AutomationProperties.GetName(bar) != "Master gain"));
         foreach (var track in new[] { audio, effect })
         {
             var strip = StripOf(mixer, track.Name);
-            Visible<MixerGainBar>(strip, $"{track.Name} gain");
-            Visible<MixerPanRamp>(strip, $"{track.Name} pan");
-            Visible<MixerMeterRail>(strip, "Track level meter");
+            Visible<ConsoleFader>(strip, $"{track.Name} gain");
+            Visible<PanKnob>(strip, $"{track.Name} pan");
+            Visible<LedLadderMeter>(strip, "Track level meter");
             Visible<ToggleButton>(strip, $"Mute {track.Name}");
             Visible<ToggleButton>(strip, $"Solo {track.Name}");
         }
 
         var midiStrip = StripOf(mixer, midi.Name);
-        Assert.DoesNotContain(midiStrip.GetLogicalDescendants().OfType<MixerGainBar>(), bar => bar.IsEffectivelyVisible);
-        Assert.DoesNotContain(midiStrip.GetLogicalDescendants().OfType<MixerPanRamp>(), pan => pan.IsEffectivelyVisible);
-        Assert.DoesNotContain(midiStrip.GetLogicalDescendants().OfType<MixerMeterRail>(), rail => rail.IsEffectivelyVisible);
-        Assert.Equal(2, mixer.GetLogicalDescendants().OfType<MixerPanRamp>().Count(pan => pan.IsEffectivelyVisible && AutomationProperties.GetName(pan) != "Master pan"));
-        Visible<MixerGainBar>(mixer, "Master gain");
-        Visible<MixerPanRamp>(mixer, "Master pan");
-        Visible<MixerMeterRail>(mixer, "Master level meter");
+        Assert.DoesNotContain(midiStrip.GetLogicalDescendants().OfType<ConsoleFader>(), bar => bar.IsEffectivelyVisible);
+        Assert.DoesNotContain(midiStrip.GetLogicalDescendants().OfType<PanKnob>(), pan => pan.IsEffectivelyVisible);
+        Assert.DoesNotContain(midiStrip.GetLogicalDescendants().OfType<LedLadderMeter>(), rail => rail.IsEffectivelyVisible);
+        Assert.Equal(2, mixer.GetLogicalDescendants().OfType<PanKnob>().Count(pan => pan.IsEffectivelyVisible && AutomationProperties.GetName(pan) != "Master pan"));
+        Visible<ConsoleFader>(mixer, "Master gain");
+        Visible<PanKnob>(mixer, "Master pan");
+        Visible<LedLadderMeter>(mixer, "Master level meter");
         Assert.Empty(AllVisible<ToggleButton>(midiStrip, $"Mute {midi.Name}"));
         Assert.Empty(AllVisible<ToggleButton>(midiStrip, $"Solo {midi.Name}"));
         Visible<ToggleButton>(mixer, "Mute Master");
@@ -235,7 +234,7 @@ public sealed class MixerConsoleTests
         app.Settle();
 
         var expectedHold = Math.Max(MeterReading.ToDecibels(0.9f), MeterReading.ToDecibels(0.8f));
-        var faces = mixer.GetLogicalDescendants().OfType<MixerMeterRail>().ToArray();
+        var faces = mixer.GetLogicalDescendants().OfType<LedLadderMeter>().ToArray();
         var targetFaces = faces.Where(face => face.IsEffectivelyVisible).ToArray();
         Assert.True(targetFaces.Length >= 2, "The visible track and Master meter rails should both be present.");
         Assert.All(targetFaces, face => Assert.Equal(expectedHold, face.PeakHold, 5));
@@ -271,7 +270,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var fader = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
+        var fader = Visible<ConsoleFader>(strip, $"{audio.Name} gain");
         var readout = Visible<TextBlock>(strip, "Track gain in decibels");
         var row = app.ViewModel.MixerConsole.Tracks.Single(candidate => candidate.Id == audio.Id);
         var steps = app.Session.History.UndoCount;
@@ -319,7 +318,6 @@ public sealed class MixerConsoleTests
         var send = Assert.Single(app.Session.Project.Connections, connection => connection.AudioPurpose == AudioRoutePurpose.Send);
         Assert.Equal(SignalNode.Track(effect.Id), send.Destination);
         Assert.Single(source.Sends);
-        Assert.Single(AllVisible<Knob>(strip, $"Send to {effect.Name} level"));
         Assert.Single(AllVisible<Knob>(sends, $"Send to {effect.Name} level"));
         Assert.Single(AllVisible<Button>(strip, "1 send, show all or add"));
 
@@ -327,7 +325,7 @@ public sealed class MixerConsoleTests
         app.Settle();
         Assert.DoesNotContain(app.Session.Project.Connections, connection => connection.AudioPurpose == AudioRoutePurpose.Send);
         Assert.Empty(source.Sends);
-        Assert.Empty(AllVisible<Knob>(strip, $"Send to {effect.Name} level"));
+        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "No sends" && text.IsEffectivelyVisible);
     });
 
     [Fact]
@@ -338,7 +336,7 @@ public sealed class MixerConsoleTests
         await SetStripAsync(app, audio.Id, -10, 0);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(strip, $"{audio.Name} gain");
         var readout = Visible<TextBlock>(strip, "Track gain in decibels");
         Assert.Equal(-10, bar.Value);
         var steps = app.Session.History.UndoCount;
@@ -372,7 +370,7 @@ public sealed class MixerConsoleTests
         await SetStripAsync(app, audio.Id, -10, 0);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(strip, $"{audio.Name} gain");
         var tracks = app.Session.Project.Sequence.Tracks.Length;
         var selected = app.ViewModel.SelectedTrack;
         app.ViewModel.NextBarCommand.Execute(null);
@@ -411,7 +409,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         await SetStripAsync(app, audio.Id, 0, 0.5);
         var mixer = ShowDockedMixer(app);
-        var ramp = Visible<MixerPanRamp>(StripOf(mixer, audio.Name), $"{audio.Name} pan");
+        var ramp = Visible<PanKnob>(StripOf(mixer, audio.Name), $"{audio.Name} pan");
         var tracks = app.Session.Project.Sequence.Tracks.Length;
         app.ViewModel.NextBarCommand.Execute(null);
         var playhead = app.ViewModel.PlayheadTick;
@@ -439,8 +437,8 @@ public sealed class MixerConsoleTests
         await SetStripAsync(app, audio.Id, -10, 0.5);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
-        var ramp = Visible<MixerPanRamp>(strip, $"{audio.Name} pan");
+        var bar = Visible<ConsoleFader>(strip, $"{audio.Name} gain");
+        var ramp = Visible<PanKnob>(strip, $"{audio.Name} pan");
         Assert.True(AudioStrip.MaxGainDecibels > MixerRail.GainCeiling, "The strip allows more boost than the bar draws.");
 
         bar.Focus(NavigationMethod.Tab);
@@ -474,7 +472,7 @@ public sealed class MixerConsoleTests
         await SetStripAsync(app, audio.Id, -20, 0);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(strip, $"{audio.Name} gain");
         Assert.True(bar.Bounds.Height > 40, $"The gain bar should be tall enough to drag, was {bar.Bounds.Height}.");
         var steps = app.Session.History.UndoCount;
         var centre = new Point(bar.Bounds.Width / 2, bar.Bounds.Height / 2);
@@ -518,9 +516,9 @@ public sealed class MixerConsoleTests
         await SetStripAsync(app, audio.Id, 0, 0.5);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var ramp = Visible<MixerPanRamp>(strip, $"{audio.Name} pan");
+        var ramp = Visible<PanKnob>(strip, $"{audio.Name} pan");
         var readout = Assert.Single(strip.GetLogicalDescendants().OfType<TextBlock>(), text =>
-            text.IsEffectivelyVisible && text.Parent is Grid grid && grid.Children.Contains(ramp));
+            text.IsEffectivelyVisible && !text.Classes.Contains("mixerCaption") && text.Parent is Grid grid && grid.Children.Contains(ramp));
         Assert.Equal("R50", readout.Text);
         var steps = app.Session.History.UndoCount;
 
@@ -603,7 +601,6 @@ public sealed class MixerConsoleTests
 
         Assert.Equal(MixerConsoleViewModel.VisibleInsertRows, strip.GetLogicalDescendants().OfType<ToggleButton>().Count(button =>
             button.IsEffectivelyVisible && AutomationProperties.GetName(button)?.EndsWith(" power", StringComparison.Ordinal) == true));
-        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "5 DEVICES" && text.IsEffectivelyVisible);
         var more = Visible<Button>(strip, "Show every device on this track");
         Assert.Contains(more.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "+2 more");
 
@@ -640,7 +637,7 @@ public sealed class MixerConsoleTests
 
         var vocal = StripOf(mixer, audio.Name);
         var add = Visible<Button>(vocal, "Add a device to this track");
-        Assert.Contains(add.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "+ Add device");
+        Assert.Contains(add.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "+");
         app.Click(add);
 
         Assert.Equal(audio.Id, Assert.Single(app.ViewModel.SelectedTracks).Id);
@@ -652,7 +649,8 @@ public sealed class MixerConsoleTests
         var devices = await AddDevicesAsync(app, midi.Id, BuiltInDevices.Transpose, BuiltInDevices.Arpeggiator);
         mixer = ShowTallDockedMixer(app);
         var keys = StripOf(mixer, midi.Name);
-        Assert.Empty(AllVisible<Button>(keys, "Add a device to this track"));
+        // Two devices leave the well's third row free, so it still offers "+".
+        Assert.Single(AllVisible<Button>(keys, "Add a device to this track"));
         app.Click(Visible<Button>(keys, $"Open {devices[1].DisplayName}"));
 
         Assert.Equal(midi.Id, Assert.Single(app.ViewModel.SelectedTracks).Id);
@@ -674,7 +672,7 @@ public sealed class MixerConsoleTests
         await AppUnderTest.WaitUntilAsync(() => app.ViewModel.MixerConsole.Tracks.Count == 4, "the group strip");
         var mixer = ShowDockedMixer(app);
         var bus = StripOf(mixer, group.Name);
-        Visible<MixerGainBar>(bus, $"{group.Name} gain");
+        Visible<ConsoleFader>(bus, $"{group.Name} gain");
         Assert.Empty(AllVisible<ToggleButton>(bus, $"Record arm {group.Name}"));
 
         var vocalArm = Visible<ToggleButton>(StripOf(mixer, audio.Name), $"Record arm {audio.Name}");
@@ -732,8 +730,8 @@ public sealed class MixerConsoleTests
         var keys = StripOf(mixer, midi.Name);
 
         Assert.DoesNotContain(keys.GetLogicalDescendants().OfType<MixerValueControl>(), control => control.IsEffectivelyVisible);
-        Assert.DoesNotContain(keys.GetLogicalDescendants().OfType<MixerMeterRail>(), rail => rail.IsEffectivelyVisible);
-        Assert.DoesNotContain(keys.GetLogicalDescendants().OfType<MixerDbScale>(), scale => scale.IsEffectivelyVisible);
+        Assert.DoesNotContain(keys.GetLogicalDescendants().OfType<LedLadderMeter>(), rail => rail.IsEffectivelyVisible);
+        Assert.DoesNotContain(keys.GetLogicalDescendants().OfType<ConsoleScale>(), scale => scale.IsEffectivelyVisible);
         Assert.DoesNotContain(keys.GetLogicalDescendants().OfType<Button>(), button => button.IsEffectivelyVisible
             && AutomationProperties.GetName(button) is { } name
             && (name.Contains("send", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Output:", StringComparison.Ordinal)));
@@ -818,10 +816,10 @@ public sealed class MixerConsoleTests
 
         void AssertRails(MixerMeterMode expected)
         {
-            var rails = mixer.GetLogicalDescendants().OfType<MixerMeterRail>().Where(rail => rail.IsEffectivelyVisible).ToArray();
+            var rails = mixer.GetLogicalDescendants().OfType<LedLadderMeter>().Where(rail => rail.IsEffectivelyVisible).ToArray();
             Assert.Equal(3, rails.Length); // Vocal, Reverb, Master; Keys is MIDI only.
             Assert.All(rails, rail => Assert.Equal(expected, rail.Mode));
-            Assert.Equal(3, mixer.GetLogicalDescendants().OfType<MixerGainBar>().Count(bar => bar.IsEffectivelyVisible));
+            Assert.Equal(3, mixer.GetLogicalDescendants().OfType<ConsoleFader>().Count(bar => bar.IsEffectivelyVisible));
         }
     });
 
@@ -902,7 +900,6 @@ public sealed class MixerConsoleTests
         {
             var strip = StripOf(mixer, midi.Name);
             Assert.Equal(Math.Min(count, MixerConsoleViewModel.VisibleInsertRows), Powers(strip).Length);
-            Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == $"{count} DEVICES" && text.IsEffectivelyVisible);
             var overflow = AllVisible<Button>(strip, "Show every device on this track").ToArray();
             if (count > MixerConsoleViewModel.VisibleInsertRows)
             {
@@ -1043,20 +1040,6 @@ public sealed class MixerConsoleTests
         Assert.False(IsBypassed(app, devices[3].Id));
     });
 
-    [Fact]
-    public Task SendKnobOnTheStrip_IsDrawnInItsTrackColour() => HeadlessApp.RunAsync(async () =>
-    {
-        await using var app = await AppUnderTest.OpenAsync();
-        var (audio, _, effect) = await SeedAsync(app);
-        Assert.True(app.Session.Execute(RoutingCommands.AddAudioSend(audio.Id, effect.Id, -12, false, BuiltInDevices.Find)));
-        app.Settle();
-        var mixer = ShowTallDockedMixer(app);
-        var row = app.ViewModel.MixerConsole.Tracks.Single(candidate => candidate.Id == audio.Id);
-        var knob = Visible<Knob>(StripOf(mixer, audio.Name), $"Send to {effect.Name} level");
-
-        Assert.Equal(Palette.Track(row.ColorIndex), knob.Accent);
-        Assert.NotEqual(Palette.Accent, knob.Accent);
-    });
 
     [Fact]
     public Task GainBarWheel_VerticalAdjusts_ShiftOrHorizontalPassesThroughToTheStripRow() => HeadlessApp.RunAsync(async () =>
@@ -1065,7 +1048,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         await SetStripAsync(app, audio.Id, -10, 0);
         var mixer = ShowDockedMixer(app);
-        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
         var at = app.InWindow(bar, new Point(bar.Bounds.Width / 2, bar.Bounds.Height / 2));
         bool? handled = null;
         Assert.IsAssignableFrom<Control>(bar.Parent).AddHandler(InputElement.PointerWheelChangedEvent,
@@ -1096,7 +1079,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         await SetStripAsync(app, audio.Id, -10, 0);
         var mixer = ShowDockedMixer(app);
-        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
 
         // Keys, then Delete at once (inside the history's merge window): Undo brings back the adjusted value.
         bar.Focus(NavigationMethod.Tab);
@@ -1135,7 +1118,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         await SetStripAsync(app, audio.Id, -80, 0);
         var mixer = ShowDockedMixer(app);
-        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
         Assert.True(-80 < MixerRail.GainFloor);
 
         bar.Focus(NavigationMethod.Tab);
@@ -1153,7 +1136,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         await SetStripAsync(app, audio.Id, -10, 0);
         var mixer = ShowDockedMixer(app);
-        var bar = Visible<MixerGainBar>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
         var steps = app.Session.History.UndoCount;
 
         bar.Focus(NavigationMethod.Tab);
@@ -1180,7 +1163,7 @@ public sealed class MixerConsoleTests
         await SetStripAsync(app, audio.Id, -10, 0);
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
-        var bar = Visible<MixerGainBar>(strip, $"{audio.Name} gain");
+        var bar = Visible<ConsoleFader>(strip, $"{audio.Name} gain");
         var range = Assert.IsAssignableFrom<IRangeValueProvider>(ControlAutomationPeer.CreatePeerForElement(bar));
         Assert.False(range.IsReadOnly);
 
@@ -1210,7 +1193,7 @@ public sealed class MixerConsoleTests
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
         var row = app.ViewModel.MixerConsole.Tracks.Single(candidate => candidate.Id == audio.Id);
-        var rail = Assert.Single(strip.GetLogicalDescendants().OfType<MixerMeterRail>(), candidate => candidate.IsEffectivelyVisible);
+        var rail = Assert.Single(strip.GetLogicalDescendants().OfType<LedLadderMeter>(), candidate => candidate.IsEffectivelyVisible);
         var reading = new MeterReading(0.5f, 0.5f, 0.3f, 0.3f);
         app.ViewModel.MixerConsole.MeterSource = _ => reading;
         var timestamp = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -1334,7 +1317,8 @@ public sealed class MixerConsoleTests
         Assert.True(app.Session.Execute(RoutingCommands.AddAudioSend(audio.Id, effect.Id, -12, false, BuiltInDevices.Find)));
         await AppUnderTest.WaitUntilAsync(() => app.ViewModel.MixerConsole.Tracks.Single(row => row.Id == audio.Id).Sends.Count == 1, "the send knob");
         var mixer = ShowDockedMixer(app);
-        var knob = Visible<Knob>(StripOf(mixer, audio.Name), $"Send to {effect.Name} level");
+        var sends = OpenFlyout(app, Visible<Button>(StripOf(mixer, audio.Name), "1 send, show all or add"));
+        var knob = Visible<Knob>(sends, $"Send to {effect.Name} level");
 
         var peer = ControlAutomationPeer.CreatePeerForElement(knob);
         Assert.Equal(AutomationControlType.Slider, peer.GetAutomationControlType());
@@ -1394,21 +1378,22 @@ public sealed class MixerConsoleTests
         var mixer = ShowDockedMixer(app);
         var strip = StripOf(mixer, audio.Name);
 
-        Assert.Equal(MixerConsoleViewModel.VisibleSendKnobs, strip.GetLogicalDescendants().OfType<Knob>().Count(knob => knob.IsEffectivelyVisible));
+        // The strip face carries a count, not knobs: every send level lives in the sends list.
+        Assert.DoesNotContain(strip.GetLogicalDescendants().OfType<Knob>(), knob => knob.IsEffectivelyVisible);
         var header = Visible<Button>(strip, "3 sends, show all or add");
-        Assert.Contains(header.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "+1" && text.IsEffectivelyVisible);
+        Assert.Contains(header.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "3 SENDS" && text.IsEffectivelyVisible);
 
         var list = OpenFlyout(app, header);
         Assert.Equal(targets.Select(target => $"Send to {target.Name} level"),
             list.GetLogicalDescendants().OfType<Knob>().Where(knob => knob.IsEffectivelyVisible).Select(AutomationProperties.GetName));
 
-        // Removing one from the list leaves two: both on the strip, no overflow.
+        // Removing one from the list leaves two.
         app.Click(list.GetLogicalDescendants().OfType<Button>().First(button =>
             button.IsEffectivelyVisible && AutomationProperties.GetName(button) == "Remove audio send"));
         await AppUnderTest.WaitUntilAsync(() => row.Sends.Count == 2, "the send to go");
         ((Flyout)header.Flyout!).Hide();
         app.Settle();
-        Assert.Equal(2, strip.GetLogicalDescendants().OfType<Knob>().Count(knob => knob.IsEffectivelyVisible));
+        Assert.Contains(strip.GetLogicalDescendants().OfType<TextBlock>(), text => text.Text == "2 SENDS" && text.IsEffectivelyVisible);
         Assert.DoesNotContain(Visible<Button>(strip, "2 sends, show all or add").GetLogicalDescendants().OfType<TextBlock>(),
             text => text.IsEffectivelyVisible && text.Text?.StartsWith('+') == true);
     });
@@ -1420,7 +1405,7 @@ public sealed class MixerConsoleTests
         var (audio, _, _) = await SeedAsync(app);
         var mixer = ShowDockedMixer(app);
         Assert.Equal(MixerMeterMode.PeakRms, app.ViewModel.MixerConsole.MeterMode);
-        var rail = Visible<MixerMeterRail>(StripOf(mixer, audio.Name), "Track level meter");
+        var rail = Visible<LedLadderMeter>(StripOf(mixer, audio.Name), "Track level meter");
         var reading = new MeterReading(0.9f, 0.6f, 0.2f, 0.5f);
         app.ViewModel.MixerConsole.MeterSource = _ => reading;
         var timestamp = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -1446,17 +1431,17 @@ public sealed class MixerConsoleTests
         foreach (var track in audioTracks)
         {
             var strip = StripOf(view, track);
-            OnScreen(Visible<MixerPanRamp>(strip, $"{track} pan"));
+            OnScreen(Visible<PanKnob>(strip, $"{track} pan"));
             OnScreen(Visible<ToggleButton>(strip, $"Mute {track}"));
             OnScreen(Visible<TextBlock>(strip, "Track gain in decibels"));
             OnScreen(Visible<TextBlock>(strip, "Track peak in dBFS"));
-            OnScreen(Visible<MixerGainBar>(strip, $"{track} gain"));
-            OnScreen(Visible<MixerMeterRail>(strip, "Track level meter"));
+            OnScreen(Visible<ConsoleFader>(strip, $"{track} gain"));
+            OnScreen(Visible<LedLadderMeter>(strip, "Track level meter"));
             OnScreen(Assert.Single(strip.GetLogicalDescendants().OfType<Button>(), button =>
                 button.IsEffectivelyVisible && AutomationProperties.GetName(button)?.StartsWith("Output: ", StringComparison.Ordinal) == true));
         }
 
-        OnScreen(Visible<MixerMeterRail>(view, "Master level meter"));
+        OnScreen(Visible<LedLadderMeter>(view, "Master level meter"));
         OnScreen(Visible<TextBlock>(view, "Master gain in decibels"));
 
         void OnScreen(Control control)
@@ -1520,7 +1505,7 @@ public sealed class MixerConsoleTests
         Assert.Equal(-10, GainOf(app, audio.Id));
     });
 
-    private static void AssertPeakHoldMarkersAreRendered(AppUnderTest app, IReadOnlyList<MixerMeterRail> faces, int minimumVisibleMarkers)
+    private static void AssertPeakHoldMarkersAreRendered(AppUnderTest app, IReadOnlyList<LedLadderMeter> faces, int minimumVisibleMarkers)
     {
         app.Window.UpdateLayout();
         using var frame = app.Window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
@@ -1549,7 +1534,8 @@ public sealed class MixerConsoleTests
                 for (var x = left; x < right; x++)
                 {
                     var offset = (y * stride) + (x * 4);
-                    if (pixels[offset] >= 210 && pixels[offset + 1] >= 210 && pixels[offset + 2] >= 210)
+                    // A held cell is its gradient colour lifted toward white: brighter than any lit cell.
+                    if (pixels[offset] + pixels[offset + 1] + pixels[offset + 2] >= 560)
                     {
                         hasPeakHoldColor = true;
                         break;

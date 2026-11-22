@@ -25,7 +25,7 @@ namespace Bluestone.Tests.Ui;
 public sealed class MixerConsoleShowcaseTests
 {
     private sealed record Seed(string Name, TrackRole Role, double Gain, double Pan, double PeakDb, double RmsDb, string[] Devices,
-        int[]? Bypassed = null, bool Muted = false, bool InDrums = false, string[]? Sends = null);
+        int[]? Bypassed = null, bool Muted = false, bool InDrums = false, string[]? Sends = null, bool Soloed = false, bool Armed = false);
 
     private static readonly Seed[] Session =
     [
@@ -43,6 +43,30 @@ public sealed class MixerConsoleShowcaseTests
     ];
 
     private static readonly (double PeakDb, double RmsDb) MasterLevel = (-0.4, -9.5);
+
+    /// <summary>
+    /// The approved R6 console (approved-r6/mixer.png): twelve strips at the mockup's gains, pans, levels and peaks, with
+    /// "Wavetable lead" selected and Sub 37 clipped. Group membership is dropped so every strip routes to Master.
+    /// </summary>
+    private static readonly Seed[] Approved =
+    [
+        new("Kick", TrackRole.Audio, -6.0, 0, -2.3, -9, ["Tone EQ", "Soft clip"]),
+        new("Snare", TrackRole.Audio, -8.5, -0.16, -4.8, -12, ["Tone EQ", "Opto"]),
+        new("Hi-hats", TrackRole.Audio, -16.8, 0.32, -10.6, -20, []),
+        new("Drums", TrackRole.Group, 1.5, 0, -0.8, -4, ["Bus comp", "Tape", "Soft clip"], Soloed: true),
+        new("Granular atmosphere", TrackRole.Hybrid, -13.2, -0.24, -6.2, -18, ["Stone EQ", "Tape"], [1], Muted: true),
+        new("Wavetable lead", TrackRole.Hybrid, -7.2, 0, -1.6, -10, ["Stone EQ", "Opto", "Saturator"]),
+        new("Sub 37", TrackRole.Audio, -3.8, 0, 1.3, -6, ["Vocal EQ"]),
+        new("Lead vocal", TrackRole.Audio, -11.5, 0, -7.4, -14, ["De-esser", "Opto"], Armed: true),
+        new("Backing vocals", TrackRole.Audio, -14.0, 0.16, -12.0, -22, ["High pass"]),
+        new("Guitar DI", TrackRole.Audio, -10.0, -0.4, -9.0, -16, ["Amp sim", "Cab"]),
+        new("Keys", TrackRole.Hybrid, -9.0, 0.24, double.NegativeInfinity, double.NegativeInfinity, ["Room"]),
+        new("Percussion", TrackRole.Audio, -18.0, 0, -16.0, -26, []),
+    ];
+
+    private static readonly (double PeakDb, double RmsDb) ApprovedMasterLevel = (-3.0, -6);
+
+    private static readonly double[] Scales = [1, 2];
 
     public static TheoryData<string, int, int, MixerMeterMode, bool> Cases => new()
     {
@@ -83,9 +107,9 @@ public sealed class MixerConsoleShowcaseTests
             window.UpdateLayout();
             app.Settle();
 
-            var rails = view.GetLogicalDescendants().OfType<MixerMeterRail>().Where(rail => rail.IsEffectivelyVisible).ToArray();
-            var gains = view.GetLogicalDescendants().OfType<MixerGainBar>().Where(bar => bar.IsEffectivelyVisible).ToArray();
-            var pans = view.GetLogicalDescendants().OfType<MixerPanRamp>().Where(pan => pan.IsEffectivelyVisible).ToArray();
+            var rails = view.GetLogicalDescendants().OfType<LedLadderMeter>().Where(rail => rail.IsEffectivelyVisible).ToArray();
+            var gains = view.GetLogicalDescendants().OfType<ConsoleFader>().Where(bar => bar.IsEffectivelyVisible).ToArray();
+            var pans = view.GetLogicalDescendants().OfType<PanKnob>().Where(pan => pan.IsEffectivelyVisible).ToArray();
             Assert.Equal(Session.Count(seed => seed.Role != TrackRole.Instrument) + 1, rails.Length);
             Assert.Equal(rails.Length, gains.Length);
             Assert.Equal(rails.Length, pans.Length);
@@ -93,11 +117,6 @@ public sealed class MixerConsoleShowcaseTests
             Assert.All(rails, rail => Assert.Equal(rails[0].Bounds.Height, rail.Bounds.Height));
             Assert.Single(view.GetLogicalDescendants().OfType<Border>(), border =>
                 AutomationProperties.GetName(border)?.StartsWith("Keys,", StringComparison.Ordinal) == true);
-
-            // Send knobs take their strip's colour, not the default accent.
-            var knobs = view.GetLogicalDescendants().OfType<Knob>().Where(knob => knob.IsEffectivelyVisible).ToArray();
-            Assert.NotEmpty(knobs);
-            Assert.All(knobs, knob => Assert.NotEqual(Bluestone.Desktop.Theme.Palette.Accent, knob.Accent));
 
             // The clipped strips (the first refresh pushed them past 0 dBFS) light their clip and offer the reset.
             Assert.True(lead.IsClipped);
@@ -150,7 +169,7 @@ public sealed class MixerConsoleShowcaseTests
         var bands = view.GetLogicalDescendants().OfType<Border>()
             .Where(border => border.Classes.Contains("processing") && border.IsEffectivelyVisible).ToArray();
         Assert.NotEmpty(bands);
-        var rails = view.GetLogicalDescendants().OfType<MixerMeterRail>().Where(rail => rail.IsEffectivelyVisible).ToArray();
+        var rails = view.GetLogicalDescendants().OfType<LedLadderMeter>().Where(rail => rail.IsEffectivelyVisible).ToArray();
         Assert.NotEmpty(rails);
         var minimum = (double)view.FindResource("Mixer.TightRailsHeight")!;
         Assert.All(rails, rail => Assert.True(rail.Bounds.Height >= minimum,
@@ -164,24 +183,71 @@ public sealed class MixerConsoleShowcaseTests
         }
     });
 
-    private static async Task<Dictionary<TrackId, Seed>> SeedAsync(AppUnderTest app)
+    /// <summary>
+    /// The production console seeded like the approved R6 mockup, at the mockup's 1440 width and at 2x, so the two can be
+    /// compared side by side. Explicit: run it when reviewing the console's look.
+    /// </summary>
+    [Fact(Explicit = true)]
+    public Task RenderTheApprovedConsole() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var ids = await SeedAsync(app, Approved);
+        var console = app.ViewModel.MixerConsole;
+        var audio = new ShowcaseAudio(ids, MixerMeterMode.PeakRms, warming: false) { Master = ApprovedMasterLevel, RightOffset = 1.5 };
+        console.UseAudio(audio);
+        console.SetMeterModeCommand.Execute(MixerMeterMode.PeakRms);
+        console.Tracks.Single(row => row.Name == "Wavetable lead").SelectCommand.Execute(null);
+        console.Tracks.Single(row => row.Name == "Lead vocal").IsArmed = true;
+
+        var destination = Environment.GetEnvironmentVariable("BLUESTONE_MIXER_FINAL_DIR") is { Length: > 0 } folder
+            ? folder
+            : Path.Combine(AppContext.BaseDirectory, "frames", "approved");
+        Directory.CreateDirectory(destination);
+        foreach (var scale in Scales)
+        {
+            var view = new MixerConsoleView { DataContext = console };
+            var host = new LayoutTransformControl { LayoutTransform = new Avalonia.Media.ScaleTransform(scale, scale), Child = view };
+            var window = new Window { Width = 1440 * scale, Height = 800 * scale, Content = host };
+            window.Show();
+            try
+            {
+                // Sub 37's peak is past 0 dBFS, so it latches its clip; the second refresh settles the held peaks.
+                var timestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                console.RefreshMeters(timestamp);
+                console.RefreshMeters(timestamp + 1);
+                app.Settle();
+                window.UpdateLayout();
+                app.Settle();
+                var path = app.SaveFrame(scale == 1 ? "mixer-approved" : "mixer-approved@2x", window);
+                File.Copy(path, Path.Combine(destination, scale == 1 ? "production-mixer.png" : "production-mixer@2x.png"), overwrite: true);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    private static Task<Dictionary<TrackId, Seed>> SeedAsync(AppUnderTest app) => SeedAsync(app, Session);
+
+    private static async Task<Dictionary<TrackId, Seed>> SeedAsync(AppUnderTest app, Seed[] session)
     {
         var drumsId = TrackId.New();
         var tracks = new List<TrackModel>();
         var byName = new Dictionary<string, TrackId>(StringComparer.Ordinal);
-        foreach (var seed in Session)
+        foreach (var seed in session)
         {
             var id = seed.Name == "Drums" ? drumsId : TrackId.New();
             byName[seed.Name] = id;
             var strip = seed.Role == TrackRole.Instrument
                 ? null
-                : new AudioStrip { GainDecibels = seed.Gain, Pan = seed.Pan, IsMuted = seed.Muted };
+                : new AudioStrip { GainDecibels = seed.Gain, Pan = seed.Pan, IsMuted = seed.Muted, IsSoloed = seed.Soloed };
             tracks.Add(new TrackModel(id, seed.Name, [], role: seed.Role, group: seed.InDrums ? drumsId : null, audioStrip: strip));
         }
 
         var connections = new List<SignalConnection>();
         var chains = new List<DeviceChain>();
-        foreach (var seed in Session)
+        foreach (var seed in session)
         {
             var id = byName[seed.Name];
             if (seed.Role != TrackRole.Instrument)
@@ -213,7 +279,7 @@ public sealed class MixerConsoleShowcaseTests
         }));
         await Task.Delay(20, TestContext.Current.CancellationToken);
         app.Settle();
-        return Session.ToDictionary(seed => byName[seed.Name]);
+        return session.ToDictionary(seed => byName[seed.Name]);
     }
 
     private static DeviceChain Chain(ChainOwner owner, string[] devices, int[]? bypassed) => DeviceChain.Create(owner) with
@@ -231,6 +297,10 @@ public sealed class MixerConsoleShowcaseTests
     /// <summary>Stands in for the audio engine's mixer meters: fixed levels per strip, reported in the chosen mode.</summary>
     private sealed class ShowcaseAudio(Dictionary<TrackId, Seed> seeds, MixerMeterMode mode, bool warming) : IAudioPlayback
     {
+        public (double PeakDb, double RmsDb) Master { get; init; } = MasterLevel;
+
+        public double RightOffset { get; init; } = 0.5;
+
         public double Boost { get; set; }
 
         public event EventHandler? Changed
@@ -279,7 +349,7 @@ public sealed class MixerConsoleShowcaseTests
         {
             var (peak, rms, index) = track is { } id
                 ? seeds.TryGetValue(id, out var seed) ? (seed.PeakDb, seed.RmsDb, Array.IndexOf(Session, seed)) : (double.NaN, double.NaN, 0)
-                : (MasterLevel.PeakDb, MasterLevel.RmsDb, -1);
+                : (Master.PeakDb, Master.RmsDb, -1);
             if (double.IsNaN(peak))
             {
                 return null;
@@ -297,7 +367,7 @@ public sealed class MixerConsoleShowcaseTests
                 MixerMeterMode.K12 => rms + 12,
                 _ => ready ? rms - 2 : double.NaN,
             };
-            return new MixerMeterReading(reading, mode, value, value - 0.5, ready);
+            return new MixerMeterReading(reading, mode, value, value - RightOffset, ready);
         }
 
         public void SetMixerMeterSettings(MixerMeterSettings settings)

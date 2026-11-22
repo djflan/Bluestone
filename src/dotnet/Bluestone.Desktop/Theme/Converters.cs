@@ -279,3 +279,15 @@ public sealed class MixerUnitlessConverter : IValueConverter
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>True while a strip's inserts leave a free row in its insert well, for the well's "+" add row.</summary>
+public sealed class InsertWellHasRoomConverter : IValueConverter
+{
+    public static readonly InsertWellHasRoomConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int count && count < MixerConsoleViewModel.VisibleInsertRows;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
