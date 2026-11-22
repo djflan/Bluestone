@@ -226,6 +226,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     {
         base.OnAttachedToVisualTree(e);
         LedColours.Changed += OnLedColoursChanged;
+        OnLedColoursChanged(this, EventArgs.Empty);
         Subscribe(Signal);
         UpdateName();
         OnFrame();
@@ -391,7 +392,8 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
         // The MIDI port: lit with a soft bloom while notes are held, dim when idle, faint where notes cannot pass.
         var icon = new Point(center, IconY);
-        var glow = signal.CanCarryNotes ? _midi.Step(0) / (double)LedLevels.Steps : 0;
+        var step = signal.CanCarryNotes ? _midi.Step(0) : 0;
+        var glow = step / (double)LedLevels.Steps;
         if (glow > 0.01)
         {
             _bloom ??= new RadialGradientBrush
@@ -409,17 +411,18 @@ public sealed class ChainJunction : Control, ICustomHitTest
             }
         }
 
-        var idle = ConsolePaint.Alpha(Palette.TextMuted, signal.CanCarryNotes ? 0.75 : 0.35);
-        var ink = glow > 0.01 ? ConsolePaint.Mix(idle, ConsolePaint.Lighter(LedColours.Midi, 0.1), glow) : idle;
+        var pen = glow > 0.01
+            ? LedColours.MidiPen(step)
+            : ConsolePaint.Pen(ConsolePaint.Alpha(Palette.TextMuted, signal.CanCarryNotes ? 0.75 : 0.35), 1.3, PenLineCap.Round);
         var k = IconSize / 16;
         using (context.PushTransform(Matrix.CreateScale(k, k) * Matrix.CreateTranslation(icon.X - (8 * k), icon.Y - (7.5 * k))))
         {
-            context.DrawGeometry(null, ConsolePaint.Pen(ink, 1.3, PenLineCap.Round), MidiPort);
+            context.DrawGeometry(null, pen, MidiPort);
         }
 
         var lit = glow > 0.5;
         var caption = lit
-            ? _midiCaptionLit ??= Text("MIDI", ConsolePaint.Alpha(LedColours.Midi, 0.85), 7.5)
+            ? _midiCaptionLit ??= Text("MIDI", LedColours.MidiCaptionBrush, 7.5)
             : _midiCaption ??= Text("MIDI", Palette.TextMuted, 7.5);
         context.DrawText(caption, new Point(center - Math.Round(caption.Width / 2), IconY + 10));
 
@@ -471,8 +474,10 @@ public sealed class ChainJunction : Control, ICustomHitTest
         }
     }
 
-    private static FormattedText Text(string text, Color color, double size) =>
-        new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold), size, ConsolePaint.Brush(color));
+    private static FormattedText Text(string text, Color color, double size) => Text(text, ConsolePaint.Brush(color), size);
+
+    private static FormattedText Text(string text, IBrush brush, double size) =>
+        new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold), size, brush);
 
     // Each frame: the lamp follows the notes (on at once, fading over LampRelease on LedMotion's clock) and the ladder takes the levels. Nothing is
     // invalidated unless what is shown has changed, so idle seams cost nothing.

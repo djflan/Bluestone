@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Immutable;
 using Bluestone.Audio;
 using Bluestone.Desktop.Theme;
 
@@ -163,16 +162,18 @@ internal sealed class ChainSeamPreview : Control
             context.DrawEllipse(bloom, null, icon, IconSize * 1.1, IconSize * 1.1);
         }
 
-        var ink = _notesHeld ? ConsolePaint.Lighter(midi, 0.1) : ConsolePaint.Alpha(Palette.TextMuted, 0.75);
+        var pen = _notesHeld
+            ? LedColours.MidiPen(LedLevels.Steps)
+            : ConsolePaint.Pen(ConsolePaint.Alpha(Palette.TextMuted, 0.75), 1.3, PenLineCap.Round);
         var k = IconSize / 16;
         using (context.PushTransform(Matrix.CreateScale(k, k) * Matrix.CreateTranslation(icon.X - (8 * k), icon.Y - (7.5 * k))))
         {
-            context.DrawGeometry(null, ConsolePaint.Pen(ink, 1.3, PenLineCap.Round), MidiPort);
+            context.DrawGeometry(null, pen, MidiPort);
         }
 
         var caption = new FormattedText("MIDI", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
             ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold), 7.5,
-            new ImmutableSolidColorBrush(_notesHeld ? ConsolePaint.Alpha(midi, 0.85) : Palette.TextMuted));
+            _notesHeld ? LedColours.MidiCaptionBrush : ConsolePaint.Brush(Palette.TextMuted));
         context.DrawText(caption, new Point(center - Math.Round(caption.Width / 2), IconY + 10));
 
         var cy = Bounds.Height - FootHeight + 9;
