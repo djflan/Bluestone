@@ -53,6 +53,17 @@ public sealed class SelectionHeaderConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>A strip's send count as its quiet label: "1 SEND", "3 SENDS".</summary>
+public sealed class SendCountConverter : IValueConverter
+{
+    public static readonly SendCountConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int count ? (count == 1 ? "1 SEND" : string.Create(CultureInfo.InvariantCulture, $"{count} SENDS")) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 public sealed class DeleteLabelConverter : IValueConverter
 {
     public static readonly DeleteLabelConverter Instance = new();

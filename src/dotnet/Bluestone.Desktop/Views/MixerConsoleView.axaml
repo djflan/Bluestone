@@ -213,7 +213,7 @@
                               <Panel>
                                 <!-- No sends: nothing on the strip until it is hovered or focused, then a quiet "+ Send". -->
                                 <TextBlock Text="+ SEND" Classes="mixerSendHint" IsVisible="{Binding !Sends.Count}" />
-                                <TextBlock Text="{Binding Sends.Count, StringFormat='{}{0} SENDS'}" IsVisible="{Binding Sends.Count}" />
+                                <TextBlock Text="{Binding Sends.Count, Converter={x:Static theme:SendCountConverter.Instance}}" IsVisible="{Binding Sends.Count}" />
                               </Panel>
                               <Button.Flyout>
                                 <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="mixerList">

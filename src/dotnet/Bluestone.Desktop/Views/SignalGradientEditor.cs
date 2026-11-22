@@ -56,6 +56,8 @@ public sealed class SignalGradientEditor : Panel
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        // End a drag on the old display first, so its preview is committed or released, not stranded.
+        FinishDrag();
         if (_display is not null)
         {
             _display.PropertyChanged -= OnDisplayChanged;
@@ -289,6 +291,8 @@ public sealed class SignalGradientEditor : Panel
             FocusAdorner = null;
         }
 
+        private StopPeer? _peer;
+
         public int Index { get; private set; }
 
         public double Position { get; private set; }
@@ -298,7 +302,15 @@ public sealed class SignalGradientEditor : Panel
         internal void Update(int index, SignalGradientStop stop, bool selected)
         {
             Index = index;
+            var oldValue = Math.Round(Position * 100, 1);
             Position = stop.Position;
+            var newValue = Math.Round(Position * 100, 1);
+            if (oldValue != newValue)
+            {
+                // A screen reader hears the move, as on the mixer's faders.
+                _peer?.RaiseValueChanged(oldValue, newValue);
+            }
+
             IsSelected = selected;
             if (stop.Colour != _colour)
             {
@@ -354,7 +366,7 @@ public sealed class SignalGradientEditor : Panel
             _editor.FinishDrag();
         }
 
-        protected override AutomationPeer OnCreateAutomationPeer() => new StopPeer(this);
+        protected override AutomationPeer OnCreateAutomationPeer() => _peer = new StopPeer(this);
 
         internal void MoveTo(double position) => _editor.MoveTo(this, position);
 
@@ -423,6 +435,9 @@ public sealed class SignalGradientEditor : Panel
             public double LargeChange => 5;
 
             public void SetValue(double value) => owner.MoveTo(value / 100);
+
+            public void RaiseValueChanged(double oldValue, double newValue) =>
+                RaisePropertyChangedEvent(RangeValuePatternIdentifiers.ValueProperty, oldValue, newValue);
 
             protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Slider;
         }

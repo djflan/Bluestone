@@ -1122,8 +1122,6 @@ public sealed class TimelineView : Control
         }
     }
 
-    // A looping clip's repeats: the first boundary dashed, later ones dotted and lighter, thinned out so they never
-    // crowd closer than 6 pixels; and the loop handle in the lower-right corner, stronger while it is hovered.
     /// <summary>The clip name's ink on a header of <paramref name="header"/>: light, or dark where light text would not reach good contrast.</summary>
     internal static IBrush HeaderInk(Color header)
     {
@@ -1144,6 +1142,8 @@ public sealed class TimelineView : Control
         return (0.2126 * Channel(color.R)) + (0.7152 * Channel(color.G)) + (0.0722 * Channel(color.B));
     }
 
+    // A looping clip's repeats: the first boundary dashed, later ones dotted and lighter, thinned out so they never
+    // crowd closer than 6 pixels; and the loop handle in the lower-right corner, stronger while it is hovered.
     private void DrawLoop(DrawingContext context, Clip clip, Rect body, double shift, Color color, double left, double right)
     {
         var hovered = _hover is { } hover && hover.Clip == clip.Id ? hover.Grip : Grip.None;

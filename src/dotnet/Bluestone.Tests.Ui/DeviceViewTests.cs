@@ -492,6 +492,18 @@ public sealed class DeviceViewTests
         Assert.False(seam.Signal!.Levels.Clipped);
         Assert.DoesNotContain("clip latched", seam.Describe(), StringComparison.Ordinal);
         Assert.Same(selected, view.SelectedDevice);
+
+        // Pressing elsewhere in the view (a device's name, which takes no focus) takes focus off the junction,
+        // so Delete goes back to the window's own path instead of being held by the junction.
+        app.Click(seam.Ladder);
+        Assert.Same(seam, app.Window.FocusManager?.GetFocusedElement());
+        var name = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<TextBlock>()
+            .First(t => t.Classes.Contains("deviceName") && t.IsEffectivelyVisible);
+        app.Click(name);
+        Assert.NotSame(seam, app.Window.FocusManager?.GetFocusedElement());
+        var tracks = app.ViewModel.Tracks.Count;
+        app.Press(Key.Delete);
+        Assert.Equal(tracks - 1, app.ViewModel.Tracks.Count);
     });
 
     /// <summary>Counts pixels near the focus colour in the top three pixel rows of <paramref name="control"/>, in a fresh frame.</summary>
