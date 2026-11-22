@@ -9,8 +9,9 @@ namespace Bluestone.Desktop.Controls;
 /// A column of round gain LEDs set into a recessed gutter beside a fader: a narrow dark band with rounded ends, an inner
 /// shadow from above and a faint lit lip, running the full fader travel. The LEDs light from the bottom up to the gain on
 /// the console taper, in the gain gradient (<see cref="MeterGradient.Gain"/>, violet to rose by default), each with a tight glow and a
-/// small specular dot; unlit LEDs stay dark at <see cref="Palette.UnlitAlpha"/>. Purely a display: the fader beside it is
-/// the control.
+/// small specular dot; unlit LEDs stay dark at <see cref="Palette.UnlitAlpha"/>. An LED fades as it goes dark
+/// (<see cref="FadeMs"/>) and warms up as it lights (<see cref="WarmupMs"/>), on <see cref="LedMotion"/>. Purely a
+/// display: the fader beside it is the control.
 /// </summary>
 public sealed class GainLedGutter : Control
 {
@@ -25,19 +26,33 @@ public sealed class GainLedGutter : Control
     /// <summary>The closest the LED centres may sit, so a short travel shows fewer LEDs rather than a solid bar.</summary>
     public const double MinimumPitch = 8;
 
+    /// <summary>How long an LED takes to go dark, in milliseconds.</summary>
+    internal const double FadeMs = 140;
+
+    /// <summary>How long an LED takes to light, in milliseconds.</summary>
+    internal const double WarmupMs = 20;
+
     private const double LitTier = 0.8;
+    private const int Stride = LedLevels.Steps + 1;
 
     private Color[] _colors = [];
     private IBrush[] _lit = [];
     private IBrush[] _unlit = [];
     private IImmutableSolidColorBrush[][] _glows = [];
+    private IBrush[] _steps = [];
     private int _version = -1;
+    private readonly LedLevels _leds;
 
     static GainLedGutter()
     {
         AffectsRender<GainLedGutter>(ValueProperty, LedCountProperty, LedRadiusProperty, IsEnabledProperty);
         AffectsMeasure<GainLedGutter>(LedRadiusProperty);
     }
+
+    public GainLedGutter() => _leds = new LedLevels(this, FadeMs, WarmupMs);
+
+    /// <summary>How lit each LED is, bottom to top (for tests).</summary>
+    internal LedLevels Leds => _leds;
 
     public double Value { get => GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
 
@@ -95,6 +110,8 @@ public sealed class GainLedGutter : Control
 
         var count = VisibleCount;
         EnsureColors(count);
+        var fresh = _leds.Resize(count);
+        var now = LedMotion.Now;
         var radius = LedRadius;
         var fraction = Value > MixerRail.GainFloor ? ConsoleRail.Position(Value) : -1;
         var highlight = ConsolePaint.Brush(ConsolePaint.Alpha(ConsolePaint.White, 0.35));
@@ -105,15 +122,25 @@ public sealed class GainLedGutter : Control
             {
                 var f = k / (double)(count - 1);
                 var centre = new Point(x, Math.Round(bottom - (f * (bottom - top))) + 0.5);
-                if (f <= fraction + 1e-6)
+                _leds.Set(k, f <= fraction + 1e-6, now, fresh);
+                var step = _leds.Step(k);
+                if (step == LedLevels.Steps)
                 {
                     Glow.Ellipse(context, centre, radius, _glows[k]);
                     context.DrawEllipse(_lit[k], null, centre, radius, radius);
                     context.DrawEllipse(highlight, null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
                 }
-                else
+                else if (step == 0)
                 {
                     context.DrawEllipse(_unlit[k], rim, centre, radius, radius);
+                }
+                else
+                {
+                    // Between dark and lit: glow, fill, rim, and dot each part of the way, from cached steps.
+                    var lit = step / (double)LedLevels.Steps;
+                    Glow.Ellipse(context, centre, radius, MeterGradient.Gain.GlowBrushes(_colors[k], LitTier * lit));
+                    context.DrawEllipse(_steps[(k * Stride) + step], ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.5 * (1 - lit)), 0.6), centre, radius, radius);
+                    context.DrawEllipse(ConsolePaint.Brush(ConsolePaint.Alpha(ConsolePaint.White, 0.35 * lit)), null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
                 }
             }
         }
@@ -153,6 +180,7 @@ public sealed class GainLedGutter : Control
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
         _glows = new IImmutableSolidColorBrush[count][];
+        _steps = new IBrush[count * Stride];
         for (var k = 0; k < count; k++)
         {
             var color = Swatch(k / (double)(count - 1));
@@ -160,6 +188,10 @@ public sealed class GainLedGutter : Control
             _lit[k] = gradient.Brush(color);
             _unlit[k] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha));
             _glows[k] = gradient.GlowBrushes(color, LitTier);
+            for (var step = 0; step <= LedLevels.Steps; step++)
+            {
+                _steps[(k * Stride) + step] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * step / LedLevels.Steps)));
+            }
         }
     }
 

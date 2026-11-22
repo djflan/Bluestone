@@ -471,6 +471,6 @@
   <!-- Motion: short and only where it explains a change. -->
   <sys:TimeSpan x:Key="Motion.Fast">0:0:0.10</sys:TimeSpan>
   <sys:TimeSpan x:Key="Motion.Normal">0:0:0.16</sys:TimeSpan>
-  <!-- A note lamp lets go softly, so short notes still read as a pulse. -->
-  <sys:TimeSpan x:Key="Motion.LampRelease">0:0:0.22</sys:TimeSpan>
+  <!-- A note lamp lets go softly (an eased LED fade, as every LED's), so short notes still read as a pulse. -->
+  <sys:TimeSpan x:Key="Motion.LampRelease">0:0:0.14</sys:TimeSpan>
 </ResourceDictionary>

@@ -26,11 +26,16 @@ public static class HeadlessApp
 {
     private static readonly Lazy<HeadlessUnitTestSession> Session = new(() => HeadlessUnitTestSession.StartNew(typeof(HeadlessApp)));
 
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>()
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        // LEDs change at once under test, so a captured frame shows each end state; LedMotionTests turn the motion on
+        // with a clock of their own.
+        Desktop.Controls.LedMotion.ReduceMotion = true;
+        return AppBuilder.Configure<App>()
             .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .WithInterFont();
+    }
 
     /// <summary>Runs <paramref name="test"/> on the UI thread and waits for it, including its awaits.</summary>
     public static Task RunAsync(Func<Task> test) =>

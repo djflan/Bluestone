@@ -112,6 +112,10 @@ public partial class App : Avalonia.Application
         {
             await splash.RenderedAsync();
             var window = new MainWindow();
+
+            // LEDs follow the system's Reduce motion, read now and again whenever the window comes forward.
+            Controls.LedMotion.ReduceMotion = SystemMotion.PrefersReducedMotion();
+            window.Activated += (_, _) => Controls.LedMotion.ReduceMotion = SystemMotion.PrefersReducedMotion();
             await Step(splash, "Connecting to MIDI drivers…");
             platformProviders = [.. PlatformProviders.Create(SystemMonotonicClock.Instance)];
             plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
@@ -236,9 +240,10 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>
-    /// Every indicator draws <paramref name="display"/>'s colours: the mixer, chain, and gain gradients and the MIDI LED's
-    /// colour, the saved ones now and each edit as it is made (indicators redraw on their <see cref="Theme.MeterGradient"/>'s
-    /// or <see cref="Theme.LedColours"/>' Changed).
+    /// Every indicator draws <paramref name="display"/>'s colours and motion: the mixer, chain, and gain gradients, the MIDI
+    /// LED's colour, and the LED fade and warm-up switches, the saved ones now and each edit as it is made (indicators
+    /// redraw on their <see cref="Theme.MeterGradient"/>'s or <see cref="Theme.LedColours"/>' Changed; motion applies from
+    /// the next change of an LED).
     /// </summary>
     internal static void FollowSignalGradient(DisplayViewModel display)
     {
@@ -246,11 +251,21 @@ public partial class App : Avalonia.Application
         Follow(display.Chain, Theme.MeterGradient.Chain);
         Follow(display.Gain, Theme.MeterGradient.Gain);
         Theme.LedColours.UseMidi(display.MidiColour);
+        Controls.LedMotion.Fade = display.LedFade;
+        Controls.LedMotion.Warmup = display.LedWarmup;
         display.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(DisplayViewModel.MidiColour))
             {
                 Theme.LedColours.UseMidi(display.MidiColour);
+            }
+            else if (e.PropertyName == nameof(DisplayViewModel.LedFade))
+            {
+                Controls.LedMotion.Fade = display.LedFade;
+            }
+            else if (e.PropertyName == nameof(DisplayViewModel.LedWarmup))
+            {
+                Controls.LedMotion.Warmup = display.LedWarmup;
             }
         };
 

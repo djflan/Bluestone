@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Input;
 using Avalonia;
@@ -21,8 +20,8 @@ namespace Bluestone.Desktop.Controls;
 /// are held and dim otherwise, a "MIDI" caption under it, and the signal there as a stereo <see cref="LedLadderMeter"/> in
 /// its dark well down the rest of the seam, with a flow chevron under it. Hovered or focused, the chevron becomes a +
 /// that aims the Browser at this gap (Enter, Space or the menu do too); a point also routed elsewhere shows an aqua tap
-/// between the caption and the ladder, which opens its connections. The lamp follows the notes (on at once, off over
-/// <see cref="LampRelease"/>); the seam and its meter redraw only when what they show changes.
+/// between the caption and the ladder, which opens its connections. The lamp follows the notes (on at once, fading out
+/// over <see cref="LampRelease"/> on <see cref="LedMotion"/>); the seam and its meter redraw only when what they show changes.
 /// </summary>
 public sealed class ChainJunction : Control, ICustomHitTest
 {
@@ -41,7 +40,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     /// <summary>A bare gap (before the Out card): no port, caption or ladder, only the insertion + and the routed tap.</summary>
     public static readonly StyledProperty<bool> IsCompactProperty = AvaloniaProperty.Register<ChainJunction, bool>(nameof(IsCompact));
 
-    public static readonly StyledProperty<TimeSpan> LampReleaseProperty = AvaloniaProperty.Register<ChainJunction, TimeSpan>(nameof(LampRelease), TimeSpan.FromMilliseconds(220));
+    public static readonly StyledProperty<TimeSpan> LampReleaseProperty = AvaloniaProperty.Register<ChainJunction, TimeSpan>(nameof(LampRelease), TimeSpan.FromMilliseconds(140));
 
     /// <summary>What the ladder shows (Settings ▸ Display): the average level with the peak held, or the peak alone.</summary>
     public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainJunction, JunctionLevelStyle>(nameof(LevelStyle));
@@ -60,9 +59,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     private readonly EventHandler _updated;
     private readonly PropertyChangedEventHandler _changed;
     private JunctionSignal? _subscribed;
-    private double _glow;
-    private long _lastFrame;
-    private double _drawnGlow = -1;
+    private readonly LedLevels _midi;
     private (bool, double, double, double, double, double, double, bool, bool) _described;
     private IImmutableBrush? _bloom;
     private FormattedText? _midiCaption;
@@ -83,6 +80,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     public ChainJunction()
     {
         _updated = (_, _) => OnFrame();
+        _midi = new LedLevels(this, LampRelease.TotalMilliseconds, count: 1);
         _changed = (_, e) =>
         {
             if (e.PropertyName is nameof(JunctionSignal.Label) or nameof(JunctionSignal.CanCarryNotes) or nameof(JunctionSignal.CanCarryAudio)
@@ -138,7 +136,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     internal LedLadderMeter Ladder => _ladder;
 
     /// <summary>How lit the MIDI glyph is now: 1 while notes are held, falling to 0 over <see cref="LampRelease"/>.</summary>
-    internal double LampGlow => _glow;
+    internal double LampGlow => _midi.Level(0);
 
     /// <summary>Where the + is (drawn only while hovered or focused) and where the routed tap is, in the seam's coordinates.</summary>
     internal (Rect Plus, Rect Routed) Targets => (PlusRect, RoutedRect);
@@ -217,6 +215,10 @@ public sealed class ChainJunction : Control, ICustomHitTest
         else if (change.Property == LevelStyleProperty)
         {
             OnFrame();
+        }
+        else if (change.Property == LampReleaseProperty)
+        {
+            _midi.FadeMs = LampRelease.TotalMilliseconds;
         }
     }
 
@@ -389,7 +391,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
         // The MIDI port: lit with a soft bloom while notes are held, dim when idle, faint where notes cannot pass.
         var icon = new Point(center, IconY);
-        var glow = signal.CanCarryNotes ? _glow : 0;
+        var glow = signal.CanCarryNotes ? _midi.Step(0) / (double)LedLevels.Steps : 0;
         if (glow > 0.01)
         {
             _bloom ??= new RadialGradientBrush
@@ -415,7 +417,6 @@ public sealed class ChainJunction : Control, ICustomHitTest
             context.DrawGeometry(null, ConsolePaint.Pen(ink, 1.3, PenLineCap.Round), MidiPort);
         }
 
-        _drawnGlow = _glow;
         var lit = glow > 0.5;
         var caption = lit
             ? _midiCaptionLit ??= Text("MIDI", ConsolePaint.Alpha(LedColours.Midi, 0.85), 7.5)
@@ -473,7 +474,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     private static FormattedText Text(string text, Color color, double size) =>
         new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold), size, ConsolePaint.Brush(color));
 
-    // Each frame: the lamp follows the notes (on at once, off over LampRelease) and the ladder takes the levels. Nothing is
+    // Each frame: the lamp follows the notes (on at once, fading over LampRelease on LedMotion's clock) and the ladder takes the levels. Nothing is
     // invalidated unless what is shown has changed, so idle seams cost nothing.
     private void OnFrame()
     {
@@ -483,12 +484,9 @@ public sealed class ChainJunction : Control, ICustomHitTest
             return;
         }
 
-        var now = Stopwatch.GetTimestamp();
-        var elapsed = _lastFrame == 0 ? 0 : Stopwatch.GetElapsedTime(_lastFrame, now).TotalSeconds;
-        _lastFrame = now;
-        var release = Math.Max(LampRelease.TotalSeconds, 0.001);
-        _glow = signal.NotesHeld ? 1 : Math.Max(0, _glow - (elapsed / release));
-        if (Math.Abs(_glow - _drawnGlow) > 0.01)
+        var drawn = _midi.Step(0);
+        _midi.Set(0, signal.NotesHeld, LedMotion.Now);
+        if (_midi.Step(0) != drawn)
         {
             InvalidateVisual();
         }
@@ -530,8 +528,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
         }
 
         _subscribed = signal;
-        _glow = 0;
-        _lastFrame = 0;
+        _midi.Set(0, false, 0, instant: true);
         if (signal is not null)
         {
             signal.Levels.Updated += _updated;
