@@ -666,6 +666,34 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
+    public Task ADropDownOpenedInCode_AfterAPageSwitch_StillLetsAnOutsideClickThrough() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        var tempo = app.Find<TextBox>("TempoBox");
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var dropdown = AppUnderTest.ComboNamed(page, "Buffer size");
+        // Opened without pointer or key input, so only the configuration posted on the page switch covers it.
+        dropdown.IsDropDownOpen = true;
+        app.Settle();
+
+        var point = app.InWindow(tempo, new Point(tempo.Bounds.Width / 2, tempo.Bounds.Height / 2));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.False(dropdown.IsDropDownOpen);
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Fact]
     public Task AClickElsewhereInSettings_WithADropDownOpen_OnlyClosesTheDropDown() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
