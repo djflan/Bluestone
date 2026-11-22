@@ -25,7 +25,7 @@
   <Grid ColumnDefinitions="Auto,*">
     <Border Classes="settingsNav">
       <Grid RowDefinitions="Auto,Auto,*">
-        <Border Classes="dockHeader">
+        <Border x:Name="NavHeader" Classes="dockHeader">
           <TextBlock Classes="dockTitle" Text="SETTINGS" />
         </Border>
         <Border Grid.Row="1" Classes="searchField" Margin="8,8,8,6">
@@ -57,15 +57,13 @@
     </Border>
 
     <Grid Grid.Column="1" RowDefinitions="Auto,*" Background="{StaticResource Surface.Base}">
-      <Border Classes="settingsHeader">
+      <Border x:Name="SettingsHeader" Classes="settingsHeader">
         <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="2" VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Classes="settingsCrumb" Text="Settings" />
-              <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronRight}" Width="8" Height="8" Foreground="{StaticResource Text.Muted}" />
-              <TextBlock x:Name="PageTitle" Classes="settingsTitle" Text="{Binding SelectedCategory.Name, FallbackValue=''}" />
-            </StackPanel>
-            <TextBlock Classes="muted" Text="{Binding SelectedCategory.Description, FallbackValue=''}" TextTrimming="CharacterEllipsis" />
+          <!-- One line, as tall as the categories' header beside it, so their dividers run on as one line. -->
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Classes="settingsCrumb" Text="Settings" />
+            <PathIcon Classes="stroke" Data="{StaticResource Icon.ChevronRight}" Width="8" Height="8" Foreground="{StaticResource Text.Muted}" />
+            <TextBlock x:Name="PageTitle" Classes="settingsTitle" Text="{Binding SelectedCategory.Name, FallbackValue=''}" />
           </StackPanel>
           <Button x:Name="CloseSettingsButton" Grid.Column="1" Classes="raised compact" Content="Done" Command="{Binding CloseCommand}" VerticalAlignment="Center"
                   ToolTip.Tip="Back to the workspace (Esc)" AutomationProperties.Name="Close settings" />

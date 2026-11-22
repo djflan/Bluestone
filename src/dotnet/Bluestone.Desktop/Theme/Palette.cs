@@ -43,6 +43,9 @@ internal static class Palette
     public static readonly Color Focus = Color.Parse("#63D5F6");
     public static readonly Color Field = Color.Parse("#11141A");
     public static readonly Color Border = Color.Parse("#2E333B");
+    public static readonly Color BorderStrong = Color.Parse("#3D434D");
+    public static readonly Color Edge = Color.Parse("#161A20");
+    public static readonly Color Overlay = Color.Parse("#2E333B");
 
     // What a device works on (Signal.* tokens)
     public static readonly Color SignalNote = Color.Parse("#D7A24A");

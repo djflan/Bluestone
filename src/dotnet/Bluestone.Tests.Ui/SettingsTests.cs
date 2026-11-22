@@ -51,7 +51,7 @@ public sealed class SettingsTests : IDisposable
             TextKey ActionKey(string name) => AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == name);
             string[] Names() => [.. editor.Handles.Select(h => Avalonia.Automation.AutomationProperties.GetName(h) ?? string.Empty)];
             Assert.Equal(["Gradient stop 1 at 0%", "Gradient stop 2 at 40%", "Gradient stop 3 at 62%", "Gradient stop 4 at 78%", "Gradient stop 5 at 86%", "Gradient stop 6 at 100%"], Names());
-            Assert.Contains(page.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Clip (fixed)");
+            Assert.Same(display.Mixer, editor.DataContext);
 
             // Add: a stop in the widest gap (0% to 40%), selected, saved, and on every meter.
             app.Click(ActionKey("Add gradient stop"));
@@ -75,7 +75,7 @@ public sealed class SettingsTests : IDisposable
             Assert.Equal(0.36, Desktop.Theme.MeterGradient.Mixer.Stops[1].Position, 3);
 
             // A swatch recolours the selected stop.
-            app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Colour #4CB873"));
+            app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Color #4CB873"));
             Assert.Equal(new SignalGradientStop("#4CB873", 0.36), store.Load().MixerGradient.Stops[1]);
             app.Window.MouseMove(new Point(1300, 800), RawInputModifiers.None);
             await app.SettleTransitionsAsync();
@@ -108,6 +108,105 @@ public sealed class SettingsTests : IDisposable
         finally
         {
             display.Mixer.ResetGradientCommand.Execute(null);
+        }
+    });
+
+    [Theory]
+    [InlineData(1040)]
+    [InlineData(1440)]
+    public Task SettingsHeaders_AreOneHeight_WithOneBottomLine_AndNoDescriptionLine(double width) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = width;
+        foreach (var page in new[] { SettingsPage.Display, SettingsPage.Audio })
+        {
+            app.Window.ShowSettings(page);
+            app.Settle();
+            var header = app.Find<Border>("SettingsHeader");
+            var nav = app.Find<Border>("NavHeader");
+            Assert.Equal(nav.Bounds.Height, header.Bounds.Height);
+            Assert.Equal(30, header.Bounds.Height);
+            Assert.Equal(nav.TranslatePoint(new Point(0, nav.Bounds.Height), app.Window)!.Value.Y, header.TranslatePoint(new Point(0, header.Bounds.Height), app.Window)!.Value.Y);
+            Assert.DoesNotContain(header.GetVisualDescendants().OfType<TextBlock>(), t => t.IsEffectivelyVisible && t.Text == app.Window.Settings.SelectedCategory?.Description);
+            Assert.Contains(header.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && b.Content as string == "Done");
+        }
+    });
+
+    [Fact]
+    public Task TheDisplayStage_EditsOnlyTheChosenIndicator_AndItsLedMotionSwitchesAreReachable() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        var store = new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json"));
+        var display = app.ViewModel.Display;
+        display.Use(store);
+        Desktop.App.FollowSignalGradient(display);
+        try
+        {
+            app.Window.ShowSettings(SettingsPage.Display);
+            app.Settle();
+            var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+            var editor = AppUnderTest.Within<SignalGradientEditor>(page, _ => true);
+            var midi = AppUnderTest.Within<Control>(page, c => c.Name == "MidiPanel");
+            Button Swatch(string hex) => AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == $"Color {hex}");
+            Assert.False(midi.IsEffectivelyVisible, "The MIDI light belongs to the device chain only.");
+
+            // A click on the gain tile edits the gain LEDs alone: the mixer and chain keep their colors, on screen and saved.
+            app.Click(ColourPickerTests.StageTile(page, "Gain LEDs"));
+            Assert.Same(display.Gain, editor.DataContext);
+            Assert.False(midi.IsEffectivelyVisible);
+            display.Gain.SelectedGradientStopIndex = 0;
+            app.Click(Swatch("#B65CFF"));
+            var saved = store.Load();
+            Assert.Equal("#B65CFF", saved.GainGradient.Stops[0].Colour);
+            Assert.Equal((SignalGradient.Default, SignalGradient.Default), (saved.MixerGradient, saved.ChainGradient));
+            Assert.Equal(Avalonia.Media.Color.Parse("#B65CFF"), Desktop.Theme.MeterGradient.Gain.Stops[0].Color);
+            Assert.NotEqual(Avalonia.Media.Color.Parse("#B65CFF"), Desktop.Theme.MeterGradient.Mixer.Stops[0].Color);
+
+            // The segmented fallback reaches the chain from the keyboard's side: its own stops, and the MIDI light row.
+            app.Click(AppUnderTest.Within<RadioButton>(page, r => Avalonia.Automation.AutomationProperties.GetName(r) == "Edit device chain colors"));
+            Assert.Same(display.Chain, editor.DataContext);
+            Assert.True(ColourPickerTests.StageTile(page, "Device chain").IsSelected);
+            Assert.Equal("Device chain", ControlAutomationPeer.CreatePeerForElement(ColourPickerTests.StageTile(page, "Device chain")).GetName());
+            Assert.True(midi.IsEffectivelyVisible);
+            display.Chain.SelectedGradientStopIndex = 1;
+            app.Click(Swatch("#E0A43A"));
+            saved = store.Load();
+            Assert.Equal("#E0A43A", saved.ChainGradient.Stops[1].Colour);
+            Assert.Equal(SignalGradient.Default, saved.MixerGradient);
+            Assert.Equal("#B65CFF", saved.GainGradient.Stops[0].Colour);
+
+            // Arrow keys move between the tiles, as the radios follow.
+            ColourPickerTests.StageTile(page, "Device chain").Focus(NavigationMethod.Tab);
+            app.Press(Key.Left);
+            Assert.Same(display.Mixer, editor.DataContext);
+            Assert.True(AppUnderTest.Within<RadioButton>(page, r => Avalonia.Automation.AutomationProperties.GetName(r) == "Edit mixer meter colors").IsChecked);
+
+            // LED fade and warm-up: each a switch on the page that turns its setting off and saves it.
+            var fade = AppUnderTest.Within<TextKey>(page, k => k.Name == "LedFadeKey");
+            var warmup = AppUnderTest.Within<TextKey>(page, k => k.Name == "LedWarmupKey");
+            Assert.Equal(("LED fade", "LED warm-up"), (Avalonia.Automation.AutomationProperties.GetName(fade), Avalonia.Automation.AutomationProperties.GetName(warmup)));
+            Assert.True(fade.IsChecked == true && warmup.IsChecked == true);
+            app.Click(fade);
+            Assert.False(display.LedFade);
+            Assert.False(store.Load().LedFade);
+            Assert.True(store.Load().LedWarmup);
+            app.Click(warmup);
+            Assert.False(store.Load().LedWarmup);
+            app.Click(fade);
+            app.Click(warmup);
+            Assert.True(store.Load() is { LedFade: true, LedWarmup: true });
+        }
+        finally
+        {
+            foreach (var each in display.Editors)
+            {
+                each.ResetGradientCommand.Execute(null);
+            }
+
+            display.LedFade = true;
+            display.LedWarmup = true;
         }
     });
 

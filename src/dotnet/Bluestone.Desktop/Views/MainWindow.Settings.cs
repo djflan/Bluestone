@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -66,10 +67,10 @@ public partial class MainWindow
         }, RoutingStrategies.Tunnel);
     }
 
-    /// <summary>Whether Escape belongs to a popup first: <paramref name="source"/> is in a popup of its own, or a drop-down in Settings is open.</summary>
+    /// <summary>Whether Escape belongs to a popup first: <paramref name="source"/> is in a popup of its own, or a drop-down or other popup in Settings (a color picker) is open.</summary>
     private bool IsInOpenPopup(Control? source) =>
         (source is not null && TopLevel.GetTopLevel(source) != this)
-        || SettingsHost.GetVisualDescendants().OfType<ComboBox>().Any(c => c.IsDropDownOpen);
+        || SettingsHost.GetVisualDescendants().OfType<Popup>().Any(p => p.IsOpen);
 
     private void ApplySettingsVisibility()
     {

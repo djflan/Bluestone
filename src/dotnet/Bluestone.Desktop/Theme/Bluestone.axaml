@@ -1098,8 +1098,10 @@
   <Style Selector="ListBox.settingsCategories ListBoxItem TextBlock">
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
+  <!-- Exactly as tall as the categories' Border.dockHeader beside it: one line (crumb and Done), dividers continuous. -->
   <Style Selector="Border.settingsHeader">
-    <Setter Property="Padding" Value="24,12,16,12" />
+    <Setter Property="Height" Value="{StaticResource Height.Header}" />
+    <Setter Property="Padding" Value="24,0,6,0" />
     <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -1137,6 +1139,140 @@
   </Style>
   <Style Selector="TextBlock.settingHint.warning">
     <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
+  </Style>
+
+  <!--
+    Color swatches: the whole rounded tile is the color, with a dark keyline so light colors still read against the
+    panel. Hover rings it; keyboard focus rings it in the focus color.
+  -->
+  <Style Selector="Button.swatch">
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.swatch.small">
+    <Setter Property="Width" Value="18" />
+    <Setter Property="Height" Value="18" />
+  </Style>
+  <Style Selector="Button.swatch > Border">
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.swatch:pointerover /template/ ContentPresenter, Button.swatch:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.swatch:pointerover > Border">
+    <Setter Property="BorderBrush" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <Style Selector="Button.swatch:pressed > Border">
+    <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
+  </Style>
+  <Style Selector="Button.swatch:focus-visible > Border">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="BorderThickness" Value="1.5" />
+  </Style>
+
+  <!-- A hex color field; a value that is not six hex digits is marked, and goes nowhere. -->
+  <Style Selector="TextBox.hex">
+    <Setter Property="Width" Value="92" />
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBox.hex.invalid /template/ Border#PART_BorderElement, TextBox.hex.invalid:focus /template/ Border#PART_BorderElement, TextBox.hex.invalid:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Error}" />
+  </Style>
+
+  <!--
+    A color chip that opens the color picker: the color in a console well, ringed on hover, on keyboard focus, and in the
+    accent (lit) while its picker is open.
+  -->
+  <Style Selector="Button.colorChip">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.colorChip:pointerover /template/ ContentPresenter, Button.colorChip:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.colorChip > Border.chipRing">
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="Padding" Value="1.5" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+  <Style Selector="Button.colorChip:pointerover > Border.chipRing">
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.colorChip:focus-visible > Border.chipRing">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+  </Style>
+  <Style Selector="Button.colorChip.open > Border.chipRing">
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.AccentGlowTight}" />
+  </Style>
+
+  <!-- The color wheel, swatches, and chips draw their own focus rings, so not the default adorner on their bounds. -->
+  <Style Selector="controls|ColourWheel, Button.swatch, Button.colorChip">
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+
+  <!-- The color picker popover (Controls/ColourPicker.axaml). -->
+  <Style Selector="Border.colorPicker">
+    <Setter Property="Background" Value="{StaticResource Surface.Raised}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.Popover}" />
+  </Style>
+  <Style Selector="Border.colorPicker TextBlock.pickerContext">
+    <Setter Property="Margin" Value="12,10,12,0" />
+    <Setter Property="LetterSpacing" Value="0.8" />
+  </Style>
+  <Style Selector="Border.colorPicker StackPanel.pickerBody">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="{StaticResource Space.L}" />
+    <Setter Property="Margin" Value="12,10,12,0" />
+  </Style>
+  <Style Selector="Border.colorPicker StackPanel.pickerHexRow">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="{StaticResource Space.M}" />
+    <Setter Property="Margin" Value="12,12,12,8" />
+  </Style>
+  <Style Selector="Border.colorPicker TextBlock.pickerReadout">
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.colorPicker TextBlock.pickerReadout.invalid">
+    <Setter Property="Foreground" Value="{StaticResource State.Error}" />
+  </Style>
+  <Style Selector="Border.colorPicker ItemsControl.pickerSwatches">
+    <Setter Property="Margin" Value="12,0" />
+  </Style>
+  <Style Selector="Border.colorPicker Border.pickerFooter">
+    <Setter Property="Height" Value="40" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+    <Setter Property="Padding" Value="12,0,10,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="CornerRadius" Value="0,0,4,4" />
   </Style>
 
   <!-- Dense lists (messages, monitor, event list) -->
