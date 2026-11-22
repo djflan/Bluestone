@@ -573,11 +573,22 @@ with a dB scale and peak readout. Only junctions a visible Device View shows are
 (`IAudioPlayback.WatchJunctions`). A junction also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers
-only points the routing validator accepts. Every `LedLadderMeter`, in the Device View and the mixer, is coloured by
-the user's `SignalGradient` (2 to 8 colour stops, Settings ▸ Display), applied through `Theme/MeterGradient`; the clip
-lamp is a fixed colour outside it. The gradient and level style are application preferences (`DisplayViewModel`,
-`display-settings.json`), not project data; the former junction size, LED shape, and position settings were removed,
-and older settings files still load.
+only points the routing validator accepts. `Theme/MeterGradient` has independent Mixer, Chain, and Gain instances,
+each with its own version, change event, and brush caches. Mixer ladders use `MixerGradient`; Device View junction
+and Out ladders use `ChainGradient`; fader gain LEDs use `GainGradient`. Each gradient has 2 to 8 color stops.
+The MIDI port glyph uses one `MidiColour`; clip lamps stay fixed red outside the gradients. These and the level
+style are application preferences (`DisplayViewModel`, `display-settings.json`), not project data. Older
+`signalGradient` settings load into both mixer and chain; gain starts with its own default. The former junction
+size, LED shape, and position settings were removed, and older settings files still load.
+
+`Controls/LedMotion` is a shared UI-thread frame clock with one loop per window, driven by
+`TopLevel.RequestAnimationFrame` only while LEDs are changing. Controls retain brightness state and use cached
+brush/glow steps; no animation work is added to the audio or MIDI real-time paths. `LedFade` and `LedWarmup`
+default on and are independently switchable. Both are effectively off under macOS Reduce motion
+(`NSWorkspace`) or the Windows client-area animation preference, refreshed at startup and main-window activation;
+Linux uses only the application switches.
+Headless manual-clock tests cover transitions and settling; ADR 0043 records the measured allocation scope
+and the unverified compositor and platform-preference paths.
 
 Time navigation is one pure model, `TimelineViewport` (zoom in pixels per quarter and scroll, anchored zoom, fit),
 with one ruler gesture, `RulerNavigationGesture`, in the arrangement and the piano roll, each keeping its own state:

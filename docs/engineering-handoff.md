@@ -183,6 +183,11 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
   editor) was verified headless only: Avalonia UI tests with simulated meter data, rendered at 1040×700 and 1440×900.
   The screen was locked, so there was no capture of the running app. It has not been checked with real-time audio, on
   HiDPI or GPU rendering, or with a screen reader.
+- LED motion on `a34f9b7` was checked with manual-clock headless tests, not hardware: application clock ticks and
+  the Out meter's ladder draw reported 0 managed B; animated gain draws matched their at-rest allocation baseline.
+  Key and MIDI offscreen draws allocated backend bytes. This does not establish zero allocation for all rendering,
+  or verify the real frame-request/compositor path, hardware timing, or macOS/Windows system-preference reads
+  (ADR 0043).
 
 ## 7. Unresolved implementation backlog
 
@@ -250,3 +255,8 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
    - Still open from the earlier identity work: theme presets (Studio Blue, Amber, Mono), which need `DynamicResource`
      plumbing, and a user glow-intensity setting. The transport glyph glows still use Avalonia's blur
      (`DropShadowEffect`), not `Theme/Glow`.
+10. **LED motion verification (ADRs 0037, 0043, 0050):** measure the real
+    `TopLevel.RequestAnimationFrame`/compositor path and hardware timing, and verify macOS `NSWorkspace` Reduce
+    motion and Windows client-area animation preference reads. These preferences refresh at startup and
+    main-window activation, not through continuous system-change notifications. Current allocation evidence is manual-clock,
+    headless/offscreen only, with the limits recorded in §6 and ADR 0043.

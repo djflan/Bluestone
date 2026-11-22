@@ -116,6 +116,21 @@ conversion point.
 The seam is now a `ChainJunction`: a MIDI port glyph at the top, lit while notes are held, and a stereo LED ladder
 with a clip lamp that shows the average with the peak held above it (the default) or the peak alone. The Out card
 shows the chain's output on a wider meter. Insertion, routing taps, and the context menu are unchanged. Settings ▸
-Display no longer chooses an indicator size, LED shape, or position; it keeps the level style and adds the signal
-gradient every level meter uses. Meter colours now come from that user gradient, not the `Meter.*` tokens; the clip
+Display no longer chooses an indicator size, LED shape, or position; it keeps the level style and adds a signal
+gradient (split into independent families by the amendment below). Meter colors come from user gradients, not the `Meter.*` tokens; the clip
 lamp is a fixed red outside the gradient.
+
+## Amendment: separate indicator colors and LED motion
+
+Junction and Out meters use `DisplaySettings.ChainGradient` through `MeterGradient.Chain`, independently of the
+mixer meters and gain LEDs. The junction's MIDI port glyph uses one saved `MidiColour` (default `#3CCBF4`), not a
+gradient. Clip lamps remain fixed red. Settings ▸ Display edits these application-local preferences; an older
+`signalGradient` is loaded into both chain and mixer gradients, while gain uses its own default. New saves omit
+the legacy key; an older build reopening those settings uses its default gradient.
+
+Meter cells warm up over about 20 ms and fade to dark over 90 ms; held-peak cells fade over 90 ms without warm-up.
+Clip and MIDI lamps fade over 140 ms and light immediately. This display-only motion does not change metering,
+note activity, or the clip latch. `LedFade` and `LedWarmup` default on and can be disabled independently; the
+system reduced-motion preference overrides both on macOS and Windows. Linux uses only the application switches.
+The UI-thread `LedMotion` clock requests frames per window only while LEDs are changing and stops once they
+settle. The allocation evidence and its limits are recorded in ADR 0043; this is not a hardware timing claim.
