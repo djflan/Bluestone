@@ -108,7 +108,11 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
     /// <summary>The junction after the last device, where the chain's output leaves; null for an empty chain (its input is the output).</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OutputJunction))]
     public partial JunctionSignal? LastJunction { get; private set; }
+
+    /// <summary>What leaves the chain for the Out node: the last junction, or the input for an empty chain.</summary>
+    public JunctionSignal OutputJunction => LastJunction ?? Input;
 
     /// <summary>Every junction this view shows, in signal order: the input, then the point after each device. Empty without a chain.</summary>
     internal IEnumerable<JunctionSignal> Junctions => HasChain ? Devices.Select(d => d.Output).Prepend(Input) : [];
@@ -398,7 +402,7 @@ public sealed partial class DeviceViewViewModel : ObservableObject
 
         // A junction is routed when a connection takes signal from it. At the last junction that includes a device input
         // (a receiver, a sidechain) fed from the chain's output; ordinary outputs are what the OUT node shows.
-        var terminal = LastJunction ?? Input;
+        var terminal = OutputJunction;
         foreach (var junction in Junctions)
         {
             IEnumerable<SignalConnection> taps = junction != Input ? project.ConnectionsFrom(SignalNode.Device(new DeviceId(junction.Key)))

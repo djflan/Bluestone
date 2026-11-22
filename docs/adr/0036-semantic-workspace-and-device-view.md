@@ -126,3 +126,12 @@ ignored.
   editors, child-chain slots, and modulation can be added to the panel model without changing ownership.
 - Detached windows depend on the platform honouring requested positions; recovery logic is tested, but behaviour
   with real monitors being attached and removed has not been verified by hand.
+
+## Amendment: Identity R6 design system
+
+This amends §Design tokens. R6 adds a shared custom control library: `SquareKey`, `TextKey`, `PowerGlyph`,
+`RecessedWell`, `GutterPanel`, `DeviceCardPanel`, and the console controls (`ConsoleFader`, `ConsoleScale`,
+`LedLadderMeter`, `GainLedGutter`, `PanKnob`), plus `Theme/Glow`'s exponential light falloff for custom-drawn glows.
+They use the tokens like any other view. One exception to the token rule: meter colours are a user preference (the
+signal gradient in Settings ▸ Display), applied at runtime through `Theme/MeterGradient` rather than read from
+`Tokens.axaml`. The clip lamp stays a fixed token colour.

@@ -13,12 +13,10 @@
       the device and Space turns it on or off (MixerConsoleView); the switch stays clickable for the pointer.
     -->
     <DataTemplate x:Key="MixerInsertRow" x:DataType="vm:MixerInsertViewModel">
-      <Grid Classes="mixerInsertRow" Classes.bypassed="{Binding !IsEnabled}" ColumnDefinitions="Auto,*">
-        <ToggleButton Classes="mixerInsertPower" IsChecked="{Binding IsEnabled}" IsTabStop="False"
-                      AutomationProperties.Name="{Binding PowerAutomationName}"
-                      ToolTip.Tip="Turn this device on or off (off bypasses it)">
-          <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
-        </ToggleButton>
+      <Grid Classes="mixerInsertRow" Classes.bypassed="{Binding !IsEnabled}" ColumnDefinitions="11,*">
+        <controls:PowerGlyph Classes="mixerInsertPower" IsChecked="{Binding IsEnabled}" IsTabStop="False"
+                             AutomationProperties.Name="{Binding PowerAutomationName}"
+                             ToolTip.Tip="Turn this device on or off (off bypasses it)" />
         <Button Grid.Column="1" Classes="mixerRow insertName" Command="{Binding OpenCommand}"
                 AutomationProperties.Name="{Binding Name, StringFormat='Open {0}'}"
                 ToolTip.Tip="{Binding Name, StringFormat='{}{0} · Enter opens it, Space turns it on or off'}">
@@ -29,12 +27,10 @@
 
     <!-- A Master insert: the same row, but its name shows the device in the Master Inspector. -->
     <DataTemplate x:Key="MixerMasterInsertRow" x:DataType="vm:MixerInsertViewModel">
-      <Grid Classes="mixerInsertRow" Classes.bypassed="{Binding !IsEnabled}" ColumnDefinitions="Auto,*">
-        <ToggleButton Classes="mixerInsertPower" IsChecked="{Binding IsEnabled}" IsTabStop="False"
-                      AutomationProperties.Name="{Binding PowerAutomationName}"
-                      ToolTip.Tip="Turn this device on or off (off bypasses it)">
-          <PathIcon Classes="stroke" Data="{StaticResource Icon.Power}" />
-        </ToggleButton>
+      <Grid Classes="mixerInsertRow" Classes.bypassed="{Binding !IsEnabled}" ColumnDefinitions="11,*">
+        <controls:PowerGlyph Classes="mixerInsertPower" IsChecked="{Binding IsEnabled}" IsTabStop="False"
+                             AutomationProperties.Name="{Binding PowerAutomationName}"
+                             ToolTip.Tip="Turn this device on or off (off bypasses it)" />
         <Button Grid.Column="1" Classes="mixerRow insertName" Command="{Binding OpenCommand}"
                 AutomationProperties.Name="{Binding Name, StringFormat='Show {0} in Master Inspector'}"
                 ToolTip.Tip="{Binding Name, StringFormat='Show {0} in Master Inspector · Space turns it on or off'}">
@@ -170,49 +166,42 @@
       </Grid>
     </Border>
 
-    <Grid x:Name="StripsArea" Grid.Row="1" ColumnDefinitions="*,Auto">
+    <Grid x:Name="StripsArea" Grid.Row="1" ColumnDefinitions="*,Auto" Background="{StaticResource Console.Bed}">
       <!-- Track strips scroll as one console at a fixed pitch; Master stays pinned in its own column. -->
       <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                     AutomationProperties.Name="Track mixer strips">
-        <StackPanel Orientation="Horizontal">
+        <StackPanel Orientation="Horizontal" Margin="{StaticResource Inset.MixerConsole}">
           <ItemsControl ItemsSource="{Binding Tracks}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Mixer.StripGap}" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:MixerTrackStripViewModel">
                 <Border Classes="mixerStrip" Width="{StaticResource Mixer.StripWidth}" AutomationProperties.Name="{Binding AccessibilitySummary}">
-                  <Panel>
-                    <!-- Bands in reading (and Tab) order: processing, its folded cue, name, body, then the output footer. -->
-                    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="{StaticResource Inset.MixerScrollClearance}">
-                      <!-- Processing: the insert stack, its count and the sends. -->
-                      <Border Classes="mixerBand processing" Height="{StaticResource Mixer.ProcessingHeight}" Padding="{StaticResource Inset.MixerProcessing}">
-                        <Grid RowDefinitions="Auto,Auto,*">
-                          <Border Classes="mixerInsertStack">
-                            <Panel>
+                  <controls:ConsoleStripPanel IsSelected="{Binding IsSelected}">
+                    <!-- Bands in reading (and Tab) order: inserts, their folded cue, pan, keys, readouts, fader zone, then the name plate. -->
+                    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                      <!-- Inserts: a recessed well of power glyphs and names, then the device count and the sends. -->
+                      <Border Classes="mixerBand processing">
+                        <StackPanel>
+                          <controls:RecessedWell Classes="mixerInsertWell">
+                            <StackPanel>
                               <ItemsControl ItemsSource="{Binding VisibleInserts}" ItemTemplate="{StaticResource MixerInsertRow}" />
-                              <Button Classes="mixerRow micro add" Height="{StaticResource Mixer.InsertRowHeight}" VerticalAlignment="Top"
-                                      Padding="{StaticResource Inset.MixerRow}" HorizontalAlignment="Stretch"
-                                      IsVisible="{Binding HasNoInserts}" Command="{Binding OpenChainCommand}"
-                                      AutomationProperties.Name="Add a device to this track" ToolTip.Tip="Open this track's device chain to add a device">
-                                <TextBlock Text="+ Add device" />
+                              <!-- The well's next free row adds a device, as on the approved strip. -->
+                              <Button Classes="mixerRow micro add" Height="{StaticResource Mixer.InsertRowHeight}" HorizontalAlignment="Stretch"
+                                      IsVisible="{Binding Inserts.Count, Converter={x:Static theme:InsertWellHasRoomConverter.Instance}}"
+                                      Command="{Binding OpenChainCommand}" ToolTip.Tip="{Binding ChainSummary, StringFormat='{}{0} · add a device'}"
+                                      AutomationProperties.Name="Add a device to this track">
+                                <TextBlock Text="+" />
                               </Button>
-                            </Panel>
-                          </Border>
-                          <Grid Grid.Row="1" Height="{StaticResource Mixer.CountLineHeight}" ColumnDefinitions="*,Auto">
-                            <Button Classes="mixerRow micro" Command="{Binding OpenChainCommand}" ToolTip.Tip="{Binding ChainSummary}"
-                                    IsVisible="{Binding !HasOverflow}" IsTabStop="{Binding !HasNoInserts}"
-                                    AutomationProperties.Name="Open this track's device chain">
-                              <TextBlock Text="{Binding InsertCountText}" />
-                            </Button>
+                            </StackPanel>
+                          </controls:RecessedWell>
+                          <Grid Height="{StaticResource Mixer.CountLineHeight}" ColumnDefinitions="*,Auto">
                             <Button Classes="mixerRow micro" IsVisible="{Binding HasOverflow}"
                                     AutomationProperties.Name="Show every device on this track" ToolTip.Tip="{Binding ChainSummary, StringFormat='{}{0} · show every device'}">
-                              <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XS}">
-                                <TextBlock Text="{Binding InsertCountText}" />
-                                <TextBlock Text="{Binding OverflowText}" Classes="mixerMore" />
-                              </StackPanel>
+                              <TextBlock Text="{Binding OverflowText}" Classes="mixerMore" />
                               <Button.Flyout>
                                 <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="mixerList">
                                   <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MixerChainPanel}" />
@@ -220,11 +209,12 @@
                               </Button.Flyout>
                             </Button>
                             <Button Grid.Column="1" Classes="mixerRow micro" IsVisible="{Binding HasAudioStrip}"
-                                    AutomationProperties.Name="{Binding SendsAutomationName}" ToolTip.Tip="Show every send, or add one">
-                              <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XS}">
-                                <TextBlock Text="{Binding OverflowSendCount, StringFormat='+{0}'}" Classes="mixerMore" IsVisible="{Binding HasSendOverflow}" />
-                                <TextBlock Text="SENDS" />
-                              </StackPanel>
+                                    AutomationProperties.Name="{Binding SendsAutomationName}" ToolTip.Tip="Show every send and its level, or add one">
+                              <Panel>
+                                <!-- No sends: nothing on the strip until it is hovered or focused, then a quiet "+ Send". -->
+                                <TextBlock Text="+ SEND" Classes="mixerSendHint" IsVisible="{Binding !Sends.Count}" />
+                                <TextBlock Text="{Binding Sends.Count, Converter={x:Static theme:SendCountConverter.Instance}}" IsVisible="{Binding Sends.Count}" />
+                              </Panel>
                               <Button.Flyout>
                                 <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="mixerList">
                                   <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MixerSendsPanel}" />
@@ -232,39 +222,7 @@
                               </Button.Flyout>
                             </Button>
                           </Grid>
-                          <Panel Grid.Row="2" IsVisible="{Binding HasAudioStrip}">
-                            <TextBlock Text="No sends" Classes="micro" VerticalAlignment="Center" IsVisible="{Binding !Sends.Count}" />
-                            <ItemsControl ItemsSource="{Binding VisibleSends}" ClipToBounds="True" VerticalAlignment="Center"
-                                          Tag="{Binding ColorIndex, Converter={x:Static theme:TrackColorConverter.Instance}}">
-                              <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                  <UniformGrid Rows="1" Columns="2" />
-                                </ItemsPanelTemplate>
-                              </ItemsControl.ItemsPanel>
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:MixerSendViewModel">
-                                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="{StaticResource Space.XXS}" Background="Transparent"
-                                        ToolTip.Tip="{Binding LevelText, StringFormat='{}{0} · right-click for destination, pre/post, remove'}">
-                                    <Grid.ContextFlyout>
-                                      <Flyout FlyoutPresenterClasses="mixerList">
-                                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MixerSendEditor}" />
-                                      </Flyout>
-                                    </Grid.ContextFlyout>
-                                    <controls:Knob Width="{StaticResource Mixer.SendKnobSize}" Height="{StaticResource Mixer.SendKnobSize}" VerticalAlignment="Center"
-                                                   Value="{Binding Level}" Minimum="{Binding MinimumLevel}" Maximum="{Binding MaximumLevel}"
-                                                   ValueText="{Binding LevelText}"
-                                                   Accent="{Binding $parent[ItemsControl].Tag}" ResetCommand="{Binding ResetLevelCommand}"
-                                                   AutomationProperties.Name="{Binding LevelAutomationName}" />
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                      <TextBlock Text="{Binding TargetName}" Classes="micro" TextTrimming="CharacterEllipsis" />
-                                      <TextBlock Text="{Binding LevelText, Converter={x:Static theme:MixerUnitlessConverter.Instance}}" Classes="mixerValue micro" />
-                                    </StackPanel>
-                                  </Grid>
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                          </Panel>
-                        </Grid>
+                        </StackPanel>
                       </Border>
 
                       <!-- Folded (short pane): one line that still reaches every device and send. -->
@@ -291,169 +249,147 @@
                         </Button>
                       </Border>
 
-                      <!-- Name block: colour notch, "01 · AUDIO", and the name; selecting it selects the track. -->
-                      <Grid Grid.Row="2" Classes="mixerName"
-                            Background="{Binding ColorIndex, Converter={x:Static theme:TrackTintConverter.Instance}, ConverterParameter=0.16}">
-                        <Border Width="{StaticResource Mixer.ColorNotchWidth}" HorizontalAlignment="Left"
-                                Background="{Binding ColorIndex, Converter={x:Static theme:TrackBrushConverter.Instance}}" />
-                        <Button Classes="mixerRow name" Command="{Binding SelectCommand}" ToolTip.Tip="{Binding Name}"
-                                AutomationProperties.Name="{Binding SelectAutomationName}">
-                          <TextBlock Classes="mixerStripName" Classes.long="{Binding Name.Length, Converter={x:Static theme:GreaterThanConverter.Instance}, ConverterParameter=14}"
-                                     Text="{Binding Name}" />
-                        </Button>
-                        <StackPanel Classes="mixerNumberLine" Orientation="Horizontal" Spacing="{StaticResource Space.XS}"
-                                    VerticalAlignment="Top" IsHitTestVisible="False">
-                          <TextBlock Text="{Binding NumberText}" Classes="mixerValue micro" />
-                          <TextBlock Text="·" Classes="micro" />
-                          <TextBlock Text="{Binding RoleCaption}" Classes="micro" />
+                      <!-- MIDI-only strip: same pitch and name plate, a quiet body, and record arm when it can record. -->
+                      <StackPanel Grid.Row="2" Grid.RowSpan="2" Classes="mixerMidi" Spacing="{StaticResource Space.XS}" IsVisible="{Binding !HasAudioStrip}">
+                        <TextBlock Text="MIDI ONLY" Classes="mixerCaption" Foreground="{StaticResource Signal.Note}" />
+                        <TextBlock Text="No audio fader, pan, or meter" Classes="mixerNote" TextWrapping="Wrap" />
+                        <controls:SquareKey Kind="Record" OnColor="{x:Static theme:Palette.Record}" HorizontalAlignment="Left"
+                                            IsChecked="{Binding IsArmed}" IsVisible="{Binding CanArm}"
+                                            AutomationProperties.Name="{Binding ArmAutomationName}" ToolTip.Tip="Arm for recording" />
+                      </StackPanel>
+
+                      <!-- Pan, the track keys and the gain and peak readouts. -->
+                      <StackPanel Grid.Row="2" Classes="mixerControls" IsVisible="{Binding HasAudioStrip}">
+                        <Grid Classes="mixerPanRow">
+                          <controls:PanKnob Value="{Binding Pan}" ResetCommand="{Binding ResetPanCommand}"
+                                            AutomationProperties.Name="{Binding PanAutomationName}"
+                                            ToolTip.Tip="Pan. Drag or use the arrow keys; double-click or Delete to centre." />
+                          <TextBlock Text="PAN" Classes="mixerCaption mixerPanCaption" />
+                          <TextBlock Text="{Binding PanText}" Classes="mixerValue mixerPanValue" />
+                        </Grid>
+                        <StackPanel Classes="mixerKeys">
+                          <controls:SquareKey Glyph="M" OnColor="{x:Static theme:Palette.Mute}" IsChecked="{Binding IsMuted}"
+                                              AutomationProperties.Name="{Binding MuteAutomationName}" ToolTip.Tip="Mute this track's audio strip; MIDI content mute is separate" />
+                          <controls:SquareKey Glyph="S" OnColor="{x:Static theme:Palette.Solo}" IsChecked="{Binding IsSoloed}"
+                                              AutomationProperties.Name="{Binding SoloAutomationName}" ToolTip.Tip="Solo this track's audio strip; MIDI content solo is separate" />
+                          <!-- The arm slot is always reserved so M and S sit in the same place on every strip. -->
+                          <Panel Width="{StaticResource Mixer.KeySize}">
+                            <controls:SquareKey Kind="Record" OnColor="{x:Static theme:Palette.Record}" IsChecked="{Binding IsArmed}" IsVisible="{Binding CanArm}"
+                                                AutomationProperties.Name="{Binding ArmAutomationName}" ToolTip.Tip="Arm for recording" />
+                          </Panel>
                         </StackPanel>
-                        <Border Classes="mixerSelectedBadge" IsVisible="{Binding IsSelected}" Margin="{StaticResource Inset.MixerReadout}"
-                                HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False">
-                          <PathIcon Data="{StaticResource Icon.Check}" Width="{StaticResource FontSize.Micro}" Height="{StaticResource FontSize.Micro}"
-                                    Foreground="{StaticResource Text.OnAccent}" />
-                        </Border>
+                        <Grid Classes="mixerReadouts" ColumnDefinitions="*,3,*">
+                          <controls:RecessedWell Classes="mixerReadout">
+                            <TextBlock Text="{Binding GainValueText}" Classes="mixerValue" AutomationProperties.Name="Track gain in decibels" />
+                          </controls:RecessedWell>
+                          <controls:RecessedWell Grid.Column="2" Classes="mixerReadout">
+                            <TextBlock Text="{Binding PeakText}" Classes="mixerValue peak" Classes.clipped="{Binding IsClipped}" AutomationProperties.Name="Track peak in dBFS" />
+                          </controls:RecessedWell>
+                        </Grid>
+                      </StackPanel>
+
+                      <!-- Fader zone: gain LEDs in their gutter, the fader, the meter, and its scale, all on one travel. -->
+                      <Grid Grid.Row="3" Classes="mixerRails" IsVisible="{Binding HasAudioStrip}">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="{StaticResource Mixer.GainGutterColumn}" />
+                          <ColumnDefinition Width="{StaticResource Mixer.FaderColumn}" />
+                          <ColumnDefinition Width="{StaticResource Mixer.FaderMeterGapColumn}" />
+                          <ColumnDefinition Width="{StaticResource Mixer.MeterColumn}" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <controls:GainLedGutter Value="{Binding Gain}" IsHitTestVisible="False" />
+                        <controls:ConsoleFader Grid.Column="1" Value="{Binding Gain}" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" ResetCommand="{Binding ResetGainCommand}"
+                                               AutomationProperties.Name="{Binding GainAutomationName}"
+                                               ToolTip.Tip="Gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
+                        <controls:LedLadderMeter Grid.Column="3" Mode="{Binding MeterMode}" Value="{Binding MeterValue}" PeakHold="{Binding MeterPeakHold}"
+                                                 LeftValue="{Binding MeterLeftValue}" RightValue="{Binding MeterRightValue}"
+                                                 LeftPeakHold="{Binding MeterLeftPeakHold}" RightPeakHold="{Binding MeterRightPeakHold}"
+                                                 IsReady="{Binding IsMeterReady}" IsClipped="{Binding IsClipped}"
+                                                 AutomationProperties.Name="Track level meter"
+                                                 ToolTip.Tip="Level in the chosen meter mode; the readout above holds the peak in dBFS (louder of left and right). The lamp on top shows a clip." />
+                        <!-- While the clip lamp is lit, the whole meter column resets it. -->
+                        <Button Grid.Column="3" Classes="mixerClip" IsVisible="{Binding IsClipped}" Command="{Binding ResetClipCommand}"
+                                AutomationProperties.Name="Clipped – click to reset" AutomationProperties.HelpText="A peak passed 0 dBFS on this strip"
+                                ToolTip.Tip="Clipped: a peak passed 0 dBFS. Click, Enter, or Space to reset." />
+                        <controls:ConsoleScale Grid.Column="4" Mode="{Binding MeterMode}" />
+                        <!-- Why the meter shows no level, over the meter and scale and never in the way of a click. -->
+                        <LayoutTransformControl Grid.Column="3" Grid.ColumnSpan="2" Classes="mixerStatus" IsVisible="{Binding !IsMeterReady}" IsHitTestVisible="False">
+                          <LayoutTransformControl.LayoutTransform>
+                            <RotateTransform Angle="-90" />
+                          </LayoutTransformControl.LayoutTransform>
+                          <Border Classes="mixerStatusPill">
+                            <TextBlock Text="{Binding MeterStatus}" Classes="mixerMeterStatus" Classes.warming="{Binding IsMeterWarmingUp}"
+                                       Classes.unavailable="{Binding !HasMeterReading}" />
+                          </Border>
+                        </LayoutTransformControl>
                       </Grid>
 
-                      <Panel Grid.Row="3">
-                        <!-- MIDI-only strip: same pitch and name block, a quiet body, and record arm when it can record. -->
-                        <StackPanel Spacing="{StaticResource Space.XS}" Margin="{StaticResource Inset.MixerStrip}" IsVisible="{Binding !HasAudioStrip}">
-                          <TextBlock Text="MIDI ONLY" Classes="overline" Foreground="{StaticResource Signal.Note}" />
-                          <TextBlock Text="{Binding OutputSummary}" Classes="secondary" TextWrapping="Wrap" />
-                          <TextBlock Text="No audio fader, pan, or meter" Classes="muted" TextWrapping="Wrap" />
-                          <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XS}" IsVisible="{Binding CanArm}">
-                            <ToggleButton Classes="trackButton arm" IsChecked="{Binding IsArmed}"
-                                          AutomationProperties.Name="{Binding ArmAutomationName}" ToolTip.Tip="Arm for recording">
-                              <PathIcon Data="{StaticResource Icon.Record}" Width="{StaticResource Space.M}" Height="{StaticResource Space.M}" />
-                            </ToggleButton>
-                            <TextBlock Text="Record arm" Classes="micro" VerticalAlignment="Center" />
+                      <!-- Name plate: "01 · AUDIO", the name, and where the strip goes. Selecting it selects the track. -->
+                      <controls:TrackFooterBand Grid.Row="4" Classes="mixerPlate" IsSelected="{Binding IsSelected}"
+                                                TrackColor="{Binding ColorIndex, Converter={x:Static theme:TrackColorConverter.Instance}}">
+                        <Panel>
+                          <Button Classes="mixerRow name" Command="{Binding SelectCommand}" ToolTip.Tip="{Binding Name}"
+                                  AutomationProperties.Name="{Binding SelectAutomationName}">
+                            <TextBlock Classes="mixerStripName" Classes.selected="{Binding IsSelected}" Text="{Binding Name}" />
+                          </Button>
+                          <StackPanel Classes="mixerPlateKind" Orientation="Horizontal" Spacing="{StaticResource Space.XXS}">
+                            <TextBlock Text="{Binding NumberText}" Classes="mixerCaption" />
+                            <TextBlock Text="·" Classes="mixerCaption" />
+                            <TextBlock Text="{Binding RoleCaption}" Classes="mixerCaption" />
                           </StackPanel>
-                        </StackPanel>
-
-                        <!-- Audio body: pan, buttons, readouts, then gain bar · scale · meter. -->
-                        <Grid Classes="mixerBody" RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding HasAudioStrip}">
-                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
-                            <controls:MixerPanRamp Classes="mixerPan" Value="{Binding Pan}" ColorIndex="{Binding ColorIndex}" ResetCommand="{Binding ResetPanCommand}"
-                                                   AutomationProperties.Name="{Binding PanAutomationName}"
-                                                   ToolTip.Tip="Pan. Drag or use the arrow keys; double-click or Delete to centre." />
-                            <TextBlock Grid.Column="1" Text="{Binding PanText}" Classes="mixerValue" Width="{StaticResource Mixer.ValueWidth}" TextAlignment="Right" />
-                          </Grid>
-                          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="{StaticResource Space.XS}" HorizontalAlignment="Center">
-                            <ToggleButton Classes="trackButton mute" Content="M" IsChecked="{Binding IsMuted}"
-                                          AutomationProperties.Name="{Binding MuteAutomationName}" ToolTip.Tip="Mute this track's audio strip; MIDI content mute is separate" />
-                            <ToggleButton Classes="trackButton solo" Content="S" IsChecked="{Binding IsSoloed}"
-                                          AutomationProperties.Name="{Binding SoloAutomationName}" ToolTip.Tip="Solo this track's audio strip; MIDI content solo is separate" />
-                            <!-- The arm slot is always reserved so M and S sit in the same place on every strip. -->
-                            <Panel Width="{StaticResource Mixer.StripButtonWidth}">
-                              <ToggleButton Classes="trackButton arm" IsChecked="{Binding IsArmed}" IsVisible="{Binding CanArm}"
-                                            AutomationProperties.Name="{Binding ArmAutomationName}" ToolTip.Tip="Arm for recording">
-                                <PathIcon Data="{StaticResource Icon.Record}" Width="{StaticResource Space.M}" Height="{StaticResource Space.M}" />
-                              </ToggleButton>
-                            </Panel>
-                          </StackPanel>
-                          <Border Grid.Row="2" Classes="mixerSunken mixerReadouts">
-                            <Grid ColumnDefinitions="*,*">
-                              <StackPanel>
-                                <TextBlock Text="GAIN dB" Classes="micro mixerCaption" />
-                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}">
-                                  <TextBlock Text="{Binding GainValueText}" Classes="mixerValue" AutomationProperties.Name="Track gain in decibels" />
-                                  <TextBlock Text="dB" Classes="micro mixerUnit" />
+                          <Button Classes="mixerRow route" IsVisible="{Binding HasAudioStrip}"
+                                  AutomationProperties.Name="{Binding OutputAutomationName}" ToolTip.Tip="The ordinary output goes to Master or the parent Group.">
+                            <TextBlock Text="{Binding OutputSummary, StringFormat='→ {0}'}" TextTrimming="CharacterEllipsis" />
+                            <Button.Flyout>
+                              <Flyout Placement="TopEdgeAlignedLeft" FlyoutPresenterClasses="mixerList">
+                                <StackPanel Spacing="{StaticResource Space.S}">
+                                  <TextBlock Text="OUTPUT" Classes="overline" />
+                                  <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding Output}" IsEnabled="{Binding CanChooseOutput}"
+                                            HorizontalAlignment="Stretch" AutomationProperties.Name="Track audio output destination" />
                                 </StackPanel>
-                              </StackPanel>
-                              <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                <TextBlock Text="PEAK dBFS" Classes="micro mixerCaption" HorizontalAlignment="Right" />
-                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Right">
-                                  <TextBlock Text="{Binding PeakText}" Classes="mixerValue" Classes.clipped="{Binding IsClipped}" AutomationProperties.Name="Track peak in dBFS" />
-                                  <TextBlock Text="dBFS" Classes="micro mixerUnit" />
-                                </StackPanel>
-                              </StackPanel>
-                            </Grid>
-                          </Border>
-                          <Border Grid.Row="3" Classes="mixerSunken mixerRails" Padding="{StaticResource Inset.MixerReadout}">
-                            <Grid ColumnDefinitions="*,Auto,*">
-                              <controls:MixerGainBar Value="{Binding Gain}" Minimum="{Binding MinimumGain}" Maximum="{Binding MaximumGain}" ResetCommand="{Binding ResetGainCommand}"
-                                                     BarWidth="{StaticResource Mixer.GainBarWidth}"
-                                                     AutomationProperties.Name="{Binding GainAutomationName}"
-                                                     ToolTip.Tip="Gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
-                              <controls:MixerDbScale Grid.Column="1" Width="{StaticResource Mixer.ScaleWidth}" Mode="{Binding MeterMode}" />
-                              <controls:MixerMeterRail Grid.Column="2" HorizontalAlignment="Center" Mode="{Binding MeterMode}" Value="{Binding MeterValue}"
-                                                       PeakHold="{Binding MeterPeakHold}" IsReady="{Binding IsMeterReady}" IsClipped="{Binding IsClipped}" RailWidth="{StaticResource Mixer.MeterRailWidth}"
-                                                       AutomationProperties.Name="Track level meter"
-                                                       ToolTip.Tip="Level in the chosen meter mode; the readout above holds the peak in dBFS (louder of left and right). The light on top shows a clip." />
-                              <!-- While the clip light is on, the whole meter column resets it. -->
-                              <Button Grid.Column="2" Classes="mixerClip" IsVisible="{Binding IsClipped}" Command="{Binding ResetClipCommand}"
-                                      AutomationProperties.Name="Clipped – click to reset" AutomationProperties.HelpText="A peak passed 0 dBFS on this strip"
-                                      ToolTip.Tip="Clipped: a peak passed 0 dBFS. Click, Enter, or Space to reset." />
-                              <!-- Why the meter shows no level, over the meter column only and never in the way of a click. -->
-                              <LayoutTransformControl Grid.Column="2" Classes="mixerStatus" IsVisible="{Binding !IsMeterReady}" IsHitTestVisible="False">
-                                <LayoutTransformControl.LayoutTransform>
-                                  <RotateTransform Angle="-90" />
-                                </LayoutTransformControl.LayoutTransform>
-                                <Border Classes="mixerStatusPill">
-                                  <TextBlock Text="{Binding MeterStatus}" Classes="mixerMeterStatus" Classes.warming="{Binding IsMeterWarmingUp}"
-                                             Classes.unavailable="{Binding !HasMeterReading}" />
-                                </Border>
-                              </LayoutTransformControl>
-                            </Grid>
-                          </Border>
-                        </Grid>
-                      </Panel>
-
-                      <!-- Footer: where this strip goes. Last, so it is also last in Tab order. -->
-                      <Border Grid.Row="4" Height="{StaticResource Mixer.FooterHeight}" Padding="{StaticResource Inset.MixerRow}" IsVisible="{Binding HasAudioStrip}">
-                        <Button Classes="mixerRow chip" HorizontalAlignment="Left" VerticalAlignment="Center"
-                                AutomationProperties.Name="{Binding OutputAutomationName}" ToolTip.Tip="The ordinary output goes to Master or the parent Group.">
-                          <TextBlock Text="{Binding OutputSummary, StringFormat='→ {0}'}" TextTrimming="CharacterEllipsis" />
-                          <Button.Flyout>
-                            <Flyout Placement="TopEdgeAlignedLeft" FlyoutPresenterClasses="mixerList">
-                              <StackPanel Spacing="{StaticResource Space.S}">
-                                <TextBlock Text="OUTPUT" Classes="overline" />
-                                <ComboBox ItemsSource="{Binding Outputs}" SelectedItem="{Binding Output}" IsEnabled="{Binding CanChooseOutput}"
-                                          HorizontalAlignment="Stretch" AutomationProperties.Name="Track audio output destination" />
-                              </StackPanel>
-                            </Flyout>
-                          </Button.Flyout>
-                        </Button>
-                      </Border>
+                              </Flyout>
+                            </Button.Flyout>
+                          </Button>
+                          <TextBlock Classes="mixerRoute" IsVisible="{Binding !HasAudioStrip}" Text="{Binding OutputSummary, StringFormat='→ {0}'}"
+                                     TextTrimming="CharacterEllipsis" IsHitTestVisible="False" />
+                        </Panel>
+                      </controls:TrackFooterBand>
                     </Grid>
-                    <Border Classes="mixerSelection" IsVisible="{Binding IsSelected}" />
-                  </Panel>
+                  </controls:ConsoleStripPanel>
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <Border Classes="mixerStrip" IsVisible="{Binding !Tracks.Count}" Width="{StaticResource Mixer.StripWidth}">
-            <StackPanel Classes="emptyState" Spacing="{StaticResource Space.S}" VerticalAlignment="Center" Margin="{StaticResource Inset.MixerStrip}">
-              <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" Width="{StaticResource Icon.SizeLarge}" Height="{StaticResource Icon.SizeLarge}"
-                        Foreground="{StaticResource Line.BorderStrong}" HorizontalAlignment="Center" />
-              <TextBlock Text="No tracks yet" Classes="emptyTitle" HorizontalAlignment="Center" />
-              <TextBlock Text="Add an audio or MIDI track to begin mixing." Classes="muted" TextWrapping="Wrap" TextAlignment="Center" />
-            </StackPanel>
+          <Border Classes="mixerStrip empty" IsVisible="{Binding !Tracks.Count}" Width="{StaticResource Mixer.FlyoutWidth}">
+            <controls:ConsoleStripPanel>
+              <StackPanel Classes="emptyState" Spacing="{StaticResource Space.S}" VerticalAlignment="Center" Margin="{StaticResource Inset.MixerProcessing}">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" Width="{StaticResource Icon.SizeLarge}" Height="{StaticResource Icon.SizeLarge}"
+                          Foreground="{StaticResource Line.BorderStrong}" HorizontalAlignment="Center" />
+                <TextBlock Text="No tracks yet" Classes="emptyTitle" HorizontalAlignment="Center" />
+                <TextBlock Text="Add an audio or MIDI track to begin mixing." Classes="muted" TextWrapping="Wrap" TextAlignment="Center" />
+              </StackPanel>
+            </controls:ConsoleStripPanel>
           </Border>
         </StackPanel>
       </ScrollViewer>
 
-      <!-- Master: pinned, sunken, same rhythm as a track strip. -->
+      <!-- Master: pinned at the right past a dark seam, the same bands as a track strip with a wider meter. -->
       <Border Grid.Column="1" Classes="mixerMaster" Width="{StaticResource Mixer.MasterWidth}" AutomationProperties.Name="Master audio strip">
-        <Panel>
-          <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="{StaticResource Inset.MixerScrollClearance}">
-            <Border Classes="mixerBand processing" Height="{StaticResource Mixer.ProcessingHeight}" Padding="{StaticResource Inset.MixerProcessing}">
-              <Grid RowDefinitions="Auto,Auto,*">
-                <Border Classes="mixerInsertStack">
+        <controls:ConsoleStripPanel IsSelected="{Binding Master.IsSelected}">
+          <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+            <Border Classes="mixerBand processing">
+              <StackPanel>
+                <controls:RecessedWell Classes="mixerInsertWell">
                   <Panel>
                     <ItemsControl ItemsSource="{Binding Master.VisibleInserts}" ItemTemplate="{StaticResource MixerMasterInsertRow}" />
-                    <TextBlock Text="No devices" Classes="micro" Margin="{StaticResource Inset.MixerRow}" VerticalAlignment="Top"
+                    <TextBlock Text="No devices" Classes="mixerNote" Height="{StaticResource Mixer.InsertRowHeight}" VerticalAlignment="Top"
                                IsVisible="{Binding Master.HasNoInserts}" />
                   </Panel>
-                </Border>
-                <Grid Grid.Row="1" Height="{StaticResource Mixer.CountLineHeight}" ColumnDefinitions="*,Auto">
-                  <TextBlock Text="{Binding Master.InsertCountText}" Classes="micro" VerticalAlignment="Center" ToolTip.Tip="{Binding Master.ChainSummary}"
-                             IsVisible="{Binding !Master.HasOverflow}" />
+                </controls:RecessedWell>
+                <Grid Height="{StaticResource Mixer.CountLineHeight}" ColumnDefinitions="*,Auto">
                   <Button Classes="mixerRow micro" IsVisible="{Binding Master.HasOverflow}"
                           AutomationProperties.Name="Show every device on Master" ToolTip.Tip="Show every device in the Master chain">
-                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XS}">
-                      <TextBlock Text="{Binding Master.InsertCountText}" />
-                      <TextBlock Text="{Binding Master.OverflowText}" Classes="mixerMore" />
-                    </StackPanel>
+                    <TextBlock Text="{Binding Master.OverflowText}" Classes="mixerMore" />
                     <Button.Flyout>
                       <Flyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="mixerList">
                         <StackPanel Spacing="{StaticResource Space.S}">
@@ -465,13 +401,8 @@
                       </Flyout>
                     </Button.Flyout>
                   </Button>
-                  <TextBlock Grid.Column="1" Text="MASTER" Classes="micro" VerticalAlignment="Center" />
                 </Grid>
-                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                  <TextBlock Text="OUTPUT" Classes="micro" VerticalAlignment="Center" />
-                  <TextBlock Grid.Column="1" Text="Project output" Classes="micro" VerticalAlignment="Center" />
-                </Grid>
-              </Grid>
+              </StackPanel>
             </Border>
 
             <Border Grid.Row="1" Classes="mixerBand cue">
@@ -498,91 +429,79 @@
               </Button>
             </Border>
 
-            <Grid Grid.Row="2" Classes="mixerName" Classes.selected="{Binding Master.IsSelected}">
-              <Border Width="{StaticResource Mixer.ColorNotchWidth}" HorizontalAlignment="Left" Background="{StaticResource Signal.Audio}" />
-              <Button Classes="mixerRow name" Command="{Binding Master.SelectCommand}"
-                      ToolTip.Tip="Select the project Master and show its Inspector scope" AutomationProperties.Name="{Binding Master.SelectAutomationName}">
-                <TextBlock Classes="mixerStripName" Text="Master" />
-              </Button>
-              <StackPanel Classes="mixerNumberLine" Orientation="Horizontal" Spacing="{StaticResource Space.XS}"
-                          VerticalAlignment="Top" IsHitTestVisible="False">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Pin}" Width="{StaticResource FontSize.Micro}" Height="{StaticResource FontSize.Micro}"
-                          Foreground="{StaticResource Text.Secondary}" />
-                <TextBlock Text="PINNED" Classes="micro" />
-              </StackPanel>
-              <Border Classes="mixerSelectedBadge" IsVisible="{Binding Master.IsSelected}" Margin="{StaticResource Inset.MixerReadout}"
-                      HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False">
-                <PathIcon Data="{StaticResource Icon.Check}" Width="{StaticResource FontSize.Micro}" Height="{StaticResource FontSize.Micro}"
-                          Foreground="{StaticResource Text.OnAccent}" />
-              </Border>
-            </Grid>
-
-            <Grid Grid.Row="3" Classes="mixerBody" RowDefinitions="Auto,Auto,Auto,*">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.XS}">
-                <controls:MixerPanRamp Classes="mixerPan" Value="{Binding Master.Pan}" ResetCommand="{Binding Master.ResetPanCommand}"
-                                       AutomationProperties.Name="{Binding Master.PanAutomationName}"
-                                       ToolTip.Tip="Master pan. Drag or use the arrow keys; double-click or Delete to centre." />
-                <TextBlock Grid.Column="1" Text="{Binding Master.PanText}" Classes="mixerValue" Width="{StaticResource Mixer.ValueWidth}" TextAlignment="Right" />
+            <StackPanel Grid.Row="2" Classes="mixerControls">
+              <Grid Classes="mixerPanRow">
+                <controls:PanKnob Value="{Binding Master.Pan}" ResetCommand="{Binding Master.ResetPanCommand}"
+                                  AutomationProperties.Name="{Binding Master.PanAutomationName}"
+                                  ToolTip.Tip="Master pan. Drag or use the arrow keys; double-click or Delete to centre." />
+                <TextBlock Text="PAN" Classes="mixerCaption mixerPanCaption" />
+                <TextBlock Text="{Binding Master.PanText}" Classes="mixerValue mixerPanValue" />
               </Grid>
-              <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="{StaticResource Space.XS}" HorizontalAlignment="Center">
-                <ToggleButton Classes="trackButton mute" Content="M" IsChecked="{Binding Master.IsMuted}"
-                              AutomationProperties.Name="{Binding Master.MuteAutomationName}" ToolTip.Tip="Mute the project Master output" />
-                <ToggleButton Classes="trackButton solo" Content="S" IsChecked="{Binding Master.IsSoloed}"
-                              AutomationProperties.Name="{Binding Master.SoloAutomationName}" ToolTip.Tip="Solo the project Master output" />
-                <Panel Width="{StaticResource Mixer.StripButtonWidth}" />
+              <StackPanel Classes="mixerKeys">
+                <controls:SquareKey Glyph="M" OnColor="{x:Static theme:Palette.Mute}" IsChecked="{Binding Master.IsMuted}"
+                                    AutomationProperties.Name="{Binding Master.MuteAutomationName}" ToolTip.Tip="Mute the project Master output" />
+                <controls:SquareKey Glyph="S" OnColor="{x:Static theme:Palette.Solo}" IsChecked="{Binding Master.IsSoloed}"
+                                    AutomationProperties.Name="{Binding Master.SoloAutomationName}" ToolTip.Tip="Solo the project Master output" />
               </StackPanel>
-              <Border Grid.Row="2" Classes="mixerSunken mixerReadouts">
-                <Grid ColumnDefinitions="*,*">
-                  <StackPanel>
-                    <TextBlock Text="GAIN dB" Classes="micro mixerCaption" />
-                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}">
-                      <TextBlock Text="{Binding Master.GainValueText}" Classes="mixerValue" AutomationProperties.Name="Master gain in decibels" />
-                      <TextBlock Text="dB" Classes="micro mixerUnit" />
-                    </StackPanel>
-                  </StackPanel>
-                  <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                    <TextBlock Text="PEAK dBFS" Classes="micro mixerCaption" HorizontalAlignment="Right" />
-                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource Space.XXS}" HorizontalAlignment="Right">
-                      <TextBlock Text="{Binding Master.PeakText}" Classes="mixerValue" Classes.clipped="{Binding Master.IsClipped}" AutomationProperties.Name="Master peak in dBFS" />
-                      <TextBlock Text="dBFS" Classes="micro mixerUnit" />
-                    </StackPanel>
-                  </StackPanel>
-                </Grid>
-              </Border>
-              <Border Grid.Row="3" Classes="mixerSunken mixerRails" Padding="{StaticResource Inset.MixerReadout}">
-                <Grid ColumnDefinitions="*,Auto,*">
-                  <controls:MixerGainBar Value="{Binding Master.Gain}" Minimum="{Binding Master.MinimumGain}" Maximum="{Binding Master.MaximumGain}" ResetCommand="{Binding Master.ResetGainCommand}"
-                                         BarWidth="{StaticResource Mixer.GainBarWidth}"
-                                         AutomationProperties.Name="{Binding Master.GainAutomationName}"
-                                         ToolTip.Tip="Master gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
-                  <controls:MixerDbScale Grid.Column="1" Width="{StaticResource Mixer.ScaleWidth}" Mode="{Binding Master.MeterMode}" />
-                  <controls:MixerMeterRail Grid.Column="2" HorizontalAlignment="Center" Mode="{Binding Master.MeterMode}" Value="{Binding Master.MeterValue}"
-                                           PeakHold="{Binding Master.MeterPeakHold}" IsReady="{Binding Master.IsMeterReady}" IsClipped="{Binding Master.IsClipped}" RailWidth="{StaticResource Mixer.MeterRailWidth}"
-                                           AutomationProperties.Name="Master level meter"
-                                           ToolTip.Tip="Level in the chosen meter mode; the readout above holds the peak in dBFS (louder of left and right). The light on top shows a clip." />
-                  <Button Grid.Column="2" Classes="mixerClip" IsVisible="{Binding Master.IsClipped}" Command="{Binding Master.ResetClipCommand}"
-                          AutomationProperties.Name="Master clipped – click to reset" AutomationProperties.HelpText="A peak passed 0 dBFS on the Master output"
-                          ToolTip.Tip="Clipped: a peak passed 0 dBFS. Click, Enter, or Space to reset." />
-                  <!-- The console's one spoken meter status: every strip warms up and fails together, so Master speaks for them. -->
-                  <LayoutTransformControl Grid.Column="2" Classes="mixerStatus" IsVisible="{Binding !Master.IsMeterReady}" IsHitTestVisible="False">
-                    <LayoutTransformControl.LayoutTransform>
-                      <RotateTransform Angle="-90" />
-                    </LayoutTransformControl.LayoutTransform>
-                    <Border Classes="mixerStatusPill">
-                      <TextBlock Text="{Binding Master.MeterStatus}" Classes="mixerMeterStatus" Classes.warming="{Binding Master.IsMeterWarmingUp}"
-                                 Classes.unavailable="{Binding !Master.HasMeterReading}" AutomationProperties.LiveSetting="Polite" />
-                    </Border>
-                  </LayoutTransformControl>
-                </Grid>
-              </Border>
+              <Grid Classes="mixerReadouts" ColumnDefinitions="*,3,*">
+                <controls:RecessedWell Classes="mixerReadout">
+                  <TextBlock Text="{Binding Master.GainValueText}" Classes="mixerValue" AutomationProperties.Name="Master gain in decibels" />
+                </controls:RecessedWell>
+                <controls:RecessedWell Grid.Column="2" Classes="mixerReadout">
+                  <TextBlock Text="{Binding Master.PeakText}" Classes="mixerValue peak" Classes.clipped="{Binding Master.IsClipped}" AutomationProperties.Name="Master peak in dBFS" />
+                </controls:RecessedWell>
+              </Grid>
+            </StackPanel>
+
+            <Grid Grid.Row="3" Classes="mixerRails">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="{StaticResource Mixer.GainGutterColumn}" />
+                <ColumnDefinition Width="{StaticResource Mixer.FaderColumn}" />
+                <ColumnDefinition Width="{StaticResource Mixer.FaderMeterGapColumn}" />
+                <ColumnDefinition Width="{StaticResource Mixer.MasterMeterColumn}" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <controls:GainLedGutter Value="{Binding Master.Gain}" IsHitTestVisible="False" />
+              <controls:ConsoleFader Grid.Column="1" Value="{Binding Master.Gain}" Minimum="{Binding Master.MinimumGain}" Maximum="{Binding Master.MaximumGain}" ResetCommand="{Binding Master.ResetGainCommand}"
+                                     AutomationProperties.Name="{Binding Master.GainAutomationName}"
+                                     ToolTip.Tip="Master gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
+              <controls:LedLadderMeter Grid.Column="3" MeterWidth="{StaticResource Mixer.MasterMeterWidth}" ColumnWidth="{StaticResource Mixer.MasterMeterColumnWidth}"
+                                       Mode="{Binding Master.MeterMode}" Value="{Binding Master.MeterValue}" PeakHold="{Binding Master.MeterPeakHold}"
+                                       LeftValue="{Binding Master.MeterLeftValue}" RightValue="{Binding Master.MeterRightValue}"
+                                       LeftPeakHold="{Binding Master.MeterLeftPeakHold}" RightPeakHold="{Binding Master.MeterRightPeakHold}"
+                                       IsReady="{Binding Master.IsMeterReady}" IsClipped="{Binding Master.IsClipped}"
+                                       AutomationProperties.Name="Master level meter"
+                                       ToolTip.Tip="Level in the chosen meter mode; the readout above holds the peak in dBFS (louder of left and right). The lamp on top shows a clip." />
+              <Button Grid.Column="3" Classes="mixerClip" IsVisible="{Binding Master.IsClipped}" Command="{Binding Master.ResetClipCommand}"
+                      AutomationProperties.Name="Master clipped – click to reset" AutomationProperties.HelpText="A peak passed 0 dBFS on the Master output"
+                      ToolTip.Tip="Clipped: a peak passed 0 dBFS. Click, Enter, or Space to reset." />
+              <controls:ConsoleScale Grid.Column="4" Mode="{Binding Master.MeterMode}" />
+              <!-- The console's one spoken meter status: every strip warms up and fails together, so Master speaks for them. -->
+              <LayoutTransformControl Grid.Column="3" Grid.ColumnSpan="2" Classes="mixerStatus" IsVisible="{Binding !Master.IsMeterReady}" IsHitTestVisible="False">
+                <LayoutTransformControl.LayoutTransform>
+                  <RotateTransform Angle="-90" />
+                </LayoutTransformControl.LayoutTransform>
+                <Border Classes="mixerStatusPill">
+                  <TextBlock Text="{Binding Master.MeterStatus}" Classes="mixerMeterStatus" Classes.warming="{Binding Master.IsMeterWarmingUp}"
+                             Classes.unavailable="{Binding !Master.HasMeterReading}" AutomationProperties.LiveSetting="Polite" />
+                </Border>
+              </LayoutTransformControl>
             </Grid>
 
-            <Border Grid.Row="4" Height="{StaticResource Mixer.FooterHeight}" Padding="{StaticResource Inset.MixerRow}">
-              <TextBlock Text="→ Project output" Classes="micro" Margin="{StaticResource Inset.MixerRole}" VerticalAlignment="Center" />
-            </Border>
+            <controls:TrackFooterBand Grid.Row="4" Classes="mixerPlate" IsSelected="{Binding Master.IsSelected}" TrackColor="{x:Static theme:Palette.TextSecondary}">
+              <Panel>
+                <Button Classes="mixerRow name" Command="{Binding Master.SelectCommand}"
+                        ToolTip.Tip="Select the project Master and show its Inspector scope" AutomationProperties.Name="{Binding Master.SelectAutomationName}">
+                  <TextBlock Classes="mixerStripName" Classes.selected="{Binding Master.IsSelected}" Text="Master" />
+                </Button>
+                <StackPanel Classes="mixerPlateKind">
+                  <TextBlock Text="PINNED" Classes="mixerCaption" />
+                </StackPanel>
+                <TextBlock Classes="mixerRoute" Text="→ Project out" IsHitTestVisible="False" />
+              </Panel>
+            </controls:TrackFooterBand>
           </Grid>
-          <Border Classes="mixerSelection" IsVisible="{Binding Master.IsSelected}" />
-        </Panel>
+        </controls:ConsoleStripPanel>
       </Border>
     </Grid>
 

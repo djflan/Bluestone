@@ -11,7 +11,7 @@ using Avalonia.Input;
 namespace Bluestone.Desktop.Controls;
 
 /// <summary>
-/// The interaction a mixer strip's drawn value controls share (<see cref="MixerGainBar"/>, <see cref="MixerPanRamp"/>):
+/// The interaction a mixer strip's drawn value controls share (<see cref="ConsoleFader"/>, <see cref="PanKnob"/>):
 /// relative pointer drag (Shift for fine), the wheel, arrow keys (Shift for fine), Page Up/Down for large steps, Home and End
 /// for the minimum and maximum (<see cref="KeyMaximum"/>), and double-click, Delete, or Backspace to reset. A reset runs
 /// <see cref="ResetCommand"/> (its own undo step) when bound, or returns to <see cref="DefaultValue"/>. A drag previews live
@@ -93,6 +93,9 @@ public abstract class MixerValueControl : Control
 
     /// <summary>Whether a pointer drag is in progress, for drawing the pressed state.</summary>
     protected bool IsDragging => _dragging;
+
+    /// <summary>The value the current drag started from (<see cref="DragOrigin"/> at the press).</summary>
+    protected double DragStartValue => _dragStartValue;
 
     /// <summary>The value the user asked for, clamped to the range.</summary>
     public void SetFromUser(double value)

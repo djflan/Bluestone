@@ -6,25 +6,26 @@
     geometry, icon sizes, and motion are defined. Styles and views use these keys, never raw values. Custom-drawn
     controls read the same values through Theme/Palette.cs, which a UI test keeps in step with this file.
 
-    One dark theme: neutral charcoal surfaces divided by hairlines, compact fixed geometry, and colour reserved for
-    meaning (selection, state, track identity, and the kind of signal a device works on).
+    One dark theme, "Machined" (identity round 6): cool slate surfaces divided by hairlines, recessed gutters and wells,
+    an aqua accent with a restrained, realistic glow, compact fixed geometry, and colour reserved for meaning (selection,
+    state, track identity, and the kind of signal a device works on).
   -->
 
   <!-- Surfaces, darkest to lightest. -->
-  <Color x:Key="Surface.SunkenColor">#161618</Color>
-  <Color x:Key="Surface.BaseColor">#1C1C1E</Color>
-  <Color x:Key="Surface.ChromeColor">#19191B</Color>
-  <Color x:Key="Surface.PanelColor">#252527</Color>
-  <Color x:Key="Surface.RaisedColor">#2E2E31</Color>
-  <Color x:Key="Surface.OverlayColor">#3A3A3E</Color>
-  <Color x:Key="Surface.FieldColor">#1A1A1D</Color>
+  <Color x:Key="Surface.SunkenColor">#0C0F13</Color>
+  <Color x:Key="Surface.BaseColor">#12151A</Color>
+  <Color x:Key="Surface.ChromeColor">#1C2027</Color>
+  <Color x:Key="Surface.PanelColor">#181C22</Color>
+  <Color x:Key="Surface.RaisedColor">#20252D</Color>
+  <Color x:Key="Surface.OverlayColor">#2E333B</Color>
+  <Color x:Key="Surface.FieldColor">#11141A</Color>
 
   <!-- Interaction states. -->
-  <Color x:Key="State.HoverColor">#38383C</Color>
-  <Color x:Key="State.PressedColor">#434348</Color>
-  <Color x:Key="State.SelectedColor">#2D4766</Color>
-  <Color x:Key="State.SelectedSubtleColor">#24384F</Color>
-  <Color x:Key="State.FocusColor">#6AA2E4</Color>
+  <Color x:Key="State.HoverColor">#2A3039</Color>
+  <Color x:Key="State.PressedColor">#343A44</Color>
+  <Color x:Key="State.SelectedColor">#1F3F4C</Color>
+  <Color x:Key="State.SelectedSubtleColor">#1C3137</Color>
+  <Color x:Key="State.FocusColor">#63D5F6</Color>
   <Color x:Key="State.WarningColor">#E0A43A</Color>
   <Color x:Key="State.ErrorColor">#E5484D</Color>
   <Color x:Key="State.SuccessColor">#4CB873</Color>
@@ -33,21 +34,21 @@
   <Color x:Key="State.ErrorSurfaceColor">#3A1F21</Color>
 
   <!-- Borders and separators. -->
-  <Color x:Key="Line.DividerColor">#111113</Color>
-  <Color x:Key="Line.BorderColor">#3A3A3E</Color>
-  <Color x:Key="Line.BorderStrongColor">#4A4A50</Color>
-  <Color x:Key="Line.EdgeColor">#19191B</Color>
+  <Color x:Key="Line.DividerColor">#0A0C0F</Color>
+  <Color x:Key="Line.BorderColor">#2E333B</Color>
+  <Color x:Key="Line.BorderStrongColor">#3D434D</Color>
+  <Color x:Key="Line.EdgeColor">#161A20</Color>
 
   <!-- Text. -->
-  <Color x:Key="Text.PrimaryColor">#D9D9DC</Color>
-  <Color x:Key="Text.SecondaryColor">#A1A1A7</Color>
-  <Color x:Key="Text.MutedColor">#6E6E75</Color>
-  <Color x:Key="Text.DisabledColor">#4E4E54</Color>
-  <Color x:Key="Text.OnAccentColor">#FFFFFF</Color>
+  <Color x:Key="Text.PrimaryColor">#DADCE0</Color>
+  <Color x:Key="Text.SecondaryColor">#A0A4AB</Color>
+  <Color x:Key="Text.MutedColor">#6C7078</Color>
+  <Color x:Key="Text.DisabledColor">#474B53</Color>
+  <Color x:Key="Text.OnAccentColor">#06141A</Color>
 
   <!-- Accents. The interface accent marks selection and focus; signal accents mark what a device works on. -->
-  <Color x:Key="Accent.Color">#4C8DDB</Color>
-  <Color x:Key="Accent.HoverColor">#6AA2E4</Color>
+  <Color x:Key="Accent.Color">#3CCBF4</Color>
+  <Color x:Key="Accent.HoverColor">#63D5F6</Color>
   <Color x:Key="Signal.NoteColor">#D7A24A</Color>
   <Color x:Key="Signal.InstrumentColor">#9C82D9</Color>
   <Color x:Key="Signal.AudioColor">#4FB3B0</Color>
@@ -57,9 +58,9 @@
   <Color x:Key="Meter.MidColor">#3D5BFF</Color>
   <Color x:Key="Meter.HotColor">#FF2E93</Color>
   <Color x:Key="Meter.ClipColor">#FF3036</Color>
-  <Color x:Key="Meter.TrackColor">#222225</Color>
+  <Color x:Key="Meter.TrackColor">#0C0F13</Color>
   <!-- Mixer-only DSP display. These roles intentionally do not change Device View junction meters. -->
-  <Color x:Key="MixerMeter.TrackColor">#333338</Color>
+  <Color x:Key="MixerMeter.TrackColor">#0C0F13</Color>
   <Color x:Key="MixerMeter.FillColor">#4FB3B0</Color>
   <Color x:Key="MixerMeter.HotColor">#E0A43A</Color>
   <Color x:Key="MixerMeter.PeakHoldColor">#F2F2F2</Color>
@@ -68,6 +69,41 @@
   <!-- A junction's note lamp: a warm pilot-lamp amber segment under its level, lit while notes are held there. -->
   <!-- The MIDI icon: the level's first segment colour (Meter.Low), lightened 25%. -->
   <Color x:Key="Junction.LampColor">#6DD6FF</Color>
+
+  <!--
+    Console surfaces (the Machined identity): the darker panel header, recessed gutters and wells that hold glyphs, LEDs,
+    and readouts, the key face of square keys, the overhead sheen on a panel, and the fader slot. Lit things glow with
+    Console.GlowAlpha at Console.GlowReach (Theme/Glow.cs); unlit LEDs and cells keep Console.UnlitAlpha of their colour.
+  -->
+  <Color x:Key="Console.PanelHeaderColor">#20252D</Color>
+  <Color x:Key="Console.GutterColor">#11141A</Color>
+  <Color x:Key="Console.WellColor">#0C0F13</Color>
+  <Color x:Key="Console.KeyColor">#2E333B</Color>
+  <Color x:Key="Console.SheenColor">#DCE8FF</Color>
+  <Color x:Key="Console.SlotColor">#050506</Color>
+  <Color x:Key="Console.SelectedTextColor">#F4F7FA</Color>
+  <Color x:Key="Console.SoloInkColor">#1A1608</Color>
+  <!-- The clip lamp: one colour, never part of the signal gradient (Theme/MeterGradient.cs). -->
+  <Color x:Key="Console.ClipColor">#FF3640</Color>
+  <!-- The bed the console's strips sit on, a step below the base so each strip reads as its own panel. -->
+  <Color x:Key="Console.BedColor">#101317</Color>
+  <!-- The fader gain ladder, rose to violet, bottom to top. -->
+  <Color x:Key="Console.GainLed0Color">#6B4BE0</Color>
+  <Color x:Key="Console.GainLed1Color">#A45CF2</Color>
+  <Color x:Key="Console.GainLed2Color">#E070C8</Color>
+  <Color x:Key="Console.GainLed3Color">#FFA3C4</Color>
+  <x:Double x:Key="Console.GlowAlpha">0.28</x:Double>
+  <x:Double x:Key="Console.GlowReach">4</x:Double>
+  <x:Double x:Key="Console.GutterDepth">0.22</x:Double>
+  <x:Double x:Key="Console.SheenAlpha">0.035</x:Double>
+  <x:Double x:Key="Console.UnlitAlpha">0.13</x:Double>
+  <SolidColorBrush x:Key="Console.PanelHeader" Color="{StaticResource Console.PanelHeaderColor}" />
+  <SolidColorBrush x:Key="Console.Gutter" Color="{StaticResource Console.GutterColor}" />
+  <SolidColorBrush x:Key="Console.Well" Color="{StaticResource Console.WellColor}" />
+  <SolidColorBrush x:Key="Console.Key" Color="{StaticResource Console.KeyColor}" />
+  <SolidColorBrush x:Key="Console.SelectedText" Color="{StaticResource Console.SelectedTextColor}" />
+  <SolidColorBrush x:Key="Console.Clip" Color="{StaticResource Console.ClipColor}" />
+  <SolidColorBrush x:Key="Console.Bed" Color="{StaticResource Console.BedColor}" />
 
   <!-- Brushes for the tokens above. -->
   <SolidColorBrush x:Key="Surface.Sunken" Color="{StaticResource Surface.SunkenColor}" />
@@ -112,53 +148,55 @@
   <SolidColorBrush x:Key="Signal.Other" Color="{StaticResource Signal.OtherColor}" />
 
   <!-- Domain surfaces and controls: the transport, LCD, arrangement lanes, and track rows. -->
-  <Color x:Key="Transport.CycleColor">#C9A227</Color>
+  <Color x:Key="Transport.CycleColor">#3CCBF4</Color>
   <Color x:Key="Track.MuteColor">#4C8DDB</Color>
   <Color x:Key="Track.SoloColor">#E3C345</Color>
-  <Color x:Key="Lcd.Color">#141416</Color>
-  <Color x:Key="Lcd.TextColor">#ECEDEF</Color>
-  <Color x:Key="Lcd.LabelColor">#74767D</Color>
-  <Color x:Key="Lcd.EdgeColor">#0B0B0C</Color>
-  <Color x:Key="Lcd.RuleColor">#2A2A2E</Color>
-  <Color x:Key="Lane.AutomationColor">#1D1D1F</Color>
-  <Color x:Key="Lane.RulerColor">#2B2B2E</Color>
-  <Color x:Key="Lane.HeaderColor">#1F1F21</Color>
-  <Color x:Key="Lane.BackgroundColor">#222224</Color>
-  <Color x:Key="Control.ForegroundColor">#C9C9CD</Color>
-  <Color x:Key="Control.HoverColor">#47474C</Color>
-  <Color x:Key="Control.PressedColor">#2C2C2F</Color>
-  <Color x:Key="Control.IdleColor">#9A9AA0</Color>
-  <Color x:Key="Control.CheckedForegroundColor">#7DB2EE</Color>
-  <Color x:Key="Control.LinkHoverColor">#8CB8EC</Color>
+  <Color x:Key="Lcd.Color">#0C0F13</Color>
+  <Color x:Key="Lcd.TextColor">#DADCE0</Color>
+  <Color x:Key="Lcd.LabelColor">#6C7078</Color>
+  <Color x:Key="Lcd.EdgeColor">#07090C</Color>
+  <Color x:Key="Lcd.RuleColor">#1C2027</Color>
+  <Color x:Key="Lane.AutomationColor">#101318</Color>
+  <Color x:Key="Lane.RulerColor">#1C2027</Color>
+  <Color x:Key="Lane.HeaderColor">#181C22</Color>
+  <Color x:Key="Lane.BackgroundColor">#12151A</Color>
+  <Color x:Key="Control.ForegroundColor">#A0A4AB</Color>
+  <Color x:Key="Control.HoverColor">#2A3039</Color>
+  <Color x:Key="Control.PressedColor">#11141A</Color>
+  <Color x:Key="Control.IdleColor">#6C7078</Color>
+  <Color x:Key="Control.CheckedForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Control.LinkHoverColor">#63D5F6</Color>
   <Color x:Key="Control.DangerBorderColor">#6B2C2F</Color>
   <Color x:Key="Control.DangerForegroundColor">#E8797C</Color>
   <Color x:Key="Control.PanicColor">#E07A7D</Color>
-  <Color x:Key="Transport.PlayColor">#2F5E3E</Color>
-  <Color x:Key="Transport.PlayForegroundColor">#7EE09D</Color>
-  <Color x:Key="Transport.RecordColor">#6A2427</Color>
-  <Color x:Key="Transport.RecordIdleColor">#C0585B</Color>
-  <Color x:Key="Transport.RecordForegroundColor">#FF6B6F</Color>
-  <Color x:Key="Transport.CycleOnColor">#5A4A16</Color>
-  <Color x:Key="Transport.CycleForegroundColor">#F2CF5B</Color>
-  <Color x:Key="Transport.ModeForegroundColor">#8CBDF2</Color>
-  <Color x:Key="Transport.KeysColor">#1F4A5A</Color>
-  <Color x:Key="Transport.KeysForegroundColor">#6FD8F2</Color>
-  <Color x:Key="Transport.KeysEdgeColor">#2A5563</Color>
-  <Color x:Key="Transport.KeysIdleColor">#22343A</Color>
-  <Color x:Key="Transport.InputIdleColor">#2A3A2E</Color>
-  <Color x:Key="Transport.InputActiveColor">#5BE08A</Color>
+  <Color x:Key="Transport.PlayColor">#1A3A44</Color>
+  <Color x:Key="Transport.PlayForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.RecordColor">#4A1C1F</Color>
+  <Color x:Key="Transport.RecordIdleColor">#D9484D</Color>
+  <Color x:Key="Transport.RecordForegroundColor">#E5484D</Color>
+  <Color x:Key="Transport.CycleOnColor">#1A3A44</Color>
+  <Color x:Key="Transport.CycleForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.ModeForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.KeysColor">#1A3A44</Color>
+  <Color x:Key="Transport.KeysForegroundColor">#3CCBF4</Color>
+  <Color x:Key="Transport.KeysEdgeColor">#07090C</Color>
+  <Color x:Key="Transport.KeysIdleColor">#1C2A30</Color>
+  <Color x:Key="Transport.InputIdleColor">#1C2A30</Color>
+  <Color x:Key="Transport.InputActiveColor">#3CCBF4</Color>
   <Color x:Key="Track.OfflineColor">#9A6B6D</Color>
   <Color x:Key="Track.SoloForegroundColor">#2A2300</Color>
-  <Color x:Key="Track.ArmIdleColor">#A0585A</Color>
-  <Color x:Key="Tab.CheckedColor">#2A2B2F</Color>
-  <Color x:Key="Tab.FocusColor">#33343A</Color>
-  <Color x:Key="List.AlternateColor">#28282B</Color>
-  <Color x:Key="List.CellHoverColor">#303035</Color>
-  <Color x:Key="TrackRow.Color">#262628</Color>
-  <Color x:Key="TrackRow.HoverColor">#2C2C2F</Color>
-  <Color x:Key="TrackRow.SelectedColor">#35373D</Color>
-  <Color x:Key="Overlay.ScrimColor">#CC1C1E22</Color>
-  <Color x:Key="Overlay.ReplaceColor">#F01C1E22</Color>
+  <Color x:Key="Track.ArmIdleColor">#A0A4AB</Color>
+  <Color x:Key="Tab.CheckedColor">#1A3A44</Color>
+  <Color x:Key="Tab.RimColor">#803CCBF4</Color>
+  <Color x:Key="Tab.CheckedForegroundColor">#63D5F6</Color>
+  <Color x:Key="Tab.FocusColor">#2A3039</Color>
+  <Color x:Key="List.AlternateColor">#15191E</Color>
+  <Color x:Key="List.CellHoverColor">#2A3039</Color>
+  <Color x:Key="TrackRow.Color">#181C22</Color>
+  <Color x:Key="TrackRow.HoverColor">#1D2229</Color>
+  <Color x:Key="TrackRow.SelectedColor">#1F2A33</Color>
+  <Color x:Key="Overlay.ScrimColor">#CC0C0F13</Color>
+  <Color x:Key="Overlay.ReplaceColor">#F0181C22</Color>
 
   <!-- Lit keys (identity: ladder + focus). A latched key shows its state on its whole face, lit from below in its colour,
        with a lit rim and a tight glow; no side LED. Glyphs use Key.LitInk, which clears 4.5:1 on both face stops. -->
@@ -196,10 +234,6 @@
     <GradientStop Color="{StaticResource Key.Solo.BottomColor}" Offset="1" />
   </LinearGradientBrush>
   <SolidColorBrush x:Key="Key.Solo.Rim" Color="{StaticResource Key.Solo.RimColor}" />
-
-  <!-- Knobs: a dark body inside thin radial ticks; unlit ticks clear 3:1 on the panel. -->
-  <Color x:Key="Knob.BodyColor">#1A1A1D</Color>
-  <Color x:Key="Knob.TickColor">#76767E</Color>
 
   <!-- Focus lighting: the selected device panel is lit (accent pool from the top, lit edge); the rest stay calm. -->
   <LinearGradientBrush x:Key="DevicePanel.SelectedFill" StartPoint="0%,0%" EndPoint="0%,100%">
@@ -246,6 +280,8 @@
   <SolidColorBrush x:Key="Track.SoloForeground" Color="{StaticResource Track.SoloForegroundColor}" />
   <SolidColorBrush x:Key="Track.ArmIdle" Color="{StaticResource Track.ArmIdleColor}" />
   <SolidColorBrush x:Key="Tab.Checked" Color="{StaticResource Tab.CheckedColor}" />
+  <SolidColorBrush x:Key="Tab.Rim" Color="{StaticResource Tab.RimColor}" />
+  <SolidColorBrush x:Key="Tab.CheckedForeground" Color="{StaticResource Tab.CheckedForegroundColor}" />
   <SolidColorBrush x:Key="Tab.Focus" Color="{StaticResource Tab.FocusColor}" />
   <SolidColorBrush x:Key="List.Alternate" Color="{StaticResource List.AlternateColor}" />
   <SolidColorBrush x:Key="List.CellHover" Color="{StaticResource List.CellHoverColor}" />
@@ -255,18 +291,18 @@
   <SolidColorBrush x:Key="Overlay.Scrim" Color="{StaticResource Overlay.ScrimColor}" />
   <SolidColorBrush x:Key="Overlay.Replace" Color="{StaticResource Overlay.ReplaceColor}" />
 
-  <!-- The control bar and pane headers have a faint top-lit gradient, like hardware panels. -->
+  <!-- The control bar and pane headers: slate chrome, faintly lit from above. -->
   <LinearGradientBrush x:Key="Gradient.Bar" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#323235" />
-    <GradientStop Offset="1" Color="#2A2A2D" />
+    <GradientStop Offset="0" Color="#1E232A" />
+    <GradientStop Offset="1" Color="#1A1E25" />
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="Gradient.Header" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#2E2E31" />
-    <GradientStop Offset="1" Color="#28282B" />
+    <GradientStop Offset="0" Color="#1E232A" />
+    <GradientStop Offset="1" Color="#1A1E25" />
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="Gradient.Button" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#3E3E42" />
-    <GradientStop Offset="1" Color="#363639" />
+    <GradientStop Offset="0" Color="#323740" />
+    <GradientStop Offset="1" Color="#2B3038" />
   </LinearGradientBrush>
 
   <!-- Typography. -->
@@ -277,6 +313,12 @@
   <x:Double x:Key="FontSize.Body">12</x:Double>
   <x:Double x:Key="FontSize.Title">13</x:Double>
   <x:Double x:Key="FontSize.Heading">15</x:Double>
+  <!-- The console ramp (mixer strips, device panels): small caps captions, scale labels, routing, values, strip names. -->
+  <x:Double x:Key="Console.FontSize.Caption">7.5</x:Double>
+  <x:Double x:Key="Console.FontSize.Scale">8</x:Double>
+  <x:Double x:Key="Console.FontSize.Route">8.5</x:Double>
+  <x:Double x:Key="Console.FontSize.Value">9.5</x:Double>
+  <x:Double x:Key="Console.FontSize.Name">11</x:Double>
 
   <!-- Spacing, on a 2-pixel step. -->
   <x:Double x:Key="Space.XXS">2</x:Double>
@@ -294,7 +336,15 @@
   <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>
   <Thickness x:Key="Inset.MixerRole">4,1</Thickness>
   <Thickness x:Key="Inset.MixerRow">4,0</Thickness>
-  <Thickness x:Key="Inset.MixerStrip">6</Thickness>
+  <Thickness x:Key="Inset.MixerStrip">5,0</Thickness>
+  <Thickness x:Key="Inset.MixerConsole">6,6,0,6</Thickness>
+  <Thickness x:Key="Inset.MixerMaster">4,6,6,6</Thickness>
+  <Thickness x:Key="Inset.MixerMasterSeam">3,0,0,0</Thickness>
+  <Thickness x:Key="Inset.MixerInsertWell">4,2</Thickness>
+  <Thickness x:Key="Inset.MixerBandTop">5,6,5,0</Thickness>
+  <Thickness x:Key="Inset.MixerPlate">1,6,1,1</Thickness>
+  <Thickness x:Key="Inset.MixerPlateText">4,3,4,0</Thickness>
+  <Thickness x:Key="Inset.MixerPlateName">4,12,4,0</Thickness>
   <Thickness x:Key="Inset.MixerName">10,4,6,4</Thickness>
   <Thickness x:Key="Inset.MixerReadout">4,2</Thickness>
   <Thickness x:Key="Inset.MixerSelected">2</Thickness>
@@ -329,32 +379,42 @@
     the same pitch. Each strip stacks fixed-height bands (processing, name, pan, buttons, readouts) above the rails, so
     every strip's controls line up across the console whatever it contains.
   -->
-  <x:Double x:Key="Mixer.StripWidth">132</x:Double>
-  <x:Double x:Key="Mixer.MasterWidth">132</x:Double>
-  <x:Double x:Key="Mixer.ProcessingHeight">96</x:Double>
-  <x:Double x:Key="Mixer.NameHeight">46</x:Double>
-  <x:Double x:Key="Mixer.InsertRowHeight">14</x:Double>
-  <x:Double x:Key="Mixer.InsertStackHeight">46</x:Double>
+  <x:Double x:Key="Mixer.StripWidth">86</x:Double>
+  <x:Double x:Key="Mixer.MasterWidth">190</x:Double>
+  <x:Double x:Key="Mixer.StripGap">2</x:Double>
+  <x:Double x:Key="Mixer.InsertRowHeight">15</x:Double>
+  <x:Double x:Key="Mixer.InsertWellHeight">49</x:Double>
+  <x:Double x:Key="Mixer.CountLineHeight">14</x:Double>
+  <x:Double x:Key="Mixer.PanRowHeight">30</x:Double>
+  <x:Double x:Key="Mixer.PanKnobRadius">11</x:Double>
+  <x:Double x:Key="Mixer.KeySize">15</x:Double>
+  <x:Double x:Key="Mixer.KeyRowHeight">22</x:Double>
+  <x:Double x:Key="Mixer.ReadoutHeight">18</x:Double>
+  <x:Double x:Key="Mixer.ReadoutRowHeight">24</x:Double>
+  <x:Double x:Key="Mixer.FooterPlateHeight">40</x:Double>
+  <x:Double x:Key="Mixer.GainGutterWidth">15</x:Double>
+  <x:Double x:Key="Mixer.FaderWidth">20</x:Double>
+  <x:Double x:Key="Mixer.FaderMeterGap">4</x:Double>
+  <x:Double x:Key="Mixer.MeterWidth">14</x:Double>
+  <x:Double x:Key="Mixer.MasterMeterWidth">22</x:Double>
+  <!-- The fader zone's columns (gain gutter | fader | breathing room | meter), as grid lengths of the widths above. -->
+  <GridLength x:Key="Mixer.GainGutterColumn">15</GridLength>
+  <GridLength x:Key="Mixer.FaderColumn">20</GridLength>
+  <GridLength x:Key="Mixer.FaderMeterGapColumn">4</GridLength>
+  <GridLength x:Key="Mixer.MeterColumn">14</GridLength>
+  <GridLength x:Key="Mixer.MasterMeterColumn">22</GridLength>
+  <x:Double x:Key="Mixer.MeterColumnWidth">4</x:Double>
+  <x:Double x:Key="Mixer.MasterMeterColumnWidth">8</x:Double>
+  <x:Int32 x:Key="Mixer.GainLedCount">20</x:Int32>
+  <x:Double x:Key="Mixer.GainLedRadius">3</x:Double>
   <x:Double x:Key="Mixer.SendKnobSize">20</x:Double>
-  <x:Double x:Key="Mixer.SendRowHeight">26</x:Double>
-  <x:Double x:Key="Mixer.StripButtonHeight">18</x:Double>
-  <x:Double x:Key="Mixer.PanRampHeight">20</x:Double>
-  <x:Double x:Key="Mixer.ValueWidth">30</x:Double>
-  <x:Double x:Key="Mixer.ScaleWidth">26</x:Double>
-  <x:Double x:Key="Mixer.GainBarWidth">8</x:Double>
-  <x:Double x:Key="Mixer.MeterRailWidth">14</x:Double>
-  <x:Double x:Key="Mixer.ColorNotchWidth">4</x:Double>
-  <x:Double x:Key="Mixer.InsertPowerWidth">18</x:Double>
-  <x:Double x:Key="Mixer.CountLineHeight">16</x:Double>
-  <x:Double x:Key="Mixer.StripButtonWidth">20</x:Double>
-  <x:Double x:Key="Mixer.CueHeight">24</x:Double>
+  <x:Double x:Key="Mixer.CueHeight">22</x:Double>
   <x:Double x:Key="Mixer.MinimumRailsHeight">96</x:Double>
-  <x:Double x:Key="Mixer.TightNameHeight">36</x:Double>
-  <x:Double x:Key="Mixer.TightRailsHeight">24</x:Double>
+  <x:Double x:Key="Mixer.TightRailsHeight">72</x:Double>
   <!--
     Height tiers of the strips area. At or above RoomyStripHeight every band has its full height (the approved strip).
-    Between the two, the strip tightens: one-line readouts, a shorter name block, and the star-sized rails shrink first.
-    Below FullStripHeight the processing band folds into a one-line cue so the meter keeps a usable height.
+    Between the two the fader zone gives up height first. Below FullStripHeight the insert well folds into a one-line
+    cue so the fader and meter keep a usable travel.
   -->
   <x:Double x:Key="Mixer.RoomyStripHeight">360</x:Double>
   <x:Double x:Key="Mixer.FullStripHeight">264</x:Double>
@@ -376,71 +436,31 @@
 
   <!-- Device panels: one fixed height, a few fixed widths (DevicePanelSize). -->
   <x:Double x:Key="DevicePanel.Height">212</x:Double>
-  <x:Double x:Key="DevicePanel.HeaderHeight">30</x:Double>
+  <x:Double x:Key="DevicePanel.HeaderHeight">32</x:Double>
   <x:Double x:Key="DevicePanel.CollapsedWidth">30</x:Double>
-  <x:Double x:Key="DevicePanel.SmallWidth">152</x:Double>
-  <x:Double x:Key="DevicePanel.MediumWidth">216</x:Double>
-  <x:Double x:Key="DevicePanel.LargeWidth">280</x:Double>
-  <x:Double x:Key="DevicePanel.Gap">20</x:Double>
-  <x:Double x:Key="DevicePanel.KnobCellWidth">64</x:Double>
-  <x:Double x:Key="DevicePanel.KnobCellHeight">66</x:Double>
-  <x:Double x:Key="DevicePanel.SwitchWidth">128</x:Double>
+  <x:Double x:Key="DevicePanel.SmallWidth">168</x:Double>
+  <x:Double x:Key="DevicePanel.MediumWidth">236</x:Double>
+  <x:Double x:Key="DevicePanel.LargeWidth">320</x:Double>
+  <x:Double x:Key="DevicePanel.Gap">34</x:Double>
+  <x:Double x:Key="DevicePanel.KnobCellWidth">66</x:Double>
+  <x:Double x:Key="DevicePanel.KnobCellHeight">80</x:Double>
+  <x:Double x:Key="DevicePanel.SwitchWidth">120</x:Double>
   <x:Double x:Key="DevicePanel.SwitchHeight">24</x:Double>
   <x:Double x:Key="DevicePanel.LampSize">6</x:Double>
-  <x:Double x:Key="DevicePanel.KnobSize">34</x:Double>
+  <x:Double x:Key="DevicePanel.KnobSize">38</x:Double>
   <x:Double x:Key="DevicePanel.NodeSize">10</x:Double>
   <x:Double x:Key="DevicePanel.NodeWidth">56</x:Double>
+  <x:Double x:Key="DevicePanel.InWidth">26</x:Double>
+  <x:Double x:Key="DevicePanel.OutWidth">86</x:Double>
   <x:Double x:Key="DevicePanel.FooterHeight">22</x:Double>
-  <!-- A junction between devices (ADR 0037): a segmented level with a small glowing MIDI icon under it. -->
-  <x:Double x:Key="Junction.LinkY">105</x:Double>
-  <x:Double x:Key="Junction.LevelHeight">52</x:Double>
-  <x:Double x:Key="Junction.LevelBarWidth">5</x:Double>
-  <x:Double x:Key="Junction.LevelSegmentHeight">1</x:Double>
-  <x:Double x:Key="Junction.LevelSegmentGap">1</x:Double>
-  <x:Double x:Key="Junction.LampHeight">11</x:Double>
-  <x:Double x:Key="Junction.LampGap">7</x:Double>
   <!--
-    The standalone signal indicator (SignalIndicator) at Medium and Large; Compact uses the Junction.* sizes above. Segment
-    edges land on whole dB from -60 to +6, so the 0 dB colour change and the scale's ticks fall in the gaps: Medium fits 33
-    segments of 2 dB in its level height, Large 66 of 1 dB. Round LEDs use their own whole-pixel pitch so they read as even
-    dots at 1x: Medium 22 dots of 3 dB (4 px, so a little taller than its bars), Large 33 of 2 dB (5 px, as tall as its bars).
+    The LED grid the mixer's level scale lines up with (MixerRail): segment edges land on whole dB from -60 to +6, so the
+    0 dB colour change and the scale's ticks fall in the gaps.
   -->
-  <x:Double x:Key="Signal.Medium.LevelHeight">98</x:Double>
-  <x:Double x:Key="Signal.Medium.BarWidth">6</x:Double>
-  <x:Double x:Key="Signal.Medium.BarGap">1</x:Double>
-  <x:Double x:Key="Signal.Medium.SegmentHeight">2</x:Double>
-  <x:Double x:Key="Signal.Medium.SegmentGap">1</x:Double>
-  <x:Double x:Key="Signal.Medium.DotSize">4</x:Double>
-  <x:Double x:Key="Signal.Medium.DotGap">1</x:Double>
-  <x:Double x:Key="Signal.Medium.DotBarGap">2</x:Double>
-  <x:Double x:Key="Signal.Medium.DotLevelHeight">109</x:Double>
-  <x:Double x:Key="Signal.Medium.LampHeight">12</x:Double>
-  <x:Double x:Key="Signal.Medium.LampGap">8</x:Double>
-  <x:Double x:Key="Signal.Medium.TickLength">3</x:Double>
-  <x:Double x:Key="Signal.Medium.ScaleGap">2</x:Double>
-  <x:Double x:Key="Signal.Large.LevelHeight">197</x:Double>
-  <x:Double x:Key="Signal.Large.BarWidth">10</x:Double>
   <x:Double x:Key="Signal.Large.BarGap">2</x:Double>
   <x:Double x:Key="Signal.Large.SegmentHeight">2</x:Double>
   <x:Double x:Key="Signal.Large.SegmentGap">1</x:Double>
-  <x:Double x:Key="Signal.Large.DotSize">5</x:Double>
-  <x:Double x:Key="Signal.Large.DotGap">1</x:Double>
-  <x:Double x:Key="Signal.Large.DotBarGap">2</x:Double>
-  <x:Double x:Key="Signal.Large.LampHeight">16</x:Double>
-  <x:Double x:Key="Signal.Large.LampGap">8</x:Double>
   <x:Double x:Key="Signal.Large.TickLength">3</x:Double>
-  <x:Double x:Key="Signal.Large.ScaleGap">3</x:Double>
-  <x:Double x:Key="Signal.Large.ScaleWidth">12</x:Double>
-  <x:Double x:Key="Signal.Large.ClipLatchHeight">4</x:Double>
-  <x:Double x:Key="Signal.Large.ReadoutGap">4</x:Double>
-  <!--
-    Large inside a junction seam (Settings ▸ Display): the whole group has to fit a device panel's height with room for the
-    seam's +, so the level keeps Medium's pitch (33 bars of 2 dB, or 22 dots of 3 dB) with Large's scale, readout and clip light.
-  -->
-  <x:Double x:Key="Junction.Large.LevelHeight">98</x:Double>
-  <x:Double x:Key="Junction.Large.DotSize">4</x:Double>
-  <x:Double x:Key="Junction.Large.DotLevelHeight">109</x:Double>
-  <x:Double x:Key="Junction.Large.LampHeight">12</x:Double>
   <BoxShadows x:Key="Shadow.Focus">0 0 6 0 #806AA2E4</BoxShadows>
 
   <!-- Icons. -->

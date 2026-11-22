@@ -452,8 +452,9 @@ digital scales with their 0 references at −20, −14, and −12 dBFS, and unga
 stereo channel weighting over the trailing three seconds of K-weighted energy). K-System references
 are digital scales, not room calibration; VU reference is not acoustic SPL calibration. LUFS-S shows
 a warming-up/not-ready state until three seconds of valid samples have accumulated and after a
-discontinuity. Each strip draws one LED-segment meter with the shared `SignalIndicatorRenderer`; the
-mode changes its scale and ballistics, not the meter count. Meter mode and VU reference are saved in
+discontinuity. Each strip draws one stereo `LedLadderMeter`, beside a `ConsoleFader` and `ConsoleScale` on the
+same console taper (`ConsoleRail`, −60 to +6 dB) and a display-only `GainLedGutter`; the mode changes its scale and
+ballistics, not the meter count. Meter mode and VU reference are saved in
 application-local settings, not the project; they do not change Device View junction meters. The
 former Bar/Round presentation setting was removed; older settings files still load. A focused BenchmarkDotNet
 ShortRun covered warmed 128-frame Peak+RMS/VU/LUFS-S processing and build/preparation/reused-snapshot
@@ -563,19 +564,20 @@ Device View picks the chain and gap, or, over the middle of a device's panel, th
 (`DeviceCommands.ReplaceDevice`: one undo step, a new device identity, a plugin started in its worker before the
 project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
 
-Between panels, each junction is a `JunctionSeam` drawn from a `JunctionSignal` (ADR 0037): a segmented level and a
-MIDI icon for notes, updated each frame without allocating and redrawn only when they change. The seam draws them
-through `SignalIndicatorRenderer`, which the standalone `SignalIndicator` control shares: Compact is the seam's look, and
-Medium and Large add a 0 dB tick, then a dB scale, a held-peak readout, and a clip light that stays on until cleared,
-with bar or round LEDs. Settings ▸ Display picks the size and LED shape for every seam: at Medium and Large the seam
-hosts a `SignalIndicator` on the junction's own `MeterLevels` and notes (so every size shows the same data), widens
-to fit it, and places it at the top, middle, or bottom of the panel (its own setting: Compact's upper and lower half
-positions would land where top and bottom do), with a shorter Large level so it fits a panel's height. Only junctions a
-visible Device View shows are metered (`IAudioPlayback.WatchJunctions`). A seam also aims the Browser at its gap
+Between panels, each junction is a `ChainJunction` drawn from a `JunctionSignal` (ADR 0037): a MIDI port glyph lit
+while notes are held, and a stereo `LedLadderMeter` with its clip lamp that follows Settings ▸ Display's **Levels
+show** (`LadderLevels`): the average with the held peak above it (the default) or the peak alone. They update each
+frame and redraw only when what they show changes. The update does not allocate, except that while a junction is
+hovered its tooltip text is rebuilt when its signal changes. The Out card's `ChainOutMeter` shows the chain's last junction
+with a dB scale and peak readout. Only junctions a visible Device View shows are metered
+(`IAudioPlayback.WatchJunctions`). A junction also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers
-only points the routing validator accepts. Where indicators sit, their size and LED shape, and what levels show are application preferences
-(`DisplayViewModel`, Settings ▸ Display), not project data.
+only points the routing validator accepts. Every `LedLadderMeter`, in the Device View and the mixer, is coloured by
+the user's `SignalGradient` (2 to 8 colour stops, Settings ▸ Display), applied through `Theme/MeterGradient`; the clip
+lamp is a fixed colour outside it. The gradient and level style are application preferences (`DisplayViewModel`,
+`display-settings.json`), not project data; the former junction size, LED shape, and position settings were removed,
+and older settings files still load.
 
 Time navigation is one pure model, `TimelineViewport` (zoom in pixels per quarter and scroll, anchored zoom, fit),
 with one ruler gesture, `RulerNavigationGesture`, in the arrangement and the piano roll, each keeping its own state:
@@ -585,7 +587,10 @@ arranger's loop strip is reserved for loop editing (`LoopStripDrag`, committed o
 Layout is local state, never project state: `WorkspaceStore` keeps user defaults and per-project state as small
 versioned JSON in the settings folder, with window bounds per display configuration. `LayoutRecovery` never
 restores a window off-screen and shows a detached view whose monitor is missing as a rail icon while keeping its
-saved window. Colours, type, spacing, and device-panel geometry are design tokens in `Theme/Tokens.axaml`.
+saved window. Colours, type, spacing, and device-panel geometry are design tokens in `Theme/Tokens.axaml`: the
+"Machined" slate theme with an aqua accent (#3CCBF4). Shared custom controls (`SquareKey`, `TextKey`, `PowerGlyph`,
+`Knob` arc rings, `RecessedWell`, `GutterPanel`, `DeviceCardPanel`) draw its keys, wells, and gutters; custom-drawn glows
+use `Theme/Glow`'s exponential falloff.
 
 ### Plugin workers
 

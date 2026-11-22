@@ -20,13 +20,15 @@ Bluestone combines deep, flexible signal flow with clear, approachable workflows
 
 New builds on the [Releases](https://github.com/djflan/Bluestone/releases) page include categorized notes and the complete pull-request and commit history since the previous published release.
 
-![Bluestone's workspace with the professional mixer docked below the arrangement](docs/images/professional-mixer/final-docked-default.png)
+![Bluestone's workspace with the mixer docked below the arrangement](docs/images/identity-r6/workspace-mixer.png)
 
-The approved C2 mixer design direction and compact layout:
+![The device chain: machined device cards joined by LED-ladder signal junctions with MIDI indicators](docs/images/identity-r6/device-chain.png)
+
+The mixer at normal and compact sizes:
 
 | Normal | Compact |
 |---|---|
-| ![C2 mixer design, normal layout](docs/images/professional-mixer/C2-normal.png) | ![C2 mixer design, compact layout](docs/images/professional-mixer/C2-compact.png) |
+| ![Mixer, normal layout](docs/images/identity-r6/mixer-normal.png) | ![Mixer, compact layout](docs/images/identity-r6/mixer-compact.png) |
 
 ## The idea
 

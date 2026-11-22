@@ -60,8 +60,8 @@ public sealed class DeviceViewTests
         Assert.Equal(3, chain.ItemCount);
         Assert.True(app.Find<BrowserView>("DockedBrowser").IsEffectivelyVisible);
         var knob = deviceView.GetVisualDescendants().OfType<Knob>().First(k => k.IsEffectivelyVisible);
-        Assert.Equal(Palette.SignalNote, knob.Accent);
-        var switches = deviceView.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>().Where(t => t.Classes.Contains("paramSwitch") && t.IsEffectivelyVisible).ToList();
+        Assert.Equal(Palette.Accent, knob.Accent);
+        var switches = deviceView.GetVisualDescendants().OfType<TextKey>().Where(t => t.Classes.Contains("paramSwitch") && t.IsEffectivelyVisible).ToList();
         Assert.Equal(4, switches.Count);
         app.Click(switches[0]);
         Assert.Equal(0, app.ViewModel.DeviceView!.Devices[1].Parameters[0].Value);
@@ -126,35 +126,6 @@ public sealed class DeviceViewTests
         Assert.DoesNotContain("dropTarget", slot.Classes);
         Assert.False(slot.IsEffectivelyVisible);
         app.SaveFrame("device-view-unrouted");
-    });
-
-    [Fact]
-    public Task AKnob_LightsItsTicksFromItsOrigin_AndOnlyTheSelectedDeviceGlows() => HeadlessApp.RunAsync(async () =>
-    {
-        // Ticks light from the origin to the value: a unipolar knob from its start, a bipolar one from its centre tick.
-        const int count = 21;
-        int[] Lit(double fraction, double origin) => [.. Enumerable.Range(0, count).Where(i => Knob.IsTickLit(i, count, fraction, origin))];
-        Assert.Equal([0], Lit(0, 0));
-        Assert.Equal(Enumerable.Range(0, count), Lit(1, 0));
-        Assert.Equal([10], Lit(0.5, 0.5));
-        Assert.Equal([10, 11, 12, 13, 14, 15], Lit(0.75, 0.5));
-        Assert.Equal([5, 6, 7, 8, 9, 10], Lit(0.25, 0.5));
-        Assert.Equal(21, Knob.TickCount(34));
-        Assert.Equal(15, Knob.TickCount(20));
-
-        // Focus lighting: the selected device's knobs glow; every other device's knobs stay calm.
-        await using var app = await OpenWithChainAsync(1440, 900);
-        var deviceView = app.Find<ContentControl>("DockedDeviceView");
-        var vm = app.ViewModel.DeviceView!;
-        var knobs = deviceView.GetVisualDescendants().OfType<Knob>().Where(k => k.IsEffectivelyVisible).ToList();
-        var owners = knobs.Select(k => vm.Devices.Single(d => d.Parameters.Contains((Presentation.ParameterViewModel)k.DataContext!))).ToList();
-        Assert.True(owners.Distinct().Count() > 1, "The chain needs knobs on two devices.");
-        foreach (var device in owners.Distinct())
-        {
-            vm.SelectedDevice = device;
-            app.Settle();
-            Assert.All(knobs.Zip(owners), pair => Assert.Equal(pair.Second == device ? 1 : 0, pair.First.Glow));
-        }
     });
 
     [Fact]
@@ -440,7 +411,7 @@ public sealed class DeviceViewTests
         await using var app = await OpenWithChainAsync(1440, 900);
         var view = app.ViewModel.DeviceView!;
         var deviceView = app.Find<ContentControl>("DockedDeviceView");
-        var seam = deviceView.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[1].Arriving);
+        var seam = deviceView.GetVisualDescendants().OfType<ChainJunction>().Single(s => s.Signal == view.Devices[1].Arriving);
         Assert.False(seam.ShowsPlus);
 
         // Hovering shows the +, clear of the indicators; clicking it aims the Browser here without selecting a device.
@@ -466,7 +437,7 @@ public sealed class DeviceViewTests
         app.ViewModel.Connections.Destination = app.ViewModel.Connections.Destinations.Single(d => d.Name == "Track: Pad");
         app.ViewModel.Connections.ConnectCommand.Execute(null);
         app.Settle();
-        seam = deviceView.GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[0].Output);
+        seam = deviceView.GetVisualDescendants().OfType<ChainJunction>().Single(s => s.Signal == view.Devices[0].Output);
         Assert.True(view.Devices[0].Output.IsRouted);
         app.ViewModel.Connections.Source = app.ViewModel.Connections.Sources[^1];
         var (_, routed) = seam.Targets;
@@ -483,20 +454,131 @@ public sealed class DeviceViewTests
     {
         await using var app = await OpenWithChainAsync(1440, 900);
         var view = app.ViewModel.DeviceView!;
-        app.ViewModel.Display.IndicatorSize = Bluestone.Presentation.SignalIndicatorSize.Large;
         view.SelectedDevice = view.Devices[0];
         var selected = view.SelectedDevice;
-        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<JunctionSeam>()
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<ChainJunction>()
             .Single(s => s.Signal == view.Devices[1].Arriving);
-        var indicator = Assert.IsType<SignalIndicator>(seam.Indicator);
         SetInternal(seam.Signal!, nameof(Bluestone.Presentation.JunctionSignal.CanCarryAudio), true);
         seam.Signal!.Levels.Update(new Bluestone.Audio.MeterReading(1.2f, 1.1f, 0.6f, 0.5f), System.Diagnostics.Stopwatch.GetTimestamp());
-        Assert.True(indicator.DisplayState.ClipLatched);
+        app.Settle();
+        Assert.True(seam.Ladder.IsClipped);
 
-        app.Click(indicator);
+        app.Click(seam.Ladder);
 
-        Assert.False(indicator.DisplayState.ClipLatched);
+        Assert.False(seam.Signal!.Levels.Clipped);
         Assert.Same(selected, view.SelectedDevice);
+    });
+
+    [Fact]
+    public Task AFocusedJunction_DrawsAFocusRing_AndDeleteClearsItsLatchedClip() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<ChainJunction>()
+            .Single(s => s.Signal == view.Devices[1].Arriving);
+        SetInternal(seam.Signal!, nameof(Bluestone.Presentation.JunctionSignal.CanCarryAudio), true);
+        seam.Signal!.Levels.Update(new Bluestone.Audio.MeterReading(1.2f, 1.1f, 0.6f, 0.5f), System.Diagnostics.Stopwatch.GetTimestamp());
+        app.Settle();
+        Assert.Equal(0, FocusPixels(app, seam));
+        Assert.Contains("clip latched", seam.Describe(), StringComparison.Ordinal);
+
+        // Keyboard focus draws a solid ring round the junction; Delete then clears the latched clip.
+        seam.Focus(NavigationMethod.Tab);
+        app.Settle();
+        Assert.True(FocusPixels(app, seam) > 20, "A keyboard-focused junction shows a focus ring.");
+        var selected = view.SelectedDevice;
+        app.Press(Key.Delete);
+        app.Settle();
+        Assert.False(seam.Signal!.Levels.Clipped);
+        Assert.DoesNotContain("clip latched", seam.Describe(), StringComparison.Ordinal);
+        Assert.Same(selected, view.SelectedDevice);
+
+        // Pressing elsewhere in the view (a device's name, which takes no focus) takes focus off the junction,
+        // so Delete goes back to the window's own path instead of being held by the junction.
+        app.Click(seam.Ladder);
+        Assert.Same(seam, app.Window.FocusManager?.GetFocusedElement());
+        var name = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<TextBlock>()
+            .First(t => t.Classes.Contains("deviceName") && t.IsEffectivelyVisible);
+        app.Click(name);
+        Assert.NotSame(seam, app.Window.FocusManager?.GetFocusedElement());
+        var tracks = app.ViewModel.Tracks.Count;
+        app.Press(Key.Delete);
+        Assert.Equal(tracks - 1, app.ViewModel.Tracks.Count);
+    });
+
+    /// <summary>Counts pixels near the focus colour in the top three pixel rows of <paramref name="control"/>, in a fresh frame.</summary>
+    private static int FocusPixels(AppUnderTest app, Control control)
+    {
+        app.Window.UpdateLayout();
+        using var frame = app.Window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
+        var origin = control.TranslatePoint(default, app.Window)!.Value;
+        var scale = frame.PixelSize.Width / app.Window.Bounds.Width;
+        var x0 = (int)(origin.X * scale);
+        var y0 = (int)(origin.Y * scale);
+        var width = (int)(control.Bounds.Width * scale);
+        var stride = frame.PixelSize.Width * 4;
+        var rows = new byte[stride * 3];
+        var buffer = System.Runtime.InteropServices.Marshal.AllocHGlobal(rows.Length);
+        try
+        {
+            frame.CopyPixels(new PixelRect(0, y0, frame.PixelSize.Width, 3), buffer, rows.Length, stride);
+            System.Runtime.InteropServices.Marshal.Copy(buffer, rows, 0, rows.Length);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.Marshal.FreeHGlobal(buffer);
+        }
+
+        var focus = Palette.Focus;
+        var count = 0;
+        for (var y = 0; y < 3; y++)
+        {
+            for (var x = x0; x < x0 + width; x++)
+            {
+                // RGBA or BGRA; the ring is anti-aliased, so a loose match: strong blue and green, little red.
+                var i = (y * stride) + (x * 4);
+                var (blue, red) = (Math.Max(rows[i], rows[i + 2]), Math.Min(rows[i], rows[i + 2]));
+                if (blue > focus.B * 0.6 && rows[i + 1] > focus.G * 0.6 && red < focus.R * 1.4)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    [Fact]
+    public Task JunctionAndOutMeters_ShowWhatSettingsDisplaySays_AverageWithThePeakHeld_OrThePeakAlone() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var seam = deviceView.GetVisualDescendants().OfType<ChainJunction>().Single(s => s.Signal == view.Devices[1].Arriving);
+        var outLadder = deviceView.GetVisualDescendants().OfType<ChainOutMeter>().Single().GetVisualDescendants().OfType<LedLadderMeter>().Single();
+        foreach (var signal in new[] { seam.Signal!, view.LastJunction! })
+        {
+            SetInternal(signal, nameof(Bluestone.Presentation.JunctionSignal.CanCarryAudio), true);
+
+            // Peak −6 dB, average −20 dB.
+            signal.Levels.Update(new Bluestone.Audio.MeterReading(0.5f, 0.5f, 0.1f, 0.1f), System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+
+        app.Settle();
+        Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.RmsAndPeak, view.Display.LevelStyle);
+        foreach (var ladder in new[] { seam.Ladder, outLadder })
+        {
+            Assert.Equal(-20, ladder.Shown.Left, 1);
+            Assert.Equal(-6, ladder.Shown.LeftHold, 1);
+        }
+
+        view.Display.LevelStyle = Bluestone.Presentation.JunctionLevelStyle.Peak;
+        app.Settle();
+        foreach (var ladder in new[] { seam.Ladder, outLadder })
+        {
+            Assert.Equal(-6, ladder.Shown.Left, 1);
+            Assert.True(double.IsNaN(ladder.Shown.LeftHold), "Peak alone has no held cell.");
+        }
     });
 
     private static void SetInternal(object target, string property, object value) =>
@@ -507,7 +589,7 @@ public sealed class DeviceViewTests
     {
         await using var app = await OpenWithChainAsync(1440, 900);
         var view = app.ViewModel.DeviceView!;
-        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<JunctionSeam>().Single(s => s.Signal == view.Devices[0].Output);
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<ChainJunction>().Single(s => s.Signal == view.Devices[0].Output);
 
         var peer = Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(seam);
 
@@ -522,7 +604,7 @@ public sealed class DeviceViewTests
         // An empty chain's trailing wire is only drawing: not a tab stop, and not in the automation tree.
         app.ViewModel.Select(app.ViewModel.Tracks[1]);
         app.Settle();
-        var trail = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Border>().Single(b => b.Name == "TrailLink").GetVisualDescendants().OfType<JunctionSeam>().Single();
+        var trail = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<Border>().Single(b => b.Name == "TrailLink").GetVisualDescendants().OfType<ChainJunction>().Single();
         Assert.Null(trail.Signal);
         Assert.False(trail.Focusable);
         Assert.False(Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(trail).IsControlElement());
@@ -563,8 +645,6 @@ public sealed class DeviceViewTests
             (Palette.MeterTrack, "Meter.TrackColor"),
             (Palette.MixerMeterPeakHold, "MixerMeter.PeakHoldColor"),
             (Palette.JunctionLamp, "Junction.LampColor"),
-            (Palette.KnobBody, "Knob.BodyColor"),
-            (Palette.KnobTick, "Knob.TickColor"),
         };
 
         Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));

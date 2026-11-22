@@ -46,7 +46,7 @@ public sealed class TimelineView : Control
     private const double EdgeGrip = 5;
     private const double PointGrip = 5;
     private const double CurveInset = 4;
-    private const double ClipHeaderHeight = 13;
+    private const double ClipHeaderHeight = 14;
 
     private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor MoveCursor = new(StandardCursorType.DragMove);
@@ -63,7 +63,9 @@ public sealed class TimelineView : Control
     private static readonly IBrush RecordFill = new SolidColorBrush(Palette.Record, 0.28);
     private static readonly IPen RecordEdge = new Pen(new SolidColorBrush(Palette.Record, 0.9), 1);
     private static readonly IBrush RecordNote = new SolidColorBrush(Palette.Lighten(Palette.Record, 0.35));
-    private static readonly IBrush RegionText = new SolidColorBrush(Color.Parse("#141416"));
+    private static readonly Color RegionTextColor = Color.Parse("#F4F6F8");
+    private static readonly IBrush RegionText = new SolidColorBrush(RegionTextColor);
+    private static readonly IBrush RegionInk = new SolidColorBrush(Palette.Base);
     private static readonly Typeface RegionFace = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
 
     // Clip drag state
@@ -1035,19 +1037,23 @@ public sealed class TimelineView : Control
         var color = Palette.Track(colorLane);
         var selected = SelectedClips.Contains(clip.Id);
         var muted = track.IsMuted || (track.Group is not null && Project is { } project && GroupTracks.IsMutedByGroup(project.Sequence, track));
-        var fill = Palette.Mix(Palette.Lane, color, muted ? 0.16 : selected ? 0.5 : 0.32);
-        var header = Palette.Mix(Palette.Lane, color, muted ? 0.32 : selected ? 0.95 : 0.68);
-        var edge = selected ? new Pen(Brushes.White, 1.5) : new Pen(new SolidColorBrush(Palette.Darken(color, 0.25)), 1);
+        // Machined clips: a face of the track colour sunk 55% into the desk, a solid colour header strip, a darker rim.
+        var fill = Palette.Mix(Palette.Lane, color, muted ? 0.25 : selected ? 0.6 : 0.45);
+        var header = muted ? Palette.Mix(Palette.Lane, color, 0.4) : selected ? Palette.Lighten(color, 0.12) : color;
+        var edge = selected ? new Pen(Brushes.White, 1.5) : new Pen(new SolidColorBrush(Palette.Darken(color, 0.4)), 1);
 
-        context.DrawRectangle(new SolidColorBrush(fill), edge, body, 2, 2);
+        context.DrawRectangle(new SolidColorBrush(fill), edge, body, 3, 3);
         var strip = HeaderOf(body);
-        context.DrawRectangle(new SolidColorBrush(header), null, new Rect(strip.X + 0.5, strip.Y + 0.5, strip.Width - 1, strip.Height - 1), 1.5, 1.5);
+        using (context.PushClip(new RoundedRect(body.Deflate(0.5), 3)))
+        {
+            context.FillRectangle(new SolidColorBrush(header), new Rect(strip.X, strip.Y, strip.Width, strip.Height));
+        }
 
         // The name stays readable at the left edge of the view while the clip scrolls past.
         var labelX = Math.Max(body.X + 4, VisibleLeft + 4);
         if (labelX < body.Right - 24)
         {
-            var name = new FormattedText(track.ClipName(clip), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 10, RegionText)
+            var name = new FormattedText(track.ClipName(clip), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 10, HeaderInk(header))
             {
                 MaxTextWidth = Math.Max(1, body.Right - labelX - 4),
                 MaxLineCount = 1,
@@ -1089,7 +1095,7 @@ public sealed class TimelineView : Control
         var noteArea = body.Bottom - noteTop - 3;
         var span = high - low + 1;
         var noteHeight = Math.Clamp(noteArea / span, 1.5, 4);
-        var noteColor = muted ? Palette.Mix(color, Palette.Lane, 0.4) : Palette.Lighten(color, selected ? 0.6 : 0.45);
+        var noteColor = muted ? Palette.Mix(color, Palette.Lane, 0.4) : Palette.Lighten(color, selected ? 0.6 : 0.5);
         var firstTick = Math.Max(clip.Start.Value, XToTick(Math.Max(0, left - shift)));
         var lastVisible = Math.Min(clip.End.Value - 1, XToTick(Math.Max(0, right - shift)));
         using (context.PushClip(body))
@@ -1114,6 +1120,26 @@ public sealed class TimelineView : Control
                 context.FillRectangle(new SolidColorBrush(noteColor, opacity), new Rect(x, y, w, noteHeight));
             }
         }
+    }
+
+    /// <summary>The clip name's ink on a header of <paramref name="header"/>: light, or dark where light text would not reach good contrast.</summary>
+    internal static IBrush HeaderInk(Color header)
+    {
+        var face = Luminance(header);
+        var light = (Luminance(RegionTextColor) + 0.05) / (face + 0.05);
+        var dark = (face + 0.05) / (Luminance(Palette.Base) + 0.05);
+        return dark > light ? RegionInk : RegionText;
+    }
+
+    private static double Luminance(Color color)
+    {
+        static double Channel(byte value)
+        {
+            var c = value / 255.0;
+            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+
+        return (0.2126 * Channel(color.R)) + (0.7152 * Channel(color.G)) + (0.0722 * Channel(color.B));
     }
 
     // A looping clip's repeats: the first boundary dashed, later ones dotted and lighter, thinned out so they never

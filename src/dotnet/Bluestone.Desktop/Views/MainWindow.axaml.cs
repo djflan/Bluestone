@@ -1016,6 +1016,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A focused chain junction owns Delete: it clears the junction's latched clip, never deletes the device beside it.
+        if (e.Key is Key.Delete or Key.Back && modifiers == KeyModifiers.None && FocusManager?.GetFocusedElement() is Controls.ChainJunction)
+        {
+            return;
+        }
+
         // A focused mixer insert name takes Space to turn its device on or off (MixerConsoleView.ToggleInsertPower).
         if (e.Key == Key.Space && modifiers == KeyModifiers.None && IsInsertNameFocused())
         {

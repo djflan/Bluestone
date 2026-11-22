@@ -101,9 +101,18 @@ public partial class DeviceViewControl : UserControl
         }
 
         vm.Activate();
+        if (e.Source is Visual pressed && pressed is not Controls.ChainJunction && !pressed.GetVisualAncestors().Any(a => a is Controls.ChainJunction)
+            && TopLevel.GetTopLevel(this)?.FocusManager is { } focus && focus.GetFocusedElement() is Controls.ChainJunction)
+        {
+            // A press elsewhere in the view takes focus off a junction, so it no longer holds Delete for its clip.
+            // A focusable control pressed after this takes focus itself; anything else leaves Delete to the window.
+            focus.Focus(null, NavigationMethod.Pointer);
+        }
+
         // A seam belongs to the gap, not the device after it: pressing it (including a hosted indicator) does not select that device.
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is not Control source
-            || source is Controls.JunctionSeam || source.GetVisualAncestors().Any(ancestor => ancestor is Controls.JunctionSeam))
+            || source is Controls.ChainJunction
+            || source.GetVisualAncestors().Any(ancestor => ancestor is Controls.ChainJunction))
         {
             return;
         }

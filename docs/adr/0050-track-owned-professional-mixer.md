@@ -330,3 +330,14 @@ insert stack. The decisions above are unchanged; only the presentation changed.
 - Not built: per-strip width and spectrum views, an input-monitor control, a Master chain view from
   the Master inserts, and keyboard jumps between strips. Record arm is view state only.
 
+
+## Amendment: Identity R6 strip
+
+The strip was rebuilt for the "Machined" theme; the decisions above are unchanged.
+
+- Strips are 86 px wide. Each has one stereo LED-ladder meter (replacing the `SignalIndicatorRenderer` meter above),
+  a console fader with a satin cap on the meter's taper (−60 to +6 dB), and a display-only column of gain LEDs.
+- A pan knob replaces the pan ramp. Mute, solo, and record arm are square keys. Sends show as a count, or as
+  **+ Send** only while the strip is hovered or focused.
+- Meter colours follow the user's signal gradient (Settings ▸ Display); the clip lamp is a fixed red.
+- Still not built: the monitor key (the model has no monitor state) and the items listed above.

@@ -146,8 +146,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _all.Add(new SettingsCategory(
             SettingsPage.Display,
             "Display",
-            "How the Device View shows signal: where each junction's level and MIDI icon sit, how big they are, and what the levels show.",
-            "display appearance device view junction indicator level meter note midi lamp position top bottom half rms peak average size compact medium large led round bar scale clip",
+            "Signal meters: the colours their levels run through, and what the levels show.",
+            "display appearance signal meter level indicator junction colour color gradient stop led rms peak average clip",
             _display));
         Filter();
     }
