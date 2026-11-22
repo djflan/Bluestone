@@ -415,6 +415,87 @@ public sealed class DisplaySettingsTests : IDisposable
     }
 
     [Fact]
+    public void AMidiColourPreview_AppliesEachChangeAtOnce_AppliesWithOneSave_AndCancelLeavesTheOriginal()
+    {
+        var path = File();
+        var store = new DisplaySettingsStore(path);
+        var display = new DisplayViewModel();
+        display.Use(store);
+        display.MidiColour = "#7C6BFF";
+        var notified = new List<string?>();
+        display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
+
+        // Apply: every change shows at once, nothing is written until the preview ends, then the final colour once.
+        System.IO.File.Delete(path);
+        display.BeginMidiColourPreview();
+        Assert.True(display.IsMidiColourPreviewing);
+        display.MidiColour = "#FF2E93";
+        display.MidiColour = "#E0A43A";
+        Assert.Equal("#E0A43A", display.MidiColour);
+        Assert.Equal(2, notified.Count(n => n == nameof(DisplayViewModel.MidiColour)));
+        Assert.False(System.IO.File.Exists(path), "Nothing is written during a preview.");
+        display.EndMidiColourPreview();
+        Assert.False(display.IsMidiColourPreviewing);
+        Assert.Equal("#E0A43A", store.Load().MidiColour);
+
+        // That was the only write: ending again, or a preview with no change, writes nothing; a second begin is no nesting.
+        System.IO.File.Delete(path);
+        display.EndMidiColourPreview();
+        display.BeginMidiColourPreview();
+        display.BeginMidiColourPreview();
+        display.EndMidiColourPreview();
+        Assert.False(System.IO.File.Exists(path));
+
+        // Cancel: the picker puts the original back before ending, and the saved colour is the original.
+        var original = display.MidiColour;
+        display.BeginMidiColourPreview();
+        display.MidiColour = "#3D5BFF";
+        display.ChooseMidiColourCommand.Execute("#B65CFF");
+        Assert.Equal("#B65CFF", display.MidiColour);
+        display.MidiColour = original;
+        display.EndMidiColourPreview();
+        Assert.Equal(original, display.MidiColour);
+        Assert.Equal(original, store.Load().MidiColour);
+
+        // Outside a preview every change saves again.
+        display.MidiColour = "#4CB873";
+        Assert.Equal("#4CB873", store.Load().MidiColour);
+    }
+
+    [Fact]
+    public void MidiAndGradientPreviews_HoldEachOthersSaves_AndTheLastToEndWritesBoth()
+    {
+        var path = File();
+        var store = new DisplaySettingsStore(path);
+        var display = new DisplayViewModel();
+        display.Use(store);
+
+        // A gradient drag pending while the MIDI picker is open is kept, and written once the picker closes.
+        display.Mixer.BeginGradientPreview();
+        display.Mixer.MoveAndSelectGradientStop(1, 0.3);
+        display.BeginMidiColourPreview();
+        display.Mixer.EndGradientPreview();
+        Assert.False(System.IO.File.Exists(path), "The open MIDI preview holds the gradient's save.");
+        display.MidiColour = "#FF2E93";
+        display.EndMidiColourPreview();
+        Assert.Equal(0.3, store.Load().MixerGradient.Stops[1].Position);
+        Assert.Equal("#FF2E93", store.Load().MidiColour);
+
+        // And the other way round: a MIDI change waits for a gradient drag that outlasts it.
+        System.IO.File.Delete(path);
+        display.BeginMidiColourPreview();
+        display.MidiColour = "#3FE0D8";
+        display.Chain.BeginGradientPreview();
+        display.EndMidiColourPreview();
+        display.Chain.MoveAndSelectGradientStop(1, 0.2);
+        Assert.False(System.IO.File.Exists(path), "The open gradient preview holds the MIDI colour's save.");
+        display.Chain.EndGradientPreview();
+        Assert.Equal("#3FE0D8", store.Load().MidiColour);
+        Assert.Equal(0.2, store.Load().ChainGradient.Stops[1].Position);
+        Assert.Equal(0.3, store.Load().MixerGradient.Stops[1].Position);
+    }
+
+    [Fact]
     public void LedFadeAndWarmup_RoundTrip()
     {
         var store = new DisplaySettingsStore(File());

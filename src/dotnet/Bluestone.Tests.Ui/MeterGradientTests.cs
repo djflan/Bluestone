@@ -250,6 +250,8 @@ public sealed class MeterGradientTests
         var window = new Window { Width = 48, Height = 220, Background = Brushes.Black, Content = junction };
         window.Show();
         var display = new DisplayViewModel();
+        var (fade, warmup) = (LedMotion.Fade, LedMotion.Warmup);
+        var settings = Path.Combine(Path.GetTempPath(), $"bluestone-display-{Guid.NewGuid():N}.json");
         try
         {
             Assert.Equal(Color.Parse(DisplaySettings.DefaultMidiColour), LedColours.Midi);
@@ -275,8 +277,22 @@ public sealed class MeterGradientTests
             LedColours.UseMidi("red");
             Assert.Equal(LedColours.DefaultMidi, LedColours.Midi);
 
-            // The app applies the display settings: each gradient to its own seam, and the MIDI colour.
+            // The app applies the display settings: the saved LED fade and warm-up switches at once, and later each change
+            // to them, to each gradient's own seam, and to the MIDI colour.
+            new DisplaySettingsStore(settings).Save(new DisplaySettings { LedFade = false, LedWarmup = false });
+            display.Use(new DisplaySettingsStore(settings));
+            (LedMotion.Fade, LedMotion.Warmup) = (true, true);
             Desktop.App.FollowSignalGradient(display);
+            Assert.False(LedMotion.Fade);
+            Assert.False(LedMotion.Warmup);
+            display.LedFade = true;
+            Assert.True(LedMotion.Fade);
+            Assert.False(LedMotion.Warmup);
+            display.LedWarmup = true;
+            Assert.True(LedMotion.Warmup);
+            display.LedFade = false;
+            Assert.False(LedMotion.Fade);
+            Assert.True(LedMotion.Warmup);
             display.MidiColour = "#00FF00";
             Assert.Equal(Color.Parse("#00FF00"), LedColours.Midi);
             var mixer = MeterGradient.Mixer.Version;
@@ -295,6 +311,8 @@ public sealed class MeterGradientTests
             display.Gain.ResetGradientCommand.Execute(null);
             display.MidiColour = DisplaySettings.DefaultMidiColour;
             LedColours.UseMidi(null);
+            (LedMotion.Fade, LedMotion.Warmup) = (fade, warmup);
+            File.Delete(settings);
             window.Close();
         }
 

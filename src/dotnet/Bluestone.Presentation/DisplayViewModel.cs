@@ -215,6 +215,14 @@ public sealed partial class DisplayViewModel : ObservableObject
         }
     } = DisplaySettings.DefaultMidiColour;
 
+    /// <summary>
+    /// Whether a MIDI colour preview (a picker open on it) is open: <see cref="MidiColour"/> changes apply at once, but are
+    /// not saved until it ends. As a gradient's preview (<see cref="GradientEditorViewModel.IsPreviewing"/>), it also holds
+    /// any other save until every preview has ended.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsMidiColourPreviewing { get; private set; }
+
     /// <summary>Whether LEDs fade out rather than go dark at once.</summary>
     [ObservableProperty]
     public partial bool LedFade { get; set; } = true;
@@ -222,6 +230,16 @@ public sealed partial class DisplayViewModel : ObservableObject
     /// <summary>Whether LEDs warm up (ease in) rather than light at once.</summary>
     [ObservableProperty]
     public partial bool LedWarmup { get; set; } = true;
+
+    /// <summary>
+    /// Opens a MIDI colour preview: from now <see cref="MidiColour"/> changes apply at once but are not written until
+    /// <see cref="EndMidiColourPreview"/>. To cancel, set <see cref="MidiColour"/> back to the value it had before, then end
+    /// the preview. Starting one while one is open does nothing.
+    /// </summary>
+    public void BeginMidiColourPreview() => IsMidiColourPreviewing = true;
+
+    /// <summary>Ends a MIDI colour preview, saving once if anything changed during any preview. Ending none does nothing.</summary>
+    public void EndMidiColourPreview() => IsMidiColourPreviewing = false;
 
     /// <summary>Sets the MIDI LED's colour from a swatch ("#RRGGBB").</summary>
     [RelayCommand]
@@ -267,14 +285,25 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     partial void OnLedWarmupChanged(bool value) => Save();
 
-    // An edit in any gradient saves; one made during a preview is saved once, when the preview ends.
+    partial void OnIsMidiColourPreviewingChanged(bool value)
+    {
+        if (!value && _unsaved && !Previewing)
+        {
+            Save();
+        }
+    }
+
+    // Whether any preview, of a gradient or of the MIDI colour, holds saves.
+    private bool Previewing => IsMidiColourPreviewing || Editors.Any(e => e.IsPreviewing);
+
+    // An edit in any gradient saves; one made during a preview is saved once, when the last preview ends.
     private void OnEditorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
         {
             Save();
         }
-        else if (e.PropertyName == nameof(GradientEditorViewModel.IsPreviewing) && _unsaved && !Editors.Any(x => x.IsPreviewing))
+        else if (e.PropertyName == nameof(GradientEditorViewModel.IsPreviewing) && _unsaved && !Previewing)
         {
             Save();
         }
@@ -287,7 +316,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             return;
         }
 
-        if (Editors.Any(e => e.IsPreviewing))
+        if (Previewing)
         {
             _unsaved = true;
             return;
