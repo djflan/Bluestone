@@ -15,15 +15,16 @@ post to the pull request unless the user asks.
    `git merge-base origin/<base> <sha>`. Every reviewer reviews exactly that diff:
    `git --no-pager diff <merge-base> <sha>`. If the branch moves during the review, say so and keep the pinned SHA.
 3. Read the PR body and the linked issue, so the review checks what the change claims as well as the code.
-   For user-facing UI, collect the user's reference and hint language VERBATIM, the supplied references, the approved
-   rendered direction, comparison screenshots of the pinned UI, and both the direction pick and FINAL screenshot
-   approval records.
+   For user-facing UI, collect the recorded tier, the user's relevant acceptance language, supplied references, and
+   the evidence and approvals that tier requires under `.github/skills/team/references/governance.md`.
 
 ## 2. Staff
 
-- **Grace twice:** one reviewer on a Claude model and one on a GPT model, same snapshot, same prompt, run
-  independently. If one family is unavailable, say so plainly and do not present the result as a dual review.
-- **Specialists for touched paths** (`references/roster.md`), each reviewing only their area.
+- **Grace:** one independent reviewer for ordinary localized work. Use two independent Grace reviews on different
+  available model families for the high-risk or broad categories in
+  `.github/skills/team/references/model-selection.md`. Both review the same
+  snapshot and prompt. If one family is unavailable, say so and do not present the result as dual review.
+- **Specialists for touched paths** (`.github/skills/team/references/roster.md`), each reviewing only their area.
 - **Alice** when tests changed, or when changed behavior has no test.
 
 Dispatch them all in parallel, read-only. Launch the reviewers as custom agents or as `general-purpose` agents told
@@ -31,8 +32,9 @@ to stay read-only. **Never use the built-in `code-review` agent type:** its ters
 
 Ask reviewers for recall: report every plausible problem with evidence and a confidence level. Precision comes from
 validation in step 3.
-For user-facing UI, Max, Caroline, and Jules review screenshots beside the supplied references and approved direction,
-with per-element critique; Grace checks the comparison evidence and both user approvals.
+For UI, staff Max, Caroline, Jules, or Iris only when the recorded tier and touched risk give each a distinct question.
+They review the evidence beside supplied references and the approved direction; Grace checks that the tier is honest
+and that its required evidence and approvals are present.
 
 ## 3. Validate (Lucas)
 
@@ -43,10 +45,10 @@ For each finding:
 
 Keep rejected findings out of the report, but count them.
 
-UI comparison screenshots and user approvals are BLOCKING gates. Missing screenshots compared against supplied
-references, an unapproved chosen direction, or missing FINAL user screenshot approval is not optional evidence or a
-low-severity note. Rendering alone is not approval; approval must match the pinned UI. Generic UI without supplied
-references may use an explicitly agreed baseline, but never use one to replace or weaken supplied-reference comparison.
+UI evidence and approvals required by the recorded tier are BLOCKING gates. Directional UI needs its alternatives,
+user pick, comparisons, and final approval; material UI needs its proposal, comparisons, and final approval; routine
+UI needs appropriate internal visual evidence. An incorrectly low tier is itself a finding. Rendering is not user
+approval when approval is required, and a generic baseline never replaces supplied references.
 
 ## 4. Report
 
@@ -58,7 +60,7 @@ Critical / High / Medium / Low
   Evidence · Fix · Found by: <members> · Status: confirmed | plausible
 
 Claims check: <each claim in the PR body that the evidence does or does not support>
-UI gates: <reference comparisons, chosen direction and final user approvals; blockers | not applicable>
+UI gates: <recorded tier, required comparisons/evidence/approvals; blockers | not applicable>
 Not reviewed: <areas no one covered>
 Rejected: <count> findings (reasons in the run log)
 ```
