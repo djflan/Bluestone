@@ -167,14 +167,17 @@ public sealed class LedLadderMeter : Control
             var lit = i <= topLit;
             if (lit && (i == topLit || i % 3 == 0))
             {
-                Glow.Rect(context, cell, 0.5, _colors[i], i == topLit ? TopCellTier : CellTier);
+                Glow.Rect(context, cell, 0.5, MeterGradient.GlowBrushes(_colors[i], i == topLit ? TopCellTier : CellTier));
             }
 
             context.FillRectangle(lit ? _lit[i] : i == held ? _held[i] : _unlit[i], cell);
         }
     }
 
-    /// <summary>One brush per cell for each state, rebuilt only when the cell count or the gradient changes.</summary>
+    /// <summary>
+    /// One brush per cell for each state, rebuilt only when the cell count or the gradient changes. They come from
+    /// <see cref="MeterGradient"/>'s caches, which empty on each change, not the app-lifetime ones in <see cref="ConsolePaint"/>.
+    /// </summary>
     private void EnsureColors(int count)
     {
         if (_colors.Length == count && _version == MeterGradient.Version)
@@ -191,9 +194,9 @@ public sealed class LedLadderMeter : Control
         {
             var color = MeterGradient.At((i + 0.5) / count);
             _colors[i] = color;
-            _lit[i] = ConsolePaint.Brush(color);
-            _unlit[i] = ConsolePaint.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
-            _held[i] = ConsolePaint.Brush(ConsolePaint.Lighter(color, 0.3));
+            _lit[i] = MeterGradient.Brush(color);
+            _unlit[i] = MeterGradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
+            _held[i] = MeterGradient.Brush(ConsolePaint.Lighter(color, 0.3));
         }
     }
 

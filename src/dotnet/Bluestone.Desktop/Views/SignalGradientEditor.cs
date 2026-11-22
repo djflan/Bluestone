@@ -1,8 +1,11 @@
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
+using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
 using Bluestone.Presentation;
@@ -12,7 +15,9 @@ namespace Bluestone.Desktop.Views;
 /// <summary>
 /// Settings ▸ Display's gradient editor: a recessed well of LED cells drawn in the signal gradient, as a meter draws them,
 /// with a draggable, focusable handle under it for each stop. Dragging a handle (or Left/Right on it: 1%, Shift for 5%)
-/// changes that stop's position. All state is in <see cref="DisplayViewModel"/>, its data context.
+/// changes that stop's position. All state is in <see cref="DisplayViewModel"/>, its data context. A drag previews as it
+/// goes and saves once, on release; each key press saves. The editor's colours are its own brushes, not the shared caches,
+/// so editing never grows them.
 /// </summary>
 public sealed class SignalGradientEditor : Panel
 {
@@ -68,7 +73,7 @@ public sealed class SignalGradientEditor : Panel
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
-        _dragIndex = -1;
+        FinishDrag();
     }
 
     private void OnDisplayChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -143,6 +148,7 @@ public sealed class SignalGradientEditor : Panel
         }
 
         _dragIndex = handle.Index;
+        _display.BeginGradientPreview();
         _display.SelectedGradientStopIndex = handle.Index;
         handle.Focus(NavigationMethod.Pointer);
         e.Pointer.Capture(handle);
@@ -167,9 +173,19 @@ public sealed class SignalGradientEditor : Panel
     {
         if (_dragIndex >= 0)
         {
-            _dragIndex = -1;
-            e.Pointer.Capture(null);
             e.Handled = true;
+            e.Pointer.Capture(null);
+            FinishDrag();
+        }
+    }
+
+    /// <summary>Ends a drag however it ends (release, lost capture, leaving the window), saving its result once.</summary>
+    internal void FinishDrag()
+    {
+        if (_dragIndex >= 0)
+        {
+            _dragIndex = -1;
+            _display?.EndGradientPreview();
         }
     }
 
@@ -178,6 +194,14 @@ public sealed class SignalGradientEditor : Panel
         if (_display is not null)
         {
             _display.NudgeGradientStop(handle.Index, delta);
+        }
+    }
+
+    internal void MoveTo(StopHandle handle, double position)
+    {
+        if (_display is not null)
+        {
+            _display.MoveAndSelectGradientStop(handle.Index, Math.Round(Math.Clamp(position, 0, 1) * 1000) / 1000);
         }
     }
 
@@ -192,6 +216,9 @@ public sealed class SignalGradientEditor : Panel
     /// <summary>The well of LED cells, lit in the gradient as a meter draws it, with a hairline at each stop.</summary>
     private sealed class Bar(SignalGradientEditor editor) : Control
     {
+        private IBrush[] _cells = [];
+        private SignalGradient? _cellsGradient;
+
         public override void Render(DrawingContext context)
         {
             if (editor._display is not { } display)
@@ -204,12 +231,11 @@ public sealed class SignalGradientEditor : Panel
             var count = Math.Max(1, (int)Math.Floor((width + CellGap) / CellPitch));
             var cell = ((width + CellGap) / count) - CellGap;
             var gradient = display.SignalGradient;
+            var cells = CellBrushes(gradient, count);
             for (var i = 0; i < count; i++)
             {
-                var (r, g, b) = gradient.Evaluate((i + 0.5) / count);
-                var colour = Color.FromRgb(r, g, b);
                 var rect = new Rect(Inset + (i * (cell + CellGap)), WellPad, cell, BarHeight - (2 * WellPad));
-                context.DrawRectangle(ConsolePaint.Vertical(ConsolePaint.Lighter(colour, 0.12), colour), null, new RoundedRect(rect, 1.5));
+                context.DrawRectangle(cells[i], null, new RoundedRect(rect, 1.5));
                 ConsolePaint.HLine(context, ConsolePaint.Alpha(ConsolePaint.White, 0.18), rect.X + 1, rect.Right - 1, rect.Y + 0.5);
             }
 
@@ -222,13 +248,37 @@ public sealed class SignalGradientEditor : Panel
                 ConsolePaint.VLine(context, ConsolePaint.Alpha(on ? Palette.Accent : ConsolePaint.White, on ? 0.9 : 0.35), x, WellPad - 2, BarHeight - WellPad + 2);
             }
         }
+
+        // The cells' brushes, rebuilt only when the gradient or the cell count changes.
+        private IBrush[] CellBrushes(SignalGradient gradient, int count)
+        {
+            if (_cells.Length == count && ReferenceEquals(_cellsGradient, gradient))
+            {
+                return _cells;
+            }
+
+            _cellsGradient = gradient;
+            _cells = new IBrush[count];
+            for (var i = 0; i < count; i++)
+            {
+                var (r, g, b) = gradient.Evaluate((i + 0.5) / count);
+                var colour = Color.FromRgb(r, g, b);
+                _cells[i] = new ImmutableLinearGradientBrush(
+                    [new ImmutableGradientStop(0, ConsolePaint.Lighter(colour, 0.12)), new ImmutableGradientStop(1, colour)],
+                    startPoint: new RelativePoint(0, 0, RelativeUnit.Relative),
+                    endPoint: new RelativePoint(0, 1, RelativeUnit.Relative));
+            }
+
+            return _cells;
+        }
     }
 
     /// <summary>One stop's handle: a small key in the stop's colour with a notch pointing up at the bar. Focusable.</summary>
     public sealed class StopHandle : Control
     {
         private readonly SignalGradientEditor _editor;
-        private Color _colour;
+        private string _colour = string.Empty;
+        private IBrush _swatch = Brushes.Transparent;
 
         internal StopHandle(SignalGradientEditor editor)
         {
@@ -250,8 +300,14 @@ public sealed class SignalGradientEditor : Panel
             Index = index;
             Position = stop.Position;
             IsSelected = selected;
-            _colour = Color.Parse(stop.Colour);
+            if (stop.Colour != _colour)
+            {
+                _colour = stop.Colour;
+                _swatch = new ImmutableSolidColorBrush(Color.Parse(stop.Colour));
+            }
+
             AutomationProperties.SetName(this, $"Gradient stop {index + 1} at {DisplayViewModel.FormatPercent(stop.Position)}");
+            AutomationProperties.SetHelpText(this, $"{stop.Colour}. Left or Right to move; Shift for 5%.");
             InvalidateVisual();
         }
 
@@ -291,6 +347,16 @@ public sealed class SignalGradientEditor : Panel
             base.OnPointerReleased(e);
             _editor.EndDrag(e);
         }
+
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            base.OnPointerCaptureLost(e);
+            _editor.FinishDrag();
+        }
+
+        protected override AutomationPeer OnCreateAutomationPeer() => new StopPeer(this);
+
+        internal void MoveTo(double position) => _editor.MoveTo(this, position);
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
@@ -334,11 +400,31 @@ public sealed class SignalGradientEditor : Panel
             }
 
             context.DrawRectangle(ConsolePaint.Vertical(ConsolePaint.Lighter(Palette.Key, 0.06), Palette.Key), ConsolePaint.Pen(rim), new RoundedRect(face, 3));
-            context.DrawRectangle(ConsolePaint.Brush(_colour), ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.5)), new RoundedRect(face.Deflate(3), 1.5));
+            context.DrawRectangle(_swatch, ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.5)), new RoundedRect(face.Deflate(3), 1.5));
             if (IsFocused)
             {
                 context.DrawRectangle(null, ConsolePaint.Pen(Palette.Focus), new RoundedRect(face.Inflate(2), 5));
             }
+        }
+
+        /// <summary>A stop to a screen reader: a slider over 0 to 100 (%), named for its place and described by its colour.</summary>
+        private sealed class StopPeer(StopHandle owner) : ControlAutomationPeer(owner), IRangeValueProvider
+        {
+            public bool IsReadOnly => false;
+
+            public double Minimum => 0;
+
+            public double Maximum => 100;
+
+            public double Value => Math.Round(owner.Position * 100, 1);
+
+            public double SmallChange => 1;
+
+            public double LargeChange => 5;
+
+            public void SetValue(double value) => owner.MoveTo(value / 100);
+
+            protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Slider;
         }
     }
 }

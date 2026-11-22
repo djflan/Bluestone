@@ -53,17 +53,25 @@ internal static class Glow
         return Layers[tier] = layers;
     }
 
+    /// <summary>
+    /// The layers for a fixed theme colour, cached for the life of the app. Colours that change at run time (the meter
+    /// gradient's) take <see cref="MeterGradient.GlowBrushes"/> instead, whose cache is emptied when they change.
+    /// </summary>
     public static IImmutableSolidColorBrush[] BrushesFor(Color color, double tier)
     {
         var key = (color.ToUInt32(), tier);
         if (!Brushes.TryGetValue(key, out var brushes))
         {
-            brushes = [.. LayersFor(tier).Select(alpha => new ImmutableSolidColorBrush(Palette.Alpha(color, alpha)))];
+            brushes = CreateBrushes(color, tier);
             Brushes[key] = brushes;
         }
 
         return brushes;
     }
+
+    /// <summary>New, uncached layers for <paramref name="color"/> at <paramref name="tier"/>, innermost first.</summary>
+    public static IImmutableSolidColorBrush[] CreateBrushes(Color color, double tier) =>
+        [.. LayersFor(tier).Select(alpha => new ImmutableSolidColorBrush(Palette.Alpha(color, alpha)))];
 
     private static IPen[] PensFor(Color color, double tier, double width)
     {
@@ -84,9 +92,12 @@ internal static class Glow
         return pens;
     }
 
-    public static void Rect(DrawingContext context, Rect rect, double radius, Color color, double tier)
+    public static void Rect(DrawingContext context, Rect rect, double radius, Color color, double tier) =>
+        Rect(context, rect, radius, BrushesFor(color, tier));
+
+    /// <summary>A glow around <paramref name="rect"/> in layers the caller holds (from <see cref="CreateBrushes"/> or <see cref="MeterGradient.GlowBrushes"/>).</summary>
+    public static void Rect(DrawingContext context, Rect rect, double radius, IImmutableSolidColorBrush[] brushes)
     {
-        var brushes = BrushesFor(color, tier);
         for (var i = brushes.Length; i >= 1; i--)
         {
             var grow = Reach * i / brushes.Length;

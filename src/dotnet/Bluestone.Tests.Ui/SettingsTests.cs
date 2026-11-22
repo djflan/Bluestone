@@ -1,4 +1,6 @@
 using Avalonia;
+using Avalonia.Automation.Peers;
+using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -102,6 +104,83 @@ public sealed class SettingsTests : IDisposable
             app.Click(ActionKey("Reset gradient to default"));
             Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
             Assert.Equal(6, editor.Handles.Count);
+        }
+        finally
+        {
+            display.ResetGradientCommand.Execute(null);
+        }
+    });
+
+    [Fact]
+    public Task TheGradientEditor_SavesADragOnceOnRelease_ClampsNudges_AndAnnouncesSlidersAndButtons() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        var path = Path.Combine(_directory, "display-settings.json");
+        var store = new DisplaySettingsStore(path);
+        var display = app.ViewModel.Display;
+        display.Use(store);
+        Desktop.App.FollowSignalGradient(display);
+        try
+        {
+            app.Window.ShowSettings(SettingsPage.Display);
+            app.Settle();
+            var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+            var editor = AppUnderTest.Within<SignalGradientEditor>(page, _ => true);
+
+            // A drag previews on the meters as it goes, but writes the file only once, on release.
+            store.Save(store.Load());
+            var saved = File.ReadAllText(path);
+            var handle = editor.Handles[1];
+            var start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), app.Window)!.Value;
+            app.Window.MouseMove(start, RawInputModifiers.None);
+            app.Window.MouseDown(start, MouseButton.Left, RawInputModifiers.None);
+            for (var position = 0.35; position > 0.24; position -= 0.05)
+            {
+                var at = new Point(editor.TranslatePoint(new Point(editor.XAt(position), 0), app.Window)!.Value.X, start.Y);
+                app.Window.MouseMove(at, RawInputModifiers.LeftMouseButton);
+                app.Settle();
+                Assert.Equal(position, display.SignalGradient.Stops[1].Position, 2);
+                Assert.Equal(position, Desktop.Theme.MeterGradient.Stops[1].Position, 2);
+                Assert.Equal(saved, File.ReadAllText(path));
+            }
+
+            app.Window.MouseUp(new Point(editor.TranslatePoint(new Point(editor.XAt(0.25), 0), app.Window)!.Value.X, start.Y), MouseButton.Left, RawInputModifiers.None);
+            app.Settle();
+            Assert.Equal(0.25, store.Load().SignalGradient.Stops[1].Position, 2);
+
+            // Nudges stop at the ends of the scale, by 1% or by 5% with Shift.
+            editor.Handles[0].Focus();
+            app.Press(Key.Left);
+            app.Press(Key.Left, RawInputModifiers.Shift);
+            Assert.Equal(0, store.Load().SignalGradient.Stops[0].Position);
+            Assert.Equal("Gradient stop 1 at 0%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[0]));
+            var last = editor.Handles.Count - 1;
+            editor.Handles[last].Focus();
+            app.Press(Key.Right);
+            app.Press(Key.Right, RawInputModifiers.Shift);
+            Assert.Equal(1, store.Load().SignalGradient.Stops[last].Position);
+            Assert.Equal($"Gradient stop {last + 1} at 100%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[last]));
+
+            // A stop is a slider over 0 to 100 described by its colour; setting it moves the stop.
+            var stopPeer = ControlAutomationPeer.CreatePeerForElement(editor.Handles[2]);
+            Assert.Equal(AutomationControlType.Slider, stopPeer.GetAutomationControlType());
+            Assert.StartsWith(display.SignalGradient.Stops[2].Colour + ". Left or Right to move", stopPeer.GetHelpText(), StringComparison.Ordinal);
+            var range = Assert.IsAssignableFrom<IRangeValueProvider>(stopPeer);
+            Assert.Equal((0, 100, 62), (range.Minimum, range.Maximum, range.Value));
+            range.SetValue(70);
+            Assert.Equal(0.7, store.Load().SignalGradient.Stops[2].Position, 3);
+
+            // The gradient's actions are buttons, not toggles, and stay unchecked.
+            var add = AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == "Add gradient stop");
+            var addPeer = ControlAutomationPeer.CreatePeerForElement(add);
+            Assert.Equal(AutomationControlType.Button, addPeer.GetAutomationControlType());
+            Assert.IsAssignableFrom<IInvokeProvider>(addPeer);
+            Assert.False(addPeer is IToggleProvider, "An action key must not offer a toggle.");
+            app.Click(add);
+            Assert.False(add.IsChecked == true, "An action key never stays checked.");
+            Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
         }
         finally
         {

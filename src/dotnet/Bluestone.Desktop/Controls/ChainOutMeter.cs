@@ -30,6 +30,7 @@ public sealed class ChainOutMeter : Control
     private JunctionSignal? _subscribed;
     private FormattedText? _readout;
     private string _readoutText = string.Empty;
+    private long _readoutTenths = long.MaxValue;
 
     static ChainOutMeter() => AffectsRender<ChainOutMeter>(SignalProperty);
 
@@ -114,12 +115,15 @@ public sealed class ChainOutMeter : Control
 
         _ladder.IsClipped = levels?.Clipped == true;
         var hold = ready ? Math.Max(levels!.HoldLeft, levels.HoldRight) : double.NegativeInfinity;
-        var text = hold <= MeterLevels.FloorDecibels || double.IsNaN(hold)
-            ? "−∞"
-            : hold.ToString("0.0", CultureInfo.InvariantCulture).Replace("-", "−", StringComparison.Ordinal);
-        if (text != _readoutText)
+        // The readout changes only in tenths of a dB, so it is formatted (and allocated) only when they change; long.MinValue is −∞.
+        var silent = hold <= MeterLevels.FloorDecibels || double.IsNaN(hold);
+        var tenths = silent ? long.MinValue : (long)Math.Round(hold * 10, MidpointRounding.AwayFromZero);
+        if (tenths != _readoutTenths)
         {
-            _readoutText = text;
+            _readoutTenths = tenths;
+            _readoutText = silent
+                ? "−∞"
+                : (tenths / 10.0).ToString("0.0", CultureInfo.InvariantCulture).Replace("-", "−", StringComparison.Ordinal);
             _readout = null;
             InvalidateVisual();
         }

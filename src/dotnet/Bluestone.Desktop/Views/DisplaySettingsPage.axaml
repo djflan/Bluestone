@@ -87,11 +87,11 @@
                      AutomationProperties.Name="Selected stop position" />
         </StackPanel>
         <StackPanel Grid.Column="2" Classes="gradientTools">
-          <controls:TextKey x:Name="AddStopKey" Classes="action" Text="Add stop" Command="{Binding AddGradientStopInLargestGapCommand}"
+          <controls:TextKey x:Name="AddStopKey" Classes="action" IsAction="True" Text="Add stop" Command="{Binding AddGradientStopInLargestGapCommand}"
                             AutomationProperties.Name="Add gradient stop" />
-          <controls:TextKey x:Name="RemoveStopKey" Classes="action" Text="Remove stop" Command="{Binding RemoveSelectedGradientStopCommand}"
+          <controls:TextKey x:Name="RemoveStopKey" Classes="action" IsAction="True" Text="Remove stop" Command="{Binding RemoveSelectedGradientStopCommand}"
                             AutomationProperties.Name="Remove gradient stop" />
-          <controls:TextKey x:Name="ResetGradientKey" Classes="action" Text="Reset to default" Command="{Binding ResetGradientCommand}"
+          <controls:TextKey x:Name="ResetGradientKey" Classes="action" IsAction="True" Text="Reset to default" Command="{Binding ResetGradientCommand}"
                             AutomationProperties.Name="Reset gradient to default" />
         </StackPanel>
       </Grid>

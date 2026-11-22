@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -9,10 +10,15 @@ namespace Bluestone.Desktop.Controls;
 /// <summary>
 /// A flat text key (mode switches such as Auto or Limiter, and segmented choices): a dark rounded face with a light
 /// label; on takes a little of the accent, a soft bloom behind the label, an accent rim, and an accent-white label. No lamp beside it.
+/// With <see cref="IsAction"/> it is a plain action key instead (Add, Reset): pressing it never checks it, and a screen
+/// reader hears a button it can invoke, not a toggle.
 /// </summary>
 public sealed class TextKey : ToggleButton
 {
     public static readonly StyledProperty<string> TextProperty = AvaloniaProperty.Register<TextKey, string>(nameof(Text), string.Empty);
+
+    /// <summary>An action key: it runs its command and never toggles, and is announced as a button.</summary>
+    public static readonly StyledProperty<bool> IsActionProperty = AvaloniaProperty.Register<TextKey, bool>(nameof(IsAction));
 
     private const double Radius = 3;
     private const double FontPx = 10;
@@ -22,6 +28,8 @@ public sealed class TextKey : ToggleButton
     private (string, bool) _labelKey;
 
     public string Text { get => GetValue(TextProperty); set => SetValue(TextProperty, value); }
+
+    public bool IsAction { get => GetValue(IsActionProperty); set => SetValue(IsActionProperty, value); }
 
     static TextKey()
     {
@@ -76,6 +84,16 @@ public sealed class TextKey : ToggleButton
     }
 
     protected override Type StyleKeyOverride => typeof(TextKey);
+
+    protected override void Toggle()
+    {
+        if (!IsAction)
+        {
+            base.Toggle();
+        }
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => IsAction ? new ButtonAutomationPeer(this) : base.OnCreateAutomationPeer();
 
     protected override Size MeasureOverride(Size availableSize)
     {

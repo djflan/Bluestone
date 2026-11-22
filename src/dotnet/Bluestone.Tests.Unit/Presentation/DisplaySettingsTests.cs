@@ -220,4 +220,57 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(0, display.SelectedGradientStopIndex);
         Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
     }
+
+    [Fact]
+    public void APreview_AppliesEachEditAtOnce_ButSavesOnlyOnceItEnds()
+    {
+        var path = File();
+        var store = new DisplaySettingsStore(path);
+        var display = new DisplayViewModel();
+        display.Use(store);
+        display.LevelStyle = JunctionLevelStyle.Peak;
+        var before = System.IO.File.ReadAllText(path);
+        var notified = 0;
+        display.PropertyChanged += (_, e) => notified += e.PropertyName == nameof(DisplayViewModel.SignalGradient) ? 1 : 0;
+
+        display.BeginGradientPreview();
+        display.MoveAndSelectGradientStop(1, 0.3);
+        display.MoveAndSelectGradientStop(1, 0.2);
+        Assert.Equal(0.2, display.SignalGradient.Stops[1].Position);
+        Assert.Equal(2, notified);
+        Assert.Equal(before, System.IO.File.ReadAllText(path));
+
+        display.EndGradientPreview();
+        Assert.Equal(0.2, store.Load().SignalGradient.Stops[1].Position);
+
+        // Ending it again, or a preview with no edits, writes nothing.
+        System.IO.File.Delete(path);
+        display.EndGradientPreview();
+        display.BeginGradientPreview();
+        display.EndGradientPreview();
+        Assert.False(System.IO.File.Exists(path));
+
+        // Outside a preview every edit saves again.
+        display.NudgeGradientStop(1, 0.01);
+        Assert.Equal(0.21, store.Load().SignalGradient.Stops[1].Position);
+    }
+
+    [Fact]
+    public void Nudges_StopAtTheEndsOfTheScale()
+    {
+        var store = new DisplaySettingsStore(File());
+        var display = new DisplayViewModel();
+        display.Use(store);
+
+        display.NudgeGradientStop(0, -0.01);
+        display.NudgeGradientStop(0, -0.05);
+        Assert.Equal(0, store.Load().SignalGradient.Stops[0].Position);
+        Assert.Equal("0%", display.SelectedGradientStopPercent);
+
+        var last = display.SignalGradient.Stops.Length - 1;
+        display.NudgeGradientStop(last, 0.01);
+        display.NudgeGradientStop(last, 0.05);
+        Assert.Equal(1, store.Load().SignalGradient.Stops[last].Position);
+        Assert.Equal("100%", display.SelectedGradientStopPercent);
+    }
 }

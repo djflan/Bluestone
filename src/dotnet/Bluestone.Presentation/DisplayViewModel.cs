@@ -107,6 +107,8 @@ public sealed partial class DisplayViewModel : ObservableObject
 {
     private DisplaySettingsStore? _store;
     private bool _loading;
+    private bool _holdingSave;
+    private bool _unsaved;
 
     public static IReadOnlyList<LevelStyleOption> LevelStyles { get; } =
     [
@@ -217,6 +219,27 @@ public sealed partial class DisplayViewModel : ObservableObject
         if (landed >= 0)
         {
             SelectedGradientStopIndex = landed;
+        }
+    }
+
+    /// <summary>
+    /// Starts a preview (a handle being dragged): edits still apply and notify at once, so meters follow, but nothing is
+    /// written until <see cref="EndGradientPreview"/>. Starting one while one is open does nothing.
+    /// </summary>
+    public void BeginGradientPreview() => _holdingSave = true;
+
+    /// <summary>Ends a preview, saving once if anything changed during it.</summary>
+    public void EndGradientPreview()
+    {
+        if (!_holdingSave)
+        {
+            return;
+        }
+
+        _holdingSave = false;
+        if (_unsaved)
+        {
+            Save();
         }
     }
 
@@ -347,7 +370,19 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     private void Save()
     {
-        if (!_loading && _store is { } store)
+        if (_loading)
+        {
+            return;
+        }
+
+        if (_holdingSave)
+        {
+            _unsaved = true;
+            return;
+        }
+
+        _unsaved = false;
+        if (_store is { } store)
         {
             try
             {
