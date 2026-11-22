@@ -56,18 +56,23 @@
         <StackPanel x:Name="WorkspaceTools" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <controls:GutterPanel Classes="toolGutter">
             <StackPanel Orientation="Horizontal">
-              <ToggleButton Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I)" AutomationProperties.Name="Inspector">
+              <ToggleButton x:Name="InspectorButton" Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I; Enter to toggle)"
+                            AutomationProperties.Name="Inspector" AutomationProperties.HelpText="Press Enter to toggle. Shortcut: I.">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
               </ToggleButton>
-              <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
-                            ToolTip.Tip="Show or hide the Browser (Shift+B)" AutomationProperties.Name="Browser">
+              <ToggleButton x:Name="BrowserButton" Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
+                            ToolTip.Tip="Show or hide the Browser (Shift+B; Enter to toggle)" AutomationProperties.Name="Browser"
+                            AutomationProperties.HelpText="Press Enter to toggle. Shortcut: Shift+B.">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
               </ToggleButton>
-              <ToggleButton Classes="tool" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
-                            ToolTip.Tip="Open the track mixer" AutomationProperties.Name="Mixer">
+              <ToggleButton x:Name="MixerButton" Classes="tool" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
+                            ToolTip.Tip="Show or hide the track mixer (Enter to toggle)" AutomationProperties.Name="Mixer"
+                            AutomationProperties.HelpText="Press Enter to toggle.">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" />
               </ToggleButton>
-              <ToggleButton Classes="tool" IsChecked="{Binding IsEditorVisible}" ToolTip.Tip="Show or hide the detail region: devices and editors (P: piano roll, D: event list)" AutomationProperties.Name="Editors">
+              <ToggleButton x:Name="EditorsButton" Classes="tool" IsChecked="{Binding IsEditorVisible}"
+                            ToolTip.Tip="Show or hide the detail region (Enter to toggle; P: piano roll, D: event list)" AutomationProperties.Name="Editors"
+                            AutomationProperties.HelpText="Press Enter to toggle. Shortcuts: P for piano roll, D for event list.">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
               </ToggleButton>
             </StackPanel>
@@ -87,7 +92,9 @@
         <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
           <controls:GutterPanel Classes="toolGutter">
             <StackPanel Orientation="Horizontal">
-              <ToggleButton x:Name="SettingsButton" Classes="tool" Click="OnSettingsButtonClick" ToolTip.Tip="Settings: audio and plugins (Ctrl/Cmd+,)" AutomationProperties.Name="Settings">
+              <ToggleButton x:Name="SettingsButton" Classes="tool" Click="OnSettingsButtonClick"
+                            ToolTip.Tip="Settings: audio, plugins, and display (Ctrl/Cmd+,; Enter to toggle)" AutomationProperties.Name="Settings"
+                            AutomationProperties.HelpText="Press Enter to toggle. Shortcut: Ctrl or Command plus comma.">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Settings}" />
               </ToggleButton>
               <Button Classes="tool" Command="{Binding PanicCommand}" ToolTip.Tip="Panic: silence every output (Ctrl/Cmd+.)" AutomationProperties.Name="Panic, silence all outputs">
@@ -606,8 +613,10 @@
       </Border>
     </Grid>
 
-    <!-- Settings takes the workspace's place while it is open; the workspace is hidden, not changed, and comes back as it was. -->
-    <views:SettingsView x:Name="SettingsHost" Grid.Row="1" IsVisible="False" />
+    <!-- Settings sits above the unchanged workspace, anchored to the control bar's Settings button. -->
+    <views:SettingsView x:Name="SettingsHost" Grid.Row="1" IsVisible="False"
+                        Width="{StaticResource Width.SettingsPopover}" MaxHeight="{StaticResource Height.SettingsPopover}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="{StaticResource Inset.SettingsPopover}" />
 
     <!--
       Transport (Machined): the loop in its well at the left; then the time readout in its own inset well, one recessed
@@ -652,16 +661,28 @@
                 <PathIcon Data="{StaticResource Icon.Start}" Width="12" Height="12" />
               </Button>
               <Button Classes="stop" Classes.active="{Binding !IsPlaying}" Command="{Binding StopCommand}" ToolTip.Tip="Stop; press again to go to the start" AutomationProperties.Name="Stop">
-                <PathIcon Data="{StaticResource Icon.Stop}" Width="11" Height="11" />
+                <controls:LedFade IsLit="{Binding !IsPlaying}">
+                  <PathIcon Data="{StaticResource Icon.Stop}" Width="11" Height="11" />
+                  <PathIcon Classes="lit" Data="{StaticResource Icon.Stop}" Width="11" Height="11" />
+                </controls:LedFade>
               </Button>
               <ToggleButton Classes="play" IsChecked="{Binding IsPlaying, Mode=OneWay}" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play or stop (Space)" AutomationProperties.Name="{Binding PlayButtonText}">
-                <PathIcon Data="{StaticResource Icon.Play}" Width="14" Height="14" />
+                <controls:LedFade IsLit="{Binding $parent[ToggleButton].IsChecked}">
+                  <PathIcon Data="{StaticResource Icon.Play}" Width="14" Height="14" />
+                  <PathIcon Classes="lit" Data="{StaticResource Icon.Play}" Width="14" Height="14" />
+                </controls:LedFade>
               </ToggleButton>
               <ToggleButton Classes="record" IsChecked="{Binding IsRecording, Mode=OneWay}" Command="{Binding RecordCommand}" ToolTip.Tip="Record into the armed or selected track (R)" AutomationProperties.Name="Record">
-                <PathIcon Data="{StaticResource Icon.Record}" Width="13" Height="13" />
+                <controls:LedFade IsLit="{Binding $parent[ToggleButton].IsChecked}">
+                  <PathIcon Data="{StaticResource Icon.Record}" Width="13" Height="13" />
+                  <PathIcon Classes="lit" Data="{StaticResource Icon.Record}" Width="13" Height="13" />
+                </controls:LedFade>
               </ToggleButton>
               <ToggleButton x:Name="LoopButton" Classes="cycle" IsChecked="{Binding Loop.IsEnabled, Mode=OneWay}" Command="{Binding Loop.ToggleCommand}" ToolTip.Tip="{Binding Loop.ToggleTip}" AutomationProperties.Name="Loop">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Cycle}" Width="17" Height="17" />
+                <controls:LedFade IsLit="{Binding $parent[ToggleButton].IsChecked}">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Cycle}" Width="17" Height="17" />
+                  <PathIcon Classes="stroke lit" Data="{StaticResource Icon.Cycle}" Width="17" Height="17" />
+                </controls:LedFade>
               </ToggleButton>
             </StackPanel>
           </controls:GutterPanel>
@@ -684,18 +705,26 @@
           <controls:GutterPanel Classes="transport">
             <StackPanel Orientation="Horizontal">
               <ToggleButton Classes="mode" IsChecked="{Binding IsMetronomeEnabled, Mode=OneWay}" Command="{Binding ToggleMetronomeCommand}" ToolTip.Tip="Metronome click (K)" AutomationProperties.Name="Metronome">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Metronome}" Width="15" Height="15" />
+                <controls:LedFade IsLit="{Binding $parent[ToggleButton].IsChecked}">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Metronome}" Width="15" Height="15" />
+                  <PathIcon Classes="stroke lit" Data="{StaticResource Icon.Metronome}" Width="15" Height="15" />
+                </controls:LedFade>
               </ToggleButton>
               <ToggleButton Classes="mode text" IsChecked="{Binding IsCountInEnabled, Mode=OneWay}" Command="{Binding ToggleCountInCommand}" ToolTip.Tip="Count in before recording" AutomationProperties.Name="Pre (count-in)">
-                <TextBlock Text="Pre" />
+                <controls:LedFade IsLit="{Binding $parent[ToggleButton].IsChecked}">
+                  <TextBlock Text="Pre" />
+                  <TextBlock Classes="lit" Text="Pre" />
+                </controls:LedFade>
               </ToggleButton>
             </StackPanel>
           </controls:GutterPanel>
 
           <!-- MIDI input activity: the IN glyph lights while notes arrive. -->
           <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
-            <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputIdle}" IsVisible="{Binding !HasInputActivity}" />
-            <Ellipse Width="7" Height="7" HorizontalAlignment="Center" Fill="{StaticResource Transport.InputActive}" IsVisible="{Binding HasInputActivity}" />
+            <controls:LedFade x:Name="InputActivityLamp" FadeDuration="{StaticResource Motion.LampRelease}" IsLit="{Binding HasInputActivity}" HorizontalAlignment="Center">
+              <Ellipse Width="7" Height="7" Fill="{StaticResource Transport.InputIdle}" />
+              <Ellipse Width="7" Height="7" Fill="{StaticResource Transport.InputActive}" />
+            </controls:LedFade>
             <TextBlock Text="IN" Classes="fieldLabel" HorizontalAlignment="Center" />
           </StackPanel>
 
@@ -708,13 +737,19 @@
                 <ToggleButton Classes="keys" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
                               ToolTip.Tip="Computer keyboard (`): play notes with A–' (white) and W E T Y U O P (black). Z/X octave, C/V velocity."
                               AutomationProperties.Name="Computer keyboard">
-                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" Width="16" Height="16" />
+                  <controls:LedFade IsLit="{Binding $parent[ToggleButton].IsChecked}">
+                    <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" Width="16" Height="16" />
+                    <PathIcon Classes="stroke lit" Data="{StaticResource Icon.Keyboard}" Width="16" Height="16" />
+                  </controls:LedFade>
                 </ToggleButton>
               </StackPanel>
             </controls:GutterPanel>
             <Border Classes="keysReadout" Classes.on="{Binding IsEnabled}" AutomationProperties.Name="Computer keyboard octave and velocity">
               <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <Ellipse Classes="keysActivity" Classes.on="{Binding IsSounding}" VerticalAlignment="Center" />
+                <controls:LedFade FadeDuration="{StaticResource Motion.LampRelease}" IsLit="{Binding IsSounding}" VerticalAlignment="Center">
+                  <Ellipse Classes="keysActivity" />
+                  <Ellipse Classes="keysActivity on" />
+                </controls:LedFade>
                 <StackPanel VerticalAlignment="Center" ToolTip.Tip="MIDI channel of the armed or selected track">
                   <TextBlock Text="{Binding ChannelText}" Classes="keysValue" MinWidth="14" />
                   <TextBlock Text="CH" Classes="lcdLabel" />

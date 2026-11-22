@@ -339,5 +339,25 @@ The strip was rebuilt for the "Machined" theme; the decisions above are unchange
   a console fader with a satin cap on the meter's taper (−60 to +6 dB), and a display-only column of gain LEDs.
 - A pan knob replaces the pan ramp. Mute, solo, and record arm are square keys. Sends show as a count, or as
   **+ Send** only while the strip is hovered or focused.
-- Meter colours follow the user's signal gradient (Settings ▸ Display); the clip lamp is a fixed red.
+- Meter colors follow the user's gradient (Settings ▸ Display; split into families by the amendment below);
+  the clip lamp is a fixed red.
 - Still not built: the monitor key (the model has no monitor state) and the items listed above.
+
+## Amendment: separate indicator colors and LED motion
+
+Mixer track and Master meters use `DisplaySettings.MixerGradient` through `MeterGradient.Mixer`. Gain LEDs
+use `GainGradient` through `MeterGradient.Gain`, with a violet-to-rose default; they no longer use a fixed
+palette. Each family has its own gradient version, change event, and brush caches, so editing one does not
+rebuild another's caches. Chain meters use a third family (ADR 0037). Clip lamps remain fixed red outside
+the gradients; gain LEDs have no clip lamp.
+
+An older saved `signalGradient` loads into both mixer and chain preferences; gain starts with its own default.
+These are application-local settings, not project data. Reset affects only the selected gradient.
+
+Meter cells and gain LEDs warm up over about 20 ms. Meter cells and held peaks fade to dark over 90 ms;
+gain LEDs and clip lamps over 140 ms; lit keys over 60 ms. Held peaks, lamps, and keys have no warm-up.
+The effects change brightness only, not the meter's DSP, scale, fall, peak hold, or clip latch.
+`LedFade` and `LedWarmup` default on and can be disabled independently. Both are effectively off under
+the macOS reduced-motion or Windows client-area animation preference; Linux uses the application switches.
+The shared UI-thread clock runs per window only while LEDs are changing. ADR 0043 records the scoped
+allocation measurements, not a compositor or real-device timing guarantee.

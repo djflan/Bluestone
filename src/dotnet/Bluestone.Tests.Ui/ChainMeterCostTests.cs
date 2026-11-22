@@ -1,5 +1,7 @@
 using System.Reflection;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 using Bluestone.Audio;
 using Bluestone.Desktop.Controls;
 using Bluestone.Presentation;
@@ -73,6 +75,60 @@ public sealed class ChainMeterCostTests
         return Task.CompletedTask;
     });
 
+    // While LEDs fade and warm up, each frame (the motion clock's tick plus the ladder's draw) must allocate nothing too:
+    // levels are quantized and every step's brush is prebuilt. Measured with motion off as well, as a baseline for the
+    // draw itself, into an offscreen bitmap's drawing context.
+    [Fact]
+    public Task OutMeter_AnimatingFrames_AllocateNothing() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var signal = Carrying();
+        var meter = new ChainOutMeter { Signal = signal, LevelStyle = JunctionLevelStyle.RmsAndPeak, Width = 80, Height = 220 };
+        var window = Show(meter);
+        var ladder = meter.Ladder;
+        using var bitmap = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(ladder.Bounds.Width), (int)Math.Ceiling(ladder.Bounds.Height)));
+        using var context = bitmap.CreateDrawingContext();
+        try
+        {
+            var low = Reading(rms: -36, peak: -30);
+            var high = Reading(rms: -6, peak: -1.5);
+            var step = 0;
+            var moved = 0;
+            void Frame()
+            {
+                // A new reading every 12 frames, so the cells are always part-way through a fade or a warm-up.
+                if (step++ % 12 == 0)
+                {
+                    signal.Levels.Update((step / 12) % 2 == 0 ? high : low, Now);
+                }
+
+                ladder.Render(context);
+                if (clock.Pending > 0)
+                {
+                    moved++;
+                }
+
+                clock.Frame(clock.Time + 8);
+            }
+
+            var animating = InSteadyState(Frame, Updates);
+            Assert.True(moved > Updates, $"The clock ran on {moved} frames.");
+
+            LedMotion.ReduceMotion = true;
+            var still = InSteadyState(Frame, Updates);
+
+            Report($"ChainOutMeter, bytes per {Updates} frames: animating {animating}, motion off {still}");
+            Assert.Equal(0, animating);
+            Assert.Equal(0, still);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
     // Steady: the same reading every update. Moving: every update changes the levels (the held peak stays at the louder one).
     private static (long Steady, long Moving) Measure(JunctionSignal signal)
     {
@@ -110,7 +166,7 @@ public sealed class ChainMeterCostTests
 
     // As Bluestone.Tests.Unit's Allocations.InSteadyState: the last of up to ten rounds, stopping at the first from the third
     // on that allocates nothing, so one-time runtime work (a tier-up) cannot fail a path that does not allocate.
-    private static long InSteadyState(Action step, int steps)
+    internal static long InSteadyState(Action step, int steps)
     {
         long allocated = 0;
         for (var round = 0; round < 10; round++)
@@ -131,7 +187,7 @@ public sealed class ChainMeterCostTests
         return allocated;
     }
 
-    private static void Report(string message) => TestContext.Current.TestOutputHelper?.WriteLine(message);
+    internal static void Report(string message) => TestContext.Current.TestOutputHelper?.WriteLine(message);
 
     private static MeterReading Reading(double rms, double peak) => new(Linear(peak), Linear(peak), Linear(rms), Linear(rms));
 

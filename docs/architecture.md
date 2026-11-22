@@ -556,6 +556,16 @@ below (Device Views, piano roll, event list, MIDI monitor, messages), a left and
 Browser), and border rails with icons for collapsed views. `WorkspaceViewModel` owns the views and their
 placement (docked, collapsed, detached); the desktop layer reflects it and opens a `ViewWindow` per detached view.
 
+ADR 0051 specifies Settings as a bounded, right-anchored, non-dockable popover over the visible workspace, not a
+`WorkspaceViewKind`. `SettingsViewModel` remains independent of its desktop host; the existing Audio, Plugins, and
+Display pages, their entry points, and their apply/save behavior are retained. The pages and picker must remain
+usable at compact and normal window sizes. Done, Escape, or focus or a click outside it closes the popover;
+opening or closing Settings alone does not change project or workspace state, except that a field edit
+still being typed is committed when focus moves into Settings, as on any focus change. Closing it with a nested
+color-picker preview pending cancels the preview. Project and workspace commands close it before they act.
+Headless UI tests cover the popover and its dismissal and focus behavior at 1040 × 640 and 1440 × 900; the
+running app, HiDPI, and screen readers are not yet verified.
+
 View state and model state are kept apart. A `DeviceViewViewModel` holds only what it shows (following the
 selection, or locked to a track or rack by ID) and its presentation (collapsed devices, selection, scroll); the
 chain and its devices are the project's and change only through project commands, so several Device Views over
@@ -573,11 +583,24 @@ with a dB scale and peak readout. Only junctions a visible Device View shows are
 (`IAudioPlayback.WatchJunctions`). A junction also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers
-only points the routing validator accepts. Every `LedLadderMeter`, in the Device View and the mixer, is coloured by
-the user's `SignalGradient` (2 to 8 colour stops, Settings ▸ Display), applied through `Theme/MeterGradient`; the clip
-lamp is a fixed colour outside it. The gradient and level style are application preferences (`DisplayViewModel`,
-`display-settings.json`), not project data; the former junction size, LED shape, and position settings were removed,
-and older settings files still load.
+only points the routing validator accepts. `Theme/MeterGradient` has independent Mixer, Chain, and Gain instances,
+each with its own version, change event, and brush caches. Mixer ladders use `MixerGradient`; Device View junction
+and Out ladders use `ChainGradient`; fader gain LEDs use `GainGradient`. Each gradient has 2 to 8 color stops.
+The MIDI port glyph uses one `MidiColour`; clip lamps stay fixed red outside the gradients. These and the level
+style are application preferences (`DisplayViewModel`, `display-settings.json`), not project data. Older
+`signalGradient` settings load into both mixer and chain; gain starts with its own default. The former junction
+size, LED shape, and position settings were removed, and older settings files still load.
+
+`Controls/LedMotion` is a shared UI-thread frame clock with one loop per window, driven by
+`TopLevel.RequestAnimationFrame` only while LEDs are changing. Controls retain brightness state and use cached
+brush/glow steps; no animation work is added to the audio or MIDI real-time paths. The LED fade and warm-up
+settings (`DisplayViewModel.LedFade`, `LedWarmup`) default on and are independently switchable; the `Controls/LedFade`
+panel applies the fade to transport keys. Both settings are effectively off under macOS Reduce motion
+(`NSWorkspace`) or the Windows client-area animation preference, refreshed at startup and main-window activation;
+if that preference can't be read, `SystemMotion` reduces motion and traces one warning. Linux uses only the
+application switches.
+Headless manual-clock tests cover transitions and settling; ADR 0043 records the measured allocation scope
+and the unverified compositor and platform-preference paths.
 
 Time navigation is one pure model, `TimelineViewport` (zoom in pixels per quarter and scroll, anchored zoom, fit),
 with one ruler gesture, `RulerNavigationGesture`, in the arrangement and the piano roll, each keeping its own state:
@@ -708,7 +731,7 @@ Not built. The product roadmap decides priority; this list records architectural
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
 - **Workspace**: vertical device chains, auto-collapse of device panels, nested and container devices in the
-  Device View, modulators, windows holding several views, free docking, and a full-page Settings view.
+  Device View, modulators, windows holding several views, and free docking.
 - **Groups**: drag and drop into a group, and a folded group's lane summarizing its members' clips.
 - **Operating-system sandboxing** of plugin workers is not planned: crash isolation with hosting modes
   instead (ADR 0034).
@@ -741,12 +764,13 @@ Not built. The product roadmap decides priority; this list records architectural
 | Live input through every device on the live route; a live render-ahead queue; plugin delay compensation | ADR 0035 |
 | A semantic workspace; Device Views own presentation, the project owns devices; layout is local state | ADR 0036 |
 | A chain carries notes, events, and audio in parallel; instruments pass notes on and layer | ADR 0037 |
-| New tracks are hybrid and heard through explicit connections; Settings takes the workspace's place | ADR 0038 |
+| New tracks are hybrid and heard through explicit connections | ADR 0038 |
 | Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; introduced in project format 5 | ADR 0039 |
 | Floating plugin editors follow the selection, can be pinned, and can send their keys to Bluestone | ADR 0040 |
 | Bluestone is a device-centric production DAW; routing depth is progressively disclosed | ADR 0041 |
 | Bluestone alone, with plugins, with hardware, or any mix is a complete studio with the same timing guarantees | ADR 0042 |
 | Track-owned strips, routable Effect tracks, Master processing, and format 6 | ADR 0050 |
+| Settings overlays the visible workspace in a right-anchored, non-dockable popover | ADR 0051 |
 
 ## Native technology
 

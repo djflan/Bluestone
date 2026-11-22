@@ -50,12 +50,12 @@ public sealed class PluginsViewTests : IDisposable
         Directory.Delete(_directory, recursive: true);
     }
 
-    /// <summary>The Plugins page of Settings, shown in the main window in place of the workspace.</summary>
+    /// <summary>The Plugins page of Settings, shown over the workspace.</summary>
     private static PluginSettingsPage OpenedPlugins(AppUnderTest app)
     {
         app.Settle();
         Assert.True(app.Window.Settings.IsOpen, "Settings should be open.");
-        Assert.False(app.Find<Grid>("WorkspaceGrid").IsVisible);
+        Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
         return app.Window.GetVisualDescendants().OfType<PluginSettingsPage>().SingleOrDefault(p => p.IsEffectivelyVisible)
             ?? throw new InvalidOperationException("The plugins page did not open.");
     }

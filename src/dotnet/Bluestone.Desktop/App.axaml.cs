@@ -112,6 +112,10 @@ public partial class App : Avalonia.Application
         {
             await splash.RenderedAsync();
             var window = new MainWindow();
+
+            // LEDs follow the system's Reduce motion, read now and again whenever the window comes forward.
+            Controls.LedMotion.ReduceMotion = SystemMotion.PrefersReducedMotion();
+            window.Activated += (_, _) => Controls.LedMotion.ReduceMotion = SystemMotion.PrefersReducedMotion();
             await Step(splash, "Connecting to MIDI drivers…");
             platformProviders = [.. PlatformProviders.Create(SystemMonotonicClock.Instance)];
             plugins = new PluginHostManager(new PluginHostOptions { DataDirectory = Path.Combine(Path.GetTempPath(), $"bluestone-plugins-{Environment.ProcessId}") });
@@ -236,22 +240,46 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>
-    /// Every meter draws <paramref name="display"/>'s signal gradient: the saved one now, and each edit as it is made (the
-    /// meters redraw on <see cref="Theme.MeterGradient.Changed"/>).
+    /// Every indicator draws <paramref name="display"/>'s colours and motion: the mixer, chain, and gain gradients, the MIDI
+    /// LED's colour, and the LED fade and warm-up switches, the saved ones now and each edit as it is made (indicators
+    /// redraw on their <see cref="Theme.MeterGradient"/>'s or <see cref="Theme.LedColours"/>' Changed; motion applies from
+    /// the next change of an LED).
     /// </summary>
     internal static void FollowSignalGradient(DisplayViewModel display)
     {
-        static void Apply(SignalGradient gradient) =>
-            Theme.MeterGradient.Use(gradient.Stops.Select(s => (s.Position, Color.Parse(s.Colour))));
-
-        Apply(display.SignalGradient);
+        Follow(display.Mixer, Theme.MeterGradient.Mixer);
+        Follow(display.Chain, Theme.MeterGradient.Chain);
+        Follow(display.Gain, Theme.MeterGradient.Gain);
+        Theme.LedColours.UseMidi(display.MidiColour);
+        Controls.LedMotion.Fade = display.LedFade;
+        Controls.LedMotion.Warmup = display.LedWarmup;
         display.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(DisplayViewModel.SignalGradient))
+            if (e.PropertyName == nameof(DisplayViewModel.MidiColour))
             {
-                Apply(display.SignalGradient);
+                Theme.LedColours.UseMidi(display.MidiColour);
+            }
+            else if (e.PropertyName == nameof(DisplayViewModel.LedFade))
+            {
+                Controls.LedMotion.Fade = display.LedFade;
+            }
+            else if (e.PropertyName == nameof(DisplayViewModel.LedWarmup))
+            {
+                Controls.LedMotion.Warmup = display.LedWarmup;
             }
         };
+
+        static void Follow(GradientEditorViewModel editor, Theme.MeterGradient meters)
+        {
+            meters.Use(editor.Gradient);
+            editor.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
+                {
+                    meters.Use(editor.Gradient);
+                }
+            };
+        }
     }
 
     /// <summary>Whether the real-time work runs in the engine process: <paramref name="setting"/> "0" or "1", else by platform.</summary>

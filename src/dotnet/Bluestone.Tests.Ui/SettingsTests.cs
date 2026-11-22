@@ -4,6 +4,8 @@ using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Bluestone.Application.Audio;
 using Bluestone.Audio.Devices;
@@ -14,7 +16,7 @@ using Bluestone.Presentation;
 namespace Bluestone.Tests.Ui;
 
 /// <summary>
-/// Settings in the real window: it takes the workspace's place and gives it back exactly as it was, opens from the keyboard and
+/// Settings in the real window: it leaves the workspace as it was, opens from the keyboard and
 /// the control bar, narrows its categories by search, and its pages' controls reach their view models.
 /// </summary>
 public sealed class SettingsTests : IDisposable
@@ -51,32 +53,32 @@ public sealed class SettingsTests : IDisposable
             TextKey ActionKey(string name) => AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == name);
             string[] Names() => [.. editor.Handles.Select(h => Avalonia.Automation.AutomationProperties.GetName(h) ?? string.Empty)];
             Assert.Equal(["Gradient stop 1 at 0%", "Gradient stop 2 at 40%", "Gradient stop 3 at 62%", "Gradient stop 4 at 78%", "Gradient stop 5 at 86%", "Gradient stop 6 at 100%"], Names());
-            Assert.Contains(page.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Clip (fixed)");
+            Assert.Same(display.Mixer, editor.DataContext);
 
             // Add: a stop in the widest gap (0% to 40%), selected, saved, and on every meter.
             app.Click(ActionKey("Add gradient stop"));
             Assert.False(ActionKey("Add gradient stop").IsChecked, "An action key springs back.");
-            Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
             Assert.Equal("Gradient stop 2 at 20%", Names()[1]);
             Assert.Equal("20%", AppUnderTest.Within<TextBlock>(page, t => t.Name == "StopPositionText").Text);
-            Assert.Equal(7, Desktop.Theme.MeterGradient.Stops.Count);
+            Assert.Equal(7, Desktop.Theme.MeterGradient.Mixer.Stops.Count);
 
             // Move: drag the new stop to 30%, then nudge it with the keyboard (1%, and 5% with Shift).
             var handle = editor.Handles[1];
             var from = new Point(handle.Bounds.Center.X, handle.Bounds.Center.Y);
             app.Drag(editor, from, new Point(editor.XAt(0.3), from.Y));
-            Assert.Equal(0.3, store.Load().SignalGradient.Stops[1].Position, 2);
+            Assert.Equal(0.3, store.Load().MixerGradient.Stops[1].Position, 2);
             Assert.True(editor.Handles[1].IsFocused);
             app.Press(Key.Right);
-            Assert.Equal(0.31, store.Load().SignalGradient.Stops[1].Position, 3);
+            Assert.Equal(0.31, store.Load().MixerGradient.Stops[1].Position, 3);
             app.Press(Key.Right, RawInputModifiers.Shift);
-            Assert.Equal(0.36, store.Load().SignalGradient.Stops[1].Position, 3);
+            Assert.Equal(0.36, store.Load().MixerGradient.Stops[1].Position, 3);
             Assert.Equal("Gradient stop 2 at 36%", Names()[1]);
-            Assert.Equal(0.36, Desktop.Theme.MeterGradient.Stops[1].Position, 3);
+            Assert.Equal(0.36, Desktop.Theme.MeterGradient.Mixer.Stops[1].Position, 3);
 
             // A swatch recolours the selected stop.
-            app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Colour #4CB873"));
-            Assert.Equal(new SignalGradientStop("#4CB873", 0.36), store.Load().SignalGradient.Stops[1]);
+            app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Color #4CB873"));
+            Assert.Equal(new SignalGradientStop("#4CB873", 0.36), store.Load().MixerGradient.Stops[1]);
             app.Window.MouseMove(new Point(1300, 800), RawInputModifiers.None);
             await app.SettleTransitionsAsync();
             var frame = app.SaveFrame("settings-display-gradient-editor");
@@ -90,24 +92,130 @@ public sealed class SettingsTests : IDisposable
 
             // Remove: the selected stop goes; at two stops the key is disabled.
             app.Click(ActionKey("Remove gradient stop"));
-            Assert.Equal(6, store.Load().SignalGradient.Stops.Length);
-            Assert.DoesNotContain(store.Load().SignalGradient.Stops, s => s.Colour == "#4CB873");
-            while (display.CanRemoveGradientStop)
+            Assert.Equal(6, store.Load().MixerGradient.Stops.Length);
+            Assert.DoesNotContain(store.Load().MixerGradient.Stops, s => s.Colour == "#4CB873");
+            while (display.Mixer.CanRemoveGradientStop)
             {
                 app.Click(ActionKey("Remove gradient stop"));
             }
 
-            Assert.Equal(2, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal(2, store.Load().MixerGradient.Stops.Length);
             Assert.False(ActionKey("Remove gradient stop").IsEffectivelyEnabled);
             Assert.Equal(2, editor.Handles.Count);
 
             app.Click(ActionKey("Reset gradient to default"));
-            Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
+            Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
             Assert.Equal(6, editor.Handles.Count);
         }
         finally
         {
-            display.ResetGradientCommand.Execute(null);
+            display.Mixer.ResetGradientCommand.Execute(null);
+        }
+    });
+
+    [Theory]
+    [InlineData(1040)]
+    [InlineData(1440)]
+    public Task SettingsHeaders_AreOneHeight_WithOneBottomLine_AndNoDescriptionLine(double width) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = width;
+        foreach (var page in new[] { SettingsPage.Display, SettingsPage.Audio })
+        {
+            app.Window.ShowSettings(page);
+            app.Settle();
+            var header = app.Find<Border>("SettingsHeader");
+            var nav = app.Find<Border>("NavHeader");
+            Assert.Equal(nav.Bounds.Height, header.Bounds.Height);
+            Assert.Equal(30, header.Bounds.Height);
+            Assert.Equal(nav.TranslatePoint(new Point(0, nav.Bounds.Height), app.Window)!.Value.Y, header.TranslatePoint(new Point(0, header.Bounds.Height), app.Window)!.Value.Y);
+            Assert.DoesNotContain(header.GetVisualDescendants().OfType<TextBlock>(), t => t.IsEffectivelyVisible && t.Text == app.Window.Settings.SelectedCategory?.Description);
+            Assert.Contains(header.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && b.Content as string == "Done");
+        }
+    });
+
+    [Fact]
+    public Task TheDisplayStage_EditsOnlyTheChosenIndicator_AndItsLedMotionSwitchesAreReachable() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1440;
+        app.Window.Height = 900;
+        var store = new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json"));
+        var display = app.ViewModel.Display;
+        display.Use(store);
+        Desktop.App.FollowSignalGradient(display);
+        try
+        {
+            app.Window.ShowSettings(SettingsPage.Display);
+            app.Settle();
+            var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+            var editor = AppUnderTest.Within<SignalGradientEditor>(page, _ => true);
+            var midi = AppUnderTest.Within<Control>(page, c => c.Name == "MidiPanel");
+            Button Swatch(string hex) => AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == $"Color {hex}");
+            Assert.False(midi.IsEffectivelyVisible, "The MIDI light belongs to the device chain only.");
+
+            // A click on the gain tile edits the gain LEDs alone: the mixer and chain keep their colors, on screen and saved.
+            app.Click(ColourPickerTests.StageTile(page, "Gain LEDs"));
+            Assert.Same(display.Gain, editor.DataContext);
+            Assert.False(midi.IsEffectivelyVisible);
+            display.Gain.SelectedGradientStopIndex = 0;
+            app.Click(Swatch("#B65CFF"));
+            var saved = store.Load();
+            Assert.Equal("#B65CFF", saved.GainGradient.Stops[0].Colour);
+            Assert.Equal((SignalGradient.Default, SignalGradient.Default), (saved.MixerGradient, saved.ChainGradient));
+            Assert.Equal(Avalonia.Media.Color.Parse("#B65CFF"), Desktop.Theme.MeterGradient.Gain.Stops[0].Color);
+            Assert.NotEqual(Avalonia.Media.Color.Parse("#B65CFF"), Desktop.Theme.MeterGradient.Mixer.Stops[0].Color);
+
+            // The segmented fallback reaches the chain from the keyboard's side: its own stops, and the MIDI light row.
+            app.Click(AppUnderTest.Within<RadioButton>(page, r => Avalonia.Automation.AutomationProperties.GetName(r) == "Edit device chain colors"));
+            Assert.Same(display.Chain, editor.DataContext);
+            Assert.True(ColourPickerTests.StageTile(page, "Device chain").IsSelected);
+            Assert.Equal("Device chain", ControlAutomationPeer.CreatePeerForElement(ColourPickerTests.StageTile(page, "Device chain")).GetName());
+            Assert.True(midi.IsEffectivelyVisible);
+            display.Chain.SelectedGradientStopIndex = 1;
+            app.Click(Swatch("#E0A43A"));
+            saved = store.Load();
+            Assert.Equal("#E0A43A", saved.ChainGradient.Stops[1].Colour);
+            Assert.Equal(SignalGradient.Default, saved.MixerGradient);
+            Assert.Equal("#B65CFF", saved.GainGradient.Stops[0].Colour);
+
+            // Arrow keys move between the tiles, as the radios follow.
+            ColourPickerTests.StageTile(page, "Device chain").Focus(NavigationMethod.Tab);
+            app.Press(Key.Left);
+            Assert.Same(display.Mixer, editor.DataContext);
+            Assert.True(AppUnderTest.Within<RadioButton>(page, r => Avalonia.Automation.AutomationProperties.GetName(r) == "Edit mixer meter colors").IsChecked);
+
+            // LED fade and warm-up: each a check box on the page that turns its setting off and saves it.
+            var fade = AppUnderTest.Within<CheckBox>(page, k => k.Name == "LedFadeCheck");
+            var warmup = AppUnderTest.Within<CheckBox>(page, k => k.Name == "LedWarmupCheck");
+            Assert.Equal(("LED fade", "LED warm-up"), (Avalonia.Automation.AutomationProperties.GetName(fade), Avalonia.Automation.AutomationProperties.GetName(warmup)));
+            Assert.True(fade.IsChecked == true && warmup.IsChecked == true);
+
+            // Keyboard focus draws one ring round the whole check box, not a second rim tight round its label.
+            Assert.True(fade.Focus(NavigationMethod.Tab));
+            app.Settle();
+            Assert.Contains(":focus-visible", fade.Classes);
+            Assert.NotNull(fade.FocusAdorner);
+            Assert.All(fade.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ContentPresenter>(), p => Assert.Equal(default, p.BorderThickness));
+            app.Click(fade);
+            Assert.False(display.LedFade);
+            Assert.False(store.Load().LedFade);
+            Assert.True(store.Load().LedWarmup);
+            app.Click(warmup);
+            Assert.False(store.Load().LedWarmup);
+            app.Click(fade);
+            app.Click(warmup);
+            Assert.True(store.Load() is { LedFade: true, LedWarmup: true });
+        }
+        finally
+        {
+            foreach (var each in display.Editors)
+            {
+                each.ResetGradientCommand.Execute(null);
+            }
+
+            display.LedFade = true;
+            display.LedWarmup = true;
         }
     });
 
@@ -141,36 +249,36 @@ public sealed class SettingsTests : IDisposable
                 var at = new Point(editor.TranslatePoint(new Point(editor.XAt(position), 0), app.Window)!.Value.X, start.Y);
                 app.Window.MouseMove(at, RawInputModifiers.LeftMouseButton);
                 app.Settle();
-                Assert.Equal(position, display.SignalGradient.Stops[1].Position, 2);
-                Assert.Equal(position, Desktop.Theme.MeterGradient.Stops[1].Position, 2);
+                Assert.Equal(position, display.Mixer.Gradient.Stops[1].Position, 2);
+                Assert.Equal(position, Desktop.Theme.MeterGradient.Mixer.Stops[1].Position, 2);
                 Assert.Equal(saved, File.ReadAllText(path));
             }
 
             app.Window.MouseUp(new Point(editor.TranslatePoint(new Point(editor.XAt(0.25), 0), app.Window)!.Value.X, start.Y), MouseButton.Left, RawInputModifiers.None);
             app.Settle();
-            Assert.Equal(0.25, store.Load().SignalGradient.Stops[1].Position, 2);
+            Assert.Equal(0.25, store.Load().MixerGradient.Stops[1].Position, 2);
 
             // Nudges stop at the ends of the scale, by 1% or by 5% with Shift.
             editor.Handles[0].Focus();
             app.Press(Key.Left);
             app.Press(Key.Left, RawInputModifiers.Shift);
-            Assert.Equal(0, store.Load().SignalGradient.Stops[0].Position);
+            Assert.Equal(0, store.Load().MixerGradient.Stops[0].Position);
             Assert.Equal("Gradient stop 1 at 0%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[0]));
             var last = editor.Handles.Count - 1;
             editor.Handles[last].Focus();
             app.Press(Key.Right);
             app.Press(Key.Right, RawInputModifiers.Shift);
-            Assert.Equal(1, store.Load().SignalGradient.Stops[last].Position);
+            Assert.Equal(1, store.Load().MixerGradient.Stops[last].Position);
             Assert.Equal($"Gradient stop {last + 1} at 100%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[last]));
 
             // A stop is a slider over 0 to 100 described by its colour; setting it moves the stop.
             var stopPeer = ControlAutomationPeer.CreatePeerForElement(editor.Handles[2]);
             Assert.Equal(AutomationControlType.Slider, stopPeer.GetAutomationControlType());
-            Assert.StartsWith(display.SignalGradient.Stops[2].Colour + ". Left or Right to move", stopPeer.GetHelpText(), StringComparison.Ordinal);
+            Assert.StartsWith(display.Mixer.Gradient.Stops[2].Colour + ". Left or Right to move", stopPeer.GetHelpText(), StringComparison.Ordinal);
             var range = Assert.IsAssignableFrom<IRangeValueProvider>(stopPeer);
             Assert.Equal((0, 100, 62), (range.Minimum, range.Maximum, range.Value));
             range.SetValue(70);
-            Assert.Equal(0.7, store.Load().SignalGradient.Stops[2].Position, 3);
+            Assert.Equal(0.7, store.Load().MixerGradient.Stops[2].Position, 3);
 
             // The gradient's actions are buttons, not toggles, and stay unchecked.
             var add = AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == "Add gradient stop");
@@ -180,11 +288,30 @@ public sealed class SettingsTests : IDisposable
             Assert.False(addPeer is IToggleProvider, "An action key must not offer a toggle.");
             app.Click(add);
             Assert.False(add.IsChecked == true, "An action key never stays checked.");
-            Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
+
+            // Leaving the page during a gradient drag commits that drag, unlike cancelling a color-picker preview.
+            var beforeDetach = File.ReadAllText(path);
+            handle = editor.Handles[1];
+            start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), app.Window)!.Value;
+            app.Window.MouseDown(start, MouseButton.Left);
+            var moved = new Point(editor.TranslatePoint(new Point(editor.XAt(0.15), 0), app.Window)!.Value.X, start.Y);
+            app.Window.MouseMove(moved, RawInputModifiers.LeftMouseButton);
+            app.Settle();
+            Assert.True(display.Mixer.IsPreviewing);
+            Assert.Equal(0.15, display.Mixer.Gradient.Stops[1].Position, 2);
+            Assert.Equal(beforeDetach, File.ReadAllText(path));
+            app.Window.ShowSettings(SettingsPage.Audio);
+            app.Settle();
+            Assert.True(app.Window.Settings.IsOpen);
+            Assert.False(display.Mixer.IsPreviewing);
+            Assert.Equal(0.15, store.Load().MixerGradient.Stops[1].Position, 2);
+            app.Window.MouseUp(moved, MouseButton.Left);
+            app.Settle();
         }
         finally
         {
-            display.ResetGradientCommand.Execute(null);
+            display.Mixer.ResetGradientCommand.Execute(null);
         }
     });
 
@@ -258,12 +385,14 @@ public sealed class SettingsTests : IDisposable
         }
     }
 
-    [Fact]
-    public Task Settings_TakesTheWorkspacesPlace_AndGivesItBackUnchanged_WithoutTouchingTheProject() => HeadlessApp.RunAsync(async () =>
+    [Theory]
+    [InlineData(1040, 640)]
+    [InlineData(1440, 900)]
+    public Task Settings_OverlaysTheWorkspace_WithoutChangingItsLayout(double width, double height) => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
-        app.Window.Width = 1440;
-        app.Window.Height = 900;
+        app.Window.Width = width;
+        app.Window.Height = height;
         using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
         app.Window.AttachAudio(Audio(app, audio));
         app.ViewModel.AddTrackCommand.Execute(null);
@@ -276,20 +405,52 @@ public sealed class SettingsTests : IDisposable
         var before = (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
             app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView);
         var detailRow = app.Find<Grid>("MainArea").RowDefinitions[3].Height;
+        var workspaceGrid = app.Find<Grid>("WorkspaceGrid");
+        var workspaceBounds = new Rect(app.InWindow(workspaceGrid, default), workspaceGrid.Bounds.Size);
 
         app.Click(app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"));
+        app.Window.MouseMove(new Point(width - 2, height - 2), RawInputModifiers.None);
 
         Assert.True(app.Window.Settings.IsOpen);
-        Assert.False(app.Find<Grid>("WorkspaceGrid").IsVisible);
-        Assert.True(app.Find<SettingsView>("SettingsHost").IsEffectivelyVisible);
+        Assert.True(workspaceGrid.IsEffectivelyVisible);
+        Assert.Equal(workspaceBounds, new Rect(app.InWindow(workspaceGrid, default), workspaceGrid.Bounds.Size));
+        var host = app.Find<SettingsView>("SettingsHost");
+        Assert.True(host.IsEffectivelyVisible);
+        var hostBounds = new Rect(app.InWindow(host, default), host.Bounds.Size);
+        Assert.InRange(hostBounds.Width, 500, 800);
+        Assert.InRange(hostBounds.Height, 200, 560);
+        Assert.True(hostBounds.Left > workspaceBounds.Left + 100);
+        // The popover stops clear of the right rail, so the rotated Browser label is never covered.
+        var rail = app.Find<Border>("RightRail");
+        Assert.True(rail.IsEffectivelyVisible);
+        var railBounds = new Rect(app.InWindow(rail, default), rail.Bounds.Size);
+        Assert.InRange(railBounds.Left - hostBounds.Right, 6, 12);
+        Assert.InRange(hostBounds.Top - workspaceBounds.Top, 4, 12);
+        Assert.True(hostBounds.Bottom <= workspaceBounds.Bottom - 8);
+        var pointer = AppUnderTest.Within<Avalonia.Controls.Shapes.Path>(host, p => p.Name == "SettingsPointer");
+        var pointerBounds = new Rect(app.InWindow(pointer, default), pointer.Bounds.Size);
+        var gear = app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton");
+        var gearBounds = new Rect(app.InWindow(gear, default), gear.Bounds.Size);
+        Assert.True(pointer.IsEffectivelyVisible);
+        Assert.False(pointer.IsHitTestVisible);
+        Assert.False(pointer.Focusable);
+        Assert.InRange(Math.Abs(pointerBounds.Center.X - gearBounds.Center.X), 0, 1.5);
+        Assert.InRange(hostBounds.Top - pointerBounds.Top, 5, 7);
+        Assert.InRange(pointerBounds.Bottom - hostBounds.Top, 0, 3);
         Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
         Assert.Single(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>(), p => p.IsEffectivelyVisible);
         await app.SettleTransitionsAsync();
-        app.SaveFrame("settings-audio");
+        app.SaveFrame($"settings-popover-audio-{(int)width}");
+
+        app.Window.ShowSettings(SettingsPage.Display);
+        await app.SettleTransitionsAsync();
+        Assert.Single(app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>(), p => p.IsEffectivelyVisible);
+        app.SaveFrame($"settings-popover-display-{(int)width}");
 
         app.Press(Key.Escape);
 
         Assert.False(app.Window.Settings.IsOpen);
+        Assert.False(pointer.IsEffectivelyVisible);
         Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
         Assert.Equal(before, (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
             app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView));
@@ -297,10 +458,36 @@ public sealed class SettingsTests : IDisposable
         Assert.Same(project, app.Session.Project);
         Assert.Equal(undo, app.ViewModel.UndoCommand.CanExecute(null));
 
-        // The keyboard opens it where it was.
+        // A hidden surface must not intercept clicks in the workspace area it covered.
+        var presses = 0;
+        workspaceGrid.AddHandler(InputElement.PointerPressedEvent, (_, _) => presses++, RoutingStrategies.Bubble, handledEventsToo: true);
+        var point = app.InWindow(workspaceGrid, new Point(workspaceGrid.Bounds.Width - 64, 80));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+        Assert.Equal(1, presses);
+
+        // The shortcut and both targeted menus keep the workspace and project unchanged, and the shortcut remembers the last page.
+        var afterClick = (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
+            app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView);
+        var projectAfterClick = app.Session.Project;
+        app.Press(Key.OemComma, AppUnderTest.Command);
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Display, app.Window.Settings.SelectedCategory?.Page);
+        app.ChooseFromMenu("Window", "Plugins…");
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
+        app.ChooseFromMenu("Window", "Audio Settings…");
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+        app.Window.Settings.Close();
+        app.Settle();
         app.Press(Key.OemComma, AppUnderTest.Command);
         Assert.True(app.Window.Settings.IsOpen);
         Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+        Assert.Same(projectAfterClick, app.Session.Project);
+        Assert.Equal(afterClick, (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
+            app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView));
     });
 
     [Fact]
@@ -391,6 +578,272 @@ public sealed class SettingsTests : IDisposable
         app.Settle();
         AssertSelected(96_000, 256);
         Assert.False(audioSettings.IsRunning);
+    });
+
+    [Fact]
+    public Task OutsidePointer_ClosesSettings_AndReachesTheFieldOrActionWithoutRestoringOldFocus() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        var gear = app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton");
+        var tempo = app.Find<TextBox>("TempoBox");
+        var addTrack = AppUnderTest.Within<Button>(app.Window, b => Avalonia.Automation.AutomationProperties.GetName(b) == "New track");
+        Assert.True(gear.Focus(NavigationMethod.Tab));
+
+        app.Window.ShowSettings();
+        app.Settle();
+        ClickWithoutSettling(tempo);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+
+        app.Window.ShowSettings();
+        app.Settle();
+        ClickWithoutSettling(addTrack);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Single(app.ViewModel.Tracks);
+
+        void ClickWithoutSettling(Control target)
+        {
+            var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
+            app.Window.MouseDown(point, MouseButton.Left);
+            app.Window.MouseUp(point, MouseButton.Left);
+        }
+    });
+
+    [Theory]
+    [InlineData("Field")]
+    [InlineData("Action")]
+    [InlineData("Gear")]
+    [InlineData("Focus")]
+    public Task OutsidePointer_WithADropDownOpen_ReachesItsTarget(string targetName) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        var tempo = app.Find<TextBox>("TempoBox");
+        Assert.True(tempo.Focus(NavigationMethod.Tab));
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var dropdown = AppUnderTest.ComboNamed(page, "Buffer size");
+        app.Click(dropdown);
+        Assert.True(dropdown.IsDropDownOpen);
+
+        if (targetName == "Focus")
+        {
+            var timeline = app.Find<TimelineView>("Timeline");
+            Assert.True(timeline.Focus(NavigationMethod.Tab));
+            app.Settle();
+            Assert.False(app.Window.Settings.IsOpen);
+            Assert.False(dropdown.IsDropDownOpen);
+            Assert.True(timeline.IsFocused);
+            return;
+        }
+
+        Control target = targetName switch
+        {
+            "Field" => tempo,
+            "Action" => AppUnderTest.Within<Button>(app.Window, b => Avalonia.Automation.AutomationProperties.GetName(b) == "New track"),
+            _ => app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"),
+        };
+        var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.False(dropdown.IsDropDownOpen);
+        if (targetName == "Action")
+        {
+            Assert.Single(app.ViewModel.Tracks);
+        }
+        else
+        {
+            Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+        }
+    });
+
+    [Fact]
+    public Task ADropDownOpenedInCode_AfterAPageSwitch_StillLetsAnOutsideClickThrough() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        var tempo = app.Find<TextBox>("TempoBox");
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var dropdown = AppUnderTest.ComboNamed(page, "Buffer size");
+        // Opened without pointer or key input, so only the configuration posted on the page switch covers it.
+        dropdown.IsDropDownOpen = true;
+        app.Settle();
+
+        var point = app.InWindow(tempo, new Point(tempo.Bounds.Width / 2, tempo.Bounds.Height / 2));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.False(dropdown.IsDropDownOpen);
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Fact]
+    public Task AClickElsewhereInSettings_WithADropDownOpen_OnlyClosesTheDropDown() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var dropdown = AppUnderTest.ComboNamed(page, "Buffer size");
+        app.Click(dropdown);
+        Assert.True(dropdown.IsDropDownOpen);
+
+        var done = app.Find<Button>("CloseSettingsButton");
+        var point = app.InWindow(done, new Point(done.Bounds.Width / 2, done.Bounds.Height / 2));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+
+        Assert.False(dropdown.IsDropDownOpen);
+        Assert.True(app.Window.Settings.IsOpen);
+    });
+
+    [Theory]
+    [InlineData("Done")]
+    [InlineData("Escape")]
+    [InlineData("Gear")]
+    public Task ExplicitClose_RestoresThePreviouslyFocusedControl(string close) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        var tempo = app.Find<TextBox>("TempoBox");
+        Assert.True(tempo.Focus(NavigationMethod.Tab));
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+
+        app.Press(Key.Escape, RawInputModifiers.Shift);
+        Assert.True(app.Window.Settings.IsOpen);
+        switch (close)
+        {
+            case "Done":
+                app.Click(app.Find<Button>("CloseSettingsButton"));
+                break;
+            case "Escape":
+                app.Press(Key.Escape);
+                break;
+            default:
+                app.Click(app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"));
+                break;
+        }
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task ExplicitClose_FallsBackWhenPreviousFocusIsDisabledOrDetached(bool detach) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var root = Assert.IsType<Panel>(app.Window.Content);
+        var previous = new TextBox { Width = 100, Height = 24 };
+        root.Children.Add(previous);
+        app.Settle();
+        Assert.True(previous.Focus(NavigationMethod.Tab));
+        app.Window.ShowSettings();
+        app.Settle();
+
+        app.Window.Settings.Close();
+        if (detach)
+        {
+            root.Children.Remove(previous);
+        }
+        else
+        {
+            previous.IsEnabled = false;
+        }
+
+        app.Settle();
+        Assert.True(app.Find<TimelineView>("Timeline").IsFocused);
+    });
+
+    [Fact]
+    public Task KeyboardFocusLeavingSettings_ClosesItWithoutStealingFocus_AndWorkspaceShortcutsResume() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.ShowSettings();
+        app.Settle();
+        var timeline = app.Find<TimelineView>("Timeline");
+        Assert.True(timeline.Focus(NavigationMethod.Tab));
+        app.Settle();
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.True(timeline.IsFocused);
+        var inspector = app.ViewModel.IsInspectorVisible;
+        app.Press(Key.I);
+        Assert.NotEqual(inspector, app.ViewModel.IsInspectorVisible);
+    });
+
+    [Fact]
+    public Task RapidCloseAndReopen_DoesNotRunStaleFocusPosts() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var gear = app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton");
+        Assert.True(gear.Focus(NavigationMethod.Tab));
+        var staleFocus = 0;
+        gear.GotFocus += (_, _) => staleFocus++;
+
+        app.Window.ShowSettings();
+        app.Window.Settings.Close();
+        bool? focusBeforeReopenPost = null;
+        Dispatcher.UIThread.Post(() => focusBeforeReopenPost = gear.IsFocused, DispatcherPriority.Loaded);
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Display, app.Window.Settings.SelectedCategory?.Page);
+        Assert.True(focusBeforeReopenPost);
+        Assert.Equal(0, staleFocus);
+        Assert.True(app.Find<SettingsView>("SettingsHost").IsKeyboardFocusWithin);
+
+        app.Window.Settings.Close();
+        var tempo = app.Find<TextBox>("TempoBox");
+        Assert.True(tempo.Focus(NavigationMethod.Pointer));
+        app.Settle();
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Fact]
+    public Task CompactSettings_ScrollAndPageChangesStayInsideTheSurface() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1040;
+        app.Window.Height = 640;
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var scroller = page.FindAncestorOfType<ScrollViewer>()!;
+        var point = app.InWindow(scroller, new Point(scroller.Bounds.Width / 2, scroller.Bounds.Height / 2));
+        app.Window.MouseWheel(point, new Vector(0, -4));
+        app.Settle();
+        Assert.True(scroller.Offset.Y > 0);
+        Assert.True(app.Window.Settings.IsOpen);
+
+        var host = app.Find<SettingsView>("SettingsHost");
+        var categories = AppUnderTest.Within<ListBox>(host, c => c.Name == "CategoryList");
+        app.Click(categories.ContainerFromIndex(1)!);
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
     });
 
     [Fact]
@@ -491,6 +944,9 @@ public sealed class SettingsTests : IDisposable
         app.Window.ShowSettings(SettingsPage.Plugins);
         app.Settle();
 
+        app.ChooseFromMenu("Window", "Plugins…");
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
         app.ChooseFromMenu("Window", "Audio Settings…");
         Assert.True(app.Window.Settings.IsOpen);
         Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
@@ -513,6 +969,60 @@ public sealed class SettingsTests : IDisposable
 
         Assert.True(app.Window.Settings.IsOpen);
         Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
+    });
+
+    [Fact]
+    public Task AGradientEditorOffScreen_FollowsNoGradient_AndBackOnScreenFollowsOnlyItsOwn() => HeadlessApp.RunAsync(() =>
+    {
+        var a = new GradientEditorViewModel("A", SignalGradient.Default, hasClipLamp: true);
+        var b = new GradientEditorViewModel("B", SignalGradient.GainDefault, hasClipLamp: false);
+        var editor = new SignalGradientEditor { DataContext = a, Height = 40 };
+        var host = new Border { Width = 400, Height = 60, Child = editor };
+        var window = new Window { Width = 500, Height = 200, Content = host };
+        window.Show();
+        window.UpdateLayout();
+        Assert.Equal((1, a.Gradient.Stops.Length), (Listeners(a, editor), editor.Handles.Count));
+
+        // Taken off screen with its own context still set: it stops listening, and an edit to the gradient passes it by.
+        host.Child = null;
+        Assert.Equal(0, Listeners(a, editor));
+        var offScreen = editor.Handles.Count;
+        a.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(offScreen, editor.Handles.Count);
+
+        // Back on screen (twice over): it catches up and listens exactly once.
+        host.Child = editor;
+        host.Child = null;
+        host.Child = editor;
+        window.UpdateLayout();
+        Assert.Equal((1, a.Gradient.Stops.Length), (Listeners(a, editor), editor.Handles.Count));
+
+        // Switched to another gradient: only that one's edits reach it.
+        editor.DataContext = b;
+        window.UpdateLayout();
+        Assert.Equal((0, 1), (Listeners(a, editor), Listeners(b, editor)));
+        Assert.Equal(b.Gradient.Stops.Length, editor.Handles.Count);
+        a.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(b.Gradient.Stops.Length, editor.Handles.Count);
+        b.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(b.Gradient.Stops.Length, editor.Handles.Count);
+
+        // A drag cut short by leaving the screen ends its preview: nothing is left stranded.
+        window.UpdateLayout();
+        var handle = editor.Handles[1];
+        window.MouseDown(handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value, MouseButton.Left);
+        Assert.True(b.IsPreviewing);
+        host.Child = null;
+        Assert.False(b.IsPreviewing);
+        Assert.Equal(0, Listeners(b, editor));
+        window.Close();
+        return Task.CompletedTask;
+
+        // How many of the gradient's change handlers belong to this editor.
+        static int Listeners(GradientEditorViewModel gradient, SignalGradientEditor editor) =>
+            (typeof(CommunityToolkit.Mvvm.ComponentModel.ObservableObject)
+                .GetField("PropertyChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(gradient) as Delegate)?.GetInvocationList().Count(d => ReferenceEquals(d.Target, editor)) ?? 0;
     });
 
     private sealed class ImmediateDispatcher : IUiDispatcher

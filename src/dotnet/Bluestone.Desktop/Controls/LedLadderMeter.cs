@@ -8,11 +8,14 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// The Machined signal meter: a stereo pair of LED columns in a recessed dark well. Each column is 3 DIP cells on a
-/// 4 DIP pitch, coloured by <see cref="MeterGradient"/> from the floor up; lit cells throw a tight glow (the top cell
+/// 4 DIP pitch, coloured from the floor up by the <see cref="MeterGradient"/> its <see cref="GradientTarget"/> names; lit cells throw a tight glow (the top cell
 /// and every third cell), unlit cells stay dark at <see cref="Palette.UnlitAlpha"/> of their colour, and the held peak
 /// is the first unlit cell lightened. Above each column sits a separate clip lamp, always <see cref="Palette.Clip"/>,
 /// dim until a peak passes 0 dBFS and lit until reset. Peak + RMS readings follow the console taper
 /// (<see cref="ConsoleRail.Position"/>) so the meter, scale and fader agree; VU, K and LUFS are linear over their range.
+/// Each cell fades as it goes dark (<see cref="CellFadeMs"/>) and warms up as it lights (<see cref="CellWarmupMs"/>); the
+/// held peak and the clip lamps fade but light at once (<see cref="LedMotion"/>). The fade is per cell, after the levels'
+/// own ballistics, so it never slows the fall itself.
 /// </summary>
 public sealed class LedLadderMeter : Control
 {
@@ -42,17 +45,36 @@ public sealed class LedLadderMeter : Control
     /// <summary>The width of each LED column (4 on a track, 8 on Master).</summary>
     public static readonly StyledProperty<double> ColumnWidthProperty = AvaloniaProperty.Register<LedLadderMeter, double>(nameof(ColumnWidth), 4);
 
+    /// <summary>Which gradient the cells are coloured from: the mixer's (the default) or a device chain's.</summary>
+    public static readonly StyledProperty<MeterGradientTarget> GradientTargetProperty =
+        AvaloniaProperty.Register<LedLadderMeter, MeterGradientTarget>(nameof(GradientTarget), MeterGradientTarget.Mixer);
+
     private const double Cell = 3;
     private const double Pitch = 4;
     private const double ClipHeight = 4;
     private const double TopCellTier = 1.2;
     private const double CellTier = 0.55;
 
+    /// <summary>How long a cell and the held peak take to go dark, in milliseconds.</summary>
+    internal const double CellFadeMs = 90;
+
+    /// <summary>How long a cell takes to light, in milliseconds.</summary>
+    internal const double CellWarmupMs = 20;
+
+    /// <summary>How long a clip lamp takes to go dark, in milliseconds.</summary>
+    internal const double LampFadeMs = 140;
+
+    private const int Stride = LedLevels.Steps + 1;
+
     private Color[] _colors = [];
     private IBrush[] _lit = [];
     private IBrush[] _unlit = [];
     private IBrush[] _held = [];
+    private IBrush[] _cellSteps = [];
+    private IBrush[] _heldSteps = [];
     private int _version = -1;
+    private MeterGradient? _coloursFrom;
+    private MeterGradient? _subscribed;
 
     // Levels fed through Show (the Device View's meters), as plain fields: a styled property allocates on every change, and
     // these change on every meter tick. While _fed, Render reads these instead of the per-channel properties.
@@ -62,6 +84,12 @@ public sealed class LedLadderMeter : Control
     private double _fedLeftHold = double.NaN;
     private double _fedRightHold = double.NaN;
 
+    private readonly LedLevels _leftCells;
+    private readonly LedLevels _rightCells;
+    private readonly LedLevels _leftHeld;
+    private readonly LedLevels _rightHeld;
+    private readonly LedLevels _lamps;
+
     static LedLadderMeter()
     {
         AffectsRender<LedLadderMeter>(ModeProperty, ValueProperty, LeftValueProperty, RightValueProperty, PeakHoldProperty, LeftPeakHoldProperty,
@@ -69,7 +97,21 @@ public sealed class LedLadderMeter : Control
         AffectsMeasure<LedLadderMeter>(MeterWidthProperty);
     }
 
+    public LedLadderMeter()
+    {
+        _leftCells = new LedLevels(this, CellFadeMs, CellWarmupMs);
+        _rightCells = new LedLevels(this, CellFadeMs, CellWarmupMs);
+        _leftHeld = new LedLevels(this, CellFadeMs);
+        _rightHeld = new LedLevels(this, CellFadeMs);
+        _lamps = new LedLevels(this, LampFadeMs, count: 2);
+    }
+
     public MixerMeterMode Mode { get => GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
+
+    public MeterGradientTarget GradientTarget { get => GetValue(GradientTargetProperty); set => SetValue(GradientTargetProperty, value); }
+
+    /// <summary>The gradient the cells are coloured from now.</summary>
+    internal MeterGradient Gradient => MeterGradient.For(GradientTarget);
 
     public double Value { get => GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
 
@@ -146,6 +188,9 @@ public sealed class LedLadderMeter : Control
         : (double.IsNaN(LeftValue) ? Value : LeftValue, double.IsNaN(RightValue) ? Value : RightValue,
             double.IsNaN(LeftPeakHold) ? PeakHold : LeftPeakHold, double.IsNaN(RightPeakHold) ? PeakHold : RightPeakHold);
 
+    /// <summary>The left column's cells, its held peak, and both clip lamps (left 0, right 1), for tests.</summary>
+    internal (LedLevels Cells, LedLevels Held, LedLevels Lamps) LeftLeds => (_leftCells, _leftHeld, _lamps);
+
     protected override Size MeasureOverride(Size availableSize) => new(MeterWidth, 0);
 
     public override void Render(DrawingContext context)
@@ -160,8 +205,9 @@ public sealed class LedLadderMeter : Control
         var inner = ConsolePaint.Snap(well).Deflate(2);
         var column = Math.Min(ColumnWidth, inner.Width / 2);
         var (left, right, leftHold, rightHold) = Shown;
-        Column(context, new Rect(inner.X, inner.Y, column, inner.Height), left, leftHold);
-        Column(context, new Rect(inner.Right - column, inner.Y, column, inner.Height), right, rightHold);
+        var now = LedMotion.Now;
+        Column(context, new Rect(inner.X, inner.Y, column, inner.Height), left, leftHold, _leftCells, _leftHeld, 0, now);
+        Column(context, new Rect(inner.Right - column, inner.Y, column, inner.Height), right, rightHold, _rightCells, _rightHeld, 1, now);
     }
 
     private static int CellsFor(double wellHeight)
@@ -170,17 +216,26 @@ public sealed class LedLadderMeter : Control
         return Math.Max(0, (int)Math.Floor((body + 1) / Pitch));
     }
 
-    private void Column(DrawingContext context, Rect column, double value, double peakHold)
+    private void Column(DrawingContext context, Rect column, double value, double peakHold, LedLevels cells, LedLevels heldCells, int side, double now)
     {
         var lamp = new Rect(column.X, column.Y, column.Width, ClipHeight);
-        if (IsClipped)
+        _lamps.Set(side, IsClipped, now);
+        var lampStep = _lamps.Step(side);
+        if (lampStep == LedLevels.Steps)
         {
             Glow.Rect(context, lamp, 0.5, Palette.Clip, TopCellTier);
             context.FillRectangle(ConsolePaint.Brush(Palette.Clip), lamp);
         }
-        else
+        else if (lampStep == 0)
         {
             context.FillRectangle(ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14)), lamp);
+        }
+        else
+        {
+            // Fading: the glow and the fill between lit and dim, one of a few cached steps.
+            var lit = lampStep / (double)LedLevels.Steps;
+            Glow.Rect(context, lamp, 0.5, Palette.Clip, TopCellTier * lit);
+            context.FillRectangle(ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14 + (0.86 * lit))), lamp);
         }
 
         var bottom = column.Bottom;
@@ -191,17 +246,39 @@ public sealed class LedLadderMeter : Control
         }
 
         EnsureColors(count);
+        var fresh = cells.Resize(count) | heldCells.Resize(count);
         var (topLit, held) = Cells(value, peakHold, count);
         for (var i = 0; i < count; i++)
         {
             var cell = new Rect(column.X, Math.Round(bottom - ((i + 1) * Pitch) + 1), column.Width, Cell);
             var lit = i <= topLit;
-            if (lit && (i == topLit || i % 3 == 0))
+            cells.Set(i, lit, now, fresh);
+            heldCells.Set(i, !lit && i == held, now, fresh);
+            var step = cells.Step(i);
+            var heldStep = heldCells.Step(i);
+            if (step > 0 && (i == topLit || i % 3 == 0))
             {
-                Glow.Rect(context, cell, 0.5, MeterGradient.GlowBrushes(_colors[i], i == topLit ? TopCellTier : CellTier));
+                var tier = i == topLit ? TopCellTier : CellTier;
+                Glow.Rect(context, cell, 0.5, _coloursFrom!.GlowBrushes(_colors[i], step == LedLevels.Steps ? tier : tier * step / LedLevels.Steps));
             }
 
-            context.FillRectangle(lit ? _lit[i] : i == held ? _held[i] : _unlit[i], cell);
+            if (step == LedLevels.Steps)
+            {
+                context.FillRectangle(_lit[i], cell);
+            }
+            else if (step == 0 && heldStep == LedLevels.Steps)
+            {
+                context.FillRectangle(_held[i], cell);
+            }
+            else
+            {
+                // Dark, or between dark and lit; a fading held peak shows over it.
+                context.FillRectangle(_cellSteps[(i * Stride) + step], cell);
+                if (heldStep > 0)
+                {
+                    context.FillRectangle(_heldSteps[(i * Stride) + heldStep], cell);
+                }
+            }
         }
     }
 
@@ -211,36 +288,122 @@ public sealed class LedLadderMeter : Control
     /// </summary>
     private void EnsureColors(int count)
     {
-        if (_colors.Length == count && _version == MeterGradient.Version)
+        var gradient = Gradient;
+        if (_colors.Length == count && ReferenceEquals(_coloursFrom, gradient) && _version == gradient.Version)
         {
             return;
         }
 
-        _version = MeterGradient.Version;
+        _coloursFrom = gradient;
+        _version = gradient.Version;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
         _held = new IBrush[count];
+        _cellSteps = new IBrush[count * Stride];
+        _heldSteps = new IBrush[count * Stride];
         for (var i = 0; i < count; i++)
         {
-            var color = MeterGradient.At((i + 0.5) / count);
+            var color = gradient.At((i + 0.5) / count);
+            var heldColor = ConsolePaint.Lighter(color, 0.3);
             _colors[i] = color;
-            _lit[i] = MeterGradient.Brush(color);
-            _unlit[i] = MeterGradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
-            _held[i] = MeterGradient.Brush(ConsolePaint.Lighter(color, 0.3));
+            _lit[i] = gradient.Brush(color);
+            _unlit[i] = gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
+            _held[i] = gradient.Brush(heldColor);
+
+            // Between dark and lit: the cell's colour from its unlit alpha up to opaque, and the held colour over it.
+            for (var step = 0; step <= LedLevels.Steps; step++)
+            {
+                var lit = step / (double)LedLevels.Steps;
+                _cellSteps[(i * Stride) + step] = step == 0 ? _unlit[i] : step == LedLevels.Steps ? _lit[i]
+                    : gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * lit)));
+                _heldSteps[(i * Stride) + step] = step == LedLevels.Steps ? _held[i] : gradient.Brush(Palette.Alpha(heldColor, lit));
+
+                // The glow at each step, for a top cell and for an ordinary cell that glows (every third): built now so a
+                // first fade allocates nothing.
+                if (step > 0)
+                {
+                    _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? TopCellTier : TopCellTier * step / LedLevels.Steps);
+                    if (i % 3 == 0)
+                    {
+                        _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? CellTier : CellTier * step / LedLevels.Steps);
+                    }
+                }
+            }
         }
+
+        WarmClipLamp();
+    }
+
+    private static bool _clipLampWarm;
+
+    // The clip lamp's fixed colour has one brush and glow per step, in the app-lifetime caches: build them all once.
+    private static void WarmClipLamp()
+    {
+        if (_clipLampWarm)
+        {
+            return;
+        }
+
+        _clipLampWarm = true;
+        for (var step = 0; step <= LedLevels.Steps; step++)
+        {
+            var lit = step / (double)LedLevels.Steps;
+            _ = ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14 + (0.86 * lit)));
+            _ = Glow.BrushesFor(Palette.Clip, step == LedLevels.Steps ? TopCellTier : TopCellTier * lit);
+        }
+
+        _ = ConsolePaint.Brush(Palette.Clip);
+        _ = ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14));
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        MeterGradient.Changed += OnGradientChanged;
+        Subscribe(Gradient);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        MeterGradient.Changed -= OnGradientChanged;
+        Subscribe(null);
         base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == GradientTargetProperty)
+        {
+            if (_subscribed is not null)
+            {
+                Subscribe(Gradient);
+            }
+
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>The gradient whose changes redraw this meter (null while detached), for tests.</summary>
+    internal MeterGradient? SubscribedTo => _subscribed;
+
+    // Listens to one gradient at a time: the target's while attached, none while detached.
+    private void Subscribe(MeterGradient? gradient)
+    {
+        if (ReferenceEquals(_subscribed, gradient))
+        {
+            return;
+        }
+
+        if (_subscribed is not null)
+        {
+            _subscribed.Changed -= OnGradientChanged;
+        }
+
+        _subscribed = gradient;
+        if (gradient is not null)
+        {
+            gradient.Changed += OnGradientChanged;
+        }
     }
 
     private void OnGradientChanged(object? sender, EventArgs e) => InvalidateVisual();

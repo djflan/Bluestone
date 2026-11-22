@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Bluestone.Desktop.Controls"
+             x:Class="Bluestone.Desktop.Controls.ColourPicker"
+             x:Name="Root"
+             AutomationProperties.Name="Color picker">
+  <!--
+    Bluestone's colour picker: a hue and saturation wheel with a brightness fader beside it, the new colour over the one it
+    replaces, the hex and its H/S/B readout, the preset swatches, and an explicit Cancel and Apply. Edits are live; Cancel,
+    Esc, or a click away puts the original back.
+  -->
+  <Border Classes="colorPicker">
+    <StackPanel>
+      <TextBlock x:Name="ContextText" Classes="overline pickerContext" />
+
+      <StackPanel Classes="pickerBody">
+        <controls:ColourWheel x:Name="Wheel" Width="172" Height="172" />
+        <controls:BrightnessFader x:Name="Fader" Width="24" Height="172" />
+        <StackPanel Width="50" VerticalAlignment="Top">
+          <TextBlock Classes="overline" Text="NEW" />
+          <controls:RecessedWell Width="50" Height="76" Padding="3" Margin="0,4">
+            <Border CornerRadius="{StaticResource Radius.Small}" ClipToBounds="True">
+              <Grid RowDefinitions="*,*">
+                <Border x:Name="NewSwatch" AutomationProperties.Name="New color" />
+                <Border x:Name="WasSwatch" Grid.Row="1" AutomationProperties.Name="Original color" />
+              </Grid>
+            </Border>
+          </controls:RecessedWell>
+          <TextBlock Classes="overline" Text="WAS" />
+        </StackPanel>
+      </StackPanel>
+
+      <StackPanel Classes="pickerHexRow">
+        <TextBox x:Name="HexBox" Classes="hex" MaxLength="7" AutomationProperties.Name="Color (hex)" />
+        <TextBlock x:Name="ReadoutText" Classes="pickerReadout" />
+      </StackPanel>
+
+      <ItemsControl x:Name="SwatchList" Classes="pickerSwatches" AutomationProperties.Name="Preset colors">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel ItemSpacing="5" LineSpacing="5" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="x:String">
+            <Button Classes="swatch small" Click="OnSwatch" CommandParameter="{Binding}"
+                    AutomationProperties.Name="{Binding StringFormat='Color {0}'}" ToolTip.Tip="{Binding}">
+              <Border Background="{Binding Converter={x:Static controls:ColourPicker.HexToBrush}}" />
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Classes="pickerFooter">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="label muted" Text="Esc cancels" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.S}" VerticalAlignment="Center">
+            <Button x:Name="CancelButton" Classes="raised compact" MinWidth="64" HorizontalContentAlignment="Center" Content="Cancel"
+                    Click="OnCancel" AutomationProperties.Name="Cancel color change" />
+            <Button x:Name="ApplyButton" Classes="primary compact" MinWidth="64" HorizontalContentAlignment="Center" Content="Apply"
+                    Click="OnApply" AutomationProperties.Name="Apply color" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+  </Border>
+</UserControl>

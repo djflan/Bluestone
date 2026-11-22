@@ -78,15 +78,23 @@ internal static class Glow
         var key = (color.ToUInt32(), tier, width);
         if (!Pens.TryGetValue(key, out var pens))
         {
-            var brushes = BrushesFor(color, tier);
-            var reach = Reach;
-            pens = new IPen[brushes.Length];
-            for (var i = 0; i < brushes.Length; i++)
-            {
-                pens[i] = new ImmutablePen(brushes[i], width + (2 * reach * (i + 1) / brushes.Length), lineCap: PenLineCap.Round);
-            }
-
+            pens = CreatePens(BrushesFor(color, tier), width);
             Pens[key] = pens;
+        }
+
+        return pens;
+    }
+
+    /// <summary>New, uncached line pens for <paramref name="color"/>: for a colour the user is still choosing, held by its control.</summary>
+    public static IPen[] CreatePens(Color color, double tier, double width) => CreatePens(CreateBrushes(color, tier), width);
+
+    private static IPen[] CreatePens(IImmutableSolidColorBrush[] brushes, double width)
+    {
+        var reach = Reach;
+        var pens = new IPen[brushes.Length];
+        for (var i = 0; i < brushes.Length; i++)
+        {
+            pens[i] = new ImmutablePen(brushes[i], width + (2 * reach * (i + 1) / brushes.Length), lineCap: PenLineCap.Round);
         }
 
         return pens;
@@ -111,22 +119,7 @@ internal static class Glow
         var key = (color.ToUInt32(), -alpha, reach);
         if (!Pens.TryGetValue(key, out var cached))
         {
-            var n = Math.Max(4, (int)Math.Ceiling(reach * 2));
-            var tau = reach * Tau;
-            var peak = Math.Min(0.95, alpha * TightBoost);
-            var target = new double[n + 2];
-            for (var i = 1; i <= n; i++)
-            {
-                target[i] = peak * Math.Exp(-(reach * (i - 0.5) / n) / tau);
-            }
-
-            cached = new IPen[n];
-            for (var i = n; i >= 1; i--)
-            {
-                var layer = Math.Clamp(1 - ((1 - target[i]) / (1 - target[i + 1])), 0, 1);
-                cached[i - 1] = new ImmutablePen(new ImmutableSolidColorBrush(Palette.Alpha(color, layer)), 0);
-            }
-
+            cached = [.. CreateHalo(color, alpha, reach).Select(brush => (IPen)new ImmutablePen(brush, 0))];
             Pens[key] = cached;
         }
 
@@ -137,9 +130,44 @@ internal static class Glow
         }
     }
 
-    public static void Ellipse(DrawingContext context, Point centre, double radius, Color color, double tier)
+    /// <summary>New, uncached <see cref="Halo(DrawingContext, Rect, double, Color, double, double)"/> layers, innermost first, for a colour that keeps changing.</summary>
+    public static IImmutableSolidColorBrush[] CreateHalo(Color color, double alpha, double reach)
     {
-        var brushes = BrushesFor(color, tier);
+        var n = Math.Max(4, (int)Math.Ceiling(reach * 2));
+        var tau = reach * Tau;
+        var peak = Math.Min(0.95, alpha * TightBoost);
+        var target = new double[n + 2];
+        for (var i = 1; i <= n; i++)
+        {
+            target[i] = peak * Math.Exp(-(reach * (i - 0.5) / n) / tau);
+        }
+
+        var layers = new IImmutableSolidColorBrush[n];
+        for (var i = n; i >= 1; i--)
+        {
+            var layer = Math.Clamp(1 - ((1 - target[i]) / (1 - target[i + 1])), 0, 1);
+            layers[i - 1] = new ImmutableSolidColorBrush(Palette.Alpha(color, layer));
+        }
+
+        return layers;
+    }
+
+    /// <summary>A halo in layers the caller holds (from <see cref="CreateHalo"/>).</summary>
+    public static void Halo(DrawingContext context, Rect rect, double radius, IImmutableSolidColorBrush[] layers, double reach)
+    {
+        for (var i = layers.Length; i >= 1; i--)
+        {
+            var grow = reach * i / layers.Length;
+            context.DrawRectangle(layers[i - 1], null, new RoundedRect(rect.Inflate(grow), radius + grow));
+        }
+    }
+
+    public static void Ellipse(DrawingContext context, Point centre, double radius, Color color, double tier) =>
+        Ellipse(context, centre, radius, BrushesFor(color, tier));
+
+    /// <summary>A glow around a circle in layers the caller holds (from <see cref="CreateBrushes"/> or <see cref="MeterGradient.GlowBrushes"/>).</summary>
+    public static void Ellipse(DrawingContext context, Point centre, double radius, IImmutableSolidColorBrush[] brushes)
+    {
         for (var i = brushes.Length; i >= 1; i--)
         {
             var grow = Reach * i / brushes.Length;
@@ -150,6 +178,15 @@ internal static class Glow
     public static void Line(DrawingContext context, Point from, Point to, double width, Color color, double tier)
     {
         var pens = PensFor(color, tier, width);
+        for (var i = pens.Length; i >= 1; i--)
+        {
+            context.DrawLine(pens[i - 1], from, to);
+        }
+    }
+
+    /// <summary>A line glow in pens the caller holds (from <see cref="CreatePens(Color, double, double)"/>).</summary>
+    public static void Line(DrawingContext context, Point from, Point to, IPen[] pens)
+    {
         for (var i = pens.Length; i >= 1; i--)
         {
             context.DrawLine(pens[i - 1], from, to);

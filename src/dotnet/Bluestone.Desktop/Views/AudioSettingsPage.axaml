@@ -61,7 +61,8 @@
         <ComboBox Grid.Column="1" ItemsSource="{Binding LiveQueueSizes}" SelectedItem="{Binding LiveQueuedFrames}" HorizontalAlignment="Stretch" AutomationProperties.Name="Live render-ahead queue" />
       </Grid>
       <CheckBox Classes="settingCheck" Content="Low-latency monitoring: no delay compensation for the instrument played live" IsChecked="{Binding LowLatencyMonitoring}"
-                AutomationProperties.Name="Low-latency monitoring" />
+                AutomationProperties.Name="Low-latency monitoring"
+                AutomationProperties.HelpText="No delay compensation for the instrument played live." />
       <TextBlock Classes="settingHint" TextWrapping="Wrap"
                  Text="Render-ahead absorbs .NET garbage-collection pauses at the cost of latency; 0 renders in the device callback. While you play a plugin instrument the live render-ahead is used (0 keeps the other)." />
     </StackPanel>

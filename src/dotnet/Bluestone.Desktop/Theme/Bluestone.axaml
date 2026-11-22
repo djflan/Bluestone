@@ -504,6 +504,13 @@
   <Style Selector="CheckBox">
     <Setter Property="FontSize" Value="12" />
     <Setter Property="MinHeight" Value="24" />
+    <!-- One focus ring round the box and label, drawn just outside so the box's own edge stays visible. -->
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border AdornerLayer.IsClipEnabled="False" Margin="{StaticResource Inset.FocusRingOutset}" BorderThickness="2" BorderBrush="{StaticResource State.Focus}"
+                CornerRadius="{StaticResource Radius.Control}" />
+      </FocusAdornerTemplate>
+    </Setter>
   </Style>
   <Style Selector="ToolTip">
     <Setter Property="FontSize" Value="11" />
@@ -634,7 +641,7 @@
     <Setter Property="Padding" Value="3" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
-  <!-- A tool in a gutter: the glyph alone; on, it sits on a small aqua-filled square with dark ink. -->
+  <!-- A tool in a gutter keeps its full hit target. Toggle faces are narrower, leaving a visible gap between them. -->
   <Style Selector="controls|GutterPanel.toolGutter :is(Button).tool">
     <Setter Property="Width" Value="28" />
     <Setter Property="Height" Value="22" />
@@ -643,12 +650,41 @@
   <Style Selector="controls|GutterPanel.toolGutter :is(Button).tool:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="Transparent" />
   </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool">
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool /template/ ContentPresenter">
+    <Setter Property="Width" Value="{StaticResource Height.Control}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
   <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Accent}" />
-    <Setter Property="BoxShadow" Value="0 0 6 0 #473CCBF4" />
+    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
   </Style>
   <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked">
-    <Setter Property="Foreground" Value="{StaticResource Text.OnAccent}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Selected}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:pressed /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool:checked:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Pressed}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:disabled">
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:disabled /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked:disabled /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
   </Style>
   <Style Selector="controls|GutterPanel.transport > StackPanel > :is(Button)">
     <Setter Property="Width" Value="44" />
@@ -672,11 +708,15 @@
   <Style Selector="controls|GutterPanel.transport > StackPanel > :is(Button):pressed /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource State.Hover}" />
   </Style>
-  <!-- Lit glyphs: aqua (red for record) with a faint glow; no face, no lamp. -->
+  <!--
+    Lit glyphs: aqua (red for record) with a faint glow; no face, no lamp. Each key's LedFade lays the lit glyph (.lit,
+    styled lit always) over the dark one, so turning a key off fades the light out as a SquareKey's does.
+  -->
   <Style Selector="controls|GutterPanel.transport ToggleButton:checked, controls|GutterPanel.transport Button.stop.active">
     <Setter Property="Foreground" Value="{StaticResource Accent}" />
   </Style>
-  <Style Selector="controls|GutterPanel.transport ToggleButton:checked PathIcon, controls|GutterPanel.transport Button.stop.active PathIcon">
+  <Style Selector="controls|GutterPanel.transport controls|LedFade > PathIcon.lit">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
     <Setter Property="Effect">
       <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
     </Setter>
@@ -697,7 +737,8 @@
   <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked /template/ ContentPresenter">
     <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
   </Style>
-  <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked PathIcon">
+  <Style Selector="controls|GutterPanel.transport ToggleButton.record controls|LedFade > PathIcon.lit">
+    <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
     <Setter Property="Effect">
       <DropShadowEffect Color="{StaticResource Transport.RecordForegroundColor}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.6" />
     </Setter>
@@ -706,7 +747,8 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
-  <Style Selector="controls|GutterPanel.transport ToggleButton.text:checked TextBlock">
+  <Style Selector="controls|GutterPanel.transport ToggleButton.text controls|LedFade > TextBlock.lit">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
     <Setter Property="Effect">
       <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
     </Setter>
@@ -1070,7 +1112,7 @@
     <Setter Property="Margin" Value="6,0,0,0" />
   </Style>
 
-  <!-- Settings: a category list beside the page, in the workspace's own chrome. -->
+  <!-- Settings: a category list beside the page, in a surface above the workspace. -->
   <Style Selector="Border.settingsNav">
     <Setter Property="Width" Value="{StaticResource Width.SettingsNav}" />
     <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
@@ -1088,6 +1130,8 @@
   </Style>
   <Style Selector="ListBox.settingsCategories ListBoxItem:selected /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource State.Selected}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderThickness" Value="2,0,0,0" />
   </Style>
   <Style Selector="ListBox.settingsCategories ListBoxItem PathIcon">
     <Setter Property="Width" Value="{StaticResource Icon.SizeMedium}" />
@@ -1095,11 +1139,16 @@
     <Setter Property="Margin" Value="0,0,8,0" />
     <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
   </Style>
+  <Style Selector="ListBox.settingsCategories ListBoxItem:selected PathIcon">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+  </Style>
   <Style Selector="ListBox.settingsCategories ListBoxItem TextBlock">
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
+  <!-- Exactly as tall as the categories' Border.dockHeader beside it: one line (crumb and Done), dividers continuous. -->
   <Style Selector="Border.settingsHeader">
-    <Setter Property="Padding" Value="24,12,16,12" />
+    <Setter Property="Height" Value="{StaticResource Height.Header}" />
+    <Setter Property="Padding" Value="24,0,6,0" />
     <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -1137,6 +1186,140 @@
   </Style>
   <Style Selector="TextBlock.settingHint.warning">
     <Setter Property="Foreground" Value="{StaticResource State.Warning}" />
+  </Style>
+
+  <!--
+    Color swatches: the whole rounded tile is the color, with a dark keyline so light colors still read against the
+    panel. Hover rings it; keyboard focus rings it in the focus color.
+  -->
+  <Style Selector="Button.swatch">
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.swatch.small">
+    <Setter Property="Width" Value="18" />
+    <Setter Property="Height" Value="18" />
+  </Style>
+  <Style Selector="Button.swatch > Border">
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.swatch:pointerover /template/ ContentPresenter, Button.swatch:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.swatch:pointerover > Border">
+    <Setter Property="BorderBrush" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <Style Selector="Button.swatch:pressed > Border">
+    <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
+  </Style>
+  <Style Selector="Button.swatch:focus-visible > Border">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="BorderThickness" Value="1.5" />
+  </Style>
+
+  <!-- A hex color field; a value that is not six hex digits is marked, and goes nowhere. -->
+  <Style Selector="TextBox.hex">
+    <Setter Property="Width" Value="92" />
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBox.hex.invalid /template/ Border#PART_BorderElement, TextBox.hex.invalid:focus /template/ Border#PART_BorderElement, TextBox.hex.invalid:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Error}" />
+  </Style>
+
+  <!--
+    A color chip that opens the color picker: the color in a console well, ringed on hover, on keyboard focus, and in the
+    accent (lit) while its picker is open.
+  -->
+  <Style Selector="Button.colorChip">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.colorChip:pointerover /template/ ContentPresenter, Button.colorChip:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.colorChip > Border.chipRing">
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="Padding" Value="1.5" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+  <Style Selector="Button.colorChip:pointerover > Border.chipRing">
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+  </Style>
+  <Style Selector="Button.colorChip:focus-visible > Border.chipRing">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+  </Style>
+  <Style Selector="Button.colorChip.open > Border.chipRing">
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.AccentGlowTight}" />
+  </Style>
+
+  <!-- The color wheel, swatches, and chips draw their own focus rings, so not the default adorner on their bounds. -->
+  <Style Selector="controls|ColourWheel, Button.swatch, Button.colorChip">
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+
+  <!-- The color picker popover (Controls/ColourPicker.axaml). -->
+  <Style Selector="Border.colorPicker">
+    <Setter Property="Background" Value="{StaticResource Surface.Raised}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+    <Setter Property="BoxShadow" Value="{StaticResource Shadow.Popover}" />
+  </Style>
+  <Style Selector="Border.colorPicker TextBlock.pickerContext">
+    <Setter Property="Margin" Value="12,10,12,0" />
+    <Setter Property="LetterSpacing" Value="0.8" />
+  </Style>
+  <Style Selector="Border.colorPicker StackPanel.pickerBody">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="{StaticResource Space.L}" />
+    <Setter Property="Margin" Value="12,10,12,0" />
+  </Style>
+  <Style Selector="Border.colorPicker StackPanel.pickerHexRow">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="{StaticResource Space.M}" />
+    <Setter Property="Margin" Value="12,12,12,8" />
+  </Style>
+  <Style Selector="Border.colorPicker TextBlock.pickerReadout">
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.colorPicker TextBlock.pickerReadout.invalid">
+    <Setter Property="Foreground" Value="{StaticResource State.Error}" />
+  </Style>
+  <Style Selector="Border.colorPicker ItemsControl.pickerSwatches">
+    <Setter Property="Margin" Value="12,0" />
+  </Style>
+  <Style Selector="Border.colorPicker Border.pickerFooter">
+    <Setter Property="Height" Value="40" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+    <Setter Property="Padding" Value="12,0,10,0" />
+    <Setter Property="Background" Value="{StaticResource Surface.Panel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="CornerRadius" Value="0,0,4,4" />
   </Style>
 
   <!-- Dense lists (messages, monitor, event list) -->
@@ -1228,9 +1411,19 @@
   </Style>
 
   <!-- Keep keyboard focus clearly visible on every restyled control. -->
-  <Style Selector=":is(Button):focus-visible /template/ ContentPresenter, ToggleButton:focus-visible /template/ ContentPresenter">
+  <!-- Check boxes and radio buttons are buttons too, but their ContentPresenter is the label: they take their own focus ring
+       (the CheckBox FocusAdorner or a RadioButton class style), never a second rim tight round the label. -->
+  <Style Selector=":is(Button):not(:is(CheckBox)):not(:is(RadioButton)):focus-visible /template/ ContentPresenter,
+                   ToggleButton:not(:is(CheckBox)):not(:is(RadioButton)):focus-visible /template/ ContentPresenter">
     <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
     <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <!-- A checked toolbar toggle already has an aqua rim, so keyboard focus is a thicker, neutral (not aqua) ring that
+       cannot be read as "on". -->
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:focus-visible /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool:checked:focus-visible /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource State.FocusOnLit}" />
+    <Setter Property="BorderThickness" Value="2" />
   </Style>
   <!-- ============================================================================================================
        Workspace (ADR 0036): rails, dock headers, resize handles.

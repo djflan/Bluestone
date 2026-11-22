@@ -15,12 +15,6 @@
     <Style Selector="controls|TextKey.action">
       <Setter Property="Height" Value="{StaticResource Height.Control}" />
     </Style>
-    <Style Selector="TextBox.hex">
-      <Setter Property="Width" Value="92" />
-      <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
-      <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
     <Style Selector="TextBlock.readout">
       <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
       <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
@@ -28,103 +22,219 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="MinWidth" Value="40" />
     </Style>
-    <Style Selector="TextBlock.caption">
-      <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
-      <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
+    <Style Selector="Border.rule">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{StaticResource Line.Divider}" />
+      <Setter Property="Margin" Value="0,4" />
     </Style>
-    <Style Selector="Button.swatch">
-      <Setter Property="Width" Value="22" />
-      <Setter Property="Height" Value="22" />
+
+    <!-- The indicator stage: three tiles, each the real indicator in its own colors. -->
+    <!-- Room round the tiles (taken back by the margin) so a tile's keyboard focus ring is not clipped. -->
+    <Style Selector="ListBox.indicatorStage">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="4" />
+      <Setter Property="Margin" Value="-4" />
+      <Setter Property="ClipToBounds" Value="False" />
+      <Setter Property="(ScrollViewer.HorizontalScrollBarVisibility)" Value="Disabled" />
+      <Setter Property="(ScrollViewer.VerticalScrollBarVisibility)" Value="Disabled" />
+    </Style>
+    <Style Selector="ListBox.indicatorStage > ListBoxItem">
       <Setter Property="Padding" Value="0" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Background" Value="{StaticResource Console.Well}" />
-      <Setter Property="BorderBrush" Value="{StaticResource Line.Border}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
       <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="ClipToBounds" Value="False" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Panel>
+            <Border Name="PART_Tile" Background="{StaticResource Console.Bed}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="1"
+                    CornerRadius="{StaticResource Radius.Panel}" Padding="8,10,8,8">
+              <ContentPresenter Name="TileContent" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+            </Border>
+            <Border Name="PART_FocusRing" Margin="-3.5" BorderBrush="{StaticResource State.Focus}" BorderThickness="1.5" CornerRadius="7"
+                    IsVisible="False" IsHitTestVisible="False" />
+          </Panel>
+        </ControlTemplate>
+      </Setter>
     </Style>
-    <Style Selector="Button.swatch:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource Console.Well}" />
+    <Style Selector="ListBox.indicatorStage > ListBoxItem:pointerover /template/ Border#PART_Tile">
+      <Setter Property="Background" Value="{StaticResource Console.BedHover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    </Style>
+    <Style Selector="ListBox.indicatorStage > ListBoxItem:selected /template/ Border#PART_Tile">
       <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+      <Setter Property="BorderThickness" Value="1.5" />
+      <Setter Property="BoxShadow" Value="{StaticResource Shadow.AccentGlow}" />
     </Style>
-    <Style Selector="Button.swatch:pressed /template/ ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource Console.Well}" />
-      <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
+    <Style Selector="ListBox.indicatorStage > ListBoxItem:focus-visible /template/ Border#PART_FocusRing">
+      <Setter Property="IsVisible" Value="True" />
     </Style>
-    <Style Selector="Button.swatch > Border">
-      <Setter Property="Margin" Value="3" />
-      <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    <Style Selector="ListBox.indicatorStage TextBlock.tileLabel">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />
+      <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,8,0,0" />
+    </Style>
+    <Style Selector="ListBox.indicatorStage > ListBoxItem:pointerover TextBlock.tileLabel">
+      <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+    </Style>
+    <Style Selector="ListBox.indicatorStage > ListBoxItem:selected TextBlock.tileLabel">
+      <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.segmented.stageTargets">
+      <Setter Property="Width" Value="186" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Opacity" Value="0.85" />
     </Style>
   </UserControl.Styles>
 
   <!-- Display preferences for the whole application, saved as soon as they change. -->
-  <StackPanel Classes="settingsGroups">
-    <StackPanel Classes="settingsGroup">
-      <TextBlock Classes="overline" Text="SIGNAL METERS" />
+  <Panel>
+    <controls:ColourPickerPopup x:Name="Picker" />
+    <StackPanel Classes="settingsGroups">
+      <StackPanel Classes="settingsGroup">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="overline" Text="INDICATOR COLORS" VerticalAlignment="Center" />
+          <!-- The same choice as the stage, as one short control (for the keyboard and screen readers). -->
+          <Border Grid.Column="1" Classes="segmented stageTargets">
+            <Grid ColumnDefinitions="*,*,*">
+              <RadioButton x:Name="MixerTarget" Classes="segment" GroupName="IndicatorTarget" Content="Mixer" AutomationProperties.Name="Edit mixer meter colors" />
+              <RadioButton x:Name="ChainTarget" Grid.Column="1" Classes="segment" GroupName="IndicatorTarget" Content="Chain" AutomationProperties.Name="Edit device chain colors" />
+              <RadioButton x:Name="GainTarget" Grid.Column="2" Classes="segment" GroupName="IndicatorTarget" Content="Gain" AutomationProperties.Name="Edit gain LED colors" />
+            </Grid>
+          </Border>
+        </Grid>
+        <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                   Text="Choose an indicator to change its colors. The stage shows them as the mixer and device chain draw them." />
 
-      <!-- The gradient as a meter draws it, its stops' handles under it; the clip lamp beside it is fixed. -->
-      <Grid ColumnDefinitions="*,Auto">
-        <views:SignalGradientEditor x:Name="GradientEditor" VerticalAlignment="Top" />
-        <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="4" VerticalAlignment="Top">
-          <controls:RecessedWell Width="22" Height="22" Padding="4" HorizontalAlignment="Center">
-            <Border Background="{StaticResource Console.Clip}" CornerRadius="1.5" AutomationProperties.Name="Clip lamp (fixed colour)" />
-          </controls:RecessedWell>
-          <TextBlock Classes="caption" Text="Clip (fixed)" />
+        <ListBox x:Name="Stage" Classes="indicatorStage" SelectionMode="Single,AlwaysSelected" AutomationProperties.Name="Indicator to edit">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="3" ColumnSpacing="{StaticResource Space.S}" />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="views:IndicatorStageItem">
+              <DockPanel AutomationProperties.Name="{Binding Title}">
+                <TextBlock DockPanel.Dock="Bottom" Classes="tileLabel" Text="{Binding Title}" />
+                <controls:IndicatorPreview Family="{Binding Family}" Height="120" />
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- The chosen indicator's gradient: one editor, bound to the stage's choice. -->
+        <StackPanel x:Name="EditorPanel" Spacing="{StaticResource Space.M}" Margin="0,6,0,0" x:DataType="vm:GradientEditorViewModel">
+          <TextBlock TextWrapping="Wrap">
+            <Run x:Name="EditorTitle" FontSize="{StaticResource FontSize.Title}" FontWeight="SemiBold" Foreground="{StaticResource Text.Primary}" />
+            <Run Text="  " />
+            <Run x:Name="EditorDescription" FontSize="{StaticResource FontSize.Small}" Foreground="{StaticResource Text.Muted}" />
+          </TextBlock>
+
+          <!-- The gradient as a meter draws it, its stops' handles under it. -->
+          <views:SignalGradientEditor x:Name="GradientEditor" VerticalAlignment="Top" />
+
+          <!-- The selected stop: its color (the chip opens the color picker) and position, and the gradient's actions. -->
+          <Grid ColumnDefinitions="Auto,*,Auto" Classes="settingRow">
+            <StackPanel Classes="gradientTools">
+              <Button x:Name="StopChip" Classes="colorChip" Click="OnStopChip" AutomationProperties.Name="Edit stop color" ToolTip.Tip="Pick a color">
+                <Border Classes="chipRing">
+                  <controls:RecessedWell Width="24" Height="24" Padding="4">
+                    <Border CornerRadius="{StaticResource Radius.Small}" Background="{Binding SelectedGradientStopColour, Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+                  </controls:RecessedWell>
+                </Border>
+              </Button>
+              <TextBox x:Name="StopColourBox" Classes="hex" Text="{Binding SelectedGradientStopColour}" MaxLength="7"
+                       AutomationProperties.Name="Selected stop color (hex)" />
+              <TextBlock x:Name="StopPositionText" Classes="readout" Text="{Binding SelectedGradientStopPercent}"
+                         AutomationProperties.Name="Selected stop position" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Classes="gradientTools">
+              <controls:TextKey x:Name="AddStopKey" Classes="action" IsAction="True" Text="Add stop" Command="{Binding AddGradientStopInLargestGapCommand}"
+                                AutomationProperties.Name="Add gradient stop" />
+              <controls:TextKey x:Name="RemoveStopKey" Classes="action" IsAction="True" Text="Remove stop" Command="{Binding RemoveSelectedGradientStopCommand}"
+                                AutomationProperties.Name="Remove gradient stop" />
+              <controls:TextKey x:Name="ResetGradientKey" Classes="action" IsAction="True" Text="Reset to default" Command="{Binding ResetGradientCommand}"
+                                AutomationProperties.Name="Reset gradient to default" />
+            </StackPanel>
+          </Grid>
+
+          <ItemsControl x:Name="Swatches" ItemsSource="{x:Static vm:DisplayViewModel.GradientSwatches}" AutomationProperties.Name="Stop color swatches">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel ItemSpacing="6" LineSpacing="6" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <Button Classes="swatch" Command="{Binding $parent[ItemsControl].((vm:GradientEditorViewModel)DataContext).ChooseGradientStopColourCommand}"
+                        CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='Color {0}'}" ToolTip.Tip="{Binding}">
+                  <Border Background="{Binding Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
-      </Grid>
 
-      <!-- The selected stop: its colour and position, and the gradient's actions. -->
-      <Grid ColumnDefinitions="Auto,*,Auto" Classes="settingRow">
-        <StackPanel Classes="gradientTools">
-          <controls:RecessedWell Width="24" Height="24" Padding="4">
-            <Border CornerRadius="1.5" Background="{Binding SelectedGradientStopColour, Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
-          </controls:RecessedWell>
-          <TextBox x:Name="StopColourBox" Classes="hex" Text="{Binding SelectedGradientStopColour}" MaxLength="7"
-                   AutomationProperties.Name="Selected stop colour (hex)" />
-          <TextBlock x:Name="StopPositionText" Classes="readout" Text="{Binding SelectedGradientStopPercent}"
-                     AutomationProperties.Name="Selected stop position" />
+        <!-- The MIDI light lives on the device chain's seams, so it is offered with the chain. -->
+        <StackPanel x:Name="MidiPanel" Spacing="{StaticResource Space.M}">
+          <Border Classes="rule" />
+          <Grid ColumnDefinitions="140,*" Classes="settingRow">
+            <TextBlock Classes="label" Text="MIDI light" VerticalAlignment="Top" Margin="0,4,0,0" />
+            <WrapPanel Grid.Column="1" ItemSpacing="{StaticResource Space.L}" LineSpacing="{StaticResource Space.S}">
+              <StackPanel Classes="gradientTools">
+                <Button x:Name="MidiChip" Classes="colorChip" Click="OnMidiChip" AutomationProperties.Name="Edit MIDI light color" ToolTip.Tip="Pick a color">
+                  <Border Classes="chipRing">
+                    <controls:RecessedWell Width="24" Height="24" Padding="4">
+                      <Border CornerRadius="{StaticResource Radius.Small}" Background="{Binding MidiColour, Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+                    </controls:RecessedWell>
+                  </Border>
+                </Button>
+                <TextBox x:Name="MidiColourBox" Classes="hex" Text="{Binding MidiColour}" MaxLength="7" AutomationProperties.Name="MIDI light color (hex)" />
+              </StackPanel>
+              <ItemsControl x:Name="MidiSwatches" ItemsSource="{x:Static vm:DisplayViewModel.GradientSwatches}" VerticalAlignment="Center"
+                            AutomationProperties.Name="MIDI light color swatches">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Button Classes="swatch" Command="{Binding $parent[UserControl].((vm:DisplayViewModel)DataContext).ChooseMidiColourCommand}"
+                            CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='MIDI light color {0}'}" ToolTip.Tip="{Binding}">
+                      <Border Background="{Binding Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </WrapPanel>
+          </Grid>
         </StackPanel>
-        <StackPanel Grid.Column="2" Classes="gradientTools">
-          <controls:TextKey x:Name="AddStopKey" Classes="action" IsAction="True" Text="Add stop" Command="{Binding AddGradientStopInLargestGapCommand}"
-                            AutomationProperties.Name="Add gradient stop" />
-          <controls:TextKey x:Name="RemoveStopKey" Classes="action" IsAction="True" Text="Remove stop" Command="{Binding RemoveSelectedGradientStopCommand}"
-                            AutomationProperties.Name="Remove gradient stop" />
-          <controls:TextKey x:Name="ResetGradientKey" Classes="action" IsAction="True" Text="Reset to default" Command="{Binding ResetGradientCommand}"
-                            AutomationProperties.Name="Reset gradient to default" />
-        </StackPanel>
-      </Grid>
 
-      <ItemsControl x:Name="Swatches" ItemsSource="{x:Static vm:DisplayViewModel.GradientSwatches}" AutomationProperties.Name="Stop colour swatches">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <WrapPanel ItemSpacing="6" LineSpacing="6" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="x:String">
-            <Button Classes="swatch" Command="{Binding $parent[UserControl].((vm:DisplayViewModel)DataContext).ChooseGradientStopColourCommand}"
-                    CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='Colour {0}'}" ToolTip.Tip="{Binding}">
-              <Border Background="{Binding Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
-            </Button>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      </StackPanel>
 
-      <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Every level meter runs through these colours from silence to full scale. Drag a stop's handle (or focus it and press Left or Right, with Shift for bigger steps) to change where its colour begins; put two stops at the same place for a hard edge. The clip lamp above the meter is always red." />
+      <StackPanel Classes="settingsGroup">
+        <TextBlock Classes="overline" Text="LED MOTION" />
+        <CheckBox x:Name="LedFadeCheck" Classes="settingCheck" Content="LED fade: lit LEDs fall away smoothly instead of switching off" IsChecked="{Binding LedFade}"
+                  AutomationProperties.Name="LED fade" AutomationProperties.HelpText="Lit LEDs fall away smoothly instead of switching off." />
+        <CheckBox x:Name="LedWarmupCheck" Classes="settingCheck" Content="LED warm-up: LEDs ease on as they light, like a lamp warming" IsChecked="{Binding LedWarmup}"
+                  AutomationProperties.Name="LED warm-up" AutomationProperties.HelpText="LEDs ease on as they light, like a lamp warming." />
+        <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                   Text="Both are ignored while the system's Reduce motion setting is on, or when Bluestone can't read it; LEDs then switch instantly." />
+      </StackPanel>
+
+      <StackPanel Classes="settingsGroup">
+        <TextBlock Classes="overline" Text="DEVICE VIEW" />
+        <Grid Classes="settingRow" ColumnDefinitions="140,*">
+          <TextBlock Classes="label" Text="Levels show" />
+          <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
+                    HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
+        </Grid>
+        <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                   Text="Between devices, each point in a chain shows its audio level and, above it, a MIDI icon that glows while notes are held there. Choose whether a level follows the average loudness (with the peak held above it) or the peaks." />
+      </StackPanel>
     </StackPanel>
-
-    <StackPanel Classes="settingsGroup">
-      <TextBlock Classes="overline" Text="DEVICE VIEW" />
-      <Grid Classes="settingRow" ColumnDefinitions="180,*">
-        <TextBlock Classes="label" Text="Levels show" />
-        <ComboBox x:Name="LevelStyleBox" Grid.Column="1" ItemsSource="{x:Static vm:DisplayViewModel.LevelStyles}" SelectedItem="{Binding LevelStyleChoice}"
-                  HorizontalAlignment="Stretch" AutomationProperties.Name="Signal level style" />
-      </Grid>
-      <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                 Text="Between devices, each point in a chain shows its audio level and, above it, a MIDI icon that glows while notes are held there. Choose whether a level follows the average loudness (with the peak held above it) or the peaks." />
-    </StackPanel>
-  </StackPanel>
+  </Panel>
 </UserControl>

@@ -257,3 +257,23 @@ less CPU than yielding did.
   re-measurement found no JIT pause over 0.14 ms on the in-process path either.
 - All numbers come from one Mac with a synthetic load. Rerun the probes on other machines, and on Windows and Linux
   when their adapters gain precise waits, before changing a target or a default.
+
+## Measurement note: LED display motion (2026-11-22)
+
+The LED fade/warm-up clock runs on the UI thread, outside the real-time paths above. On `a34f9b7`,
+`ChainMeterCostTests` and `LedMotionCostTests` used a manual clock and headless/offscreen drawing, measuring
+managed allocation with `GC.GetAllocatedBytesForCurrentThread`. They reported 0 B for application clock ticks
+and the Out meter's ladder draw. Animated gain draws had the same allocation baseline as at rest; key and
+MIDI draws allocated in the offscreen drawing backend. These results do not establish zero allocation for all
+rendering. The real `TopLevel.RequestAnimationFrame` implementation, compositor, hardware timing, and
+macOS/Windows system-preference reads were not verified by these tests. The existing real-time measurement
+contract is unchanged.
+
+A follow-up test, `TheLadder_AfterAGradientChange_FadesAndWarmsUpWithoutAllocating`, measures the first fade and
+warm-up after each of three gradient changes. It asserts that the gradient's brush cache does not grow during any of
+those passes (every glow step is already built) and that ticks allocate nothing; draw bytes are judged by the best of
+the three, because a loaded machine occasionally shows a few hundred backend bytes outside Bluestone's caches. Before
+the ladder prebuilt its intermediate glow steps, a pass allocated 90,312 bytes in managed draw code; with them prebuilt
+when the colors are rebuilt, it reports 0 B for both ticks and draws. The clip lamp's step brushes are app-lifetime
+caches warmed by the test's first pass, so the test cannot fail on them; only the glow prebuild is proven. The gain
+LEDs' test is judged the same way. The same manual-clock, headless limits apply.

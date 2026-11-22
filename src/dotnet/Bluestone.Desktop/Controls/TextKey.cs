@@ -10,6 +10,7 @@ namespace Bluestone.Desktop.Controls;
 /// <summary>
 /// A flat text key (mode switches such as Auto or Limiter, and segmented choices): a dark rounded face with a light
 /// label; on takes a little of the accent, a soft bloom behind the label, an accent rim, and an accent-white label. No lamp beside it.
+/// Turned off, the lit face fades out over <see cref="FadeMs"/> (<see cref="LedMotion"/>).
 /// With <see cref="IsAction"/> it is a plain action key instead (Add, Reset): pressing it never checks it, and a screen
 /// reader hears a button it can invoke, not a toggle.
 /// </summary>
@@ -23,9 +24,18 @@ public sealed class TextKey : ToggleButton
     private const double Radius = 3;
     private const double FontPx = 10;
     private const double PadX = 8;
-    private FormattedText? _label;
+    private readonly FormattedText?[] _labels = new FormattedText?[2];
+    private readonly string?[] _labelTexts = new string?[2];
+    private readonly LedLevels _lamp;
     private IImmutableBrush? _bloom;
-    private (string, bool) _labelKey;
+
+    public TextKey() => _lamp = new LedLevels(this, FadeMs, count: 1);
+
+    /// <summary>How long the lit face takes to fade out, in milliseconds.</summary>
+    internal const double FadeMs = 60;
+
+    /// <summary>How lit the face is (for tests).</summary>
+    internal LedLevels Lamp => _lamp;
 
     public string Text { get => GetValue(TextProperty); set => SetValue(TextProperty, value); }
 
@@ -43,6 +53,34 @@ public sealed class TextKey : ToggleButton
         var r = ConsolePaint.Snap(new Rect(Bounds.Size));
         var face = new RoundedRect(r, Radius);
         var on = IsChecked == true;
+        Face(context, r, face, on);
+        var fading = on ? 0 : _lamp.Step(0);
+        if (fading > 0)
+        {
+            // Turned off a moment ago: the lit face over the dark one, fading out.
+            using (context.PushOpacity(fading / (double)LedLevels.Steps))
+            {
+                Face(context, r, face, true);
+            }
+        }
+
+        if (IsFocused && Classes.Contains(":focus-visible"))
+        {
+            context.DrawRectangle(null, ConsolePaint.Pen(Palette.Focus), new RoundedRect(r.Inflate(2), Radius + 2));
+        }
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsCheckedProperty)
+        {
+            _lamp.Set(0, IsChecked == true, LedMotion.Now);
+        }
+    }
+
+    private void Face(DrawingContext context, Rect r, RoundedRect face, bool on)
+    {
         if (on)
         {
             // A lit mode key: the face takes a little of the accent and a soft bloom from behind the label.
@@ -71,15 +109,10 @@ public sealed class TextKey : ToggleButton
 
         ConsolePaint.HLine(context, ConsolePaint.Alpha(ConsolePaint.White, on ? 0.10 : 0.06), r.X + 2, r.Right - 2, r.Y + 0.5);
         context.DrawRectangle(null, ConsolePaint.Pen(on ? ConsolePaint.Alpha(Palette.Accent, 0.45) : ConsolePaint.Alpha(ConsolePaint.Black, 0.55)), new RoundedRect(r.Deflate(0.5), Radius));
-        var label = Label(IsChecked == true);
+        var label = Label(on);
         using (context.PushOpacity(IsEffectivelyEnabled ? 1 : 0.45))
         {
             context.DrawText(label, new Point(r.X + Math.Round((r.Width - label.Width) / 2), r.Y + ((r.Height - label.Height) / 2)));
-        }
-
-        if (IsFocused && Classes.Contains(":focus-visible"))
-        {
-            context.DrawRectangle(null, ConsolePaint.Pen(Palette.Focus), new RoundedRect(r.Inflate(2), Radius + 2));
         }
     }
 
@@ -103,15 +136,18 @@ public sealed class TextKey : ToggleButton
 
     protected override Size ArrangeOverride(Size finalSize) => finalSize;
 
+    // One cached label for each face, so a fade draws both without rebuilding either.
     private FormattedText Label(bool on)
     {
-        if (_label is null || _labelKey != (Text, on))
+        var slot = on ? 1 : 0;
+        if (_labels[slot] is not { } label || _labelTexts[slot] != Text)
         {
-            _label = new FormattedText(Text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            label = new FormattedText(Text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold), FontPx, ConsolePaint.Brush(on ? ConsolePaint.Lighter(Palette.Accent, 0.15) : Palette.TextSecondary));
-            _labelKey = (Text, on);
+            _labels[slot] = label;
+            _labelTexts[slot] = Text;
         }
 
-        return _label;
+        return label;
     }
 }
