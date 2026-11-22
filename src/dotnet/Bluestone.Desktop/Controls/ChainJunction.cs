@@ -98,11 +98,14 @@ public sealed class ChainJunction : Control, ICustomHitTest
         insert.Click += (_, _) => Run(InsertCommand);
         var route = new MenuItem { Header = "Route from Here…" };
         route.Click += (_, _) => Run(RouteCommand);
-        ContextMenu = new ContextMenu { Items = { insert, route } };
+        var clear = new MenuItem { Header = "Clear Clip", InputGesture = new KeyGesture(Key.Delete) };
+        clear.Click += (_, _) => ClearClip();
+        ContextMenu = new ContextMenu { Items = { insert, route, new Separator(), clear } };
         ContextMenu.Opening += (_, _) =>
         {
             insert.IsEnabled = InsertCommand?.CanExecute(Signal) == true;
             route.IsEnabled = RouteCommand?.CanExecute(Signal) == true;
+            clear.IsEnabled = Signal?.Levels.Clipped == true;
         };
     }
 
@@ -143,7 +146,21 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
     /// <summary>What the seam carries now, in words, for its tooltip and screen readers.</summary>
     internal string Describe() => Signal is not { } signal ? string.Empty
-        : SignalDescription.Describe(signal.Label, signal.CanCarryNotes, signal.NotesHeld, signal.CanCarryAudio, signal.Levels, signal.IsRouted ? signal.Routes : null);
+        : SignalDescription.Describe(signal.Label, signal.CanCarryNotes, signal.NotesHeld, signal.CanCarryAudio, signal.Levels, signal.IsRouted ? signal.Routes : null)
+            + (signal.CanCarryAudio && signal.Levels.Clipped ? "; clip latched (Delete clears it)" : string.Empty);
+
+    /// <summary>Clears a latched clip; true if there was one.</summary>
+    internal bool ClearClip()
+    {
+        if (Signal is not { } signal || !signal.Levels.Clipped)
+        {
+            return false;
+        }
+
+        signal.Levels.ResetClip();
+        OnFrame();
+        return true;
+    }
 
     private double Center => Math.Round(Bounds.Width / 2);
 
@@ -271,7 +288,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
                 e.Handled = true;
                 break;
             case Part.Clip:
-                Signal!.Levels.ResetClip();
+                ClearClip();
                 e.Handled = true;
                 break;
         }
@@ -283,6 +300,10 @@ public sealed class ChainJunction : Control, ICustomHitTest
         if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
         {
             Run(InsertCommand);
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Delete or Key.Back && e.KeyModifiers == KeyModifiers.None && ClearClip())
+        {
             e.Handled = true;
         }
     }
@@ -332,6 +353,12 @@ public sealed class ChainJunction : Control, ICustomHitTest
     {
         var center = Center;
         var signal = Signal;
+        if (IsFocused && Classes.Contains(":focus-visible"))
+        {
+            // Keyboard focus: a solid outline around the junction, as on the square keys; never a glow.
+            context.DrawRectangle(null, ConsolePaint.Pen(Palette.Focus, 1.5), new RoundedRect(new Rect(Bounds.Size).Deflate(1), 4));
+        }
+
         if (signal is { IsInsertionPoint: true })
         {
             // The gap the Browser's next insert goes into, marked as a drop's insertion marker marks it.

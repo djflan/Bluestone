@@ -173,8 +173,8 @@ public sealed class Knob : Control
 
         if (IsFocused)
         {
-            // Focus is a solid outline just outside the ring, never a glow; inset so clipped hosts keep all of it.
-            context.DrawEllipse(null, ConsolePaint.Pen(Palette.Focus, 1.5), center, radius + 0.25, radius + 0.25);
+            // Focus is a solid outline with a gap outside the ring, never a glow.
+            context.DrawEllipse(null, ConsolePaint.Pen(Palette.Focus, 2), center, radius + 1.5, radius + 1.5);
         }
     }
 

@@ -686,7 +686,7 @@
               <ToggleButton Classes="mode" IsChecked="{Binding IsMetronomeEnabled, Mode=OneWay}" Command="{Binding ToggleMetronomeCommand}" ToolTip.Tip="Metronome click (K)" AutomationProperties.Name="Metronome">
                 <PathIcon Classes="stroke" Data="{StaticResource Icon.Metronome}" Width="15" Height="15" />
               </ToggleButton>
-              <ToggleButton Classes="mode text" IsChecked="{Binding IsCountInEnabled, Mode=OneWay}" Command="{Binding ToggleCountInCommand}" ToolTip.Tip="Count in before recording" AutomationProperties.Name="Count-in">
+              <ToggleButton Classes="mode text" IsChecked="{Binding IsCountInEnabled, Mode=OneWay}" Command="{Binding ToggleCountInCommand}" ToolTip.Tip="Count in before recording" AutomationProperties.Name="Pre (count-in)">
                 <TextBlock Text="Pre" />
               </ToggleButton>
             </StackPanel>

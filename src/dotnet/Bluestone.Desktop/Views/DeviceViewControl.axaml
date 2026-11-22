@@ -95,7 +95,7 @@
                             <!-- Power: the glyph itself is lit while the device is on; no lamp beside it. -->
                             <controls:PowerGlyph Classes="devicePower" Bloom="True" IsChecked="{Binding !IsBypassed, Mode=OneWay}" Command="{Binding ToggleBypassedCommand}"
                                                  ToolTip.Tip="On or bypassed. A bypassed device passes every signal through unchanged."
-                                                 AutomationProperties.Name="Bypass device" />
+                                                 AutomationProperties.Name="{Binding Name, StringFormat='{}{0} power'}" />
                             <TextBlock Grid.Column="1" Classes="deviceName grip" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Kind}" />
                             <!-- The sidechain (ADR 0037): outlined while nothing keys it, the key's colour once something does. -->
                             <Button Grid.Column="2" Classes="scChip" Classes.keyed="{Binding Sidechain.HasSource, FallbackValue=False}" IsVisible="{Binding Sidechain, Converter={x:Static ObjectConverters.IsNotNull}}"
@@ -241,7 +241,7 @@
                       <!-- Collapsed: a narrow strip with the name running up it. Click to expand. -->
                       <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsCollapsed}">
                         <controls:PowerGlyph Grid.Row="1" Classes="devicePower" Bloom="True" IsChecked="{Binding !IsBypassed, Mode=OneWay}" Command="{Binding ToggleBypassedCommand}"
-                                             HorizontalAlignment="Center" Margin="0,10,0,4" AutomationProperties.Name="Bypass device" />
+                                             HorizontalAlignment="Center" Margin="0,10,0,4" AutomationProperties.Name="{Binding Name, StringFormat='{}{0} power'}" />
                         <Button Grid.Row="2" Classes="collapsedName" Command="{Binding ToggleCollapsedCommand}" ToolTip.Tip="{Binding Name, StringFormat='{}{0}: expand in this view'}"
                                 AutomationProperties.Name="Expand device">
                           <LayoutTransformControl>

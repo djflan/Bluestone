@@ -193,7 +193,10 @@ public sealed class WorkspaceShowcaseTests
         levels[view.Devices[2].Output.Key] = new(0.5f, 0.5f, 0.3f, 0.3f);
         app.ViewModel.OnFrame();
         Assert.True(view.Devices[2].Output.Levels.Clipped);
-        Assert.DoesNotContain("clip", seam.Describe(), StringComparison.Ordinal);
+        Assert.DoesNotContain("clipping", seam.Describe(), StringComparison.Ordinal);
+
+        // The latched clip lamp is said, with how to clear it from the keyboard.
+        Assert.Contains("clip latched", seam.Describe(), StringComparison.Ordinal);
     });
 
     /// <summary>

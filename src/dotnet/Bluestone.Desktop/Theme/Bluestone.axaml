@@ -730,7 +730,7 @@
     <Setter Property="FontSize" Value="8" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="LetterSpacing" Value="0.8" />
-    <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
   </Style>
   <Style Selector="TextBlock.fieldValue">
     <Setter Property="FontSize" Value="{StaticResource FontSize.Small}" />

@@ -63,7 +63,9 @@ public sealed class TimelineView : Control
     private static readonly IBrush RecordFill = new SolidColorBrush(Palette.Record, 0.28);
     private static readonly IPen RecordEdge = new Pen(new SolidColorBrush(Palette.Record, 0.9), 1);
     private static readonly IBrush RecordNote = new SolidColorBrush(Palette.Lighten(Palette.Record, 0.35));
-    private static readonly IBrush RegionText = new SolidColorBrush(Color.Parse("#F4F6F8"));
+    private static readonly Color RegionTextColor = Color.Parse("#F4F6F8");
+    private static readonly IBrush RegionText = new SolidColorBrush(RegionTextColor);
+    private static readonly IBrush RegionInk = new SolidColorBrush(Palette.Base);
     private static readonly Typeface RegionFace = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
 
     // Clip drag state
@@ -1051,7 +1053,7 @@ public sealed class TimelineView : Control
         var labelX = Math.Max(body.X + 4, VisibleLeft + 4);
         if (labelX < body.Right - 24)
         {
-            var name = new FormattedText(track.ClipName(clip), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 10, RegionText)
+            var name = new FormattedText(track.ClipName(clip), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, RegionFace, 10, HeaderInk(header))
             {
                 MaxTextWidth = Math.Max(1, body.Right - labelX - 4),
                 MaxLineCount = 1,
@@ -1122,6 +1124,26 @@ public sealed class TimelineView : Control
 
     // A looping clip's repeats: the first boundary dashed, later ones dotted and lighter, thinned out so they never
     // crowd closer than 6 pixels; and the loop handle in the lower-right corner, stronger while it is hovered.
+    /// <summary>The clip name's ink on a header of <paramref name="header"/>: light, or dark where light text would not reach good contrast.</summary>
+    internal static IBrush HeaderInk(Color header)
+    {
+        var face = Luminance(header);
+        var light = (Luminance(RegionTextColor) + 0.05) / (face + 0.05);
+        var dark = (face + 0.05) / (Luminance(Palette.Base) + 0.05);
+        return dark > light ? RegionInk : RegionText;
+    }
+
+    private static double Luminance(Color color)
+    {
+        static double Channel(byte value)
+        {
+            var c = value / 255.0;
+            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+
+        return (0.2126 * Channel(color.R)) + (0.7152 * Channel(color.G)) + (0.0722 * Channel(color.B));
+    }
+
     private void DrawLoop(DrawingContext context, Clip clip, Rect body, double shift, Color color, double left, double right)
     {
         var hovered = _hover is { } hover && hover.Clip == clip.Id ? hover.Grip : Grip.None;

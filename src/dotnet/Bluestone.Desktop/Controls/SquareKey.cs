@@ -98,7 +98,8 @@ public sealed class SquareKey : ToggleButton
             }
 
             context.DrawRectangle(null, ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.55)), new RoundedRect(r.Inflate(0.5), Radius + 0.5));
-            var ink = on ? (OnColor == Palette.Solo ? Palette.SoloInk : ConsolePaint.White) : Palette.Text;
+            // Solo's yellow and mute's blue are light faces: dark ink keeps the letter at 4.5:1 or better.
+            var ink = on ? (OnColor == Palette.Solo ? Palette.SoloInk : OnColor == Palette.Mute ? Palette.Base : ConsolePaint.White) : Palette.Text;
             switch (Kind)
             {
                 case SquareKeyKind.Record:

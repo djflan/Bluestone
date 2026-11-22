@@ -470,6 +470,73 @@ public sealed class DeviceViewTests
     });
 
     [Fact]
+    public Task AFocusedJunction_DrawsAFocusRing_AndDeleteClearsItsLatchedClip() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var seam = app.Find<ContentControl>("DockedDeviceView").GetVisualDescendants().OfType<ChainJunction>()
+            .Single(s => s.Signal == view.Devices[1].Arriving);
+        SetInternal(seam.Signal!, nameof(Bluestone.Presentation.JunctionSignal.CanCarryAudio), true);
+        seam.Signal!.Levels.Update(new Bluestone.Audio.MeterReading(1.2f, 1.1f, 0.6f, 0.5f), System.Diagnostics.Stopwatch.GetTimestamp());
+        app.Settle();
+        Assert.Equal(0, FocusPixels(app, seam));
+        Assert.Contains("clip latched", seam.Describe(), StringComparison.Ordinal);
+
+        // Keyboard focus draws a solid ring round the junction; Delete then clears the latched clip.
+        seam.Focus(NavigationMethod.Tab);
+        app.Settle();
+        Assert.True(FocusPixels(app, seam) > 20, "A keyboard-focused junction shows a focus ring.");
+        var selected = view.SelectedDevice;
+        app.Press(Key.Delete);
+        app.Settle();
+        Assert.False(seam.Signal!.Levels.Clipped);
+        Assert.DoesNotContain("clip latched", seam.Describe(), StringComparison.Ordinal);
+        Assert.Same(selected, view.SelectedDevice);
+    });
+
+    /// <summary>Counts pixels near the focus colour in the top three pixel rows of <paramref name="control"/>, in a fresh frame.</summary>
+    private static int FocusPixels(AppUnderTest app, Control control)
+    {
+        app.Window.UpdateLayout();
+        using var frame = app.Window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Nothing was rendered.");
+        var origin = control.TranslatePoint(default, app.Window)!.Value;
+        var scale = frame.PixelSize.Width / app.Window.Bounds.Width;
+        var x0 = (int)(origin.X * scale);
+        var y0 = (int)(origin.Y * scale);
+        var width = (int)(control.Bounds.Width * scale);
+        var stride = frame.PixelSize.Width * 4;
+        var rows = new byte[stride * 3];
+        var buffer = System.Runtime.InteropServices.Marshal.AllocHGlobal(rows.Length);
+        try
+        {
+            frame.CopyPixels(new PixelRect(0, y0, frame.PixelSize.Width, 3), buffer, rows.Length, stride);
+            System.Runtime.InteropServices.Marshal.Copy(buffer, rows, 0, rows.Length);
+        }
+        finally
+        {
+            System.Runtime.InteropServices.Marshal.FreeHGlobal(buffer);
+        }
+
+        var focus = Palette.Focus;
+        var count = 0;
+        for (var y = 0; y < 3; y++)
+        {
+            for (var x = x0; x < x0 + width; x++)
+            {
+                // RGBA or BGRA; the ring is anti-aliased, so a loose match: strong blue and green, little red.
+                var i = (y * stride) + (x * 4);
+                var (blue, red) = (Math.Max(rows[i], rows[i + 2]), Math.Min(rows[i], rows[i + 2]));
+                if (blue > focus.B * 0.6 && rows[i + 1] > focus.G * 0.6 && red < focus.R * 1.4)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    [Fact]
     public Task JunctionAndOutMeters_ShowWhatSettingsDisplaySays_AverageWithThePeakHeld_OrThePeakAlone() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await OpenWithChainAsync(1440, 900);
