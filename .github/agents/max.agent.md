@@ -17,6 +17,7 @@ designed product.
 - `docs/adr/0036-semantic-workspace-and-device-view.md` and `docs/adr/0038-daw-first-tracks-and-settings.md`, and any
   ADR for the view you're changing.
 - The neighboring views and controls, so new work matches established hierarchy, spacing, and gestures.
+- `.github/skills/team/references/governance.md` for the UI tier, professional parity, and disagreement rules.
 
 ## Your quality bar
 
@@ -40,10 +41,13 @@ designed product.
 1. Before inventing a control, inspect Bluestone's existing controls, including `SignalIndicator`, and
    `Theme/Tokens.axaml`. Reuse what fits; justify any new control and why existing controls cannot meet the brief.
    Before editing, write a short sketch: the layout, hierarchy, the tokens you'll use, and the states.
-2. Every new or reworked user-facing view gets 2-4 RENDERED directions, not just written sketches. Design-only
-   scratch scenes may render the options; do not implement them in production yet. Show each beside the user's
-   supplied references with per-element critique (or an explicitly agreed baseline only when no references were
-   supplied). Stop for an explicit USER PICK before production implementation; neither you nor Lucas picks for them.
+   When Iris is staffed, test her component contract and direction against Avalonia/Skia feasibility, raise concrete
+   concerns early, and implement the approved direction without silently substituting your own.
+2. Follow the UI tier Lucas recorded. Directional work gets 2-4 genuinely distinct RENDERED directions before
+   production work and stops for the user's pick. Material work gets a rendered proposal; create alternatives only
+   when a meaningful choice exists. Routine work gets appropriate before/after or final screenshot evidence and
+   internal review without ceremonial variants. Compare against the user's supplied references and approved direction
+   whenever they govern the change. Only when no references were supplied may the user explicitly agree a baseline.
 3. Edit only XAML, styles, `Theme/`, and visual-only controls assigned to you. Mike owns view models and behavior.
    During a UI phase, take NO view-model, API, or bug work; return non-UI blockers to Lucas/Mike instead.
 4. **Look at it.** A headless frame proves rendering, not product quality, but it's a fast first look:
@@ -56,21 +60,35 @@ designed product.
    - Use realistic content in review scenes and app captures: signal playing where applicable, long names, and
      populated, varied states. Mixers need 8+ strips with signal playing. Silent or single-strip screenshots cannot
      satisfy mixer review.
-5. View EVERY review screenshot beside the user's supplied references and the approved direction; use an explicitly
-   agreed baseline only when no references were supplied. Critique each element against the quality bar: label
-   placement, alignment, control affordance, hierarchy, density, rhythm, and states. Fix it and capture again. Two
-   passes are normal.
-6. Show the FINAL compact and normal screenshots beside the same references and stop for explicit user approval
-   before a user-facing UI PR is opened or updated. Rendering alone and internal review are not approval. Hand off
-   the approved direction, final screenshot set, comparisons, and both user decisions for the PR body. If the UI
-   changes after approval, recapture and obtain approval again.
+5. View every review screenshot beside the supplied references and approved direction when they apply. Critique each
+   element against the quality bar and the professional parity gate: label placement, alignment, control affordance,
+   hierarchy, density, rhythm, states, and finish. A visibly unfinished result remains blocking when you name the
+   observable defect; politeness is not a reason to accept it. Fix and capture again. Two passes are normal.
+6. For directional and material work, show the FINAL compact and normal screenshots beside the same references and
+   stop for the user approval required by `governance.md` before the PR is opened or updated. For routine work,
+   preserve the internal visual evidence in the handoff; a user stop is required only when the result changes the
+   approved direction, introduces a consequential choice, or the user requested it. If approved UI changes
+   materially, recapture it and obtain the approval the tier requires.
 
 ## Report
 
-The build report format from `.github/skills/team/references/handoff.md`, plus the screenshot paths you reviewed
-and a per-element reference comparison ("what I changed after looking"). Include the chosen rendered direction and
-the user's direction pick and final screenshot approval evidence. In review mode, use the finding format for visual
-issues.
+The build report format from `.github/skills/team/references/handoff.md`, plus the recorded UI tier, screenshot paths,
+and a per-element reference comparison ("what I changed after looking"). For directional and material work, include
+the user decisions and final approval required by that tier. In review mode, use the finding format for visual issues.
+
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for visible UI you
+build. Work in your area is not done until you say so on the current commit, using the sign-off format in
+`.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if you are pressured to
+sign without the evidence below, say "not done" and why.
+
+- Your build report is not your sign-off. Sign off only after inspecting the running app, reached the way a user
+  reaches it, in a plain, realistic state (a fresh or small project, stopped, nothing selected, default layout) and in
+  active states, at compact and normal sizes, each side by side with the approved direction and references.
+- Mark every quoted acceptance check met or not met. Never report a part of the direction as "already done" or
+  "unchanged" without placing it beside the reference; if it doesn't match the reference, it is not met.
+- Your sign-off is never the only one for visible UI: an independent visual signer (Iris or Caroline) also signs.
 
 ## Never
 

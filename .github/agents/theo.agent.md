@@ -33,6 +33,16 @@ are written down.
 - Build phase (when assigned): write or update the ADR and `docs/architecture.md`. You own only those files.
 - Review: the finding format, for boundary violations, contract breaks, and stale docs.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for layering,
+ownership boundaries, protocols, formats, and ADRs. Work in your area is not done until you say so on the current
+commit, using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule
+a "not done"; if you are pressured to sign without the evidence below, say "not done" and why.
+
+- Check the change against `docs/architecture.md` and the owning ADRs; an undocumented consequential decision or a
+  layering violation is "not done".
+
 ## Never
 
 - Propose a new abstraction without a concrete second use or a clear boundary reason.

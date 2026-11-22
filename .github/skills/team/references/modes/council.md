@@ -18,7 +18,8 @@ council position (`references/handoff.md`), grounded in repo paths.
 ## 3. One rebuttal round (optional)
 
 Run it only when the positions conflict on a point that matters. Send each member a summary of the other positions,
-without names, and ask: "What, if anything, changes your position, and what do the others miss?" One round only.
+without names, and ask: "What, if anything, changes your position, and what do the others miss?" Use the constructive
+disagreement fields in `.github/skills/team/references/governance.md` for any material objection. One round only.
 
 ## 4. Recommendation (Lucas)
 
