@@ -47,6 +47,9 @@ public sealed class ColourPickerPopup : Popup
     private readonly Frame _frame;
     private ColourEdit? _edit;
     private Control? _anchor;
+    private TopLevel? _top;
+    private double _reserved;
+    private (Rect Anchor, Size Window, Size Picker) _placed;
 
     public ColourPickerPopup()
     {
@@ -115,9 +118,10 @@ public sealed class ColourPickerPopup : Popup
 
         _edit = edit;
         _anchor = anchor;
+        _top = top;
         Picker.Load(edit.Original, edit.Context, edit.Swatches);
         var anchorRect = new Rect(origin, anchor.Bounds.Size);
-        var reserved = anchor.FindAncestorOfType<Window>() is null ? 0 : ReservedTop(top);
+        _reserved = anchor.FindAncestorOfType<Window>() is null ? 0 : ReservedTop(top);
 
         // Open first, where the chip is, so the picker is styled and its true size known; then put it in its place.
         PlacementTarget = top;
@@ -126,11 +130,11 @@ public sealed class ColourPickerPopup : Popup
         IsOpen = true;
         (TopLevel.GetTopLevel(Picker) ?? top).UpdateLayout();
         Picker.Measure(Size.Infinity);
-        var (bounds, side) = Place(anchorRect, Picker.DesiredSize, top.ClientSize, reserved);
-        PickerBounds = bounds;
-        Side = side;
-        _frame.Point(side, anchorRect.Center - bounds.Position);
-        PlacementRect = new Rect(bounds.X - Shadow, bounds.Y - Shadow, 1, 1);
+        PlaceBeside(anchorRect, top.ClientSize);
+
+        // While open it follows its chip: a scroll, a resize, or a page reflow moves it with the chip, and a chip scrolled
+        // out of sight (or gone) cancels the edit, so no picker is left floating over nothing.
+        anchor.LayoutUpdated += OnAnchorLayout;
 
         // The wheel takes focus, showing its focus ring only when the chip was reached from the keyboard.
         var method = anchor.Classes.Contains(":focus-visible") ? NavigationMethod.Tab : NavigationMethod.Pointer;
@@ -141,6 +145,54 @@ public sealed class ColourPickerPopup : Popup
     public void Dismiss()
     {
         Finish(null);
+    }
+
+    private void PlaceBeside(Rect anchorRect, Size window)
+    {
+        var picker = Picker.DesiredSize;
+        var (bounds, side) = Place(anchorRect, picker, window, _reserved);
+        PickerBounds = bounds;
+        Side = side;
+        _placed = (anchorRect, window, picker);
+        _frame.Point(side, anchorRect.Center - bounds.Position);
+        PlacementRect = new Rect(bounds.X - Shadow, bounds.Y - Shadow, 1, 1);
+    }
+
+    // After any layout pass: nothing to do unless the chip, the window, or the picker's own size has changed.
+    private void OnAnchorLayout(object? sender, EventArgs e)
+    {
+        if (_edit is null || _anchor is not { } anchor || _top is not { } top)
+        {
+            return;
+        }
+
+        if (!anchor.IsEffectivelyVisible || TopLevel.GetTopLevel(anchor) != top || anchor.TranslatePoint(default, top) is not { } origin)
+        {
+            Finish(null);
+            return;
+        }
+
+        var anchorRect = new Rect(origin, anchor.Bounds.Size);
+        var window = top.ClientSize;
+        if (anchorRect == _placed.Anchor && window == _placed.Window && Picker.DesiredSize == _placed.Picker)
+        {
+            return;
+        }
+
+        // The chip must still be in sight: inside the window, and inside the scrolled area it lives in.
+        var view = new Rect(window);
+        if (anchor.FindAncestorOfType<ScrollViewer>() is { } scroller && scroller.TranslatePoint(default, top) is { } at)
+        {
+            view = view.Intersect(new Rect(at, scroller.Bounds.Size));
+        }
+
+        if (!view.Contains(anchorRect.Center))
+        {
+            Finish(null);
+            return;
+        }
+
+        PlaceBeside(anchorRect, window);
     }
 
     private static double ReservedTop(TopLevel top) =>
@@ -156,6 +208,12 @@ public sealed class ColourPickerPopup : Popup
         var anchor = _anchor;
         _edit = null;
         _anchor = null;
+        _top = null;
+        if (anchor is not null)
+        {
+            anchor.LayoutUpdated -= OnAnchorLayout;
+        }
+
         try
         {
             if (applied is { } colour)

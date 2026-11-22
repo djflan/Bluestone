@@ -72,7 +72,8 @@ public sealed class ColourPickerTests : IDisposable
         Assert.Null(ColourHsv.ParseHex("#E162F"));
         Assert.Null(ColourHsv.ParseHex("#E162FZ"));
 
-        // The wheel is a focusable slider for screen readers, its value the hue and saturation; the keys move both.
+        // The wheel is a color wheel for screen readers, its value the hue and saturation, settable as typed text; the
+        // keys move both.
         wheel.Hue = 290;
         wheel.Saturation = 0.6;
         wheel.Focus();
@@ -80,8 +81,23 @@ public sealed class ColourPickerTests : IDisposable
         window.KeyPress(Key.Up, RawInputModifiers.Shift, PhysicalKey.None, null);
         Assert.Equal((295.0, 0.61), (wheel.Hue, wheel.Saturation));
         var peer = ControlAutomationPeer.CreatePeerForElement(wheel);
-        Assert.Equal(AutomationControlType.Slider, peer.GetAutomationControlType());
-        Assert.Equal("Hue 295°, saturation 61%", Assert.IsAssignableFrom<IValueProvider>(peer).Value);
+        Assert.Equal(AutomationControlType.Custom, peer.GetAutomationControlType());
+        Assert.Equal("color wheel", peer.GetLocalizedControlType());
+        var value = Assert.IsAssignableFrom<IValueProvider>(peer);
+        Assert.Equal("Hue 295°, saturation 61%", value.Value);
+        Assert.False(value.IsReadOnly);
+        value.SetValue("Hue 200°, saturation 50%");
+        Assert.Equal((200.0, 0.5), (wheel.Hue, wheel.Saturation));
+        value.SetValue("120, 30");
+        Assert.Equal((120.0, 0.3), (wheel.Hue, wheel.Saturation));
+        value.SetValue("saturation 80");
+        Assert.Equal((120.0, 0.8), (wheel.Hue, wheel.Saturation));
+        value.SetValue("hue 390");
+        Assert.Equal((30.0, 0.8), (wheel.Hue, wheel.Saturation));
+        Assert.Equal("Hue 30°, saturation 80%", value.Value);
+        Assert.Throws<ArgumentException>(() => value.SetValue("teal"));
+        Assert.Throws<ArgumentException>(() => value.SetValue("hue 10, saturation 140"));
+        Assert.Equal((30.0, 0.8), (wheel.Hue, wheel.Saturation));
         window.Close();
         return Task.CompletedTask;
     });
@@ -121,6 +137,14 @@ public sealed class ColourPickerTests : IDisposable
             Assert.Equal(live, Hex(MeterGradient.Chain.Stops[3].Color));
             Assert.Equal(chain.Stops.Where((_, i) => i != 3), display.Chain.Gradient.Stops.Where((_, i) => i != 3));
             Assert.Equal((mixer, gain), (display.Mixer.Gradient, display.Gain.Gradient));
+            Assert.Equal(saved, File.ReadAllText(path));
+
+            // A screen reader sets the wheel's value the same way: the stop follows it live.
+            var wheelValue = Assert.IsAssignableFrom<IValueProvider>(ControlAutomationPeer.CreatePeerForElement(popup.Picker.FindControl<ColourWheel>("Wheel")!));
+            wheelValue.SetValue("Hue 200, saturation 50%");
+            app.Settle();
+            Assert.Equal(200, ColourHsv.From(popup.Picker.Colour).Hue, 0);
+            Assert.Equal(ColourHsv.Hex(popup.Picker.Colour), display.Chain.Gradient.Stops[3].Colour);
             Assert.Equal(saved, File.ReadAllText(path));
 
             // Esc: the original is back, nothing saved, the picker closed, Settings still open, focus on the chip.
@@ -276,6 +300,202 @@ public sealed class ColourPickerTests : IDisposable
         }
     });
 
+    [Fact]
+    public Task ThePicker_FollowsItsChipThroughAResizeAndAScroll_AndCancelsWhenItsChipGoes() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (store, path, display, page) = Open(app, 1440);
+        try
+        {
+            app.Click(StageTile(page, "Device chain"));
+            display.Chain.SelectedGradientStopIndex = 3;
+            app.Settle();
+            var chain = display.Chain.Gradient;
+            store.Save(store.Load());
+            var saved = File.ReadAllText(path);
+            var chip = AppUnderTest.Within<Button>(page, b => b.Name == "StopChip");
+            app.Click(chip);
+            var popup = page.ColourPicker;
+            app.Click(PickerSwatch(popup, "#E3C345"));
+            var wide = popup.PickerBounds;
+
+            // Editing inside the picker (a half-typed hex, its own relayout) neither moves nor closes it.
+            var hex = popup.Picker.FindControl<TextBox>("HexBox")!;
+            hex.Text = "#E3C3";
+            app.Settle();
+            hex.Text = "#E3C345";
+            app.Settle();
+            Assert.True(popup.IsOpen);
+            Assert.Equal(wide, popup.PickerBounds);
+
+            // The window shrinks to its smallest: the picker stays open, moves with its chip, and stays inside the window.
+            app.Window.Width = 1040;
+            app.Window.Height = 640;
+            app.Settle();
+            app.Settle();
+            Assert.True(popup.IsOpen);
+            Assert.Equal("#E3C345", display.Chain.Gradient.Stops[3].Colour);
+            var bounds = popup.PickerBounds;
+            var anchor = new Rect(chip.TranslatePoint(default, app.Window)!.Value, chip.Bounds.Size);
+            Assert.NotEqual(wide, bounds);
+            Assert.True(bounds.Left >= 0 && bounds.Right <= app.Window.ClientSize.Width, $"{bounds} is outside the window's width.");
+            Assert.True(bounds.Top >= 30 && bounds.Bottom <= app.Window.ClientSize.Height, $"{bounds} is under the header or below the window.");
+            Assert.False(bounds.Intersects(anchor), "The picker covers its own chip.");
+
+            // Esc as ever; then the MIDI light's picker, and the page scrolled as far as it goes: the picker moves with its
+            // chip, still beside it and inside the window, and the light keeps its preview.
+            app.Press(Key.Escape);
+            Assert.Equal(chain, display.Chain.Gradient);
+            var midi = display.MidiColour;
+            var midiChip = AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip");
+            var scroller = midiChip.FindAncestorOfType<ScrollViewer>()!;
+            scroller.Offset = default;
+            app.Settle();
+            app.Click(midiChip);
+            app.Click(PickerSwatch(popup, "#E0A43A"));
+            var unscrolled = popup.PickerBounds;
+            scroller.Offset = new Vector(0, scroller.Extent.Height - scroller.Viewport.Height);
+            app.Settle();
+            app.Settle();
+            Assert.True(scroller.Offset.Y > 100, $"The page did not scroll ({scroller.Offset.Y}).");
+            Assert.True(popup.IsOpen);
+            Assert.Equal("#E0A43A", display.MidiColour);
+            bounds = popup.PickerBounds;
+            anchor = new Rect(midiChip.TranslatePoint(default, app.Window)!.Value, midiChip.Bounds.Size);
+            Assert.NotEqual(unscrolled, bounds);
+            Assert.True(bounds.Top >= 30 && bounds.Bottom <= app.Window.ClientSize.Height, $"{bounds} is under the header or below the window.");
+            Assert.False(bounds.Intersects(anchor), "The picker covers its own chip.");
+
+            // The chip goes (the page reflows without it): the edit is cancelled, nothing is saved, Settings stays open.
+            midiChip.IsVisible = false;
+            app.Settle();
+            Assert.False(popup.IsOpen);
+            Assert.Equal(midi, display.MidiColour);
+            Assert.Equal(Color.Parse(midi), LedColours.Midi);
+            Assert.False(display.IsMidiColourPreviewing);
+            Assert.Equal(chain, display.Chain.Gradient);
+            Assert.False(display.Chain.IsPreviewing);
+            Assert.Equal(saved, File.ReadAllText(path));
+            Assert.True(app.Window.Settings.IsOpen);
+            midiChip.IsVisible = true;
+        }
+        finally
+        {
+            Reset(display);
+        }
+    });
+
+    [Fact]
+    public Task ReopeningThePicker_SettlesTheLastEditFirst_ForAnotherStop_AndForTheMidiLight() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (store, path, display, page) = Open(app, 1440);
+        try
+        {
+            app.Click(StageTile(page, "Device chain"));
+            display.Chain.SelectedGradientStopIndex = 3;
+            app.Settle();
+            var chain = display.Chain.Gradient;
+            var midi = display.MidiColour;
+            store.Save(store.Load());
+            var saved = File.ReadAllText(path);
+            var chip = AppUnderTest.Within<Button>(page, b => b.Name == "StopChip");
+            var midiChip = AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip");
+            var popup = page.ColourPicker;
+
+            // Stop 3 previews a preset; then, with that picker still open, stop 1's chip opens a picker of its own.
+            app.Click(chip);
+            app.Click(PickerSwatch(popup, "#E3C345"));
+            display.Chain.SelectedGradientStopIndex = 1;
+            chip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            app.Settle();
+
+            // Stop 3 is back, stop 1's picker starts from stop 1, and its preview is still running.
+            Assert.True(popup.IsOpen);
+            Assert.Equal(chain, display.Chain.Gradient);
+            Assert.Equal(chain.Stops[1].Colour, ColourHsv.Hex(popup.Picker.Original));
+            Assert.True(display.Chain.IsPreviewing, "Settling the last edit must not end this one's preview.");
+            Assert.Equal(saved, File.ReadAllText(path));
+
+            // Its own cancel restores the settled gradient, not the one stop 3 was previewing.
+            app.Click(PickerSwatch(popup, "#E0A43A"));
+            Assert.Equal("#E0A43A", display.Chain.Gradient.Stops[1].Colour);
+            app.Press(Key.Escape);
+            Assert.Equal(chain, display.Chain.Gradient);
+            Assert.False(display.Chain.IsPreviewing);
+            Assert.Equal(saved, File.ReadAllText(path));
+
+            // From a stop to the MIDI light: the stop is put back, the light previews, and only the light is applied.
+            app.Click(chip);
+            app.Click(PickerSwatch(popup, "#E3C345"));
+            midiChip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            app.Settle();
+            Assert.True(popup.IsOpen);
+            Assert.Equal(chain, display.Chain.Gradient);
+            Assert.False(display.Chain.IsPreviewing);
+            Assert.Equal(midi, ColourHsv.Hex(popup.Picker.Original));
+            app.Click(PickerSwatch(popup, "#E0A43A"));
+            Assert.True(display.IsMidiColourPreviewing);
+
+            // And from the light to itself: the light's last preview is settled before it starts again from the original.
+            midiChip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            app.Settle();
+            Assert.True(popup.IsOpen);
+            Assert.Equal(midi, display.MidiColour);
+            Assert.Equal(midi, ColourHsv.Hex(popup.Picker.Original));
+            Assert.True(display.IsMidiColourPreviewing);
+            app.Click(PickerSwatch(popup, "#E0A43A"));
+            app.Click(PickerButton(popup, "Apply color"));
+            var after = store.Load();
+            Assert.Equal("#E0A43A", after.MidiColour);
+            Assert.Equal(chain, after.ChainGradient);
+            Assert.False(display.IsMidiColourPreviewing);
+        }
+        finally
+        {
+            Reset(display);
+        }
+    });
+
+    [Fact]
+    public Task TheWheelAndFader_KeepNoColourTheyTried_InTheSharedCaches() => HeadlessApp.RunAsync(() =>
+    {
+        var wheel = new ColourWheel { Width = 172, Height = 172, Hue = 10, Saturation = 0.8 };
+        var fader = new BrightnessFader { Width = 24, Height = 172, Hue = 10, Saturation = 0.8, Value = 80 };
+        var window = new Window { Width = 300, Height = 200, Content = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Children = { wheel, fader } } };
+        window.Show();
+        Render(window);
+        var before = SharedCacheSizes();
+
+        // A drag round the wheel and down the fader: dozens of colours drawn, none of them kept for the life of the app.
+        for (var i = 1; i <= 36; i++)
+        {
+            wheel.Hue = fader.Hue = i * 10;
+            wheel.Saturation = fader.Saturation = 0.3 + (i % 7 * 0.1);
+            wheel.Brightness = (100 - i) / 100.0;
+            fader.Value = 100 - i;
+            Render(window);
+        }
+
+        Assert.Equal(before, SharedCacheSizes());
+        window.Close();
+        return Task.CompletedTask;
+
+        static void Render(Window window)
+        {
+            window.UpdateLayout();
+            using var frame = window.CaptureRenderedFrame();
+        }
+
+        static string SharedCacheSizes() => string.Join(", ", new[]
+        {
+            (typeof(Desktop.Theme.Glow), "Brushes"),
+            (typeof(Desktop.Theme.Glow), "Pens"),
+            (typeof(ConsolePaint), "SolidBrushes"),
+            (typeof(ConsolePaint), "CachedPens"),
+            (typeof(ConsolePaint), "Verticals"),
+        }.Select(c => $"{c.Item1.Name}.{c.Item2}={((System.Collections.ICollection)c.Item1.GetField(c.Item2, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!).Count}"));
+    });
 
     private static readonly string[] Chips = ["StopChip", "MidiChip"];
 

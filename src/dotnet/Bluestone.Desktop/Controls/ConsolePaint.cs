@@ -50,15 +50,19 @@ internal static class ConsolePaint
         var key = (top.ToUInt32(), bottom.ToUInt32());
         if (!Verticals.TryGetValue(key, out var brush))
         {
-            brush = new ImmutableLinearGradientBrush(
-                [new ImmutableGradientStop(0, top), new ImmutableGradientStop(1, bottom)],
-                startPoint: new RelativePoint(0, 0, RelativeUnit.Relative),
-                endPoint: new RelativePoint(0, 1, RelativeUnit.Relative));
+            brush = CreateVertical(top, bottom);
             Verticals[key] = brush;
         }
 
         return brush;
     }
+
+    /// <summary>A new, uncached <see cref="Vertical"/>, for colours that keep changing (held by the control that draws them).</summary>
+    public static IImmutableBrush CreateVertical(Color top, Color bottom) =>
+        new ImmutableLinearGradientBrush(
+            [new ImmutableGradientStop(0, top), new ImmutableGradientStop(1, bottom)],
+            startPoint: new RelativePoint(0, 0, RelativeUnit.Relative),
+            endPoint: new RelativePoint(0, 1, RelativeUnit.Relative));
 
     public static Color Alpha(Color color, double alpha) => Palette.Alpha(color, alpha);
 

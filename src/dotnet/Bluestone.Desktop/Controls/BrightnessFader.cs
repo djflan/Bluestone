@@ -70,13 +70,23 @@ public sealed class BrightnessFader : MixerValueControl
         base.OnPointerPressed(e);
     }
 
+    private (Color Colour, IImmutableBrush? Brush) _track;
+    private (Color Colour, IPen[]? Glow, IPen? Pen) _mark;
+
     public override void Render(DrawingContext context)
     {
         var w = Bounds.Width;
         var track = Track;
         ConsolePaint.Gutter(context, track.Inflate(2), 4);
         var full = new ColourHsv(Hue, Saturation, 1).ToColor();
-        context.DrawRectangle(ConsolePaint.Vertical(full, Colors.Black), null, new RoundedRect(track, 2.5));
+        // The colours here change with every drag, so their brushes are this fader's own, rebuilt only when they change,
+        // never the shared caches (which would keep every colour tried for the life of the app).
+        if (_track.Colour != full || _track.Brush is null)
+        {
+            _track = (full, ConsolePaint.CreateVertical(full, Colors.Black));
+        }
+
+        context.DrawRectangle(_track.Brush, null, new RoundedRect(track, 2.5));
         for (var i = 0; i <= 4; i++)
         {
             var y = Math.Round(track.Top + (track.Height * i / 4)) + 0.5;
@@ -91,8 +101,13 @@ public sealed class BrightnessFader : MixerValueControl
         var mark = new ColourHsv(Hue, Saturation, Value / Math.Max(1e-9, Maximum)).ToColor();
         var from = new Point(cap.Left + 4, capY);
         var to = new Point(cap.Right - 4, capY);
-        Glow.Line(context, from, to, 2, mark, 1.4);
-        context.DrawLine(ConsolePaint.Pen(mark, 2), from, to);
+        if (_mark.Colour != mark || _mark.Glow is null || _mark.Pen is null)
+        {
+            _mark = (mark, Glow.CreatePens(mark, 1.4, 2), new ImmutablePen(new ImmutableSolidColorBrush(mark), 2));
+        }
+
+        Glow.Line(context, from, to, _mark.Glow);
+        context.DrawLine(_mark.Pen, from, to);
 
         if (IsFocused && Classes.Contains(":focus-visible"))
         {

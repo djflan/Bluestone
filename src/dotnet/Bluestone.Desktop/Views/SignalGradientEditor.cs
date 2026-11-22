@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.VisualTree;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
 using Bluestone.Presentation;
@@ -58,24 +59,46 @@ public sealed class SignalGradientEditor : Panel
         base.OnDataContextChanged(e);
         // End a drag on the old display first, so its preview is committed or released, not stranded.
         FinishDrag();
-        if (_display is not null)
-        {
-            _display.PropertyChanged -= OnDisplayChanged;
-        }
+        Follow(this.IsAttachedToVisualTree() ? DataContext as GradientEditorViewModel : null);
+    }
 
-        _display = DataContext as GradientEditorViewModel;
-        if (_display is not null)
-        {
-            _display.PropertyChanged += OnDisplayChanged;
-        }
-
-        Sync();
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Follow(DataContext as GradientEditorViewModel);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         FinishDrag();
+
+        // Off screen, the editor follows no gradient: a context set on it (or a parent) keeps it alive no longer. Its
+        // handles stay as they are (the tree is being taken down) and are brought up to date when it is back.
+        Follow(null, sync: false);
+    }
+
+    // Listens to exactly one gradient, and only while on screen; switching unhooks the old one before hooking the new.
+    private void Follow(GradientEditorViewModel? display, bool sync = true)
+    {
+        if (!ReferenceEquals(display, _display))
+        {
+            if (_display is not null)
+            {
+                _display.PropertyChanged -= OnDisplayChanged;
+            }
+
+            _display = display;
+            if (_display is not null)
+            {
+                _display.PropertyChanged += OnDisplayChanged;
+            }
+        }
+
+        if (sync)
+        {
+            Sync();
+        }
     }
 
     private void OnDisplayChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

@@ -161,6 +161,9 @@ public partial class DisplaySettingsPage : UserControl
             return;
         }
 
+        // A picker still open closes first (its edit cancelled and its preview ended), so this edit's original is the
+        // settled gradient, and that edit's ending cannot end this one's preview.
+        Picker.Dismiss();
         var editor = item.Editor;
         var gradient = editor.Gradient;
         var index = editor.SelectedGradientStopIndex;
@@ -190,6 +193,8 @@ public partial class DisplaySettingsPage : UserControl
 
     private void OnMidiChip(object? sender, RoutedEventArgs e)
     {
+        // As for a stop: any open edit is settled before this one reads its original or begins its preview.
+        Picker.Dismiss();
         if (_display is not { } display || sender is not Control chip || ColourHsv.ParseHex(display.MidiColour) is not { } original)
         {
             return;

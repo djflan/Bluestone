@@ -614,6 +614,60 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
     });
 
+    [Fact]
+    public Task AGradientEditorOffScreen_FollowsNoGradient_AndBackOnScreenFollowsOnlyItsOwn() => HeadlessApp.RunAsync(() =>
+    {
+        var a = new GradientEditorViewModel("A", SignalGradient.Default, hasClipLamp: true);
+        var b = new GradientEditorViewModel("B", SignalGradient.GainDefault, hasClipLamp: false);
+        var editor = new SignalGradientEditor { DataContext = a, Height = 40 };
+        var host = new Border { Width = 400, Height = 60, Child = editor };
+        var window = new Window { Width = 500, Height = 200, Content = host };
+        window.Show();
+        window.UpdateLayout();
+        Assert.Equal((1, a.Gradient.Stops.Length), (Listeners(a, editor), editor.Handles.Count));
+
+        // Taken off screen with its own context still set: it stops listening, and an edit to the gradient passes it by.
+        host.Child = null;
+        Assert.Equal(0, Listeners(a, editor));
+        var offScreen = editor.Handles.Count;
+        a.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(offScreen, editor.Handles.Count);
+
+        // Back on screen (twice over): it catches up and listens exactly once.
+        host.Child = editor;
+        host.Child = null;
+        host.Child = editor;
+        window.UpdateLayout();
+        Assert.Equal((1, a.Gradient.Stops.Length), (Listeners(a, editor), editor.Handles.Count));
+
+        // Switched to another gradient: only that one's edits reach it.
+        editor.DataContext = b;
+        window.UpdateLayout();
+        Assert.Equal((0, 1), (Listeners(a, editor), Listeners(b, editor)));
+        Assert.Equal(b.Gradient.Stops.Length, editor.Handles.Count);
+        a.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(b.Gradient.Stops.Length, editor.Handles.Count);
+        b.AddGradientStopInLargestGapCommand.Execute(null);
+        Assert.Equal(b.Gradient.Stops.Length, editor.Handles.Count);
+
+        // A drag cut short by leaving the screen ends its preview: nothing is left stranded.
+        window.UpdateLayout();
+        var handle = editor.Handles[1];
+        window.MouseDown(handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value, MouseButton.Left);
+        Assert.True(b.IsPreviewing);
+        host.Child = null;
+        Assert.False(b.IsPreviewing);
+        Assert.Equal(0, Listeners(b, editor));
+        window.Close();
+        return Task.CompletedTask;
+
+        // How many of the gradient's change handlers belong to this editor.
+        static int Listeners(GradientEditorViewModel gradient, SignalGradientEditor editor) =>
+            (typeof(CommunityToolkit.Mvvm.ComponentModel.ObservableObject)
+                .GetField("PropertyChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(gradient) as Delegate)?.GetInvocationList().Count(d => ReferenceEquals(d.Target, editor)) ?? 0;
+    });
+
     private sealed class ImmediateDispatcher : IUiDispatcher
     {
         public bool CheckAccess() => true;

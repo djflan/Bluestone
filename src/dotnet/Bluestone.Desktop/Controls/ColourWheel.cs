@@ -42,6 +42,7 @@ public sealed class ColourWheel : Control
     private static readonly ImmutablePen FocusPen = new(new ImmutableSolidColorBrush(Palette.Focus), 1.5);
 
     private (Point Centre, double Radius, (Geometry Wedge, IImmutableBrush Fill)[] Disc)? _disc;
+    private (Color Colour, IImmutableSolidColorBrush[]? Halo) _thumb;
     private bool _dragging;
     private ColourWheelPeer? _peer;
 
@@ -222,7 +223,15 @@ public sealed class ColourWheel : Control
 
         var colour = new ColourHsv(Hue, Saturation, Brightness).ToColor();
         var p = PointFor(Hue, Saturation);
-        Glow.Halo(context, new Rect(p.X - ThumbRadius, p.Y - ThumbRadius, ThumbRadius * 2, ThumbRadius * 2), ThumbRadius, colour, 0.45, 8);
+
+        // The thumb's colour changes with every move, so its halo is this wheel's own, rebuilt only when it changes, never
+        // the shared glow cache (which would keep every colour tried for the life of the app).
+        if (_thumb.Colour != colour || _thumb.Halo is null)
+        {
+            _thumb = (colour, Glow.CreateHalo(colour, 0.45, 8));
+        }
+
+        Glow.Halo(context, new Rect(p.X - ThumbRadius, p.Y - ThumbRadius, ThumbRadius * 2, ThumbRadius * 2), ThumbRadius, _thumb.Halo, 8);
         var fill = new ImmutableSolidColorBrush(colour);
         context.DrawEllipse(fill, ThumbKeyline, p, ThumbRadius + 2.5, ThumbRadius + 2.5);
         context.DrawEllipse(null, ThumbRing, p, ThumbRadius + 1, ThumbRadius + 1);
@@ -271,18 +280,90 @@ public sealed class ColourWheel : Control
         new(c.X + (r * Math.Sin(degreesFromTop * Math.PI / 180)), c.Y - (r * Math.Cos(degreesFromTop * Math.PI / 180)));
 
     private void UpdateHelpText() =>
-        AutomationProperties.SetHelpText(this, ValueText + ". Left or Right turns the hue, Up or Down changes the saturation; Shift for finer steps.");
+        AutomationProperties.SetHelpText(this, ValueText + ". Left or Right turns the hue, Up or Down changes the saturation; Shift for finer steps. Or set its value, for example \"Hue 200, saturation 50%\".");
 
-    /// <summary>Announced as a slider-like control whose value reads as the hue and saturation.</summary>
+    /// <summary>
+    /// Sets the hue and/or saturation from text such as "Hue 200°, saturation 50%", "hue 200", "saturation 40", or
+    /// "200, 50" (hue then saturation); returns false, changing nothing, for anything else.
+    /// </summary>
+    public bool TrySetValueText(string? text)
+    {
+        double? hue = null;
+        double? saturation = null;
+        var words = (text ?? string.Empty).ToLowerInvariant()
+            .Split([' ', ',', ';', '°', '%', ':', '='], StringSplitOptions.RemoveEmptyEntries);
+        string? label = null;
+        var numbers = 0;
+        foreach (var word in words)
+        {
+            if (word is "hue" or "h" or "saturation" or "sat" or "s")
+            {
+                label = word.StartsWith('h') ? "hue" : "saturation";
+                continue;
+            }
+
+            if (!double.TryParse(word, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) || !double.IsFinite(n))
+            {
+                return false;
+            }
+
+            // An unlabelled first number is the hue and an unlabelled second the saturation.
+            var slot = label ?? (numbers == 0 ? "hue" : "saturation");
+            label = null;
+            numbers++;
+            if (slot == "hue")
+            {
+                hue = n;
+            }
+            else
+            {
+                saturation = n;
+            }
+        }
+
+        if (label is not null || (hue is null && saturation is null) || saturation is < 0 or > 100)
+        {
+            return false;
+        }
+
+        if (hue is { } h)
+        {
+            SetCurrentValue(HueProperty, ((h % 360) + 360) % 360);
+        }
+
+        if (saturation is { } s)
+        {
+            SetCurrentValue(SaturationProperty, s / 100);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// A color wheel to assistive technology: its value reads as the hue and saturation and can be set the same way
+    /// (<see cref="TrySetValueText"/>), as the arrow keys set them from the keyboard. It is not announced as a slider,
+    /// which would promise a single range.
+    /// </summary>
     private sealed class ColourWheelPeer(ColourWheel owner) : ControlAutomationPeer(owner), IValueProvider
     {
         private string _last = owner.ValueText;
 
-        public bool IsReadOnly => true;
+        public bool IsReadOnly => !Owner.IsEffectivelyEnabled;
 
         public string? Value => ((ColourWheel)Owner).ValueText;
 
-        public void SetValue(string? value) => throw new InvalidOperationException("Set the hue and saturation with the wheel or its keys.");
+        public void SetValue(string? value)
+        {
+            if (IsReadOnly)
+            {
+                throw new InvalidOperationException("The color wheel is not enabled.");
+            }
+
+            if (!((ColourWheel)Owner).TrySetValueText(value))
+            {
+                throw new ArgumentException("Give a hue in degrees and a saturation in percent, for example \"Hue 200, saturation 50%\".", nameof(value));
+            }
+        }
 
         public void Changed(string now)
         {
@@ -290,6 +371,8 @@ public sealed class ColourWheel : Control
             _last = now;
         }
 
-        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Slider;
+        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Custom;
+
+        protected override string GetLocalizedControlTypeCore() => "color wheel";
     }
 }
