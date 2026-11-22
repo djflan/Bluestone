@@ -681,10 +681,20 @@
       <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
     </Setter>
   </Style>
+  <!-- The stock ToggleButton template paints its content white when checked; keep the lit glyph's colour. -->
+  <Style Selector="controls|GutterPanel.transport ToggleButton:checked /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+  </Style>
   <Style Selector="controls|GutterPanel.transport ToggleButton.record">
     <Setter Property="Foreground" Value="{StaticResource Transport.RecordIdle}" />
   </Style>
+  <Style Selector="controls|GutterPanel.transport ToggleButton.record /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{StaticResource Transport.RecordIdle}" />
+  </Style>
   <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked">
+    <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked /template/ ContentPresenter">
     <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
   </Style>
   <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked PathIcon">

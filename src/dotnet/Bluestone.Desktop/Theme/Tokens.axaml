@@ -172,7 +172,7 @@
   <Color x:Key="Transport.PlayColor">#1A3A44</Color>
   <Color x:Key="Transport.PlayForegroundColor">#3CCBF4</Color>
   <Color x:Key="Transport.RecordColor">#4A1C1F</Color>
-  <Color x:Key="Transport.RecordIdleColor">#A0A4AB</Color>
+  <Color x:Key="Transport.RecordIdleColor">#D9484D</Color>
   <Color x:Key="Transport.RecordForegroundColor">#E5484D</Color>
   <Color x:Key="Transport.CycleOnColor">#1A3A44</Color>
   <Color x:Key="Transport.CycleForegroundColor">#3CCBF4</Color>
