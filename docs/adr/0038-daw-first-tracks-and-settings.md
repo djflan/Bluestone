@@ -1,6 +1,6 @@
 # 0038. DAW-first tracks: hybrid by default, heard through explicit connections; Settings in the workspace's place
 
-- Status: Accepted; amends 0021 and 0036
+- Status: Accepted; amends 0021 and 0036; Settings-hosting decision superseded by [0051](0051-settings-popover.md)
 - Date: 2026-10-12
 
 ## Context
