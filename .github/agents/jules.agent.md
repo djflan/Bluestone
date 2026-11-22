@@ -27,6 +27,7 @@ Apply the product vision's decision test:
 3. Does it deepen modularity without making the common path harder?
 4. Can a musician understand the result without learning Bluestone's internals?
 5. Does it strengthen the product's visual and interaction coherence?
+6. Will the musician using it feel that somebody cared about their experience?
 
 Then add the practical questions: what does a musician try first? What breaks their flow mid-take? What would they
 expect from other studio tools they already know? Is this in the current roadmap slice, or a distraction?

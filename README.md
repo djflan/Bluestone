@@ -11,7 +11,7 @@
 
 <p align="center"><b>A device-centric digital audio workstation built for tight timing and accuracy.</b></p>
 
-Bluestone is a modern, open-source, device-centric digital audio workstation built for tight timing and accuracy. It brings hardware instruments, software instruments, effects, and note processors into one modular environment without making musicians work like routing engineers. Bluestone on its own is meant to be a complete virtual studio; plugins and hardware join it as peers.
+Bluestone is a modern, open-source digital audio workstation. It brings hardware instruments, software instruments, effects, and note processors into one modular environment without making musicians work like routing engineers. Bluestone on its own is meant to be a complete virtual studio; plugins and hardware join it as peers.
 
 Bluestone combines deep, flexible signal flow with clear, approachable workflows. Its interface is designed as a cohesive professional product: fresh, responsive, musically focused, and consistent across every feature.
 
@@ -32,9 +32,14 @@ The mixer at normal and compact sizes:
 
 ## The idea
 
+> **Build software that feels like somebody cared.**\
+> Express sincerity through engineering.
+
+That principle sits behind every other decision in Bluestone. Mostly it shows up in unglamorous places: timing that is measured rather than claimed, a plugin crash that does not take the session down with it, a missing synth or file kept in the project instead of silently dropped, a project you can start playing in before configuring anything, and an honest list of what does not work yet. The polish is there to make the work easier, not to decorate it.
+
 Bluestone is for serious musicians, whatever their studio looks like: Bluestone alone, a plugin collection, or a room of synthesizers, boutique instruments, Eurorack systems, audio interfaces, and external effects. Each of those setups is a complete, first-class studio with the same timing and accuracy. It is aimed primarily at intermediate and professional musicians, producers, and studio owners, while keeping the common path approachable to committed amateurs.
 
-Five priorities guide the product:
+Five priorities turn that principle into decisions:
 
 1. Tight timing, synchronization, latency handling, and accuracy.
 2. Bluestone devices, third-party plugins, and hardware as equal participants, in any combination.
@@ -44,7 +49,7 @@ Five priorities guide the product:
 
 The device chain is the everyday modular surface. Ordinary tracks keep familiar inputs, outputs, sends, faders, and sensible routes to the master. More advanced routing becomes visible when it is useful, not before. Automatic choices remain inspectable, editable, and reversible.
 
-Read the full [product vision](docs/product-vision.md), the public [roadmap](docs/roadmap.md), and the agent-ready [Release 1.0 plan](docs/release-1.0.md).
+Read the full [guiding principle](docs/product-vision.md#guiding-principle) and [product vision](docs/product-vision.md), the public [roadmap](docs/roadmap.md), and the agent-ready [Release 1.0 plan](docs/release-1.0.md).
 
 ## What works in the alpha
 
