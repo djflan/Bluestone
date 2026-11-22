@@ -4,6 +4,7 @@ using Avalonia.Automation.Provider;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Bluestone.Application.Audio;
 using Bluestone.Audio.Devices;
@@ -14,7 +15,7 @@ using Bluestone.Presentation;
 namespace Bluestone.Tests.Ui;
 
 /// <summary>
-/// Settings in the real window: it takes the workspace's place and gives it back exactly as it was, opens from the keyboard and
+/// Settings in the real window: it leaves the workspace as it was, opens from the keyboard and
 /// the control bar, narrows its categories by search, and its pages' controls reach their view models.
 /// </summary>
 public sealed class SettingsTests : IDisposable
@@ -357,12 +358,14 @@ public sealed class SettingsTests : IDisposable
         }
     }
 
-    [Fact]
-    public Task Settings_TakesTheWorkspacesPlace_AndGivesItBackUnchanged_WithoutTouchingTheProject() => HeadlessApp.RunAsync(async () =>
+    [Theory]
+    [InlineData(1040, 640)]
+    [InlineData(1440, 900)]
+    public Task Settings_OverlaysTheWorkspace_WithoutChangingItsLayout(double width, double height) => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
-        app.Window.Width = 1440;
-        app.Window.Height = 900;
+        app.Window.Width = width;
+        app.Window.Height = height;
         using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
         app.Window.AttachAudio(Audio(app, audio));
         app.ViewModel.AddTrackCommand.Execute(null);
@@ -375,20 +378,48 @@ public sealed class SettingsTests : IDisposable
         var before = (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
             app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView);
         var detailRow = app.Find<Grid>("MainArea").RowDefinitions[3].Height;
+        var workspaceGrid = app.Find<Grid>("WorkspaceGrid");
+        var workspaceBounds = new Rect(app.InWindow(workspaceGrid, default), workspaceGrid.Bounds.Size);
 
         app.Click(app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"));
+        app.Window.MouseMove(new Point(width - 2, height - 2), RawInputModifiers.None);
 
         Assert.True(app.Window.Settings.IsOpen);
-        Assert.False(app.Find<Grid>("WorkspaceGrid").IsVisible);
-        Assert.True(app.Find<SettingsView>("SettingsHost").IsEffectivelyVisible);
+        Assert.True(workspaceGrid.IsEffectivelyVisible);
+        Assert.Equal(workspaceBounds, new Rect(app.InWindow(workspaceGrid, default), workspaceGrid.Bounds.Size));
+        var host = app.Find<SettingsView>("SettingsHost");
+        Assert.True(host.IsEffectivelyVisible);
+        var hostBounds = new Rect(app.InWindow(host, default), host.Bounds.Size);
+        Assert.InRange(hostBounds.Width, 500, 800);
+        Assert.InRange(hostBounds.Height, 200, 560);
+        Assert.True(hostBounds.Left > workspaceBounds.Left + 100);
+        Assert.InRange(workspaceBounds.Right - hostBounds.Right, 12, 24);
+        Assert.InRange(hostBounds.Top - workspaceBounds.Top, 4, 12);
+        Assert.True(hostBounds.Bottom <= workspaceBounds.Bottom - 8);
+        var pointer = AppUnderTest.Within<Avalonia.Controls.Shapes.Path>(host, p => p.Name == "SettingsPointer");
+        var pointerBounds = new Rect(app.InWindow(pointer, default), pointer.Bounds.Size);
+        var gear = app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton");
+        var gearBounds = new Rect(app.InWindow(gear, default), gear.Bounds.Size);
+        Assert.True(pointer.IsEffectivelyVisible);
+        Assert.False(pointer.IsHitTestVisible);
+        Assert.False(pointer.Focusable);
+        Assert.InRange(Math.Abs(pointerBounds.Center.X - gearBounds.Center.X), 0, 1.5);
+        Assert.InRange(hostBounds.Top - pointerBounds.Top, 5, 7);
+        Assert.InRange(pointerBounds.Bottom - hostBounds.Top, 0, 3);
         Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
         Assert.Single(app.Window.GetVisualDescendants().OfType<AudioSettingsPage>(), p => p.IsEffectivelyVisible);
         await app.SettleTransitionsAsync();
-        app.SaveFrame("settings-audio");
+        app.SaveFrame($"settings-popover-audio-{(int)width}");
+
+        app.Window.ShowSettings(SettingsPage.Display);
+        await app.SettleTransitionsAsync();
+        Assert.Single(app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>(), p => p.IsEffectivelyVisible);
+        app.SaveFrame($"settings-popover-display-{(int)width}");
 
         app.Press(Key.Escape);
 
         Assert.False(app.Window.Settings.IsOpen);
+        Assert.False(pointer.IsEffectivelyVisible);
         Assert.True(app.Find<Grid>("WorkspaceGrid").IsVisible);
         Assert.Equal(before, (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
             app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView));
@@ -396,10 +427,19 @@ public sealed class SettingsTests : IDisposable
         Assert.Same(project, app.Session.Project);
         Assert.Equal(undo, app.ViewModel.UndoCommand.CanExecute(null));
 
+        // A hidden surface must not intercept clicks in the workspace area it covered.
+        var presses = 0;
+        workspaceGrid.AddHandler(InputElement.PointerPressedEvent, (_, _) => presses++, RoutingStrategies.Bubble, handledEventsToo: true);
+        var point = app.InWindow(workspaceGrid, new Point(workspaceGrid.Bounds.Width - 64, 80));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+        Assert.Equal(1, presses);
+
         // The keyboard opens it where it was.
         app.Press(Key.OemComma, AppUnderTest.Command);
         Assert.True(app.Window.Settings.IsOpen);
-        Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+        Assert.Equal(SettingsPage.Display, app.Window.Settings.SelectedCategory?.Page);
     });
 
     [Fact]

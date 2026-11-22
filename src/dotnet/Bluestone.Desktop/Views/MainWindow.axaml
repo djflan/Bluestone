@@ -606,8 +606,10 @@
       </Border>
     </Grid>
 
-    <!-- Settings takes the workspace's place while it is open; the workspace is hidden, not changed, and comes back as it was. -->
-    <views:SettingsView x:Name="SettingsHost" Grid.Row="1" IsVisible="False" />
+    <!-- Settings sits above the unchanged workspace, anchored to the control bar's Settings button. -->
+    <views:SettingsView x:Name="SettingsHost" Grid.Row="1" IsVisible="False"
+                        Width="{StaticResource Width.SettingsPopover}" MaxHeight="{StaticResource Height.SettingsPopover}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="{StaticResource Inset.SettingsPopover}" />
 
     <!--
       Transport (Machined): the loop in its well at the left; then the time readout in its own inset well, one recessed

@@ -90,7 +90,6 @@ public partial class MainWindow
             _focusBeforeSettings = FocusManager?.GetFocusedElement() as Control;
         }
 
-        WorkspaceGrid.IsVisible = !open;
         SettingsHost.IsVisible = open;
         var restore = _focusBeforeSettings is { IsEffectivelyVisible: true } previous && TopLevel.GetTopLevel(previous) is not null ? previous : TrackList;
         Dispatcher.UIThread.Post(() => (open ? SettingsHost.CategoryList : restore).Focus(), DispatcherPriority.Loaded);

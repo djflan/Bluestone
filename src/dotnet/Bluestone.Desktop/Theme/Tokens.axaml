@@ -334,6 +334,8 @@
   <Thickness x:Key="Inset.Panel">8</Thickness>
   <Thickness x:Key="Inset.Section">10,8</Thickness>
   <Thickness x:Key="Inset.Row">8,3</Thickness>
+  <Thickness x:Key="Inset.SettingsPopover">0,8,16,16</Thickness>
+  <Thickness x:Key="Inset.SettingsPointer">0,-6,36,0</Thickness>
   <Thickness x:Key="Inset.MixerTop">0,4,0,0</Thickness>
   <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>
   <Thickness x:Key="Inset.MixerRole">4,1</Thickness>
@@ -374,8 +376,10 @@
   <x:Double x:Key="Height.Row">26</x:Double>
   <x:Double x:Key="Width.Rail">30</x:Double>
   <x:Double x:Key="Width.Handle">5</x:Double>
-  <x:Double x:Key="Width.SettingsNav">220</x:Double>
+  <x:Double x:Key="Width.SettingsNav">152</x:Double>
   <x:Double x:Key="Width.SettingsPage">680</x:Double>
+  <x:Double x:Key="Width.SettingsPopover">784</x:Double>
+  <x:Double x:Key="Height.SettingsPopover">560</x:Double>
   <!--
     Track-owned mixer geometry: dense, fixed-pitch strips in one scrolling row, with Master pinned in its own column at
     the same pitch. Each strip stacks fixed-height bands (processing, name, pan, buttons, readouts) above the rails, so
