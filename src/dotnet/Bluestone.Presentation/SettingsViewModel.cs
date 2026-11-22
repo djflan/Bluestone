@@ -37,8 +37,7 @@ public sealed record SettingsCategory(SettingsPage Page, string Name, string Des
 /// <summary>
 /// Bluestone's Settings: application preferences, not project content, in a two-pane surface (categories on the left, the chosen
 /// page on the right) with a search that narrows the categories. The view model knows nothing of where it is shown: the main
-/// window shows it in place of the workspace and puts the workspace back unchanged on <see cref="Close"/>; a window could host it
-/// the same way. Each page is an existing view model, so settings are applied and saved exactly as before.
+/// window hosts it over the unchanged workspace. Each page is an existing view model, so settings are applied and saved as before.
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
@@ -119,7 +118,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void OpenAt(SettingsPage page) => Open(page);
 
-    /// <summary>Hides Settings; the host puts the workspace back as it was.</summary>
+    /// <summary>Hides Settings without changing the workspace.</summary>
     [RelayCommand]
     public void Close() => IsOpen = false;
 

@@ -701,11 +701,15 @@
   <Style Selector="controls|GutterPanel.transport > StackPanel > :is(Button):pressed /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource State.Hover}" />
   </Style>
-  <!-- Lit glyphs: aqua (red for record) with a faint glow; no face, no lamp. -->
+  <!--
+    Lit glyphs: aqua (red for record) with a faint glow; no face, no lamp. Each key's LedFade lays the lit glyph (.lit,
+    styled lit always) over the dark one, so turning a key off fades the light out as a SquareKey's does.
+  -->
   <Style Selector="controls|GutterPanel.transport ToggleButton:checked, controls|GutterPanel.transport Button.stop.active">
     <Setter Property="Foreground" Value="{StaticResource Accent}" />
   </Style>
-  <Style Selector="controls|GutterPanel.transport ToggleButton:checked PathIcon, controls|GutterPanel.transport Button.stop.active PathIcon">
+  <Style Selector="controls|GutterPanel.transport controls|LedFade > PathIcon.lit">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
     <Setter Property="Effect">
       <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
     </Setter>
@@ -726,7 +730,8 @@
   <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked /template/ ContentPresenter">
     <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
   </Style>
-  <Style Selector="controls|GutterPanel.transport ToggleButton.record:checked PathIcon">
+  <Style Selector="controls|GutterPanel.transport ToggleButton.record controls|LedFade > PathIcon.lit">
+    <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
     <Setter Property="Effect">
       <DropShadowEffect Color="{StaticResource Transport.RecordForegroundColor}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.6" />
     </Setter>
@@ -735,7 +740,8 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
-  <Style Selector="controls|GutterPanel.transport ToggleButton.text:checked TextBlock">
+  <Style Selector="controls|GutterPanel.transport ToggleButton.text controls|LedFade > TextBlock.lit">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
     <Setter Property="Effect">
       <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
     </Setter>

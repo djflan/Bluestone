@@ -62,6 +62,53 @@ public sealed class LedMotionCostTests
 
     public static TheoryData<string> Keys => ["SquareKey", "TextKey", "PowerGlyph"];
 
+    // The ladder's whole draw allocates nothing (ChainMeterCostTests); that must hold through the first fade after a
+    // gradient change too, so every glow step of every cell and of the clip lamp is built when the colours are. One
+    // settled draw after the change rebuilds them; then one measured pass, not the best of several.
+    [Fact]
+    public Task TheLadder_AfterAGradientChange_FadesAndWarmsUpWithoutAllocating() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var ladder = new LedLadderMeter { Mode = MixerMeterMode.PeakRms, IsReady = true, Width = 14, Height = 220 };
+        var window = Show(ladder);
+        var previous = MeterGradient.Mixer.Gradient;
+        try
+        {
+            using var bitmap = Bitmap(ladder);
+            using var context = bitmap.CreateDrawingContext();
+            void Loud()
+            {
+                ladder.Show(0, 0, double.NaN, double.NaN);
+                ladder.IsClipped = true;
+            }
+
+            void Quiet()
+            {
+                ladder.Show(-60, -60, double.NaN, double.NaN);
+                ladder.IsClipped = false;
+            }
+
+            Loud();
+            ladder.Render(context);
+            Pass(clock, () => ladder.Render(context), Quiet, Loud, warms: true);
+
+            MeterGradient.Mixer.Use([(0.0, Colors.Teal), (1.0, Colors.Orange)]);
+            ladder.Render(context);
+            var pass = Pass(clock, () => ladder.Render(context), Quiet, Loud, warms: true);
+
+            ChainMeterCostTests.Report($"LedLadderMeter after a gradient change: {pass.Draws} draws, {pass.DrawBytes} bytes; ticks {pass.TickBytes} bytes");
+            Assert.Equal(0, pass.TickBytes);
+            Assert.Equal(0, pass.DrawBytes);
+        }
+        finally
+        {
+            MeterGradient.Mixer.Use(previous);
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
     [Theory]
     [MemberData(nameof(Keys))]
     public Task Keys_FadeOnTicksThatAllocateNothing(string kind) => HeadlessApp.RunAsync(() =>

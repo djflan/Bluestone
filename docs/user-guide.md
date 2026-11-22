@@ -20,6 +20,10 @@ Without hardware, route tracks to **Bluestone Monitor** and open the MIDI monito
 
 The toolbar at the top shows or hides the inspector, Browser, Mixer, and editors, and holds undo, redo, Settings, and Panic. The transport bar runs along the bottom, above the status line: the loop start and length, the position and elapsed time, the transport buttons (back and forward one bar, go to start, stop, play, record, loop; Play, Loop, and the other toggles glow aqua while on, and Record is always a red dot), tempo and time signature, the metronome and **Pre** (count-in), the MIDI input light (**IN**), and the computer-keyboard button with its channel, octave, velocity, and last note. Each track header has square **M**, **S**, and record-arm keys.
 
+Open **Settings** from the toolbar, the menu, or Ctrl/Cmd + ,. **Window ▸ Audio Settings…** and **Window ▸ Plugins…** open their pages directly.
+
+The accepted Settings design ([ADR 0051](adr/0051-settings-popover.md)) is being implemented. It places Settings in a compact, right-anchored, non-dockable popover over the visible workspace. The **Audio**, **Plugins**, and **Display** pages, their existing entry points, and how settings apply and save will stay the same. **Done**, Escape, or clicking outside the popover will close it; opening or closing Settings alone will not change project or workspace state.
+
 ## Essential shortcuts
 
 | Action | Shortcut |
@@ -41,7 +45,7 @@ The toolbar at the top shows or hides the inspector, Browser, Mixer, and editors
 | Zoom and scroll time | Drag in the beat ruler; Ctrl/Cmd + scroll; pinch; Ctrl/Cmd + = / − |
 | Zoom to project / selection / loop | Ctrl/Cmd + 0 / Shift + Ctrl/Cmd + 0 / Alt + Ctrl/Cmd + 0 |
 | Inspector / Browser / Device View / piano roll / event list | I / Shift + B / E / P / D |
-| Settings / return to workspace | Ctrl/Cmd + , / Escape |
+| Open / close Settings | Ctrl/Cmd + , / Escape (when no picker is open) |
 | Computer keyboard input | ` (backquote) |
 | Shortcut reference | Ctrl/Cmd + / |
 
@@ -163,13 +167,13 @@ Plugins run with the user's full permissions. Worker processes isolate crashes, 
 
 Under **Settings ▸ Display ▸ INDICATOR COLORS**, choose one of three independent color gradients: **Mixer meters**, **Device chain** (the meters between devices and on the Out card), and **Gain LEDs** beside the faders. Select an indicator tile or use the **Mixer / Chain / Gain** selector to edit that family's gradient, from the bottom of its scale to the top. Select a stop by its handle, then open its color chip to open the **Color picker**. It has a continuous hue/saturation wheel, a brightness fader, **NEW / WAS** color previews, a **Color (hex)** field, and solid preset color tiles. Hue runs around the wheel and saturation runs from the center to the rim; the brightness fader darkens the wheel.
 
-Picker changes preview live while preference saves are held. **Apply** keeps the color; **Cancel**, Escape, or clicking outside the picker restores the original without saving the preview color. Leaving the page or selecting another indicator also cancels. An incomplete or invalid hex value does not change the preview and disables Apply until six valid hex digits are entered.
+Picker changes preview live while preference saves are held. **Apply** keeps the color; **Cancel**, Escape, or clicking outside the picker restores the original without saving the preview color. Leaving the page or selecting another indicator also cancels. Under the accepted popover design, closing Settings will also cancel an unapplied picker preview. An incomplete or invalid hex value does not change the preview and disables Apply until six valid hex digits are entered.
 
 Drag a handle, or focus it and press Left or Right (1%, or 5% with Shift), to change where its color begins; two stops at the same place make a hard edge. **Add stop** adds one in the widest gap (up to eight), **Remove stop** removes the selected one (two always remain), and **Reset to default** resets only that gradient: aqua-to-violet for mixer and chain meters, violet-to-rose for gain LEDs. **Device chain** also offers **MIDI light**, a single color whose chip opens the same picker; it is not a gradient. The selected stop and MIDI light also have hex fields and swatches on the page for direct edits. Clip lamps stay fixed red, outside the gradients. An existing saved signal gradient is copied into both mixer and chain settings on upgrade; gain LEDs start with their own default.
 
 **LED fade** and **LED warm-up** are both on by default and can be switched off independently. Warm-up softly lights meter cells and gain LEDs over about 20 ms; held peaks, clip lamps, MIDI indicators, and lit keys light immediately. Fade softens the return to dark: about 90 ms for meter cells and held peaks, 140 ms for gain LEDs, clip lamps, and MIDI indicators, and 60 ms for lit keys. This is display motion only: it does not change the measured levels, peak hold, clip latch, or audio. It sits on top of the meters' existing fall.
 
-Both effects behave as off when the operating system requests reduced motion: macOS uses Reduce motion, and Windows uses its client-area animation preference, read at startup and when the main window becomes active. After changing that system preference, return to Bluestone to refresh it. On Linux the two Bluestone switches decide alone. Under **Device View**, **Levels show** chooses whether the meters between devices and on the Out card follow the average level with the peak held above it (the default) or the peak alone. These settings are saved on this computer, not in the project.
+Both effects behave as off when the operating system requests reduced motion: macOS uses Reduce motion, and Windows uses its client-area animation preference, read at startup and when the main window becomes active. After changing that system preference, return to Bluestone to refresh it. On Linux the two Bluestone switches decide alone. If Bluestone can't read the system preference, it reduces motion. Under **Device View**, **Levels show** chooses whether the meters between devices and on the Out card follow the average level with the peak held above it (the default) or the peak alone. These settings are saved on this computer, not in the project. If they can't be saved (for example, a read-only settings folder), they still apply until you quit, and a warning appears in Messages.
 
 ## Status line and messages
 

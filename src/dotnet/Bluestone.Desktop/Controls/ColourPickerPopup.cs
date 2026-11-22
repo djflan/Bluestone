@@ -49,6 +49,7 @@ public sealed class ColourPickerPopup : Popup
     private Control? _anchor;
     private TopLevel? _top;
     private double _reserved;
+    private int _focusVersion;
     private (Rect Anchor, Size Window, Size Picker) _placed;
 
     public ColourPickerPopup()
@@ -57,6 +58,7 @@ public sealed class ColourPickerPopup : Popup
         _frame = new Frame(Picker);
         Child = _frame;
         IsLightDismissEnabled = true;
+        OverlayDismissEventPassThrough = true;
         Placement = PlacementMode.AnchorAndGravity;
         PlacementAnchor = PopupAnchor.TopLeft;
         PlacementGravity = PopupGravity.BottomRight;
@@ -117,6 +119,7 @@ public sealed class ColourPickerPopup : Popup
         }
 
         _edit = edit;
+        var version = ++_focusVersion;
         _anchor = anchor;
         _top = top;
         Picker.Load(edit.Original, edit.Context, edit.Swatches);
@@ -138,7 +141,14 @@ public sealed class ColourPickerPopup : Popup
 
         // The wheel takes focus, showing its focus ring only when the chip was reached from the keyboard.
         var method = anchor.Classes.Contains(":focus-visible") ? NavigationMethod.Tab : NavigationMethod.Pointer;
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => Picker.FocusWheel(method), Avalonia.Threading.DispatcherPriority.Input);
+        var focusedWhenPosted = top.FocusManager?.GetFocusedElement();
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (version == _focusVersion && IsOpen && ReferenceEquals(top.FocusManager?.GetFocusedElement(), focusedWhenPosted))
+            {
+                Picker.FocusWheel(method);
+            }
+        }, Avalonia.Threading.DispatcherPriority.Input);
     }
 
     /// <summary>Closes the picker, cancelling an edit that was not applied.</summary>
@@ -146,6 +156,8 @@ public sealed class ColourPickerPopup : Popup
     {
         Finish(null);
     }
+
+    internal void DismissWithoutRestoringFocus() => Finish(null, restoreFocus: false);
 
     private void PlaceBeside(Rect anchorRect, Size window)
     {
@@ -198,7 +210,7 @@ public sealed class ColourPickerPopup : Popup
     private static double ReservedTop(TopLevel top) =>
         top.TryFindResource("Height.Header", out var height) && height is double h ? h : 30;
 
-    private void Finish(Color? applied)
+    private void Finish(Color? applied, bool restoreFocus = true)
     {
         if (_edit is not { } edit)
         {
@@ -206,6 +218,7 @@ public sealed class ColourPickerPopup : Popup
         }
 
         var anchor = _anchor;
+        _focusVersion++;
         _edit = null;
         _anchor = null;
         _top = null;
@@ -231,7 +244,7 @@ public sealed class ColourPickerPopup : Popup
             if (anchor is not null)
             {
                 anchor.Classes.Remove("open");
-                if (anchor.IsEffectivelyVisible && anchor.IsAttachedToVisualTree())
+                if (restoreFocus && anchor.IsEffectivelyVisible && anchor.IsAttachedToVisualTree())
                 {
                     anchor.Focus(NavigationMethod.Tab);
                 }

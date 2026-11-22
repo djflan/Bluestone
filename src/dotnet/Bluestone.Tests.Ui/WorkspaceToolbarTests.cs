@@ -7,6 +7,8 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.VisualTree;
+using Bluestone.Desktop.Controls;
+using Bluestone.Playback;
 using SkiaSharp;
 
 namespace Bluestone.Tests.Ui;
@@ -172,6 +174,114 @@ public sealed class WorkspaceToolbarTests
         app.Click(settings);
         Assert.False(app.Window.Settings.IsOpen);
         Assert.False(settings.IsChecked is true);
+    });
+
+    [Fact]
+    public Task Enter_ActivatesEachWorkspaceToolExactlyOnce() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        ShowReferenceState(app);
+        Assert.Equal(Key.Enter, Key.Return);
+        foreach (var name in CommandTools.Prepend("Inspector"))
+        {
+            var tool = Tool(app, name);
+            var wasChecked = tool.IsChecked is true;
+            var clicks = 0;
+            tool.Click += (_, _) => clicks++;
+            Assert.True(tool.Focus(NavigationMethod.Tab));
+
+            app.Press(Key.Enter);
+            Assert.Equal(!wasChecked, tool.IsChecked is true);
+            Assert.Equal(1, clicks);
+            app.Press(Key.Return);
+            Assert.Equal(wasChecked, tool.IsChecked is true);
+            Assert.Equal(2, clicks);
+            Assert.Contains("Enter", Assert.IsType<string>(ToolTip.GetTip(tool)), StringComparison.Ordinal);
+            Assert.Contains("Enter", AutomationProperties.GetHelpText(tool), StringComparison.Ordinal);
+        }
+    });
+
+    [Fact]
+    public Task Enter_TogglesSettingsExactlyOnce_WhenTheGearHasFocus() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var gear = app.Find<ToggleButton>("SettingsButton");
+        var clicks = 0;
+        gear.Click += (_, _) => clicks++;
+        Assert.True(gear.Focus(NavigationMethod.Tab));
+        app.Window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.None, null);
+        app.Window.KeyRelease(Key.Enter, RawInputModifiers.None, PhysicalKey.None, null);
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(1, clicks);
+        Assert.True(gear.Focus(NavigationMethod.Pointer));
+        Assert.True(app.Window.Settings.IsOpen);
+        app.Window.KeyPress(Key.Return, RawInputModifiers.None, PhysicalKey.None, null);
+        app.Window.KeyRelease(Key.Return, RawInputModifiers.None, PhysicalKey.None, null);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Equal(2, clicks);
+        Assert.Contains("Enter", Assert.IsType<string>(ToolTip.GetTip(gear)), StringComparison.Ordinal);
+        Assert.Contains("display", Assert.IsType<string>(ToolTip.GetTip(gear)), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Enter", AutomationProperties.GetHelpText(gear), StringComparison.Ordinal);
+    });
+
+    [Fact]
+    public Task ToolbarKeys_PreserveDisabledStatePlaybackShortcutsAndTrackRename() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var inspector = Tool(app, "Inspector");
+        var before = app.ViewModel.IsInspectorVisible;
+        var clicks = 0;
+        inspector.Click += (_, _) => clicks++;
+        Assert.True(inspector.Focus(NavigationMethod.Tab));
+        app.Press(Key.Enter, RawInputModifiers.Shift);
+        Assert.NotEqual(before, app.ViewModel.IsInspectorVisible);
+        app.Press(Key.Enter, RawInputModifiers.Shift);
+        Assert.Equal(before, app.ViewModel.IsInspectorVisible);
+        Assert.Equal(2, clicks);
+
+        foreach (var name in CommandTools.Prepend("Inspector").Append("Settings"))
+        {
+            var tool = name == "Settings" ? app.Find<ToggleButton>("SettingsButton") : Tool(app, name);
+            var wasChecked = tool.IsChecked;
+            var disabledClicks = 0;
+            tool.Click += (_, _) => disabledClicks++;
+            Assert.True(tool.Focus(NavigationMethod.Tab));
+            tool.IsEnabled = false;
+            app.Press(Key.Enter);
+            Assert.Equal(wasChecked, tool.IsChecked);
+            Assert.Equal(0, disabledClicks);
+            Assert.False(app.Window.Settings.IsOpen);
+            tool.IsEnabled = true;
+        }
+
+        Assert.Equal(before, app.ViewModel.IsInspectorVisible);
+        Assert.Equal(2, clicks);
+        Assert.True(inspector.Focus(NavigationMethod.Tab));
+        app.Press(Key.I);
+        Assert.NotEqual(before, app.ViewModel.IsInspectorVisible);
+
+        var afterShortcut = app.ViewModel.IsInspectorVisible;
+        var engine = app.Playback.Engine;
+        app.Press(Key.Space);
+        await AppUnderTest.WaitUntilAsync(() =>
+        {
+            engine.Pump();
+            return engine.State == TransportState.Playing;
+        }, "playback to start from a toolbar control");
+        Assert.Equal(afterShortcut, app.ViewModel.IsInspectorVisible);
+        app.Press(Key.Space);
+        engine.Pump();
+        Assert.Equal(TransportState.Stopped, engine.State);
+
+        app.ViewModel.AddTrackCommand.Execute(null);
+        app.Settle();
+        var timeline = app.Find<TimelineView>("Timeline");
+        Assert.True(timeline.Focus(NavigationMethod.Tab));
+        app.Press(Key.Enter);
+        var tracks = app.Find<ListBox>("TrackList");
+        var row = tracks.ContainerFromItem(app.ViewModel.SelectedTrack!)!;
+        Assert.True(row.GetVisualDescendants().OfType<TextBox>().First().IsFocused);
     });
 
     private static void ShowReferenceState(AppUnderTest app)

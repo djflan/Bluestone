@@ -82,6 +82,13 @@ internal sealed class LedLevels : ILedAnimator
     {
         if (_target[index] == lit)
         {
+            // An instant request still settles an LED caught mid-motion toward the same target.
+            if (instant)
+            {
+                _level[index] = lit ? 1 : 0;
+                _step[index] = lit ? Steps : 0;
+            }
+
             return;
         }
 

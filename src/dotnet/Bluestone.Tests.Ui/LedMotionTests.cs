@@ -451,6 +451,41 @@ public sealed class LedMotionTests
         return Task.CompletedTask;
     });
 
+    [Fact]
+    public Task AnInstantSameTargetRequest_SettlesAPartiallyFadedLed_AndStopsTheClock() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var owner = new Border();
+        var window = Show(owner);
+        try
+        {
+            var leds = new LedLevels(owner, 90, count: 1);
+            clock.Time = 1000;
+            leds.Set(0, true, clock.Time, instant: true);
+            leds.Set(0, false, clock.Time);
+
+            clock.Frame(1045);
+            Assert.Equal(0.25, leds.Level(0), 6);
+            Assert.Equal((1, true), LedMotion.StateOf(window));
+
+            // Same target, but instant means an identity change can clear a stale MIDI light now, not after its fade.
+            leds.Set(0, false, clock.Time, instant: true);
+            Assert.Equal(0, leds.Level(0));
+            Assert.Equal(0, leds.Step(0));
+
+            // The already-requested frame removes the now-settled animator from the window's clock.
+            clock.Frame(1046);
+            Assert.Equal((0, false), LedMotion.StateOf(window));
+            Assert.Equal(0, clock.Pending);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
     public static TheoryData<string> Switches => ["Fade", "Warmup", "ReduceMotion"];
 
     [Theory]

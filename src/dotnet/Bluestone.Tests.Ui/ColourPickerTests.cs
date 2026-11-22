@@ -7,6 +7,7 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Views;
@@ -214,8 +215,11 @@ public sealed class ColourPickerTests : IDisposable
             Assert.Equal(saved, File.ReadAllText(path));
 
             // A click away (on the page, outside the picker) puts the original back, saves nothing, and ends the preview.
-            app.Window.MouseDown(new Point(1300, 860), MouseButton.Left);
-            app.Window.MouseUp(new Point(1300, 860), MouseButton.Left);
+            var host = app.Find<SettingsView>("SettingsHost");
+            var insideSettings = app.InWindow(host, new Point(12, 15));
+            Assert.False(popup.PickerBounds.Inflate(ColourPickerPopup.Shadow).Contains(insideSettings));
+            app.Window.MouseDown(insideSettings, MouseButton.Left);
+            app.Window.MouseUp(insideSettings, MouseButton.Left);
             app.Settle();
             Assert.False(popup.IsOpen);
             Assert.Equal(was, display.MidiColour);
@@ -234,6 +238,222 @@ public sealed class ColourPickerTests : IDisposable
             Assert.Equal("#9C82D9", store.Load().MidiColour);
             Assert.False(display.IsMidiColourPreviewing);
             Assert.True(chip.IsFocused);
+        }
+        finally
+        {
+            Reset(display);
+        }
+    });
+
+    [Theory]
+    [InlineData(true, "Outside")]
+    [InlineData(false, "Outside")]
+    [InlineData(true, "Done")]
+    [InlineData(false, "Done")]
+    [InlineData(true, "Parent")]
+    [InlineData(false, "Parent")]
+    [InlineData(true, "Gear")]
+    [InlineData(false, "Gear")]
+    [InlineData(true, "Focus")]
+    [InlineData(false, "Focus")]
+    [InlineData(true, "Window")]
+    [InlineData(false, "Window")]
+    public Task ClosingSettings_CancelsMidiAndGradientPickerPreviews(bool midi, string close) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (store, path, display, page) = Open(app, 1440);
+        try
+        {
+            app.Click(StageTile(page, "Device chain"));
+            var originalMidi = display.MidiColour;
+            var originalGradient = display.Chain.Gradient;
+            store.Save(store.Load());
+            var saved = File.ReadAllText(path);
+            var chip = AppUnderTest.Within<Button>(page, b => b.Name == (midi ? "MidiChip" : "StopChip"));
+            app.Click(chip);
+            var popup = page.ColourPicker;
+            app.Click(PickerSwatch(popup, "#E3C345"));
+            Assert.True(midi ? display.IsMidiColourPreviewing : display.Chain.IsPreviewing);
+            Assert.Equal(saved, File.ReadAllText(path));
+
+            if (close == "Outside")
+            {
+                Control target = midi
+                    ? app.Find<TextBox>("TempoBox")
+                    : AppUnderTest.Within<Button>(app.Window, b => AutomationProperties.GetName(b) == "New track");
+                var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
+                app.Window.MouseDown(point, MouseButton.Left);
+                app.Window.MouseUp(point, MouseButton.Left);
+                app.Settle();
+                if (midi)
+                {
+                    Assert.Same(target, app.Window.FocusManager?.GetFocusedElement());
+                }
+                else
+                {
+                    Assert.Single(app.ViewModel.Tracks);
+                }
+            }
+            else if (close == "Done")
+            {
+                var done = app.Find<Button>("CloseSettingsButton");
+                app.Click(done);
+                Assert.True(app.Window.Settings.IsOpen);
+                Assert.False(popup.IsOpen);
+                app.Click(done);
+            }
+            else if (close == "Parent")
+            {
+                app.Window.Settings.Close();
+                app.Settle();
+            }
+            else if (close == "Gear")
+            {
+                app.Click(app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"));
+            }
+            else if (close == "Focus")
+            {
+                var timeline = app.Find<TimelineView>("Timeline");
+                Assert.True(timeline.Focus(NavigationMethod.Tab));
+                app.Settle();
+                Assert.True(timeline.IsFocused);
+            }
+            else
+            {
+                app.Window.Close();
+                app.Settle();
+            }
+
+            Assert.False(app.Window.Settings.IsOpen);
+            Assert.False(popup.IsOpen);
+            Assert.False(display.IsMidiColourPreviewing);
+            Assert.False(display.Chain.IsPreviewing);
+            Assert.Equal(originalMidi, display.MidiColour);
+            Assert.Equal(originalGradient, display.Chain.Gradient);
+            Assert.Equal(saved, File.ReadAllText(path));
+        }
+        finally
+        {
+            Reset(display);
+        }
+    });
+
+    [Fact]
+    public Task CancelledWindowClose_KeepsThePreviewUntilTheWindowReallyCloses() => HeadlessApp.RunAsync(async () =>
+    {
+        var dialogs = new ClosePrompt();
+        await using var app = await AppUnderTest.OpenAsync(dialogs: dialogs);
+        app.ViewModel.AddTrackCommand.Execute(null);
+        var (store, path, display, page) = Open(app, 1440);
+        try
+        {
+            app.Click(StageTile(page, "Device chain"));
+            var original = display.MidiColour;
+            store.Save(store.Load());
+            var saved = File.ReadAllText(path);
+            app.Click(AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip"));
+            var popup = page.ColourPicker;
+            app.Click(PickerSwatch(popup, "#E3C345"));
+
+            app.Window.Close();
+            app.Settle();
+            Assert.Equal(1, dialogs.Asked);
+            Assert.True(app.Window.IsVisible);
+            Assert.True(app.Window.Settings.IsOpen);
+            Assert.True(popup.IsOpen);
+            Assert.True(display.IsMidiColourPreviewing);
+            Assert.Equal("#E3C345", display.MidiColour);
+            Assert.Equal(saved, File.ReadAllText(path));
+
+            dialogs.Answer = UnsavedChangesChoice.Discard;
+            app.Window.Close();
+            app.Settle();
+            Assert.False(app.Window.IsVisible);
+            Assert.False(app.Window.Settings.IsOpen);
+            Assert.False(popup.IsOpen);
+            Assert.False(display.IsMidiColourPreviewing);
+            Assert.Equal(original, display.MidiColour);
+            Assert.Equal(saved, File.ReadAllText(path));
+        }
+        finally
+        {
+            dialogs.Answer = UnsavedChangesChoice.Discard;
+            page.ColourPicker.Dismiss();
+            Reset(display);
+        }
+    });
+
+    [Fact]
+    public Task ClickingThePickerOutsideSettings_DoesNotCloseTheParent() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (_, _, display, page) = Open(app, 1040, 640);
+        try
+        {
+            // Constrain the host below the picker's height so a generous portion of the picker must extend beyond it.
+            var host = app.Find<SettingsView>("SettingsHost");
+            host.Height = 300;
+            app.Settle();
+            app.Click(StageTile(page, "Device chain"));
+            var chip = AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip");
+            app.Click(chip);
+            var popup = page.ColourPicker;
+            var hostBounds = new Rect(app.InWindow(host, default), host.Bounds.Size);
+            var picker = popup.Picker;
+            var top = new Point(popup.PickerBounds.Center.X, popup.PickerBounds.Top + 4);
+            var bottom = new Point(popup.PickerBounds.Center.X, popup.PickerBounds.Bottom - 4);
+            var exposed = hostBounds.Contains(top) ? bottom : top;
+            Assert.True(popup.PickerBounds.Contains(exposed) && !hostBounds.Contains(exposed),
+                $"The picker must extend outside Settings: host {hostBounds}, picker {popup.PickerBounds}.");
+            var root = TopLevel.GetTopLevel(picker)!;
+            var local = new Point(exposed.X - popup.PickerBounds.X, exposed.Y - popup.PickerBounds.Y);
+            var point = picker.TranslatePoint(local, root)!.Value;
+            root.MouseDown(point, MouseButton.Left);
+            root.MouseUp(point, MouseButton.Left);
+            app.Settle();
+
+            Assert.True(app.Window.Settings.IsOpen);
+            Assert.True(popup.IsOpen);
+        }
+        finally
+        {
+            Reset(display);
+        }
+    });
+
+    [Fact]
+    public Task RapidPickerReopen_IgnoresStaleFocusAndRespectsTheUsersFocus() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (_, _, display, page) = Open(app, 1440);
+        try
+        {
+            var chip = AppUnderTest.Within<Button>(page, b => b.Name == "StopChip");
+            var popup = page.ColourPicker;
+            var wheel = popup.Picker.FindControl<ColourWheel>("Wheel")!;
+            Assert.True(chip.Focus(NavigationMethod.Tab));
+            chip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.True(popup.IsOpen);
+            popup.Dismiss();
+            bool? staleFocus = null;
+            Dispatcher.UIThread.Post(() => staleFocus = wheel.IsFocused, DispatcherPriority.Input);
+            chip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            app.Settle();
+            Assert.False(staleFocus);
+            Assert.True(wheel.IsFocused);
+
+            popup.Dismiss();
+            chip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            popup.Dismiss();
+            chip.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.True(popup.IsOpen);
+            var hex = popup.Picker.FindControl<TextBox>("HexBox")!;
+            Assert.True(hex.Focus(NavigationMethod.Tab));
+            app.Settle();
+
+            Assert.True(app.Window.Settings.IsOpen);
+            Assert.True(popup.IsOpen);
+            Assert.True(hex.IsFocused);
         }
         finally
         {
@@ -498,6 +718,25 @@ public sealed class ColourPickerTests : IDisposable
     });
 
     private static readonly string[] Chips = ["StopChip", "MidiChip"];
+
+    private sealed class ClosePrompt : IUserInteraction
+    {
+        public UnsavedChangesChoice Answer { get; set; } = UnsavedChangesChoice.Cancel;
+
+        public int Asked { get; private set; }
+
+        public Task<string?> PickOpenFileAsync(string title, IReadOnlyList<FileFilter> filters) => Task.FromResult<string?>(null);
+
+        public Task<string?> PickSaveFileAsync(string title, string suggestedName, FileFilter filter) => Task.FromResult<string?>(null);
+
+        public Task<bool> ConfirmAsync(string title, string message, string confirmLabel, bool destructive) => Task.FromResult(true);
+
+        public Task<UnsavedChangesChoice> AskToSaveChangesAsync(string projectName)
+        {
+            Asked++;
+            return Task.FromResult(Answer);
+        }
+    }
 
     private (DisplaySettingsStore Store, string Path, DisplayViewModel Display, DisplaySettingsPage Page) Open(AppUnderTest app, double width, double height = 900)
     {

@@ -960,7 +960,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnShortcutKeyDown(object? sender, KeyEventArgs e)
     {
-        // While Settings replaces the workspace, keys belong to Settings' controls: the hidden workspace must not change.
+        // While Settings is open, its controls own the single-key shortcuts rather than the workspace underneath.
         if (_viewModel is not { } vm || Settings.IsOpen)
         {
             return;
@@ -1024,6 +1024,15 @@ public partial class MainWindow : Window
 
         // A focused mixer insert name takes Space to turn its device on or off (MixerConsoleView.ToggleInsertPower).
         if (e.Key == Key.Space && modifiers == KeyModifiers.None && IsInsertNameFocused())
+        {
+            return;
+        }
+
+        // Enter activates these toolbar toggles rather than starting a track rename. Space remains the play shortcut.
+        if (e.Key is Key.Return or Key.Enter && modifiers == KeyModifiers.None
+            && FocusManager?.GetFocusedElement() is { } focused
+            && (ReferenceEquals(focused, InspectorButton) || ReferenceEquals(focused, BrowserButton)
+                || ReferenceEquals(focused, MixerButton) || ReferenceEquals(focused, EditorsButton) || ReferenceEquals(focused, SettingsButton)))
         {
             return;
         }

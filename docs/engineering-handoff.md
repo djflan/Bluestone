@@ -187,7 +187,9 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
   the Out meter's ladder draw reported 0 managed B; animated gain draws matched their at-rest allocation baseline.
   Key and MIDI offscreen draws allocated backend bytes. This does not establish zero allocation for all rendering,
   or verify the real frame-request/compositor path, hardware timing, or macOS/Windows system-preference reads
-  (ADR 0043).
+  (ADR 0043). The ladder's first fade after a gradient change now also measures 0 managed B (its glow and clip-lamp
+  steps are prebuilt with its colors). If a system reduce-motion read fails, LEDs reduce motion and a warning is traced
+  once; that failure path is not exercised by a test.
 
 ## 7. Unresolved implementation backlog
 

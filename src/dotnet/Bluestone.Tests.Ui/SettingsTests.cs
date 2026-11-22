@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Bluestone.Application.Audio;
 using Bluestone.Audio.Devices;
@@ -281,6 +282,25 @@ public sealed class SettingsTests : IDisposable
             app.Click(add);
             Assert.False(add.IsChecked == true, "An action key never stays checked.");
             Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
+
+            // Leaving the page during a gradient drag commits that drag, unlike cancelling a color-picker preview.
+            var beforeDetach = File.ReadAllText(path);
+            handle = editor.Handles[1];
+            start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), app.Window)!.Value;
+            app.Window.MouseDown(start, MouseButton.Left);
+            var moved = new Point(editor.TranslatePoint(new Point(editor.XAt(0.15), 0), app.Window)!.Value.X, start.Y);
+            app.Window.MouseMove(moved, RawInputModifiers.LeftMouseButton);
+            app.Settle();
+            Assert.True(display.Mixer.IsPreviewing);
+            Assert.Equal(0.15, display.Mixer.Gradient.Stops[1].Position, 2);
+            Assert.Equal(beforeDetach, File.ReadAllText(path));
+            app.Window.ShowSettings(SettingsPage.Audio);
+            app.Settle();
+            Assert.True(app.Window.Settings.IsOpen);
+            Assert.False(display.Mixer.IsPreviewing);
+            Assert.Equal(0.15, store.Load().MixerGradient.Stops[1].Position, 2);
+            app.Window.MouseUp(moved, MouseButton.Left);
+            app.Settle();
         }
         finally
         {
@@ -436,10 +456,27 @@ public sealed class SettingsTests : IDisposable
         app.Settle();
         Assert.Equal(1, presses);
 
-        // The keyboard opens it where it was.
+        // The shortcut and both targeted menus keep the workspace and project unchanged, and the shortcut remembers the last page.
+        var afterClick = (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
+            app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView);
+        var projectAfterClick = app.Session.Project;
         app.Press(Key.OemComma, AppUnderTest.Command);
         Assert.True(app.Window.Settings.IsOpen);
         Assert.Equal(SettingsPage.Display, app.Window.Settings.SelectedCategory?.Page);
+        app.ChooseFromMenu("Window", "Plugins…");
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
+        app.ChooseFromMenu("Window", "Audio Settings…");
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+        app.Window.Settings.Close();
+        app.Settle();
+        app.Press(Key.OemComma, AppUnderTest.Command);
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);
+        Assert.Same(projectAfterClick, app.Session.Project);
+        Assert.Equal(afterClick, (workspace.LeftExtent, workspace.RightExtent, workspace.DetailExtent, workspace.Browser.IsDocked, workspace.Inspector.IsDocked,
+            app.ViewModel.LowerPane, app.ViewModel.SelectedTrack, workspace.ActiveDeviceView));
     });
 
     [Fact]
@@ -530,6 +567,220 @@ public sealed class SettingsTests : IDisposable
         app.Settle();
         AssertSelected(96_000, 256);
         Assert.False(audioSettings.IsRunning);
+    });
+
+    [Fact]
+    public Task OutsidePointer_ClosesSettings_AndReachesTheFieldOrActionWithoutRestoringOldFocus() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        var gear = app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton");
+        var tempo = app.Find<TextBox>("TempoBox");
+        var addTrack = AppUnderTest.Within<Button>(app.Window, b => Avalonia.Automation.AutomationProperties.GetName(b) == "New track");
+        Assert.True(gear.Focus(NavigationMethod.Tab));
+
+        app.Window.ShowSettings();
+        app.Settle();
+        ClickWithoutSettling(tempo);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+
+        app.Window.ShowSettings();
+        app.Settle();
+        ClickWithoutSettling(addTrack);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Single(app.ViewModel.Tracks);
+
+        void ClickWithoutSettling(Control target)
+        {
+            var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
+            app.Window.MouseDown(point, MouseButton.Left);
+            app.Window.MouseUp(point, MouseButton.Left);
+        }
+    });
+
+    [Theory]
+    [InlineData("Field")]
+    [InlineData("Action")]
+    [InlineData("Gear")]
+    [InlineData("Focus")]
+    public Task OutsidePointer_WithADropDownOpen_ReachesItsTarget(string targetName) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        var tempo = app.Find<TextBox>("TempoBox");
+        Assert.True(tempo.Focus(NavigationMethod.Tab));
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var dropdown = AppUnderTest.ComboNamed(page, "Buffer size");
+        app.Click(dropdown);
+        Assert.True(dropdown.IsDropDownOpen);
+
+        if (targetName == "Focus")
+        {
+            var timeline = app.Find<TimelineView>("Timeline");
+            Assert.True(timeline.Focus(NavigationMethod.Tab));
+            app.Settle();
+            Assert.False(app.Window.Settings.IsOpen);
+            Assert.False(dropdown.IsDropDownOpen);
+            Assert.True(timeline.IsFocused);
+            return;
+        }
+
+        Control target = targetName switch
+        {
+            "Field" => tempo,
+            "Action" => AppUnderTest.Within<Button>(app.Window, b => Avalonia.Automation.AutomationProperties.GetName(b) == "New track"),
+            _ => app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"),
+        };
+        var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.False(dropdown.IsDropDownOpen);
+        if (targetName == "Action")
+        {
+            Assert.Single(app.ViewModel.Tracks);
+        }
+        else
+        {
+            Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+        }
+    });
+
+    [Theory]
+    [InlineData("Done")]
+    [InlineData("Escape")]
+    [InlineData("Gear")]
+    public Task ExplicitClose_RestoresThePreviouslyFocusedControl(string close) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        var tempo = app.Find<TextBox>("TempoBox");
+        Assert.True(tempo.Focus(NavigationMethod.Tab));
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+
+        app.Press(Key.Escape, RawInputModifiers.Shift);
+        Assert.True(app.Window.Settings.IsOpen);
+        switch (close)
+        {
+            case "Done":
+                app.Click(app.Find<Button>("CloseSettingsButton"));
+                break;
+            case "Escape":
+                app.Press(Key.Escape);
+                break;
+            default:
+                app.Click(app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton"));
+                break;
+        }
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task ExplicitClose_FallsBackWhenPreviousFocusIsDisabledOrDetached(bool detach) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var root = Assert.IsType<Panel>(app.Window.Content);
+        var previous = new TextBox { Width = 100, Height = 24 };
+        root.Children.Add(previous);
+        app.Settle();
+        Assert.True(previous.Focus(NavigationMethod.Tab));
+        app.Window.ShowSettings();
+        app.Settle();
+
+        app.Window.Settings.Close();
+        if (detach)
+        {
+            root.Children.Remove(previous);
+        }
+        else
+        {
+            previous.IsEnabled = false;
+        }
+
+        app.Settle();
+        Assert.True(app.Find<TimelineView>("Timeline").IsFocused);
+    });
+
+    [Fact]
+    public Task KeyboardFocusLeavingSettings_ClosesItWithoutStealingFocus_AndWorkspaceShortcutsResume() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.ShowSettings();
+        app.Settle();
+        var timeline = app.Find<TimelineView>("Timeline");
+        Assert.True(timeline.Focus(NavigationMethod.Tab));
+        app.Settle();
+
+        Assert.False(app.Window.Settings.IsOpen);
+        Assert.True(timeline.IsFocused);
+        var inspector = app.ViewModel.IsInspectorVisible;
+        app.Press(Key.I);
+        Assert.NotEqual(inspector, app.ViewModel.IsInspectorVisible);
+    });
+
+    [Fact]
+    public Task RapidCloseAndReopen_DoesNotRunStaleFocusPosts() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var gear = app.Find<Avalonia.Controls.Primitives.ToggleButton>("SettingsButton");
+        Assert.True(gear.Focus(NavigationMethod.Tab));
+        var staleFocus = 0;
+        gear.GotFocus += (_, _) => staleFocus++;
+
+        app.Window.ShowSettings();
+        app.Window.Settings.Close();
+        bool? focusBeforeReopenPost = null;
+        Dispatcher.UIThread.Post(() => focusBeforeReopenPost = gear.IsFocused, DispatcherPriority.Loaded);
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Display, app.Window.Settings.SelectedCategory?.Page);
+        Assert.True(focusBeforeReopenPost);
+        Assert.Equal(0, staleFocus);
+        Assert.True(app.Find<SettingsView>("SettingsHost").IsKeyboardFocusWithin);
+
+        app.Window.Settings.Close();
+        var tempo = app.Find<TextBox>("TempoBox");
+        Assert.True(tempo.Focus(NavigationMethod.Pointer));
+        app.Settle();
+        Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
+    });
+
+    [Fact]
+    public Task CompactSettings_ScrollAndPageChangesStayInsideTheSurface() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Width = 1040;
+        app.Window.Height = 640;
+        app.Window.ShowSettings(SettingsPage.Display);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var scroller = page.FindAncestorOfType<ScrollViewer>()!;
+        var point = app.InWindow(scroller, new Point(scroller.Bounds.Width / 2, scroller.Bounds.Height / 2));
+        app.Window.MouseWheel(point, new Vector(0, -4));
+        app.Settle();
+        Assert.True(scroller.Offset.Y > 0);
+        Assert.True(app.Window.Settings.IsOpen);
+
+        var host = app.Find<SettingsView>("SettingsHost");
+        var categories = AppUnderTest.Within<ListBox>(host, c => c.Name == "CategoryList");
+        app.Click(categories.ContainerFromIndex(1)!);
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
     });
 
     [Fact]
@@ -630,6 +881,9 @@ public sealed class SettingsTests : IDisposable
         app.Window.ShowSettings(SettingsPage.Plugins);
         app.Settle();
 
+        app.ChooseFromMenu("Window", "Plugins…");
+        Assert.True(app.Window.Settings.IsOpen);
+        Assert.Equal(SettingsPage.Plugins, app.Window.Settings.SelectedCategory?.Page);
         app.ChooseFromMenu("Window", "Audio Settings…");
         Assert.True(app.Window.Settings.IsOpen);
         Assert.Equal(SettingsPage.Audio, app.Window.Settings.SelectedCategory?.Page);

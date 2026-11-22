@@ -318,8 +318,39 @@ public sealed class LedLadderMeter : Control
                 _cellSteps[(i * Stride) + step] = step == 0 ? _unlit[i] : step == LedLevels.Steps ? _lit[i]
                     : gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * lit)));
                 _heldSteps[(i * Stride) + step] = step == LedLevels.Steps ? _held[i] : gradient.Brush(Palette.Alpha(heldColor, lit));
+
+                // The glow at each step, for a top or an ordinary cell: built now so a first fade allocates nothing.
+                if (step > 0)
+                {
+                    _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? TopCellTier : TopCellTier * step / LedLevels.Steps);
+                    _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? CellTier : CellTier * step / LedLevels.Steps);
+                }
             }
         }
+
+        WarmClipLamp();
+    }
+
+    private static bool _clipLampWarm;
+
+    // The clip lamp's fixed colour has one brush and glow per step, in the app-lifetime caches: build them all once.
+    private static void WarmClipLamp()
+    {
+        if (_clipLampWarm)
+        {
+            return;
+        }
+
+        _clipLampWarm = true;
+        for (var step = 0; step <= LedLevels.Steps; step++)
+        {
+            var lit = step / (double)LedLevels.Steps;
+            _ = ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14 + (0.86 * lit)));
+            _ = Glow.BrushesFor(Palette.Clip, step == LedLevels.Steps ? TopCellTier : TopCellTier * lit);
+        }
+
+        _ = ConsolePaint.Brush(Palette.Clip);
+        _ = ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14));
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

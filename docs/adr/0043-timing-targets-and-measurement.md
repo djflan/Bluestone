@@ -268,3 +268,8 @@ MIDI draws allocated in the offscreen drawing backend. These results do not esta
 rendering. The real `TopLevel.RequestAnimationFrame` implementation, compositor, hardware timing, and
 macOS/Windows system-preference reads were not verified by these tests. The existing real-time measurement
 contract is unchanged.
+
+A follow-up test, `TheLadder_AfterAGradientChange_FadesAndWarmsUpWithoutAllocating`, measures one pass (not a
+steady-state best) through the first fade and warm-up after a gradient change. Before the ladder prebuilt its
+intermediate glow and clip-lamp steps, that pass allocated about 90 KB in managed draw code; with them prebuilt when
+the colors are rebuilt, it reports 0 B for both ticks and draws. The same manual-clock, headless limits apply.

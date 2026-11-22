@@ -152,6 +152,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     private DisplaySettingsStore? _store;
     private bool _loading;
     private bool _unsaved;
+    private bool _saveFailing;
 
     public DisplayViewModel()
     {
@@ -173,6 +174,12 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     /// <summary>Colours offered as one-click swatches, for a gradient stop or the MIDI LED.</summary>
     public static IReadOnlyList<string> GradientSwatches => GradientEditorViewModel.Swatches;
+
+    /// <summary>
+    /// Raised with the reason when a change could not be saved (it still applies until Bluestone closes). Raised once until a
+    /// later save succeeds.
+    /// </summary>
+    public event EventHandler<string>? SaveFailed;
 
     /// <summary>The mixer meters' gradient.</summary>
     public GradientEditorViewModel Mixer { get; }
@@ -328,10 +335,17 @@ public sealed partial class DisplayViewModel : ObservableObject
             try
             {
                 store.Save(Current);
+                _saveFailing = false;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A preference that could not be saved still applies for this session.
+                // A preference that could not be saved still applies for this session. Report it once per run of
+                // failures, so dragging a control on a read-only disk does not flood the messages.
+                if (!_saveFailing)
+                {
+                    _saveFailing = true;
+                    SaveFailed?.Invoke(this, ex.Message);
+                }
             }
         }
     }

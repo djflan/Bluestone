@@ -1,21 +1,26 @@
 using System.Windows.Input;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Bluestone.Desktop.Controls;
 using Bluestone.Presentation;
 
 namespace Bluestone.Desktop.Views;
 
 /// <summary>
-/// Settings, shown in the workspace's place: the workspace grid is hidden while Settings is open and shown again as it was when
-/// it closes, so no region, tab, size, or detached window changes. The host composes audio and plugins into it.
+/// Settings is shown over the workspace without changing its regions, tabs, sizes, or detached windows.
+/// The host composes audio and plugins into it.
 /// </summary>
 public partial class MainWindow
 {
     private Control? _focusBeforeSettings;
+    private bool _settingsDismissWithoutRestore;
+    private bool _settingsWindowClosed;
+    private int _settingsFocusVersion;
 
     /// <summary>The Settings surface: its pages are the audio and plugin view models the host attaches.</summary>
     public SettingsViewModel Settings { get; } = new();
@@ -46,8 +51,29 @@ public partial class MainWindow
         };
         ApplySettingsVisibility();
 
-        // The control bar's workspace tools (view toggles, undo and redo) act on the workspace or project, so using one brings
-        // the workspace back.
+        // Dismissing a nested popup must not swallow a click on the workspace or the Settings gear.
+        SettingsHost.LayoutUpdated += (_, _) =>
+        {
+            if (!Settings.IsOpen)
+            {
+                return;
+            }
+
+            foreach (var popup in SettingsHost.GetVisualDescendants().OfType<Popup>())
+            {
+                if (!popup.OverlayDismissEventPassThrough)
+                {
+                    popup.SetCurrentValue(Popup.OverlayDismissEventPassThroughProperty, true);
+                }
+
+                if (!ReferenceEquals(popup.OverlayInputPassThroughElement, SettingsButton))
+                {
+                    popup.SetCurrentValue(Popup.OverlayInputPassThroughElementProperty, SettingsButton);
+                }
+            }
+        };
+
+        // Workspace commands close Settings before acting on the workspace or project.
         WorkspaceTools.AddHandler(Button.ClickEvent, (_, _) =>
         {
             if (Settings.IsOpen)
@@ -55,6 +81,46 @@ public partial class MainWindow
                 Settings.Close();
             }
         }, RoutingStrategies.Bubble, handledEventsToo: true);
+
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (!Settings.IsOpen || e.Source is not Visual source)
+            {
+                return;
+            }
+
+            var inPopup = IsInSettingsPopup(source);
+            var inSettings = IsWithin(source, SettingsHost) || new Rect(SettingsHost.Bounds.Size).Contains(e.GetPosition(SettingsHost));
+            if (inSettings && !inPopup && OpenSettingsPicker() is { } picker)
+            {
+                picker.Dismiss();
+                e.Handled = true;
+                return;
+            }
+
+            if (inSettings || inPopup || IsWithin(source, SettingsButton)
+                || new Rect(SettingsButton.Bounds.Size).Contains(e.GetPosition(SettingsButton)))
+            {
+                return;
+            }
+
+            CloseSettingsWithoutRestoringFocus();
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        AddHandler(GotFocusEvent, (_, e) =>
+        {
+            if (Settings.IsOpen && e.NavigationMethod != NavigationMethod.Pointer && e.Source is Visual source && !IsInSettings(source))
+            {
+                CloseSettingsWithoutRestoringFocus();
+            }
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+
+        Closed += (_, _) =>
+        {
+            _settingsWindowClosed = true;
+            _settingsFocusVersion++;
+            Settings.Close();
+        };
 
         // Escape closes Settings before the workspace's own shortcuts see it, unless an open drop-down or popup takes it first.
         AddHandler(KeyDownEvent, (_, e) =>
@@ -72,6 +138,31 @@ public partial class MainWindow
         (source is not null && TopLevel.GetTopLevel(source) != this)
         || SettingsHost.GetVisualDescendants().OfType<Popup>().Any(p => p.IsOpen);
 
+    private bool IsInSettings(Visual source) => IsWithin(source, SettingsHost) || IsInSettingsPopup(source);
+
+    private bool IsInSettingsPopup(Visual source) =>
+        SettingsHost.GetVisualDescendants().OfType<Popup>().Any(p => p.IsOpen && p.Child is { } child && IsWithin(source, child));
+
+    private ColourPickerPopup? OpenSettingsPicker() =>
+        SettingsHost.GetVisualDescendants().OfType<ColourPickerPopup>().FirstOrDefault(p => p.IsOpen);
+
+    private static bool IsWithin(Visual source, Visual container) =>
+        ReferenceEquals(source, container) || source.GetVisualAncestors().Contains(container);
+
+    private void CloseSettingsWithoutRestoringFocus()
+    {
+        _settingsDismissWithoutRestore = true;
+        try
+        {
+            OpenSettingsPicker()?.DismissWithoutRestoringFocus();
+            Settings.Close();
+        }
+        finally
+        {
+            _settingsDismissWithoutRestore = false;
+        }
+    }
+
     private void ApplySettingsVisibility()
     {
         var open = Settings.IsOpen;
@@ -84,26 +175,58 @@ public partial class MainWindow
             return;
         }
 
+        var version = ++_settingsFocusVersion;
         if (open)
         {
             // Put focus back where it was when Settings closes, if that control is still there to take it.
-            _focusBeforeSettings = FocusManager?.GetFocusedElement() as Control;
+            if (FocusManager?.GetFocusedElement() is not Control focused || !IsInSettings(focused))
+            {
+                _focusBeforeSettings = FocusManager?.GetFocusedElement() as Control;
+            }
         }
 
         SettingsHost.IsVisible = open;
-        var restore = _focusBeforeSettings is { IsEffectivelyVisible: true } previous && TopLevel.GetTopLevel(previous) is not null ? previous : TrackList;
-        Dispatcher.UIThread.Post(() => (open ? SettingsHost.CategoryList : restore).Focus(), DispatcherPriority.Loaded);
+        if (_settingsWindowClosed || (!open && _settingsDismissWithoutRestore))
+        {
+            return;
+        }
+
+        var focusedWhenPosted = FocusManager?.GetFocusedElement();
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_settingsWindowClosed || version != _settingsFocusVersion || Settings.IsOpen != open
+                || !ReferenceEquals(FocusManager?.GetFocusedElement(), focusedWhenPosted))
+            {
+                return;
+            }
+
+            if (open)
+            {
+                if (!SettingsHost.CategoryList.Focus(NavigationMethod.Tab))
+                {
+                    SettingsHost.SearchBox.Focus(NavigationMethod.Tab);
+                }
+            }
+            else if (_focusBeforeSettings is not { IsEffectivelyVisible: true, IsEffectivelyEnabled: true, Focusable: true } previous
+                || TopLevel.GetTopLevel(previous) != this || !previous.Focus(NavigationMethod.Tab))
+            {
+                if (!Timeline.Focus(NavigationMethod.Tab))
+                {
+                    SettingsButton.Focus(NavigationMethod.Tab);
+                }
+            }
+        }, DispatcherPriority.Loaded);
     }
 
     /// <summary>
     /// <paramref name="command"/>, closing Settings first when it is open: a shortcut or menu item that edits the project or
-    /// changes the workspace brings the workspace back, so nothing changes behind Settings unseen.
+    /// changes the workspace leaves those changes unobscured.
     /// </summary>
     internal ICommand InWorkspace(ICommand command) => new ReturningCommand(command, () => Settings.IsOpen, Settings.Close);
 
     /// <summary>
     /// <paramref name="command"/> (cut, copy, paste, select all), which edits text in a Settings field where it is, and otherwise
-    /// brings the workspace back before it acts on tracks, clips, or notes.
+    /// closes Settings before it acts on tracks, clips, or notes.
     /// </summary>
     internal ICommand InWorkspaceUnlessEditingText(ICommand command) =>
         new ReturningCommand(

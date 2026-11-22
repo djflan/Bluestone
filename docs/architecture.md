@@ -556,6 +556,13 @@ below (Device Views, piano roll, event list, MIDI monitor, messages), a left and
 Browser), and border rails with icons for collapsed views. `WorkspaceViewModel` owns the views and their
 placement (docked, collapsed, detached); the desktop layer reflects it and opens a `ViewWindow` per detached view.
 
+ADR 0051 specifies Settings as a bounded, right-anchored, non-dockable popover over the visible workspace, not a
+`WorkspaceViewKind`. `SettingsViewModel` remains independent of its desktop host; the existing Audio, Plugins, and
+Display pages, their entry points, and their apply/save behavior are retained. The pages and picker must remain
+usable at compact and normal window sizes. Done, Escape, or click-away closes the popover; opening or closing
+Settings alone does not change project or workspace state. Closing it with a nested color-picker preview pending
+cancels the preview. The popover and its dismissal lifecycle are being implemented and need verification.
+
 View state and model state are kept apart. A `DeviceViewViewModel` holds only what it shows (following the
 selection, or locked to a track or rack by ID) and its presentation (collapsed devices, selection, scroll); the
 chain and its devices are the project's and change only through project commands, so several Device Views over
@@ -719,7 +726,7 @@ Not built. The product roadmap decides priority; this list records architectural
 - **MIDI 2.0** transport and UMP, **MPE**, and per-note controllers.
 - **Visual node-graph editing** and **feedback routing** (loops are refused).
 - **Workspace**: vertical device chains, auto-collapse of device panels, nested and container devices in the
-  Device View, modulators, windows holding several views, free docking, and a full-page Settings view.
+  Device View, modulators, windows holding several views, and free docking.
 - **Groups**: drag and drop into a group, and a folded group's lane summarizing its members' clips.
 - **Operating-system sandboxing** of plugin workers is not planned: crash isolation with hosting modes
   instead (ADR 0034).
@@ -752,12 +759,13 @@ Not built. The product roadmap decides priority; this list records architectural
 | Live input through every device on the live route; a live render-ahead queue; plugin delay compensation | ADR 0035 |
 | A semantic workspace; Device Views own presentation, the project owns devices; layout is local state | ADR 0036 |
 | A chain carries notes, events, and audio in parallel; instruments pass notes on and layer | ADR 0037 |
-| New tracks are hybrid and heard through explicit connections; Settings takes the workspace's place | ADR 0038 |
+| New tracks are hybrid and heard through explicit connections | ADR 0038 |
 | Loop ranges are kept apart from looping; clip loops repeat at plan time within a bound; introduced in project format 5 | ADR 0039 |
 | Floating plugin editors follow the selection, can be pinned, and can send their keys to Bluestone | ADR 0040 |
 | Bluestone is a device-centric production DAW; routing depth is progressively disclosed | ADR 0041 |
 | Bluestone alone, with plugins, with hardware, or any mix is a complete studio with the same timing guarantees | ADR 0042 |
 | Track-owned strips, routable Effect tracks, Master processing, and format 6 | ADR 0050 |
+| Settings overlays the visible workspace in a right-anchored, non-dockable popover | ADR 0051 |
 
 ## Native technology
 

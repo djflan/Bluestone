@@ -46,6 +46,33 @@ public sealed class DisplaySettingsTests : IDisposable
     }
 
     [Fact]
+    public void AFailedSave_IsReportedOnce_UntilASaveSucceedsAgain()
+    {
+        // A file where the settings folder should be: every save fails with an IOException.
+        var blocker = Path.Combine(_directory, "blocked");
+        System.IO.File.WriteAllText(blocker, string.Empty);
+        var display = new DisplayViewModel();
+        display.Use(new DisplaySettingsStore(Path.Combine(blocker, "display-settings.json")));
+        var reports = new List<string>();
+        display.SaveFailed += (_, reason) => reports.Add(reason);
+
+        display.LevelStyle = JunctionLevelStyle.Peak;
+        display.LedFade = false;
+        Assert.Single(reports);
+        Assert.Equal(JunctionLevelStyle.Peak, display.LevelStyle);
+
+        System.IO.File.Delete(blocker);
+        display.LedWarmup = false;
+        Assert.Single(reports);
+        Assert.False(new DisplaySettingsStore(Path.Combine(blocker, "display-settings.json")).Load().LedWarmup);
+
+        Directory.Delete(blocker, recursive: true);
+        System.IO.File.WriteAllText(blocker, string.Empty);
+        display.LedWarmup = true;
+        Assert.Equal(2, reports.Count);
+    }
+
+    [Fact]
     public void OldFiles_WithTheRemovedIndicatorSettings_StillLoad_AndKeepWhatStillApplies()
     {
         // A file from before the gradient, with every indicator key one meter design replaced: they are ignored.
