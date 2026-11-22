@@ -75,7 +75,8 @@ by the recorded tier are not assumptions. Stop and report when:
   positions; never drop the signer;
 - the working tree contains uncommitted changes you didn't make;
 - a required credential, device, or service is missing and no simulated check is meaningful, or any signer returns
-  "not done (unverifiable)": the user decides whether to accept the gap;
+  "not done (unverifiable)": the user decides whether to accept the gap. For a light change, a gap that only lacks
+  running-app or device evidence is listed in the PR instead (`governance.md`, "Change size");
 - you want to hire a new member: present the proposal in `governance.md` and wait for confirmation before creating a
   charter, changing the roster, or dispatching the trial. At trial end, present the required performance review and
   wait for the user's release, extend, or retain decision.
