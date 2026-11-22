@@ -63,6 +63,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     private double _glow;
     private long _lastFrame;
     private double _drawnGlow = -1;
+    private (bool, double, double, double, double, double, double, bool, bool) _described;
     private IImmutableBrush? _bloom;
     private FormattedText? _midiCaption;
     private FormattedText? _midiCaptionLit;
@@ -491,9 +492,17 @@ public sealed class ChainJunction : Control, ICustomHitTest
         }
 
         _ladder.IsClipped = signal.CanCarryAudio && levels.Clipped;
+
+        // Under the pointer the description follows what is there, but is rebuilt only when that changes (as on main), so
+        // a steady signal costs nothing while hovered.
         if (_hovered && _over == Part.None)
         {
-            ToolTip.SetTip(this, Describe());
+            var shown = (ready, levels.PeakLeft, levels.PeakRight, levels.RmsLeft, levels.RmsRight, levels.HoldLeft, levels.HoldRight, levels.Clipped, signal.NotesHeld);
+            if (shown != _described)
+            {
+                _described = shown;
+                ToolTip.SetTip(this, Describe());
+            }
         }
     }
 

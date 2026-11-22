@@ -54,6 +54,14 @@ public sealed class LedLadderMeter : Control
     private IBrush[] _held = [];
     private int _version = -1;
 
+    // Levels fed through Show (the Device View's meters), as plain fields: a styled property allocates on every change, and
+    // these change on every meter tick. While _fed, Render reads these instead of the per-channel properties.
+    private bool _fed;
+    private double _fedLeft = double.NaN;
+    private double _fedRight = double.NaN;
+    private double _fedLeftHold = double.NaN;
+    private double _fedRightHold = double.NaN;
+
     static LedLadderMeter()
     {
         AffectsRender<LedLadderMeter>(ModeProperty, ValueProperty, LeftValueProperty, RightValueProperty, PeakHoldProperty, LeftPeakHoldProperty,
@@ -112,6 +120,32 @@ public sealed class LedLadderMeter : Control
         return (topLit, held);
     }
 
+    /// <summary>
+    /// Shows a reading per channel without the property system, so a meter tick allocates nothing (ADR 0043); it redraws
+    /// only when a value differs from the last shown. From the first call these take the place of
+    /// <see cref="LeftValue"/>, <see cref="RightValue"/>, <see cref="LeftPeakHold"/> and <see cref="RightPeakHold"/>.
+    /// </summary>
+    internal void Show(double left, double right, double leftHold, double rightHold)
+    {
+        if (_fed && left.Equals(_fedLeft) && right.Equals(_fedRight) && leftHold.Equals(_fedLeftHold) && rightHold.Equals(_fedRightHold))
+        {
+            return;
+        }
+
+        _fed = true;
+        _fedLeft = left;
+        _fedRight = right;
+        _fedLeftHold = leftHold;
+        _fedRightHold = rightHold;
+        InvalidateVisual();
+    }
+
+    /// <summary>What each column shows now: <see cref="Show"/>'s reading once fed, otherwise the properties.</summary>
+    internal (double Left, double Right, double LeftHold, double RightHold) Shown => _fed
+        ? (_fedLeft, _fedRight, _fedLeftHold, _fedRightHold)
+        : (double.IsNaN(LeftValue) ? Value : LeftValue, double.IsNaN(RightValue) ? Value : RightValue,
+            double.IsNaN(LeftPeakHold) ? PeakHold : LeftPeakHold, double.IsNaN(RightPeakHold) ? PeakHold : RightPeakHold);
+
     protected override Size MeasureOverride(Size availableSize) => new(MeterWidth, 0);
 
     public override void Render(DrawingContext context)
@@ -125,10 +159,7 @@ public sealed class LedLadderMeter : Control
         ConsolePaint.Well(context, well, 2);
         var inner = ConsolePaint.Snap(well).Deflate(2);
         var column = Math.Min(ColumnWidth, inner.Width / 2);
-        var left = double.IsNaN(LeftValue) ? Value : LeftValue;
-        var right = double.IsNaN(RightValue) ? Value : RightValue;
-        var leftHold = double.IsNaN(LeftPeakHold) ? PeakHold : LeftPeakHold;
-        var rightHold = double.IsNaN(RightPeakHold) ? PeakHold : RightPeakHold;
+        var (left, right, leftHold, rightHold) = Shown;
         Column(context, new Rect(inner.X, inner.Y, column, inner.Height), left, leftHold);
         Column(context, new Rect(inner.Right - column, inner.Y, column, inner.Height), right, rightHold);
     }

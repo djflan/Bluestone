@@ -568,16 +568,16 @@ public sealed class DeviceViewTests
         Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.RmsAndPeak, view.Display.LevelStyle);
         foreach (var ladder in new[] { seam.Ladder, outLadder })
         {
-            Assert.Equal(-20, ladder.LeftValue, 1);
-            Assert.Equal(-6, ladder.LeftPeakHold, 1);
+            Assert.Equal(-20, ladder.Shown.Left, 1);
+            Assert.Equal(-6, ladder.Shown.LeftHold, 1);
         }
 
         view.Display.LevelStyle = Bluestone.Presentation.JunctionLevelStyle.Peak;
         app.Settle();
         foreach (var ladder in new[] { seam.Ladder, outLadder })
         {
-            Assert.Equal(-6, ladder.LeftValue, 1);
-            Assert.True(double.IsNaN(ladder.LeftPeakHold), "Peak alone has no held cell.");
+            Assert.Equal(-6, ladder.Shown.Left, 1);
+            Assert.True(double.IsNaN(ladder.Shown.LeftHold), "Peak alone has no held cell.");
         }
     });
 
