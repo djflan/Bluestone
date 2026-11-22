@@ -565,7 +565,8 @@ Device View picks the chain and gap, or, over the middle of a device's panel, th
 project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
 
 Between panels, each junction is a `ChainJunction` drawn from a `JunctionSignal` (ADR 0037): a MIDI port glyph lit
-while notes are held, and a stereo `LedLadderMeter` of the peak with its held peak and clip lamp, updated each frame
+while notes are held, and a stereo `LedLadderMeter` with its clip lamp, lit to the average with the held peak above it or to the peak alone
+(`LadderLevels`, following Settings ▸ Display's level style), updated each frame
 without allocating and redrawn only when they change. The Out card's `ChainOutMeter` shows the chain's last junction
 with a dB scale and peak readout. Only junctions a visible Device View shows are metered
 (`IAudioPlayback.WatchJunctions`). A junction also aims the Browser at its gap
@@ -573,7 +574,7 @@ with a dB scale and peak readout. Only junctions a visible Device View shows are
 on. Receivers and plugin sidechains show their source and change it through one `SourcePickerViewModel`, which offers
 only points the routing validator accepts. Every `LedLadderMeter`, in the Device View and the mixer, is coloured by
 the user's `SignalGradient` (2 to 8 colour stops, Settings ▸ Display), applied through `Theme/MeterGradient`; the clip
-lamp is a fixed colour outside it. The gradient is an application preference (`DisplayViewModel`,
+lamp is a fixed colour outside it. The gradient and level style are application preferences (`DisplayViewModel`,
 `display-settings.json`), not project data; the former junction size, LED shape, and position settings were removed,
 and older settings files still load.
 

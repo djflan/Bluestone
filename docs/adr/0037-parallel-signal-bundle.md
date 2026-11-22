@@ -113,7 +113,8 @@ conversion point.
 
 ## Amendment: Identity R6 junctions
 
-The seam is now a `ChainJunction`: a MIDI port glyph at the top, lit while notes are held, and a stereo LED ladder of
-the peak with its held peak and clip lamp. The Out card shows the chain's output on a wider meter. Insertion, routing
-taps, and the context menu are unchanged. Settings ▸ Display no longer chooses an indicator size, LED shape, or
-position; it sets the signal gradient every level meter uses. The clip lamp is a fixed red outside the gradient.
+The seam is now a `ChainJunction`: a MIDI port glyph at the top, lit while notes are held, and a stereo LED ladder
+with a clip lamp that shows the average with the peak held above it (the default) or the peak alone. The Out card
+shows the chain's output on a wider meter. Insertion, routing taps, and the context menu are unchanged. Settings ▸
+Display no longer chooses an indicator size, LED shape, or position; it keeps the level style and adds the signal
+gradient every level meter uses. The clip lamp is a fixed red outside the gradient.

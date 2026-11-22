@@ -180,8 +180,9 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
   including independent Master selection and Inspector scope, LUFS-S warm-up, and the since-removed Bar/Round meter
   presentation. This was a no-signal UI review only; physical audio remains unverified.
 - The Identity R6 redesign (Machined theme, rebuilt mixer strip and Device View, bottom transport bar, signal gradient
-  editor) is covered by headless Avalonia UI tests with simulated meter data. It has not been checked with real-time
-  audio, on HiDPI or GPU rendering, or with a screen reader.
+  editor) was verified headless only: Avalonia UI tests with simulated meter data, rendered at 1040×700 and 1440×900.
+  The screen was locked, so there was no capture of the running app. It has not been checked with real-time audio, on
+  HiDPI or GPU rendering, or with a screen reader.
 
 ## 7. Unresolved implementation backlog
 
@@ -210,7 +211,9 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
 7. **Professional mixer (ADR 0050, PR #95), deferred or not built:** per-strip width and spectrum analysis views
    (they need analysis DSP; collapsed must mean no analysis runs and no reserved space); a Master chain view opened from the Master inserts (today they only select
    Master); Ctrl+Left/Right jumps between strips; arming MIDI-only tracks from the mixer; a console-level LUFS-S
-   warming-up status (only Master announces it); a taller meter at the default docked height (about 44 px today);
+   warming-up status (only Master announces it); the full-height strip at the default docked height (the 330 px
+   detail region puts the strips below `Mixer.RoomyStripHeight`, 360 px, so the fader zone shrinks; the meter is held
+   to at least `Mixer.TightRailsHeight`, 72 px, checked at 1440×900);
    undo merging for continuous gestures that does not rely on a 1 s time window; the bx_console AMEK 9099 parameter
    mapping (needs verified parameter IDs and a normalized-to-dB conversion); and tests for the send knob's wheel,
    modifier-chord and disabled-automation handling and the Master clip-reset button. Also deferred and not yet
@@ -244,8 +247,6 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
    - Device display wells (wave, EQ curve, filter): no data drives them yet.
    - The track header's level line: tracks have no volume to show.
    - Track header height: 66 px in the mockup, about 50 px today.
-   - Settings ▸ Display still offers **Levels show**, but the R6 junction ladders always show the peak; the setting
-     is saved and not applied.
    - Still open from the earlier identity work: theme presets (Studio Blue, Amber, Mono), which need `DynamicResource`
      plumbing, and a user glow-intensity setting. The transport glyph glows still use Avalonia's blur
      (`DropShadowEffect`), not `Theme/Glow`.
