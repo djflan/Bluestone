@@ -236,20 +236,22 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>
-    /// Every meter draws <paramref name="display"/>'s signal gradient: the saved one now, and each edit as it is made (the
-    /// meters redraw on <see cref="Theme.MeterGradient.Changed"/>).
+    /// Every meter draws <paramref name="display"/>'s mixer gradient: the saved one now, and each edit as it is made (the
+    /// meters redraw on <see cref="Theme.MeterGradient.Changed"/>). The chain and gain gradients are not applied yet: the
+    /// meters share one colour seam until it is split per indicator family.
     /// </summary>
     internal static void FollowSignalGradient(DisplayViewModel display)
     {
         static void Apply(SignalGradient gradient) =>
             Theme.MeterGradient.Use(gradient.Stops.Select(s => (s.Position, Color.Parse(s.Colour))));
 
-        Apply(display.SignalGradient);
-        display.PropertyChanged += (_, e) =>
+        var mixer = display.Mixer;
+        Apply(mixer.Gradient);
+        mixer.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(DisplayViewModel.SignalGradient))
+            if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
             {
-                Apply(display.SignalGradient);
+                Apply(mixer.Gradient);
             }
         };
     }

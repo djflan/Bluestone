@@ -18,13 +18,36 @@ public enum JunctionLevelStyle
 /// <summary>How Bluestone draws things that are a matter of taste, not of the project. One set for the whole application.</summary>
 public sealed record DisplaySettings
 {
+    /// <summary>The colour of a lit MIDI LED by default: the accent (Palette.Accent).</summary>
+    public const string DefaultMidiColour = "#3CCBF4";
+
     public JunctionLevelStyle LevelStyle { get; init; } = JunctionLevelStyle.RmsAndPeak;
 
-    /// <summary>The colours signal indicators' levels run through. The clip lamp is not part of it.</summary>
-    public SignalGradient SignalGradient { get; init; } = SignalGradient.Default;
+    /// <summary>The colours the mixer's meters run through. The clip lamp is not part of it.</summary>
+    public SignalGradient MixerGradient { get; init; } = SignalGradient.Default;
+
+    /// <summary>The colours a device chain's junction meters run through. The clip lamp is not part of it.</summary>
+    public SignalGradient ChainGradient { get; init; } = SignalGradient.Default;
+
+    /// <summary>The colours the gain LEDs run through.</summary>
+    public SignalGradient GainGradient { get; init; } = SignalGradient.GainDefault;
+
+    /// <summary>The colour of a lit MIDI LED, "#RRGGBB".</summary>
+    public string MidiColour { get; init; } = DefaultMidiColour;
+
+    /// <summary>Whether LEDs fade out rather than go dark at once.</summary>
+    public bool LedFade { get; init; } = true;
+
+    /// <summary>Whether LEDs warm up (ease in) rather than light at once.</summary>
+    public bool LedWarmup { get; init; } = true;
 }
 
-/// <summary>Reads and writes <see cref="DisplaySettings"/> as a small JSON file. A missing or unreadable file gives the defaults.</summary>
+/// <summary>
+/// Reads and writes <see cref="DisplaySettings"/> as a small JSON file. A missing or unreadable file gives the defaults; an
+/// unreadable value gives that preference's default and leaves the others as saved. A file from before the gradients were
+/// split has one "signalGradient", which loads into both the mixer and chain gradients; it is no longer written (a file
+/// saved now carries "mixerGradient" and "chainGradient" instead, and an older build reading it shows its default gradient).
+/// </summary>
 public sealed class DisplaySettingsStore(string path)
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -40,20 +63,34 @@ public sealed class DisplaySettingsStore(string path)
     {
         try
         {
-            var settings = File.Exists(Path) ? JsonSerializer.Deserialize<DisplaySettings>(File.ReadAllText(Path), Options) : null;
-            if (settings is null)
+            if (!File.Exists(Path))
+            {
+                return new DisplaySettings();
+            }
+
+            using var document = JsonDocument.Parse(File.ReadAllText(Path));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
             {
                 return new DisplaySettings();
             }
 
             // Each preference on its own: one unknown value does not reset the others. Keys this version no longer has (the
             // old indicator positions, sizes, and LED shapes) are ignored.
+            var defaults = new DisplaySettings();
+            var legacy = Gradient(root, "signalGradient");
+            var levelStyle = root.TryGetProperty("levelStyle", out var style) ? style.Deserialize<JunctionLevelStyle>(Options) : defaults.LevelStyle;
             return new DisplaySettings
             {
-                LevelStyle = Enum.IsDefined(settings.LevelStyle) ? settings.LevelStyle : JunctionLevelStyle.RmsAndPeak,
-
-                // The converter reads an invalid gradient as null; an explicit null stays null too.
-                SignalGradient = settings.SignalGradient ?? SignalGradient.Default,
+                LevelStyle = Enum.IsDefined(levelStyle) ? levelStyle : defaults.LevelStyle,
+                MixerGradient = Gradient(root, "mixerGradient") ?? legacy ?? defaults.MixerGradient,
+                ChainGradient = Gradient(root, "chainGradient") ?? legacy ?? defaults.ChainGradient,
+                GainGradient = Gradient(root, "gainGradient") ?? defaults.GainGradient,
+                MidiColour = root.TryGetProperty("midiColour", out var midi) && midi.ValueKind == JsonValueKind.String && SignalGradient.IsColour(midi.GetString())
+                    ? midi.GetString()!.ToUpperInvariant()
+                    : defaults.MidiColour,
+                LedFade = Flag(root, "ledFade") ?? defaults.LedFade,
+                LedWarmup = Flag(root, "ledWarmup") ?? defaults.LedWarmup,
             };
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
@@ -61,6 +98,13 @@ public sealed class DisplaySettingsStore(string path)
             return new DisplaySettings();
         }
     }
+
+    // The converter reads an invalid gradient as null; an explicit null stays null too.
+    private static SignalGradient? Gradient(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) ? value.Deserialize<SignalGradient>(Options) : null;
+
+    private static bool? Flag(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : null;
 
     // Reads an enum written by name (camelCase); anything else reads as an undefined value, which Load replaces with that
     // preference's default, so one unknown value (from a newer version, or hand-edited) does not reset the others.
@@ -107,14 +151,40 @@ public sealed partial class DisplayViewModel : ObservableObject
 {
     private DisplaySettingsStore? _store;
     private bool _loading;
-    private bool _holdingSave;
     private bool _unsaved;
+
+    public DisplayViewModel()
+    {
+        Mixer = new GradientEditorViewModel("Mixer meters", SignalGradient.Default, hasClipLamp: true);
+        Chain = new GradientEditorViewModel("Chain meters", SignalGradient.Default, hasClipLamp: true);
+        Gain = new GradientEditorViewModel("Gain LEDs", SignalGradient.GainDefault, hasClipLamp: false);
+        Editors = [Mixer, Chain, Gain];
+        foreach (var editor in Editors)
+        {
+            editor.PropertyChanged += OnEditorChanged;
+        }
+    }
 
     public static IReadOnlyList<LevelStyleOption> LevelStyles { get; } =
     [
         new(JunctionLevelStyle.RmsAndPeak, "Average level, with the peak held"),
         new(JunctionLevelStyle.Peak, "Peak level"),
     ];
+
+    /// <summary>Colours offered as one-click swatches, for a gradient stop or the MIDI LED.</summary>
+    public static IReadOnlyList<string> GradientSwatches => GradientEditorViewModel.Swatches;
+
+    /// <summary>The mixer meters' gradient.</summary>
+    public GradientEditorViewModel Mixer { get; }
+
+    /// <summary>The device chain's junction meters' gradient.</summary>
+    public GradientEditorViewModel Chain { get; }
+
+    /// <summary>The gain LEDs' gradient.</summary>
+    public GradientEditorViewModel Gain { get; }
+
+    /// <summary>Every gradient, in the order a selector lists them.</summary>
+    public IReadOnlyList<GradientEditorViewModel> Editors { get; }
 
     /// <summary>What every Device View's junction levels show.</summary>
     [ObservableProperty]
@@ -128,216 +198,34 @@ public sealed partial class DisplayViewModel : ObservableObject
         set => LevelStyle = value?.Style ?? JunctionLevelStyle.RmsAndPeak;
     }
 
-    /// <summary>The colours every signal indicator's level runs through, bottom to top. The clip lamp keeps its own colour.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SelectedGradientStop), nameof(SelectedGradientStopPercent), nameof(SelectedGradientStopColour), nameof(CanAddGradientStop), nameof(CanRemoveGradientStop))]
-    [NotifyCanExecuteChangedFor(nameof(AddGradientStopInLargestGapCommand), nameof(RemoveSelectedGradientStopCommand))]
-    public partial SignalGradient SignalGradient { get; set; } = SignalGradient.Default;
-
-    /// <summary>Colours offered as one-click swatches for a gradient stop: the Machined meter and signal colours. Clip red is the clip lamp's alone.</summary>
-    public static IReadOnlyList<string> GradientSwatches { get; } =
-        ["#34C6F4", "#3FE0D8", "#4FB3B0", "#4CB873", "#3D5BFF", "#7C6BFF", "#B65CFF", "#E070C8", "#FF2E93", "#E0A43A", "#E3C345", "#DADCE0"];
-
-    /// <summary>The stop the editor is working on (its index in <see cref="SignalGradient"/>'s stops).</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SelectedGradientStop), nameof(SelectedGradientStopPercent), nameof(SelectedGradientStopColour))]
-    public partial int SelectedGradientStopIndex { get; set; }
-
-    /// <summary>The selected stop.</summary>
-    public SignalGradientStop SelectedGradientStop => SignalGradient.Stops[Math.Clamp(SelectedGradientStopIndex, 0, SignalGradient.Stops.Length - 1)];
-
-    /// <summary>The selected stop's position as the editor shows it, for example "40%".</summary>
-    public string SelectedGradientStopPercent => FormatPercent(SelectedGradientStop.Position);
-
     /// <summary>
-    /// The selected stop's colour as "#RRGGBB". Setting it to six hex digits (with or without the '#') recolours the stop;
-    /// anything else is ignored, so a half-typed value never reaches the meters.
+    /// The colour of a lit MIDI LED, "#RRGGBB". Setting it to six hex digits (with or without the '#') changes it; anything
+    /// else is ignored, so a half-typed value never reaches the LEDs.
     /// </summary>
-    public string SelectedGradientStopColour
+    public string MidiColour
     {
-        get => SelectedGradientStop.Colour;
+        get;
         set
         {
-            var colour = value is { Length: 6 } ? "#" + value : value?.Trim();
-            if (SignalGradient.IsColour(colour))
+            var colour = GradientEditorViewModel.NormalizeColour(value);
+            if (colour is not null && SetProperty(ref field, colour))
             {
-                SetGradientStopColour(Math.Clamp(SelectedGradientStopIndex, 0, SignalGradient.Stops.Length - 1), colour!);
+                Save();
             }
         }
-    }
+    } = DisplaySettings.DefaultMidiColour;
 
-    /// <summary>Whether a stop can be removed: a gradient keeps at least <see cref="SignalGradient.MinStops"/>.</summary>
-    public bool CanRemoveGradientStop => SignalGradient.Stops.Length > SignalGradient.MinStops;
+    /// <summary>Whether LEDs fade out rather than go dark at once.</summary>
+    [ObservableProperty]
+    public partial bool LedFade { get; set; } = true;
 
-    /// <summary>Whether a stop can be added: a gradient has at most <see cref="SignalGradient.MaxStops"/>.</summary>
-    public bool CanAddGradientStop => SignalGradient.Stops.Length < SignalGradient.MaxStops;
+    /// <summary>Whether LEDs warm up (ease in) rather than light at once.</summary>
+    [ObservableProperty]
+    public partial bool LedWarmup { get; set; } = true;
 
-    /// <summary>"40%": a position in [0, 1] as a whole percentage.</summary>
-    public static string FormatPercent(double position) =>
-        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Math.Round(position * 100):0}%");
-
-    /// <summary>Adds a stop at the middle of the widest gap between stops (the colour already there) and selects it.</summary>
-    [RelayCommand(CanExecute = nameof(CanAddGradientStop))]
-    private void AddGradientStopInLargestGap()
-    {
-        var stops = SignalGradient.Stops;
-        var at = 0;
-        for (var i = 1; i < stops.Length - 1; i++)
-        {
-            if (stops[i + 1].Position - stops[i].Position > stops[at + 1].Position - stops[at].Position)
-            {
-                at = i;
-            }
-        }
-
-        var index = AddGradientStop((stops[at].Position + stops[at + 1].Position) / 2);
-        if (index >= 0)
-        {
-            SelectedGradientStopIndex = index;
-        }
-    }
-
-    /// <summary>Removes the selected stop and selects its neighbour below (or the first).</summary>
-    [RelayCommand(CanExecute = nameof(CanRemoveGradientStop))]
-    private void RemoveSelectedGradientStop()
-    {
-        var index = Math.Clamp(SelectedGradientStopIndex, 0, SignalGradient.Stops.Length - 1);
-        if (RemoveGradientStop(index))
-        {
-            SelectedGradientStopIndex = Math.Max(0, index - 1);
-        }
-    }
-
-    /// <summary>Recolours the selected stop with a swatch colour ("#RRGGBB").</summary>
+    /// <summary>Sets the MIDI LED's colour from a swatch ("#RRGGBB").</summary>
     [RelayCommand]
-    private void ChooseGradientStopColour(string? colour) => SelectedGradientStopColour = colour ?? string.Empty;
-
-    /// <summary>Moves the stop at <paramref name="index"/> to <paramref name="position"/> and selects it wherever it lands.</summary>
-    public void MoveAndSelectGradientStop(int index, double position)
-    {
-        var landed = MoveGradientStop(index, position);
-        if (landed >= 0)
-        {
-            SelectedGradientStopIndex = landed;
-        }
-    }
-
-    /// <summary>
-    /// Starts a preview (a handle being dragged): edits still apply and notify at once, so meters follow, but nothing is
-    /// written until <see cref="EndGradientPreview"/>. Starting one while one is open does nothing.
-    /// </summary>
-    public void BeginGradientPreview() => _holdingSave = true;
-
-    /// <summary>Ends a preview, saving once if anything changed during it.</summary>
-    public void EndGradientPreview()
-    {
-        if (!_holdingSave)
-        {
-            return;
-        }
-
-        _holdingSave = false;
-        if (_unsaved)
-        {
-            Save();
-        }
-    }
-
-    /// <summary>Nudges the stop at <paramref name="index"/> by <paramref name="delta"/> (0.01 is 1%) and selects it wherever it lands.</summary>
-    public void NudgeGradientStop(int index, double delta)
-    {
-        if (index >= 0 && index < SignalGradient.Stops.Length)
-        {
-            MoveAndSelectGradientStop(index, Math.Round((SignalGradient.Stops[index].Position + delta) * 1000) / 1000);
-        }
-    }
-
-    /// <summary>
-    /// Adds a stop at <paramref name="position"/> (clamped to [0, 1]) in the colour the gradient already has there, so
-    /// the gradient looks the same until the stop is changed. Returns the new stop's index, or -1 at <see cref="SignalGradient.MaxStops"/>.
-    /// </summary>
-    public int AddGradientStop(double position)
-    {
-        if (double.IsNaN(position) || SignalGradient.Stops.Length >= SignalGradient.MaxStops)
-        {
-            return -1;
-        }
-
-        position = Math.Clamp(position, 0, 1);
-        var (r, g, b) = SignalGradient.Evaluate(position);
-        var stop = new SignalGradientStop($"#{r:X2}{g:X2}{b:X2}", position);
-
-        // After any stops already at this position, so an existing hard edge keeps its order.
-        var index = 0;
-        while (index < SignalGradient.Stops.Length && SignalGradient.Stops[index].Position <= position)
-        {
-            index++;
-        }
-
-        SignalGradient = SignalGradient.Create(SignalGradient.Stops.Insert(index, stop));
-        return index;
-    }
-
-    /// <summary>Removes the stop at <paramref name="index"/>. Returns false for an index out of range, or at <see cref="SignalGradient.MinStops"/>.</summary>
-    public bool RemoveGradientStop(int index)
-    {
-        if (index < 0 || index >= SignalGradient.Stops.Length || SignalGradient.Stops.Length <= SignalGradient.MinStops)
-        {
-            return false;
-        }
-
-        SignalGradient = SignalGradient.Create(SignalGradient.Stops.RemoveAt(index));
-        return true;
-    }
-
-    /// <summary>
-    /// Moves the stop at <paramref name="index"/> to <paramref name="position"/> (clamped to [0, 1]); moving it past a
-    /// neighbour reorders the stops. Returns the stop's new index, or -1 for an index out of range or a position that is not a number.
-    /// </summary>
-    public int MoveGradientStop(int index, double position)
-    {
-        if (index < 0 || index >= SignalGradient.Stops.Length || double.IsNaN(position))
-        {
-            return -1;
-        }
-
-        position = Math.Clamp(position, 0, 1);
-        var stops = SignalGradient.Stops;
-        var moved = stops[index] with { Position = position };
-
-        // Where the moved stop lands among the others: after those below or at its position, as Create's stable sort places it.
-        var newIndex = 0;
-        for (var i = 0; i < stops.Length; i++)
-        {
-            if (i != index && (stops[i].Position < position || (stops[i].Position == position && i < index)))
-            {
-                newIndex++;
-            }
-        }
-
-        SignalGradient = SignalGradient.Create(stops.SetItem(index, moved));
-        return newIndex;
-    }
-
-    /// <summary>Sets the colour ("#RRGGBB") of the stop at <paramref name="index"/>. Returns false for an index out of range or a colour that is not "#RRGGBB".</summary>
-    public bool SetGradientStopColour(int index, string colour)
-    {
-        if (index < 0 || index >= SignalGradient.Stops.Length || !SignalGradient.IsColour(colour))
-        {
-            return false;
-        }
-
-        SignalGradient = SignalGradient.Create(SignalGradient.Stops.SetItem(index, SignalGradient.Stops[index] with { Colour = colour }));
-        return true;
-    }
-
-    /// <summary>Puts the gradient back to <see cref="SignalGradient.Default"/>.</summary>
-    [RelayCommand]
-    private void ResetGradient()
-    {
-        SignalGradient = SignalGradient.Default;
-        SelectedGradientStopIndex = 0;
-    }
+    private void ChooseMidiColour(string? colour) => MidiColour = colour ?? string.Empty;
 
     /// <summary>Reads the saved settings from <paramref name="store"/> and saves every later change there.</summary>
     public void Use(DisplaySettingsStore store)
@@ -348,7 +236,12 @@ public sealed partial class DisplayViewModel : ObservableObject
         {
             var settings = store.Load();
             LevelStyle = settings.LevelStyle;
-            SignalGradient = settings.SignalGradient;
+            Mixer.Gradient = settings.MixerGradient;
+            Chain.Gradient = settings.ChainGradient;
+            Gain.Gradient = settings.GainGradient;
+            MidiColour = settings.MidiColour;
+            LedFade = settings.LedFade;
+            LedWarmup = settings.LedWarmup;
         }
         finally
         {
@@ -356,16 +249,35 @@ public sealed partial class DisplayViewModel : ObservableObject
         }
     }
 
+    /// <summary>The settings as they are now.</summary>
+    public DisplaySettings Current => new()
+    {
+        LevelStyle = LevelStyle,
+        MixerGradient = Mixer.Gradient,
+        ChainGradient = Chain.Gradient,
+        GainGradient = Gain.Gradient,
+        MidiColour = MidiColour,
+        LedFade = LedFade,
+        LedWarmup = LedWarmup,
+    };
+
     partial void OnLevelStyleChanged(JunctionLevelStyle value) => Save();
 
-    partial void OnSignalGradientChanged(SignalGradient value)
-    {
-        if (SelectedGradientStopIndex >= value.Stops.Length)
-        {
-            SelectedGradientStopIndex = value.Stops.Length - 1;
-        }
+    partial void OnLedFadeChanged(bool value) => Save();
 
-        Save();
+    partial void OnLedWarmupChanged(bool value) => Save();
+
+    // An edit in any gradient saves; one made during a preview is saved once, when the preview ends.
+    private void OnEditorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
+        {
+            Save();
+        }
+        else if (e.PropertyName == nameof(GradientEditorViewModel.IsPreviewing) && _unsaved && !Editors.Any(x => x.IsPreviewing))
+        {
+            Save();
+        }
     }
 
     private void Save()
@@ -375,7 +287,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             return;
         }
 
-        if (_holdingSave)
+        if (Editors.Any(e => e.IsPreviewing))
         {
             _unsaved = true;
             return;
@@ -386,7 +298,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         {
             try
             {
-                store.Save(new DisplaySettings { LevelStyle = LevelStyle, SignalGradient = SignalGradient });
+                store.Save(Current);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

@@ -61,7 +61,8 @@
 
   <!-- Display preferences for the whole application, saved as soon as they change. -->
   <StackPanel Classes="settingsGroups">
-    <StackPanel Classes="settingsGroup">
+    <!-- Bound to the mixer gradient's editor until the page offers a choice of gradient. -->
+    <StackPanel Classes="settingsGroup" DataContext="{Binding Mixer}" x:DataType="vm:GradientEditorViewModel">
       <TextBlock Classes="overline" Text="SIGNAL METERS" />
 
       <!-- The gradient as a meter draws it, its stops' handles under it; the clip lamp beside it is fixed. -->
@@ -104,7 +105,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="x:String">
-            <Button Classes="swatch" Command="{Binding $parent[UserControl].((vm:DisplayViewModel)DataContext).ChooseGradientStopColourCommand}"
+            <Button Classes="swatch" Command="{Binding $parent[ItemsControl].((vm:GradientEditorViewModel)DataContext).ChooseGradientStopColourCommand}"
                     CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='Colour {0}'}" ToolTip.Tip="{Binding}">
               <Border Background="{Binding Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
             </Button>

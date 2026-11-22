@@ -49,6 +49,15 @@ public sealed class SignalGradient : IEquatable<SignalGradient>
         new("#B65CFF", 1.0),
     ]);
 
+    /// <summary>The gain LEDs' colours: violet through orchid to rose, evenly spaced (Palette.GainLeds).</summary>
+    public static SignalGradient GainDefault { get; } = Create(
+    [
+        new("#6B4BE0", 0),
+        new("#A45CF2", 0.333),
+        new("#E070C8", 0.667),
+        new("#FFA3C4", 1.0),
+    ]);
+
     /// <summary>The stops, sorted by position, with colours as upper-case "#RRGGBB".</summary>
     public ImmutableArray<SignalGradientStop> Stops { get; }
 

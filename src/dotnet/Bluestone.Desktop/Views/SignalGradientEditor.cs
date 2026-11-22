@@ -15,7 +15,7 @@ namespace Bluestone.Desktop.Views;
 /// <summary>
 /// Settings ▸ Display's gradient editor: a recessed well of LED cells drawn in the signal gradient, as a meter draws them,
 /// with a draggable, focusable handle under it for each stop. Dragging a handle (or Left/Right on it: 1%, Shift for 5%)
-/// changes that stop's position. All state is in <see cref="DisplayViewModel"/>, its data context. A drag previews as it
+/// changes that stop's position. All state is in <see cref="GradientEditorViewModel"/>, its data context. A drag previews as it
 /// goes and saves once, on release; each key press saves. The editor's colours are its own brushes, not the shared caches,
 /// so editing never grows them.
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class SignalGradientEditor : Panel
     private const double WellPad = 4;
 
     private readonly Bar _bar;
-    private DisplayViewModel? _display;
+    private GradientEditorViewModel? _display;
     private int _dragIndex = -1;
 
     public SignalGradientEditor()
@@ -63,7 +63,7 @@ public sealed class SignalGradientEditor : Panel
             _display.PropertyChanged -= OnDisplayChanged;
         }
 
-        _display = DataContext as DisplayViewModel;
+        _display = DataContext as GradientEditorViewModel;
         if (_display is not null)
         {
             _display.PropertyChanged += OnDisplayChanged;
@@ -80,7 +80,7 @@ public sealed class SignalGradientEditor : Panel
 
     private void OnDisplayChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(DisplayViewModel.SignalGradient) or nameof(DisplayViewModel.SelectedGradientStopIndex))
+        if (e.PropertyName is nameof(GradientEditorViewModel.Gradient) or nameof(GradientEditorViewModel.SelectedGradientStopIndex))
         {
             Sync();
         }
@@ -89,7 +89,7 @@ public sealed class SignalGradientEditor : Panel
     // One handle per stop, reused while the count holds so that focus and a drag's capture survive a move.
     private void Sync()
     {
-        var stops = _display?.SignalGradient.Stops ?? [];
+        var stops = _display?.Gradient.Stops ?? [];
         var focusedIndex = Children.OfType<StopHandle>().FirstOrDefault(h => h.IsFocused)?.Index ?? -1;
         while (HandleCount > stops.Length)
         {
@@ -232,7 +232,7 @@ public sealed class SignalGradientEditor : Panel
             var width = Math.Max(0, Bounds.Width - (2 * Inset));
             var count = Math.Max(1, (int)Math.Floor((width + CellGap) / CellPitch));
             var cell = ((width + CellGap) / count) - CellGap;
-            var gradient = display.SignalGradient;
+            var gradient = display.Gradient;
             var cells = CellBrushes(gradient, count);
             for (var i = 0; i < count; i++)
             {
@@ -318,7 +318,7 @@ public sealed class SignalGradientEditor : Panel
                 _swatch = new ImmutableSolidColorBrush(Color.Parse(stop.Colour));
             }
 
-            AutomationProperties.SetName(this, $"Gradient stop {index + 1} at {DisplayViewModel.FormatPercent(stop.Position)}");
+            AutomationProperties.SetName(this, $"Gradient stop {index + 1} at {GradientEditorViewModel.FormatPercent(stop.Position)}");
             AutomationProperties.SetHelpText(this, $"{stop.Colour}. Left or Right to move; Shift for 5%.");
             InvalidateVisual();
         }

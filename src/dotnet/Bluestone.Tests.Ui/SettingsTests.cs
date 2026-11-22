@@ -56,7 +56,7 @@ public sealed class SettingsTests : IDisposable
             // Add: a stop in the widest gap (0% to 40%), selected, saved, and on every meter.
             app.Click(ActionKey("Add gradient stop"));
             Assert.False(ActionKey("Add gradient stop").IsChecked, "An action key springs back.");
-            Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
             Assert.Equal("Gradient stop 2 at 20%", Names()[1]);
             Assert.Equal("20%", AppUnderTest.Within<TextBlock>(page, t => t.Name == "StopPositionText").Text);
             Assert.Equal(7, Desktop.Theme.MeterGradient.Stops.Count);
@@ -65,18 +65,18 @@ public sealed class SettingsTests : IDisposable
             var handle = editor.Handles[1];
             var from = new Point(handle.Bounds.Center.X, handle.Bounds.Center.Y);
             app.Drag(editor, from, new Point(editor.XAt(0.3), from.Y));
-            Assert.Equal(0.3, store.Load().SignalGradient.Stops[1].Position, 2);
+            Assert.Equal(0.3, store.Load().MixerGradient.Stops[1].Position, 2);
             Assert.True(editor.Handles[1].IsFocused);
             app.Press(Key.Right);
-            Assert.Equal(0.31, store.Load().SignalGradient.Stops[1].Position, 3);
+            Assert.Equal(0.31, store.Load().MixerGradient.Stops[1].Position, 3);
             app.Press(Key.Right, RawInputModifiers.Shift);
-            Assert.Equal(0.36, store.Load().SignalGradient.Stops[1].Position, 3);
+            Assert.Equal(0.36, store.Load().MixerGradient.Stops[1].Position, 3);
             Assert.Equal("Gradient stop 2 at 36%", Names()[1]);
             Assert.Equal(0.36, Desktop.Theme.MeterGradient.Stops[1].Position, 3);
 
             // A swatch recolours the selected stop.
             app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Colour #4CB873"));
-            Assert.Equal(new SignalGradientStop("#4CB873", 0.36), store.Load().SignalGradient.Stops[1]);
+            Assert.Equal(new SignalGradientStop("#4CB873", 0.36), store.Load().MixerGradient.Stops[1]);
             app.Window.MouseMove(new Point(1300, 800), RawInputModifiers.None);
             await app.SettleTransitionsAsync();
             var frame = app.SaveFrame("settings-display-gradient-editor");
@@ -90,24 +90,24 @@ public sealed class SettingsTests : IDisposable
 
             // Remove: the selected stop goes; at two stops the key is disabled.
             app.Click(ActionKey("Remove gradient stop"));
-            Assert.Equal(6, store.Load().SignalGradient.Stops.Length);
-            Assert.DoesNotContain(store.Load().SignalGradient.Stops, s => s.Colour == "#4CB873");
-            while (display.CanRemoveGradientStop)
+            Assert.Equal(6, store.Load().MixerGradient.Stops.Length);
+            Assert.DoesNotContain(store.Load().MixerGradient.Stops, s => s.Colour == "#4CB873");
+            while (display.Mixer.CanRemoveGradientStop)
             {
                 app.Click(ActionKey("Remove gradient stop"));
             }
 
-            Assert.Equal(2, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal(2, store.Load().MixerGradient.Stops.Length);
             Assert.False(ActionKey("Remove gradient stop").IsEffectivelyEnabled);
             Assert.Equal(2, editor.Handles.Count);
 
             app.Click(ActionKey("Reset gradient to default"));
-            Assert.Equal(SignalGradient.Default, store.Load().SignalGradient);
+            Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
             Assert.Equal(6, editor.Handles.Count);
         }
         finally
         {
-            display.ResetGradientCommand.Execute(null);
+            display.Mixer.ResetGradientCommand.Execute(null);
         }
     });
 
@@ -141,36 +141,36 @@ public sealed class SettingsTests : IDisposable
                 var at = new Point(editor.TranslatePoint(new Point(editor.XAt(position), 0), app.Window)!.Value.X, start.Y);
                 app.Window.MouseMove(at, RawInputModifiers.LeftMouseButton);
                 app.Settle();
-                Assert.Equal(position, display.SignalGradient.Stops[1].Position, 2);
+                Assert.Equal(position, display.Mixer.Gradient.Stops[1].Position, 2);
                 Assert.Equal(position, Desktop.Theme.MeterGradient.Stops[1].Position, 2);
                 Assert.Equal(saved, File.ReadAllText(path));
             }
 
             app.Window.MouseUp(new Point(editor.TranslatePoint(new Point(editor.XAt(0.25), 0), app.Window)!.Value.X, start.Y), MouseButton.Left, RawInputModifiers.None);
             app.Settle();
-            Assert.Equal(0.25, store.Load().SignalGradient.Stops[1].Position, 2);
+            Assert.Equal(0.25, store.Load().MixerGradient.Stops[1].Position, 2);
 
             // Nudges stop at the ends of the scale, by 1% or by 5% with Shift.
             editor.Handles[0].Focus();
             app.Press(Key.Left);
             app.Press(Key.Left, RawInputModifiers.Shift);
-            Assert.Equal(0, store.Load().SignalGradient.Stops[0].Position);
+            Assert.Equal(0, store.Load().MixerGradient.Stops[0].Position);
             Assert.Equal("Gradient stop 1 at 0%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[0]));
             var last = editor.Handles.Count - 1;
             editor.Handles[last].Focus();
             app.Press(Key.Right);
             app.Press(Key.Right, RawInputModifiers.Shift);
-            Assert.Equal(1, store.Load().SignalGradient.Stops[last].Position);
+            Assert.Equal(1, store.Load().MixerGradient.Stops[last].Position);
             Assert.Equal($"Gradient stop {last + 1} at 100%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[last]));
 
             // A stop is a slider over 0 to 100 described by its colour; setting it moves the stop.
             var stopPeer = ControlAutomationPeer.CreatePeerForElement(editor.Handles[2]);
             Assert.Equal(AutomationControlType.Slider, stopPeer.GetAutomationControlType());
-            Assert.StartsWith(display.SignalGradient.Stops[2].Colour + ". Left or Right to move", stopPeer.GetHelpText(), StringComparison.Ordinal);
+            Assert.StartsWith(display.Mixer.Gradient.Stops[2].Colour + ". Left or Right to move", stopPeer.GetHelpText(), StringComparison.Ordinal);
             var range = Assert.IsAssignableFrom<IRangeValueProvider>(stopPeer);
             Assert.Equal((0, 100, 62), (range.Minimum, range.Maximum, range.Value));
             range.SetValue(70);
-            Assert.Equal(0.7, store.Load().SignalGradient.Stops[2].Position, 3);
+            Assert.Equal(0.7, store.Load().MixerGradient.Stops[2].Position, 3);
 
             // The gradient's actions are buttons, not toggles, and stay unchecked.
             var add = AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == "Add gradient stop");
@@ -180,11 +180,11 @@ public sealed class SettingsTests : IDisposable
             Assert.False(addPeer is IToggleProvider, "An action key must not offer a toggle.");
             app.Click(add);
             Assert.False(add.IsChecked == true, "An action key never stays checked.");
-            Assert.Equal(7, store.Load().SignalGradient.Stops.Length);
+            Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
         }
         finally
         {
-            display.ResetGradientCommand.Execute(null);
+            display.Mixer.ResetGradientCommand.Execute(null);
         }
     });
 
