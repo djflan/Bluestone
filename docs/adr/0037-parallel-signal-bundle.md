@@ -110,3 +110,10 @@ conversion point.
   and the domain's note events do not yet carry a stable per-note ID. Nothing in the bundle prevents adding them:
   pass-through is decided by event class, not by MIDI channel and key, and channel counts are not part of the device
   contracts this ADR touches.
+
+## Amendment: Identity R6 junctions
+
+The seam is now a `ChainJunction`: a MIDI port glyph at the top, lit while notes are held, and a stereo LED ladder of
+the peak with its held peak and clip lamp. The Out card shows the chain's output on a wider meter. Insertion, routing
+taps, and the context menu are unchanged. Settings ▸ Display no longer chooses an indicator size, LED shape, or
+position; it sets the signal gradient every level meter uses. The clip lamp is a fixed red outside the gradient.
