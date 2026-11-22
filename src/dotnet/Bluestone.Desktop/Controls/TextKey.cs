@@ -33,7 +33,7 @@ public sealed class TextKey : ToggleButton
 
     static TextKey()
     {
-        AffectsRender<TextKey>(TextProperty, IsCheckedProperty, IsPointerOverProperty, IsPressedProperty, IsEffectivelyEnabledProperty);
+        AffectsRender<TextKey>(TextProperty, IsCheckedProperty, IsPointerOverProperty, IsPressedProperty, IsEffectivelyEnabledProperty, IsFocusedProperty);
         CursorProperty.OverrideDefaultValue<TextKey>(new Cursor(StandardCursorType.Hand));
         AffectsMeasure<TextKey>(TextProperty);
     }

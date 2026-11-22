@@ -51,7 +51,7 @@ public sealed class PanKnob : MixerValueControl
         var radius = Radius;
         var centre = new Point(radius + 1, radius + 1);
         var fraction = (Math.Clamp(Value, -1, 1) + 1) / 2;
-        ArcKnobPaint.Draw(context, centre, radius, fraction, bipolar: true, Palette.Accent, dim: !IsEnabled, _cache);
+        ArcKnobPaint.Draw(context, centre, radius, fraction, origin: 0.5, Palette.Accent, dim: !IsEnabled, _cache);
         if (IsFocused)
         {
             context.DrawEllipse(null, ConsolePaint.Pen(Palette.Focus), centre, radius + 1.5, radius + 1.5);

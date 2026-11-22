@@ -6,8 +6,8 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// The Machined knob, shared by every drawn knob: a dark track ring over 270°, a coloured value arc with a restrained
-/// glow and a thin highlight, a satin-metal cap with a soft shadow, and a short dark pointer. Bipolar knobs (pan) draw
-/// the arc from the top centre. Brushes, pens and glow layers come from the shared caches; the arc geometries are
+/// glow and a thin highlight, a satin-metal cap with a soft shadow, and a short dark pointer. Bipolar knobs draw
+/// the arc from their zero point (the top centre for pan). Brushes, pens and glow layers come from the shared caches; the arc geometries are
 /// rebuilt only when the value or size changes (<see cref="ArcKnobCache"/>).
 /// </summary>
 internal static class ArcKnobPaint
@@ -24,7 +24,7 @@ internal static class ArcKnobPaint
 
     public static double TrackWidth(double radius) => radius >= 16 ? 3 : 2.5;
 
-    public static void Draw(DrawingContext context, Point centre, double radius, double fraction, bool bipolar, Color arc, bool dim, ArcKnobCache cache)
+    public static void Draw(DrawingContext context, Point centre, double radius, double fraction, double origin, Color arc, bool dim, ArcKnobCache cache)
     {
         if (dim)
         {
@@ -33,7 +33,7 @@ internal static class ArcKnobPaint
 
         var trackRadius = radius - 2;
         var width = TrackWidth(radius);
-        var (track, value) = cache.Geometries(centre, trackRadius, fraction, bipolar);
+        var (track, value) = cache.Geometries(centre, trackRadius, fraction, origin);
         context.DrawGeometry(null, ConsolePaint.Pen(ConsolePaint.Darker(Palette.Well, 0.2), width + 1.5, PenLineCap.Round), track);
         context.DrawGeometry(null, ConsolePaint.Pen(ConsolePaint.Lighter(Palette.Panel, 0.08), width, PenLineCap.Round), track);
         if (value is not null)
@@ -70,11 +70,11 @@ internal sealed class ArcKnobCache
     private Point _centre;
     private double _radius = -1;
     private double _fraction = double.NaN;
-    private bool _bipolar;
+    private double _origin;
     private StreamGeometry? _track;
     private StreamGeometry? _value;
 
-    public (StreamGeometry Track, StreamGeometry? Value) Geometries(Point centre, double radius, double fraction, bool bipolar)
+    public (StreamGeometry Track, StreamGeometry? Value) Geometries(Point centre, double radius, double fraction, double origin)
     {
         if (_track is null || centre != _centre || radius != _radius)
         {
@@ -82,9 +82,9 @@ internal sealed class ArcKnobCache
             _fraction = double.NaN;
         }
 
-        if (!fraction.Equals(_fraction) || bipolar != _bipolar)
+        if (!fraction.Equals(_fraction) || !origin.Equals(_origin))
         {
-            var from = bipolar ? ArcKnobPaint.Start + (ArcKnobPaint.Sweep / 2) : ArcKnobPaint.Start;
+            var from = ArcKnobPaint.Start + (ArcKnobPaint.Sweep * Math.Clamp(origin, 0, 1));
             var to = ArcKnobPaint.Start + (ArcKnobPaint.Sweep * Math.Clamp(fraction, 0, 1));
             var sweep = Math.Abs(to - from);
             _value = sweep > 0.5 ? ConsolePaint.Arc(centre, radius, Math.Min(from, to), sweep) : null;
@@ -93,7 +93,7 @@ internal sealed class ArcKnobCache
         _centre = centre;
         _radius = radius;
         _fraction = fraction;
-        _bipolar = bipolar;
+        _origin = origin;
         return (_track, _value);
     }
 }

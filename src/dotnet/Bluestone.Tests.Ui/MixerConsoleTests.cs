@@ -365,6 +365,21 @@ public sealed class MixerConsoleTests
     });
 
     [Fact]
+    public Task GainBar_DragAboveTheTravelCeiling_RaisesTheBoost_NotSnapsToTheTop() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var (audio, _, _) = await SeedAsync(app);
+        await SetStripAsync(app, audio.Id, 12, 0);
+        var mixer = ShowDockedMixer(app);
+        var bar = Visible<ConsoleFader>(StripOf(mixer, audio.Name), $"{audio.Name} gain");
+        var at = new Point(bar.Bounds.Width / 2, bar.IndexY);
+
+        // An upward drag from +12 dB raises the gain; it does not snap down to the +6 dB top of the travel.
+        app.Drag(bar, at, at - new Vector(0, 4));
+        Assert.True(GainOf(app, audio.Id) > 12, $"gain {GainOf(app, audio.Id)}");
+    });
+
+    [Fact]
     public Task GainBar_ValueKeysReachTheFocusedBar_NotTheWindowShortcuts() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();

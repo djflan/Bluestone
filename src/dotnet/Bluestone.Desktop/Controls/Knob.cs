@@ -165,11 +165,11 @@ public sealed class Knob : Control
         }
 
         // The Machined arc-ring knob (ArcKnobPaint): a dark track ring, the value arc in the accent with a restrained glow, a
-        // satin cap and a short pointer. A bipolar range draws its arc from the top centre.
+        // satin cap and a short pointer. A bipolar range draws its arc from its zero point.
         var center = new Point(Math.Round(Bounds.Width / 2), Math.Round(Bounds.Height / 2));
         var radius = (size / 2) - 1;
         var (fraction, origin) = Positions();
-        ArcKnobPaint.Draw(context, center, radius, fraction, Math.Abs(origin - 0.5) < 0.01, Accent, !IsEnabled, _paint);
+        ArcKnobPaint.Draw(context, center, radius, fraction, origin, Accent, !IsEnabled, _paint);
 
         if (IsFocused)
         {

@@ -53,11 +53,23 @@ public sealed class ConsoleFader : MixerValueControl
     {
         var origin = DragStartValue;
         var travel = Math.Max(1, TravelBottom - TravelTop);
-        var fraction = Math.Clamp(ConsoleRail.Position(origin) - (delta.Y / travel), 0, 1);
+        var fraction = Math.Max(0, TravelPosition(origin) - (delta.Y / travel));
 
         // The foot of the travel is −∞, as on a console: the strip's minimum, not the scale's lowest mark.
-        return (fraction <= 0 ? Minimum : ConsoleRail.Db(fraction)) - origin;
+        return (fraction <= 0 ? Minimum : TravelDb(fraction)) - origin;
     }
+
+    // Above the displayed ceiling the taper's top segment continues, so a drag that starts above +6 dB stays invertible
+    // (no movement leaves the gain unchanged) and can reach the strip's full boost; the base class clamps the result.
+    private const double BoostDbPerTravel = 6 / 0.14;
+
+    private static double TravelPosition(double db) => db > MixerRail.GainCeiling
+        ? 1 + ((db - MixerRail.GainCeiling) / BoostDbPerTravel)
+        : ConsoleRail.Position(db);
+
+    private static double TravelDb(double fraction) => fraction > 1
+        ? MixerRail.GainCeiling + ((fraction - 1) * BoostDbPerTravel)
+        : ConsoleRail.Db(fraction);
 
     protected override Size MeasureOverride(Size availableSize) => new(CapWidth + 6, 0);
 
@@ -70,6 +82,11 @@ public sealed class ConsoleFader : MixerValueControl
         var bottom = TravelBottom;
         var slot = new Rect(centre - 2, top - 2, 4, bottom - top + 4);
         context.DrawRectangle(ConsolePaint.Brush(SlotColor), ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.White, 0.05)), new RoundedRect(slot, 2));
+
+        using (context.PushOpacity(IsEnabled ? 1 : 0.5))
+        {
+            Cap(context, new Point(centre, IndexY));
+        }
 
         if (Value > MixerRail.GainCeiling)
         {
@@ -84,11 +101,6 @@ public sealed class ConsoleFader : MixerValueControl
             }
 
             context.DrawGeometry(ConsolePaint.Brush(Palette.MixerMeterHot), null, caret);
-        }
-
-        using (context.PushOpacity(IsEnabled ? 1 : 0.5))
-        {
-            Cap(context, new Point(centre, IndexY));
         }
     }
 

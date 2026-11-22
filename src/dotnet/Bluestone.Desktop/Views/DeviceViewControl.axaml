@@ -286,7 +286,7 @@
             <controls:DeviceCardPanel>
               <Grid RowDefinitions="32,*,Auto">
                 <TextBlock Text="Out" Classes="outTitle" />
-                <controls:ChainOutMeter Grid.Row="1" Classes="outMeter" Signal="{Binding LastJunction}" LevelStyle="{Binding Display.LevelStyle}" AutomationProperties.Name="Chain output level" />
+                <controls:ChainOutMeter Grid.Row="1" Classes="outMeter" Signal="{Binding OutputJunction}" LevelStyle="{Binding Display.LevelStyle}" AutomationProperties.Name="Chain output level" />
                 <TextBlock Grid.Row="2" x:Name="OutputText" Text="{Binding OutputText}" Classes="nodeDetail" Classes.unrouted="{Binding !IsRouted}" />
               </Grid>
             </controls:DeviceCardPanel>
