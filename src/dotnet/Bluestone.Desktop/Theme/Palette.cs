@@ -77,7 +77,6 @@ internal static class Palette
     public static readonly Color Solo = Color.Parse("#E3C345");
     public static readonly Color SoloInk = Color.Parse("#1A1608");
     public static readonly Color Clip = Color.Parse("#FF3640");
-    public static readonly Color[] GainLeds = [Color.Parse("#6B4BE0"), Color.Parse("#A45CF2"), Color.Parse("#E070C8"), Color.Parse("#FFA3C4")];
     public const double GlowAlpha = 0.28;
     public const double GlowReach = 4;
     public const double SheenAlpha = 0.035;

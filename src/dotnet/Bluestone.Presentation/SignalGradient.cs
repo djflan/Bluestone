@@ -49,7 +49,7 @@ public sealed class SignalGradient : IEquatable<SignalGradient>
         new("#B65CFF", 1.0),
     ]);
 
-    /// <summary>The gain LEDs' colours: violet through orchid to rose, evenly spaced (Palette.GainLeds).</summary>
+    /// <summary>The gain LEDs' colours: violet through orchid to rose, evenly spaced (the gain palette before it was editable).</summary>
     public static SignalGradient GainDefault { get; } = Create(
     [
         new("#6B4BE0", 0),

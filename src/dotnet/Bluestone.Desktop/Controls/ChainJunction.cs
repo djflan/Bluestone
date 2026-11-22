@@ -56,7 +56,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
     private static readonly StreamGeometry MidiPort = StreamGeometry.Parse("M8,2 A6,6 0 1 1 7.99,2 Z M4.8,8.3 H4.9 M5.8,5.6 H5.9 M8,4.6 H8.1 M10.2,5.6 H10.3 M11.2,8.3 H11.3 M7,12 H9");
 
-    private readonly LedLadderMeter _ladder = new() { Mode = MixerMeterMode.PeakRms, MeterWidth = LadderWidth, ColumnWidth = 4, IsHitTestVisible = false };
+    private readonly LedLadderMeter _ladder = new() { Mode = MixerMeterMode.PeakRms, MeterWidth = LadderWidth, ColumnWidth = 4, GradientTarget = MeterGradientTarget.Chain, IsHitTestVisible = false };
     private readonly EventHandler _updated;
     private readonly PropertyChangedEventHandler _changed;
     private JunctionSignal? _subscribed;
@@ -223,6 +223,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        LedColours.Changed += OnLedColoursChanged;
         Subscribe(Signal);
         UpdateName();
         OnFrame();
@@ -231,7 +232,16 @@ public sealed class ChainJunction : Control, ICustomHitTest
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         Subscribe(null);
+        LedColours.Changed -= OnLedColoursChanged;
         base.OnDetachedFromVisualTree(e);
+    }
+
+    // The MIDI LED's bloom and lit caption are built from its colour once; a new colour rebuilds them on the next frame.
+    private void OnLedColoursChanged(object? sender, EventArgs e)
+    {
+        _bloom = null;
+        _midiCaptionLit = null;
+        InvalidateVisual();
     }
 
     protected override void OnPointerEntered(PointerEventArgs e)
@@ -386,9 +396,9 @@ public sealed class ChainJunction : Control, ICustomHitTest
             {
                 GradientStops =
                 {
-                    new GradientStop(ConsolePaint.Alpha(Palette.Accent, Palette.GlowAlpha * 1.1), 0),
-                    new GradientStop(ConsolePaint.Alpha(Palette.Accent, Palette.GlowAlpha * 1.1 * 0.35), 0.45),
-                    new GradientStop(ConsolePaint.Alpha(Palette.Accent, 0), 1),
+                    new GradientStop(ConsolePaint.Alpha(LedColours.Midi, Palette.GlowAlpha * 1.1), 0),
+                    new GradientStop(ConsolePaint.Alpha(LedColours.Midi, Palette.GlowAlpha * 1.1 * 0.35), 0.45),
+                    new GradientStop(ConsolePaint.Alpha(LedColours.Midi, 0), 1),
                 },
             }.ToImmutable();
             using (context.PushOpacity(glow))
@@ -398,7 +408,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
         }
 
         var idle = ConsolePaint.Alpha(Palette.TextMuted, signal.CanCarryNotes ? 0.75 : 0.35);
-        var ink = glow > 0.01 ? ConsolePaint.Mix(idle, ConsolePaint.Lighter(Palette.Accent, 0.1), glow) : idle;
+        var ink = glow > 0.01 ? ConsolePaint.Mix(idle, ConsolePaint.Lighter(LedColours.Midi, 0.1), glow) : idle;
         var k = IconSize / 16;
         using (context.PushTransform(Matrix.CreateScale(k, k) * Matrix.CreateTranslation(icon.X - (8 * k), icon.Y - (7.5 * k))))
         {
@@ -408,7 +418,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
         _drawnGlow = _glow;
         var lit = glow > 0.5;
         var caption = lit
-            ? _midiCaptionLit ??= Text("MIDI", ConsolePaint.Alpha(Palette.Accent, 0.85), 7.5)
+            ? _midiCaptionLit ??= Text("MIDI", ConsolePaint.Alpha(LedColours.Midi, 0.85), 7.5)
             : _midiCaption ??= Text("MIDI", Palette.TextMuted, 7.5);
         context.DrawText(caption, new Point(center - Math.Round(caption.Width / 2), IconY + 10));
 

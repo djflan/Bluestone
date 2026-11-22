@@ -8,7 +8,7 @@ namespace Bluestone.Desktop.Controls;
 /// <summary>
 /// A column of round gain LEDs set into a recessed gutter beside a fader: a narrow dark band with rounded ends, an inner
 /// shadow from above and a faint lit lip, running the full fader travel. The LEDs light from the bottom up to the gain on
-/// the console taper, in the rose → violet gain palette (<see cref="Palette.GainLeds"/>), each with a tight glow and a
+/// the console taper, in the gain gradient (<see cref="MeterGradient.Gain"/>, violet to rose by default), each with a tight glow and a
 /// small specular dot; unlit LEDs stay dark at <see cref="Palette.UnlitAlpha"/>. Purely a display: the fader beside it is
 /// the control.
 /// </summary>
@@ -30,6 +30,8 @@ public sealed class GainLedGutter : Control
     private Color[] _colors = [];
     private IBrush[] _lit = [];
     private IBrush[] _unlit = [];
+    private IImmutableSolidColorBrush[][] _glows = [];
+    private int _version = -1;
 
     static GainLedGutter()
     {
@@ -105,7 +107,7 @@ public sealed class GainLedGutter : Control
                 var centre = new Point(x, Math.Round(bottom - (f * (bottom - top))) + 0.5);
                 if (f <= fraction + 1e-6)
                 {
-                    Glow.Ellipse(context, centre, radius, _colors[k], LitTier);
+                    Glow.Ellipse(context, centre, radius, _glows[k]);
                     context.DrawEllipse(_lit[k], null, centre, radius, radius);
                     context.DrawEllipse(highlight, null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
                 }
@@ -134,32 +136,50 @@ public sealed class GainLedGutter : Control
         context.DrawRectangle(null, ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.White, 0.045)), new RoundedRect(rect.Inflate(0.5), radius + 0.5));
     }
 
-    /// <summary>The gain palette sampled once per LED, rebuilt only when the count changes.</summary>
+    /// <summary>
+    /// The gain gradient sampled once per LED, at its fraction of the travel, rebuilt only when the count or the gradient
+    /// changes. The brushes come from <see cref="MeterGradient.Gain"/>'s caches, which empty on each change.
+    /// </summary>
     private void EnsureColors(int count)
     {
-        if (_colors.Length == count)
+        var gradient = MeterGradient.Gain;
+        if (_colors.Length == count && _version == gradient.Version)
         {
             return;
         }
 
+        _version = gradient.Version;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
+        _glows = new IImmutableSolidColorBrush[count][];
         for (var k = 0; k < count; k++)
         {
             var color = Swatch(k / (double)(count - 1));
             _colors[k] = color;
-            _lit[k] = ConsolePaint.Brush(color);
-            _unlit[k] = ConsolePaint.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha));
+            _lit[k] = gradient.Brush(color);
+            _unlit[k] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha));
+            _glows[k] = gradient.GlowBrushes(color, LitTier);
         }
     }
 
-    /// <summary>The gain palette at <paramref name="fraction"/> of the travel, bottom (violet) to top (rose).</summary>
-    internal static Color Swatch(double fraction)
+    /// <summary>The gain gradient at <paramref name="fraction"/> of the travel, bottom to top.</summary>
+    internal static Color Swatch(double fraction) => MeterGradient.Gain.At(fraction);
+
+    /// <summary>The LED colours drawn now, bottom to top (for tests).</summary>
+    internal IReadOnlyList<Color> Colors => _colors;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        var stops = Palette.GainLeds;
-        var x = Math.Clamp(fraction, 0, 1) * (stops.Length - 1);
-        var i = Math.Min(stops.Length - 2, (int)Math.Floor(x));
-        return ConsolePaint.Mix(stops[i], stops[i + 1], x - i);
+        base.OnAttachedToVisualTree(e);
+        MeterGradient.Gain.Changed += OnGradientChanged;
     }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        MeterGradient.Gain.Changed -= OnGradientChanged;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnGradientChanged(object? sender, EventArgs e) => InvalidateVisual();
 }

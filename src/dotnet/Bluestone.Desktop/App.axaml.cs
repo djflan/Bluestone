@@ -236,24 +236,35 @@ public partial class App : Avalonia.Application
     }
 
     /// <summary>
-    /// Every meter draws <paramref name="display"/>'s mixer gradient: the saved one now, and each edit as it is made (the
-    /// meters redraw on <see cref="Theme.MeterGradient.Changed"/>). The chain and gain gradients are not applied yet: the
-    /// meters share one colour seam until it is split per indicator family.
+    /// Every indicator draws <paramref name="display"/>'s colours: the mixer, chain, and gain gradients and the MIDI LED's
+    /// colour, the saved ones now and each edit as it is made (indicators redraw on their <see cref="Theme.MeterGradient"/>'s
+    /// or <see cref="Theme.LedColours"/>' Changed).
     /// </summary>
     internal static void FollowSignalGradient(DisplayViewModel display)
     {
-        static void Apply(SignalGradient gradient) =>
-            Theme.MeterGradient.Use(gradient.Stops.Select(s => (s.Position, Color.Parse(s.Colour))));
-
-        var mixer = display.Mixer;
-        Apply(mixer.Gradient);
-        mixer.PropertyChanged += (_, e) =>
+        Follow(display.Mixer, Theme.MeterGradient.Mixer);
+        Follow(display.Chain, Theme.MeterGradient.Chain);
+        Follow(display.Gain, Theme.MeterGradient.Gain);
+        Theme.LedColours.UseMidi(display.MidiColour);
+        display.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
+            if (e.PropertyName == nameof(DisplayViewModel.MidiColour))
             {
-                Apply(mixer.Gradient);
+                Theme.LedColours.UseMidi(display.MidiColour);
             }
         };
+
+        static void Follow(GradientEditorViewModel editor, Theme.MeterGradient meters)
+        {
+            meters.Use(editor.Gradient);
+            editor.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
+                {
+                    meters.Use(editor.Gradient);
+                }
+            };
+        }
     }
 
     /// <summary>Whether the real-time work runs in the engine process: <paramref name="setting"/> "0" or "1", else by platform.</summary>

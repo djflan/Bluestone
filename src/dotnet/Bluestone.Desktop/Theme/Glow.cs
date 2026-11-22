@@ -137,9 +137,12 @@ internal static class Glow
         }
     }
 
-    public static void Ellipse(DrawingContext context, Point centre, double radius, Color color, double tier)
+    public static void Ellipse(DrawingContext context, Point centre, double radius, Color color, double tier) =>
+        Ellipse(context, centre, radius, BrushesFor(color, tier));
+
+    /// <summary>A glow around a circle in layers the caller holds (from <see cref="CreateBrushes"/> or <see cref="MeterGradient.GlowBrushes"/>).</summary>
+    public static void Ellipse(DrawingContext context, Point centre, double radius, IImmutableSolidColorBrush[] brushes)
     {
-        var brushes = BrushesFor(color, tier);
         for (var i = brushes.Length; i >= 1; i--)
         {
             var grow = Reach * i / brushes.Length;

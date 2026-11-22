@@ -24,7 +24,7 @@ public sealed class ChainOutMeter : Control
     private const double WellHeight = 22;
     private const double WellGap = 10;
 
-    private readonly LedLadderMeter _ladder = new() { Mode = MixerMeterMode.PeakRms, MeterWidth = LadderWidth, ColumnWidth = 7, IsHitTestVisible = false };
+    private readonly LedLadderMeter _ladder = new() { Mode = MixerMeterMode.PeakRms, MeterWidth = LadderWidth, ColumnWidth = 7, GradientTarget = MeterGradientTarget.Chain, IsHitTestVisible = false };
     private readonly ConsoleScale _scale = new() { Mode = MixerMeterMode.PeakRms, IsHitTestVisible = false };
     private readonly EventHandler _updated;
     private JunctionSignal? _subscribed;

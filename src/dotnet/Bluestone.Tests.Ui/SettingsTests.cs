@@ -59,7 +59,7 @@ public sealed class SettingsTests : IDisposable
             Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
             Assert.Equal("Gradient stop 2 at 20%", Names()[1]);
             Assert.Equal("20%", AppUnderTest.Within<TextBlock>(page, t => t.Name == "StopPositionText").Text);
-            Assert.Equal(7, Desktop.Theme.MeterGradient.Stops.Count);
+            Assert.Equal(7, Desktop.Theme.MeterGradient.Mixer.Stops.Count);
 
             // Move: drag the new stop to 30%, then nudge it with the keyboard (1%, and 5% with Shift).
             var handle = editor.Handles[1];
@@ -72,7 +72,7 @@ public sealed class SettingsTests : IDisposable
             app.Press(Key.Right, RawInputModifiers.Shift);
             Assert.Equal(0.36, store.Load().MixerGradient.Stops[1].Position, 3);
             Assert.Equal("Gradient stop 2 at 36%", Names()[1]);
-            Assert.Equal(0.36, Desktop.Theme.MeterGradient.Stops[1].Position, 3);
+            Assert.Equal(0.36, Desktop.Theme.MeterGradient.Mixer.Stops[1].Position, 3);
 
             // A swatch recolours the selected stop.
             app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Colour #4CB873"));
@@ -142,7 +142,7 @@ public sealed class SettingsTests : IDisposable
                 app.Window.MouseMove(at, RawInputModifiers.LeftMouseButton);
                 app.Settle();
                 Assert.Equal(position, display.Mixer.Gradient.Stops[1].Position, 2);
-                Assert.Equal(position, Desktop.Theme.MeterGradient.Stops[1].Position, 2);
+                Assert.Equal(position, Desktop.Theme.MeterGradient.Mixer.Stops[1].Position, 2);
                 Assert.Equal(saved, File.ReadAllText(path));
             }
 

@@ -8,7 +8,7 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// The Machined signal meter: a stereo pair of LED columns in a recessed dark well. Each column is 3 DIP cells on a
-/// 4 DIP pitch, coloured by <see cref="MeterGradient"/> from the floor up; lit cells throw a tight glow (the top cell
+/// 4 DIP pitch, coloured from the floor up by the <see cref="MeterGradient"/> its <see cref="GradientTarget"/> names; lit cells throw a tight glow (the top cell
 /// and every third cell), unlit cells stay dark at <see cref="Palette.UnlitAlpha"/> of their colour, and the held peak
 /// is the first unlit cell lightened. Above each column sits a separate clip lamp, always <see cref="Palette.Clip"/>,
 /// dim until a peak passes 0 dBFS and lit until reset. Peak + RMS readings follow the console taper
@@ -42,6 +42,10 @@ public sealed class LedLadderMeter : Control
     /// <summary>The width of each LED column (4 on a track, 8 on Master).</summary>
     public static readonly StyledProperty<double> ColumnWidthProperty = AvaloniaProperty.Register<LedLadderMeter, double>(nameof(ColumnWidth), 4);
 
+    /// <summary>Which gradient the cells are coloured from: the mixer's (the default) or a device chain's.</summary>
+    public static readonly StyledProperty<MeterGradientTarget> GradientTargetProperty =
+        AvaloniaProperty.Register<LedLadderMeter, MeterGradientTarget>(nameof(GradientTarget), MeterGradientTarget.Mixer);
+
     private const double Cell = 3;
     private const double Pitch = 4;
     private const double ClipHeight = 4;
@@ -53,6 +57,8 @@ public sealed class LedLadderMeter : Control
     private IBrush[] _unlit = [];
     private IBrush[] _held = [];
     private int _version = -1;
+    private MeterGradient? _coloursFrom;
+    private MeterGradient? _subscribed;
 
     // Levels fed through Show (the Device View's meters), as plain fields: a styled property allocates on every change, and
     // these change on every meter tick. While _fed, Render reads these instead of the per-channel properties.
@@ -70,6 +76,11 @@ public sealed class LedLadderMeter : Control
     }
 
     public MixerMeterMode Mode { get => GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
+
+    public MeterGradientTarget GradientTarget { get => GetValue(GradientTargetProperty); set => SetValue(GradientTargetProperty, value); }
+
+    /// <summary>The gradient the cells are coloured from now.</summary>
+    internal MeterGradient Gradient => MeterGradient.For(GradientTarget);
 
     public double Value { get => GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
 
@@ -198,7 +209,7 @@ public sealed class LedLadderMeter : Control
             var lit = i <= topLit;
             if (lit && (i == topLit || i % 3 == 0))
             {
-                Glow.Rect(context, cell, 0.5, MeterGradient.GlowBrushes(_colors[i], i == topLit ? TopCellTier : CellTier));
+                Glow.Rect(context, cell, 0.5, _coloursFrom!.GlowBrushes(_colors[i], i == topLit ? TopCellTier : CellTier));
             }
 
             context.FillRectangle(lit ? _lit[i] : i == held ? _held[i] : _unlit[i], cell);
@@ -211,36 +222,75 @@ public sealed class LedLadderMeter : Control
     /// </summary>
     private void EnsureColors(int count)
     {
-        if (_colors.Length == count && _version == MeterGradient.Version)
+        var gradient = Gradient;
+        if (_colors.Length == count && ReferenceEquals(_coloursFrom, gradient) && _version == gradient.Version)
         {
             return;
         }
 
-        _version = MeterGradient.Version;
+        _coloursFrom = gradient;
+        _version = gradient.Version;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
         _held = new IBrush[count];
         for (var i = 0; i < count; i++)
         {
-            var color = MeterGradient.At((i + 0.5) / count);
+            var color = gradient.At((i + 0.5) / count);
             _colors[i] = color;
-            _lit[i] = MeterGradient.Brush(color);
-            _unlit[i] = MeterGradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
-            _held[i] = MeterGradient.Brush(ConsolePaint.Lighter(color, 0.3));
+            _lit[i] = gradient.Brush(color);
+            _unlit[i] = gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
+            _held[i] = gradient.Brush(ConsolePaint.Lighter(color, 0.3));
         }
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        MeterGradient.Changed += OnGradientChanged;
+        Subscribe(Gradient);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        MeterGradient.Changed -= OnGradientChanged;
+        Subscribe(null);
         base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == GradientTargetProperty)
+        {
+            if (_subscribed is not null)
+            {
+                Subscribe(Gradient);
+            }
+
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>The gradient whose changes redraw this meter (null while detached), for tests.</summary>
+    internal MeterGradient? SubscribedTo => _subscribed;
+
+    // Listens to one gradient at a time: the target's while attached, none while detached.
+    private void Subscribe(MeterGradient? gradient)
+    {
+        if (ReferenceEquals(_subscribed, gradient))
+        {
+            return;
+        }
+
+        if (_subscribed is not null)
+        {
+            _subscribed.Changed -= OnGradientChanged;
+        }
+
+        _subscribed = gradient;
+        if (gradient is not null)
+        {
+            gradient.Changed += OnGradientChanged;
+        }
     }
 
     private void OnGradientChanged(object? sender, EventArgs e) => InvalidateVisual();
