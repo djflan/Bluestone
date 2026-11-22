@@ -559,9 +559,11 @@ placement (docked, collapsed, detached); the desktop layer reflects it and opens
 ADR 0051 specifies Settings as a bounded, right-anchored, non-dockable popover over the visible workspace, not a
 `WorkspaceViewKind`. `SettingsViewModel` remains independent of its desktop host; the existing Audio, Plugins, and
 Display pages, their entry points, and their apply/save behavior are retained. The pages and picker must remain
-usable at compact and normal window sizes. Done, Escape, or click-away closes the popover; opening or closing
-Settings alone does not change project or workspace state. Closing it with a nested color-picker preview pending
-cancels the preview. The popover and its dismissal lifecycle are being implemented and need verification.
+usable at compact and normal window sizes. Done, Escape, or focus or a click outside it closes the popover;
+opening or closing Settings alone does not change project or workspace state. Closing it with a nested
+color-picker preview pending cancels the preview. Project and workspace commands close it before they act.
+Headless UI tests cover the popover and its dismissal and focus behavior at 1040 × 640 and 1440 × 900; the
+running app, HiDPI, and screen readers are not yet verified.
 
 View state and model state are kept apart. A `DeviceViewViewModel` holds only what it shows (following the
 selection, or locked to a track or rack by ID) and its presentation (collapsed devices, selection, scroll); the
@@ -590,10 +592,12 @@ size, LED shape, and position settings were removed, and older settings files st
 
 `Controls/LedMotion` is a shared UI-thread frame clock with one loop per window, driven by
 `TopLevel.RequestAnimationFrame` only while LEDs are changing. Controls retain brightness state and use cached
-brush/glow steps; no animation work is added to the audio or MIDI real-time paths. `LedFade` and `LedWarmup`
-default on and are independently switchable. Both are effectively off under macOS Reduce motion
+brush/glow steps; no animation work is added to the audio or MIDI real-time paths. The LED fade and warm-up
+settings (`DisplayViewModel.LedFade`, `LedWarmup`) default on and are independently switchable; the `Controls/LedFade`
+panel applies the fade to transport keys. Both settings are effectively off under macOS Reduce motion
 (`NSWorkspace`) or the Windows client-area animation preference, refreshed at startup and main-window activation;
-Linux uses only the application switches.
+if that preference can't be read, `SystemMotion` reduces motion and traces one warning. Linux uses only the
+application switches.
 Headless manual-clock tests cover transitions and settling; ADR 0043 records the measured allocation scope
 and the unverified compositor and platform-preference paths.
 

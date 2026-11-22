@@ -319,11 +319,15 @@ public sealed class LedLadderMeter : Control
                     : gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * lit)));
                 _heldSteps[(i * Stride) + step] = step == LedLevels.Steps ? _held[i] : gradient.Brush(Palette.Alpha(heldColor, lit));
 
-                // The glow at each step, for a top or an ordinary cell: built now so a first fade allocates nothing.
+                // The glow at each step, for a top cell and for an ordinary cell that glows (every third): built now so a
+                // first fade allocates nothing.
                 if (step > 0)
                 {
                     _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? TopCellTier : TopCellTier * step / LedLevels.Steps);
-                    _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? CellTier : CellTier * step / LedLevels.Steps);
+                    if (i % 3 == 0)
+                    {
+                        _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? CellTier : CellTier * step / LedLevels.Steps);
+                    }
                 }
             }
         }

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 
 namespace Bluestone.Desktop.Controls;
@@ -94,6 +95,8 @@ public sealed class LedFade : Panel, ILedAnimator
             var lit = Children[1];
             lit.Opacity = step / (double)LedLevels.Steps;
             lit.IsVisible = step > 0;
+            // While it fades over the dark face, the lit copy is decoration: screen readers find only the dark one.
+            lit.SetValue(AutomationProperties.AccessibilityViewProperty, target ? AccessibilityView.Content : AccessibilityView.Raw);
         }
     }
 }

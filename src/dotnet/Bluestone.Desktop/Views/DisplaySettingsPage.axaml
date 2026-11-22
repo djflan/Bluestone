@@ -15,24 +15,12 @@
     <Style Selector="controls|TextKey.action">
       <Setter Property="Height" Value="{StaticResource Height.Control}" />
     </Style>
-    <Style Selector="controls|TextKey.switch">
-      <Setter Property="Width" Value="104" />
-      <Setter Property="Height" Value="{StaticResource Height.Control}" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
     <Style Selector="TextBlock.readout">
       <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
       <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
       <Setter Property="Foreground" Value="{StaticResource Accent}" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="MinWidth" Value="40" />
-    </Style>
-    <Style Selector="TextBlock.switchDetail">
-      <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
-      <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="TextWrapping" Value="Wrap" />
-      <Setter Property="Margin" Value="12,0,0,0" />
     </Style>
     <Style Selector="Border.rule">
       <Setter Property="Height" Value="1" />
@@ -229,16 +217,12 @@
 
       <StackPanel Classes="settingsGroup">
         <TextBlock Classes="overline" Text="LED MOTION" />
-        <Grid ColumnDefinitions="Auto,*" Classes="settingRow">
-          <controls:TextKey x:Name="LedFadeKey" Classes="switch" Text="LED fade" IsChecked="{Binding LedFade}" AutomationProperties.Name="LED fade" />
-          <TextBlock Grid.Column="1" Classes="switchDetail" Text="Lit LEDs fall away smoothly instead of switching off." />
-        </Grid>
-        <Grid ColumnDefinitions="Auto,*" Classes="settingRow">
-          <controls:TextKey x:Name="LedWarmupKey" Classes="switch" Text="LED warm-up" IsChecked="{Binding LedWarmup}" AutomationProperties.Name="LED warm-up" />
-          <TextBlock Grid.Column="1" Classes="switchDetail" Text="LEDs ease on as they light, like a lamp warming." />
-        </Grid>
+        <CheckBox x:Name="LedFadeCheck" Classes="settingCheck" Content="LED fade: lit LEDs fall away smoothly instead of switching off" IsChecked="{Binding LedFade}"
+                  AutomationProperties.Name="LED fade" />
+        <CheckBox x:Name="LedWarmupCheck" Classes="settingCheck" Content="LED warm-up: LEDs ease on as they light, like a lamp warming" IsChecked="{Binding LedWarmup}"
+                  AutomationProperties.Name="LED warm-up" />
         <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                   Text="Both are ignored while the system's Reduce motion setting is on; LEDs then switch instantly." />
+                   Text="Both are ignored while the system's Reduce motion setting is on, or when Bluestone can't read it; LEDs then switch instantly." />
       </StackPanel>
 
       <StackPanel Classes="settingsGroup">

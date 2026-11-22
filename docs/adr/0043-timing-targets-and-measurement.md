@@ -271,5 +271,7 @@ contract is unchanged.
 
 A follow-up test, `TheLadder_AfterAGradientChange_FadesAndWarmsUpWithoutAllocating`, measures one pass (not a
 steady-state best) through the first fade and warm-up after a gradient change. Before the ladder prebuilt its
-intermediate glow and clip-lamp steps, that pass allocated about 90 KB in managed draw code; with them prebuilt when
-the colors are rebuilt, it reports 0 B for both ticks and draws. The same manual-clock, headless limits apply.
+intermediate glow steps, that pass allocated 90,312 bytes in managed draw code; with them prebuilt when the colors are
+rebuilt, it reports 0 B for both ticks and draws. The clip lamp's step brushes are app-lifetime caches warmed by the
+test's first pass, so the test cannot fail on them; only the glow prebuild is proven. The same manual-clock, headless
+limits apply.

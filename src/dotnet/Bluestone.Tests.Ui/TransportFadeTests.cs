@@ -44,12 +44,14 @@ public sealed class TransportFadeTests
         key.IsChecked = true;
         AssertLit(fade);
         Assert.False(fade.Lamp.IsRunning);
+        Assert.Equal(AccessibilityView.Content, AutomationProperties.GetAccessibilityView(fade.Children[1]));
 
         // Off: the dark glyph shows at once, the lit one over it fading, eased: half the time leaves a quarter.
         key.IsChecked = false;
         Assert.True(fade.Children[0].IsVisible);
         Assert.Equal(1, fade.Children[1].Opacity);
         Assert.True(fade.Lamp.IsRunning);
+        Assert.Equal(AccessibilityView.Raw, AutomationProperties.GetAccessibilityView(fade.Children[1]));
         clock.Frame(1030);
         Assert.Equal(0.25, fade.Lamp.Level(0), 6);
         Assert.Equal(0.25, fade.Children[1].Opacity);

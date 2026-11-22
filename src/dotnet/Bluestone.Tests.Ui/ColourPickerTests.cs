@@ -339,6 +339,36 @@ public sealed class ColourPickerTests : IDisposable
     });
 
     [Fact]
+    public Task MenuTextEditing_InThePickersHexField_KeepsSettingsAndThePreviewOpen() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync(nativeMenuBar: true);
+        var (_, _, display, page) = Open(app, 1440);
+        try
+        {
+            var selectAll = NativeMenu.GetMenu(app.Window)!.Items.OfType<NativeMenuItem>().Single(i => i.Header == "Edit")
+                .Menu!.Items.OfType<NativeMenuItem>().Single(i => i.Header == "Select All");
+            app.Click(StageTile(page, "Device chain"));
+            app.Click(AppUnderTest.Within<Button>(page, b => b.Name == "StopChip"));
+            var popup = page.ColourPicker;
+            app.Click(PickerSwatch(popup, "#E3C345"));
+            var hex = popup.Picker.FindControl<TextBox>("HexBox")!;
+            Assert.True(hex.Focus());
+            app.Settle();
+
+            selectAll.Command!.Execute(null);
+            app.Settle();
+
+            Assert.True(app.Window.Settings.IsOpen);
+            Assert.True(popup.IsOpen);
+            Assert.True(display.Chain.IsPreviewing);
+        }
+        finally
+        {
+            Reset(display);
+        }
+    });
+
+    [Fact]
     public Task CancelledWindowClose_KeepsThePreviewUntilTheWindowReallyCloses() => HeadlessApp.RunAsync(async () =>
     {
         var dialogs = new ClosePrompt();

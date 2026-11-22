@@ -334,8 +334,9 @@
   <Thickness x:Key="Inset.Panel">8</Thickness>
   <Thickness x:Key="Inset.Section">10,8</Thickness>
   <Thickness x:Key="Inset.Row">8,3</Thickness>
-  <Thickness x:Key="Inset.SettingsPopover">0,8,16,16</Thickness>
-  <Thickness x:Key="Inset.SettingsPointer">0,-6,36,0</Thickness>
+  <!-- The popover stops one Space.M clear of the right rail (Width.Rail 30 + 8); the pointer sits centered under the gear. -->
+  <Thickness x:Key="Inset.SettingsPopover">0,8,38,16</Thickness>
+  <Thickness x:Key="Inset.SettingsPointer">0,-6,14,0</Thickness>
   <Thickness x:Key="Inset.MixerTop">0,4,0,0</Thickness>
   <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>
   <Thickness x:Key="Inset.MixerRole">4,1</Thickness>

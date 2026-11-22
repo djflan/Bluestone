@@ -51,27 +51,17 @@ public partial class MainWindow
         };
         ApplySettingsVisibility();
 
-        // Dismissing a nested popup must not swallow a click on the workspace or the Settings gear.
-        SettingsHost.LayoutUpdated += (_, _) =>
+        // Dismissing a nested popup must not swallow a click on the workspace or the Settings gear. Popups are set up when
+        // Settings opens or changes page and before input inside it can open one, not on every layout pass.
+        Settings.PropertyChanged += (_, e) =>
         {
-            if (!Settings.IsOpen)
+            if (e.PropertyName is nameof(SettingsViewModel.IsOpen) or nameof(SettingsViewModel.SelectedCategory))
             {
-                return;
-            }
-
-            foreach (var popup in SettingsHost.GetVisualDescendants().OfType<Popup>())
-            {
-                if (!popup.OverlayDismissEventPassThrough)
-                {
-                    popup.SetCurrentValue(Popup.OverlayDismissEventPassThroughProperty, true);
-                }
-
-                if (!ReferenceEquals(popup.OverlayInputPassThroughElement, SettingsButton))
-                {
-                    popup.SetCurrentValue(Popup.OverlayInputPassThroughElementProperty, SettingsButton);
-                }
+                Dispatcher.UIThread.Post(ConfigureSettingsPopups, DispatcherPriority.Loaded);
             }
         };
+        SettingsHost.AddHandler(PointerPressedEvent, (_, _) => ConfigureSettingsPopups(), RoutingStrategies.Tunnel, handledEventsToo: true);
+        SettingsHost.AddHandler(KeyDownEvent, (_, _) => ConfigureSettingsPopups(), RoutingStrategies.Tunnel, handledEventsToo: true);
 
         // Workspace commands close Settings before acting on the workspace or project.
         WorkspaceTools.AddHandler(Button.ClickEvent, (_, _) =>
@@ -94,6 +84,14 @@ public partial class MainWindow
             if (inSettings && !inPopup && OpenSettingsPicker() is { } picker)
             {
                 picker.Dismiss();
+                e.Handled = true;
+                return;
+            }
+
+            // A click elsewhere in Settings only closes an open drop-down, as it does the picker; it presses nothing under it.
+            if (inSettings && !inPopup && OpenSettingsPopup() is { } dropDown)
+            {
+                dropDown.Close();
                 e.Handled = true;
                 return;
             }
@@ -145,6 +143,30 @@ public partial class MainWindow
 
     private ColourPickerPopup? OpenSettingsPicker() =>
         SettingsHost.GetVisualDescendants().OfType<ColourPickerPopup>().FirstOrDefault(p => p.IsOpen);
+
+    private Popup? OpenSettingsPopup() =>
+        SettingsHost.GetVisualDescendants().OfType<Popup>().FirstOrDefault(p => p.IsOpen);
+
+    private void ConfigureSettingsPopups()
+    {
+        if (!Settings.IsOpen)
+        {
+            return;
+        }
+
+        foreach (var popup in SettingsHost.GetVisualDescendants().OfType<Popup>())
+        {
+            if (!popup.OverlayDismissEventPassThrough)
+            {
+                popup.SetCurrentValue(Popup.OverlayDismissEventPassThroughProperty, true);
+            }
+
+            if (!ReferenceEquals(popup.OverlayInputPassThroughElement, SettingsButton))
+            {
+                popup.SetCurrentValue(Popup.OverlayInputPassThroughElementProperty, SettingsButton);
+            }
+        }
+    }
 
     private static bool IsWithin(Visual source, Visual container) =>
         ReferenceEquals(source, container) || source.GetVisualAncestors().Contains(container);
@@ -231,7 +253,7 @@ public partial class MainWindow
     internal ICommand InWorkspaceUnlessEditingText(ICommand command) =>
         new ReturningCommand(
             command,
-            () => Settings.IsOpen && !(FocusManager?.GetFocusedElement() is TextBox field && field.GetVisualAncestors().Contains(SettingsHost)),
+            () => Settings.IsOpen && !(FocusManager?.GetFocusedElement() is TextBox field && IsInSettings(field)),
             Settings.Close);
 
     private void OnSettingsButtonClick(object? sender, RoutedEventArgs e)

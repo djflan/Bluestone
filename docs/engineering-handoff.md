@@ -187,9 +187,14 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
   the Out meter's ladder draw reported 0 managed B; animated gain draws matched their at-rest allocation baseline.
   Key and MIDI offscreen draws allocated backend bytes. This does not establish zero allocation for all rendering,
   or verify the real frame-request/compositor path, hardware timing, or macOS/Windows system-preference reads
-  (ADR 0043). The ladder's first fade after a gradient change now also measures 0 managed B (its glow and clip-lamp
-  steps are prebuilt with its colors). If a system reduce-motion read fails, LEDs reduce motion and a warning is traced
+  (ADR 0043). The ladder's first fade after a gradient change now also measures 0 managed B (its glow steps are
+  prebuilt with its colors; the clip lamp's cached step brushes are warmed by the test's first pass, so that part is
+  not proven). If a system reduce-motion read fails, LEDs reduce motion and a warning is traced
   once; that failure path is not exercised by a test.
+- The Settings popover, color picker, and toolbar selected states on `4dcb9d1` were verified headless only:
+  Avalonia UI tests plus real-control renders at 1040 and 1440 wide. The live app was not captured (macOS
+  Accessibility and Screen Recording permissions were missing), and the user waived final UI approval for this
+  change. Not checked on HiDPI or GPU rendering or with a screen reader.
 
 ## 7. Unresolved implementation backlog
 
@@ -262,3 +267,18 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     motion and Windows client-area animation preference reads. These preferences refresh at startup and
     main-window activation, not through continuous system-change notifications. Current allocation evidence is manual-clock,
     headless/offscreen only, with the limits recorded in §6 and ADR 0043.
+11. **Indicator colors and Settings popover (ADR 0051), not yet verified:** a running-app review of the popover,
+    color picker, and toolbar selected states at compact and normal sizes, on HiDPI, and with a screen reader; a
+    test for the `SystemMotion` failure path (reduce motion and trace once); and a test that a display-settings
+    save failure reaches Messages (`MainViewModel` → `AddMessage`). Only the `SaveFailed` event is tested.
+12. **Settings popover and LED follow-ups (from the ADR 0051 sign-offs), deferred:**
+    - Product question: Space and the other single-key transport shortcuts do nothing while Settings is open (by
+      design since the panel existed); decide whether transport keys should pass through.
+    - Enter does not activate some focused buttons (already on `main`); Tab leaving Settings closes it without an
+      announcement; opening and closing Settings moves focus as if by Tab, so focus rings show after mouse use.
+    - The color picker can stay open without keyboard focus, so Escape does not close it until it is clicked; at
+      wide sizes it overhangs the popover; its swatches show no selected state and are flatter than the picked P1.
+    - The Display page icon matches Audio's; the "0%" readout uses the accent color; the Play glow is clipped on the
+      left (already on `main`).
+    - Tests still wanted: a `LedFade` detach or retarget mid-fade, the picker consuming its own clicks, and the
+      search-box focus fallback.

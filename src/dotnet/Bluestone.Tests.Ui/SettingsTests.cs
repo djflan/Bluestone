@@ -185,9 +185,9 @@ public sealed class SettingsTests : IDisposable
             Assert.Same(display.Mixer, editor.DataContext);
             Assert.True(AppUnderTest.Within<RadioButton>(page, r => Avalonia.Automation.AutomationProperties.GetName(r) == "Edit mixer meter colors").IsChecked);
 
-            // LED fade and warm-up: each a switch on the page that turns its setting off and saves it.
-            var fade = AppUnderTest.Within<TextKey>(page, k => k.Name == "LedFadeKey");
-            var warmup = AppUnderTest.Within<TextKey>(page, k => k.Name == "LedWarmupKey");
+            // LED fade and warm-up: each a check box on the page that turns its setting off and saves it.
+            var fade = AppUnderTest.Within<CheckBox>(page, k => k.Name == "LedFadeCheck");
+            var warmup = AppUnderTest.Within<CheckBox>(page, k => k.Name == "LedWarmupCheck");
             Assert.Equal(("LED fade", "LED warm-up"), (Avalonia.Automation.AutomationProperties.GetName(fade), Avalonia.Automation.AutomationProperties.GetName(warmup)));
             Assert.True(fade.IsChecked == true && warmup.IsChecked == true);
             app.Click(fade);
@@ -413,7 +413,11 @@ public sealed class SettingsTests : IDisposable
         Assert.InRange(hostBounds.Width, 500, 800);
         Assert.InRange(hostBounds.Height, 200, 560);
         Assert.True(hostBounds.Left > workspaceBounds.Left + 100);
-        Assert.InRange(workspaceBounds.Right - hostBounds.Right, 12, 24);
+        // The popover stops clear of the right rail, so the rotated Browser label is never covered.
+        var rail = app.Find<Border>("RightRail");
+        Assert.True(rail.IsEffectivelyVisible);
+        var railBounds = new Rect(app.InWindow(rail, default), rail.Bounds.Size);
+        Assert.InRange(railBounds.Left - hostBounds.Right, 6, 12);
         Assert.InRange(hostBounds.Top - workspaceBounds.Top, 4, 12);
         Assert.True(hostBounds.Bottom <= workspaceBounds.Bottom - 8);
         var pointer = AppUnderTest.Within<Avalonia.Controls.Shapes.Path>(host, p => p.Name == "SettingsPointer");
@@ -652,6 +656,30 @@ public sealed class SettingsTests : IDisposable
         {
             Assert.Same(tempo, app.Window.FocusManager?.GetFocusedElement());
         }
+    });
+
+    [Fact]
+    public Task AClickElsewhereInSettings_WithADropDownOpen_OnlyClosesTheDropDown() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        app.Window.Height = 900;
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null);
+        app.Window.AttachAudio(Audio(app, audio));
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var dropdown = AppUnderTest.ComboNamed(page, "Buffer size");
+        app.Click(dropdown);
+        Assert.True(dropdown.IsDropDownOpen);
+
+        var done = app.Find<Button>("CloseSettingsButton");
+        var point = app.InWindow(done, new Point(done.Bounds.Width / 2, done.Bounds.Height / 2));
+        app.Window.MouseDown(point, MouseButton.Left);
+        app.Window.MouseUp(point, MouseButton.Left);
+        app.Settle();
+
+        Assert.False(dropdown.IsDropDownOpen);
+        Assert.True(app.Window.Settings.IsOpen);
     });
 
     [Theory]
