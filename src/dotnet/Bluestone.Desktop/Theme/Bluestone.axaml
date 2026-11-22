@@ -634,7 +634,7 @@
     <Setter Property="Padding" Value="3" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
-  <!-- A tool in a gutter: the glyph alone; on, it sits on a small aqua-filled square with dark ink. -->
+  <!-- A tool in a gutter keeps its full hit target. Toggle faces are narrower, leaving a visible gap between them. -->
   <Style Selector="controls|GutterPanel.toolGutter :is(Button).tool">
     <Setter Property="Width" Value="28" />
     <Setter Property="Height" Value="22" />
@@ -643,12 +643,41 @@
   <Style Selector="controls|GutterPanel.toolGutter :is(Button).tool:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="Transparent" />
   </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool">
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool /template/ ContentPresenter">
+    <Setter Property="Width" Value="{StaticResource Height.Control}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
   <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Accent}" />
-    <Setter Property="BoxShadow" Value="0 0 6 0 #473CCBF4" />
+    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
   </Style>
   <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked">
-    <Setter Property="Foreground" Value="{StaticResource Text.OnAccent}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Selected}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:pressed /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool:checked:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Pressed}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:disabled">
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:disabled /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:checked:disabled /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
   </Style>
   <Style Selector="controls|GutterPanel.transport > StackPanel > :is(Button)">
     <Setter Property="Width" Value="44" />
@@ -1367,6 +1396,12 @@
   <Style Selector=":is(Button):focus-visible /template/ ContentPresenter, ToggleButton:focus-visible /template/ ContentPresenter">
     <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
     <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <!-- A checked toolbar toggle already has an aqua rim, so keyboard focus needs a distinct, thicker ring. -->
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:focus-visible /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool:checked:focus-visible /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
+    <Setter Property="BorderThickness" Value="2" />
   </Style>
   <!-- ============================================================================================================
        Workspace (ADR 0036): rails, dock headers, resize handles.
