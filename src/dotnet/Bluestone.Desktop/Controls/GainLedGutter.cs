@@ -40,6 +40,9 @@ public sealed class GainLedGutter : Control
     private IBrush[] _unlit = [];
     private IImmutableSolidColorBrush[][] _glows = [];
     private IBrush[] _steps = [];
+    private IImmutableSolidColorBrush[][] _stepGlows = [];
+    private readonly IPen[] _stepRims = new IPen[Stride];
+    private readonly IBrush[] _stepHighlights = new IBrush[Stride];
     private int _version = -1;
     private readonly LedLevels _leds;
 
@@ -114,8 +117,8 @@ public sealed class GainLedGutter : Control
         var now = LedMotion.Now;
         var radius = LedRadius;
         var fraction = Value > MixerRail.GainFloor ? ConsoleRail.Position(Value) : -1;
-        var highlight = ConsolePaint.Brush(ConsolePaint.Alpha(ConsolePaint.White, 0.35));
-        var rim = ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.5), 0.6);
+        var highlight = _stepHighlights[LedLevels.Steps];
+        var rim = _stepRims[0];
         using (context.PushOpacity(IsEnabled ? 1 : 0.5))
         {
             for (var k = 0; k < count; k++)
@@ -136,11 +139,10 @@ public sealed class GainLedGutter : Control
                 }
                 else
                 {
-                    // Between dark and lit: glow, fill, rim, and dot each part of the way, from cached steps.
-                    var lit = step / (double)LedLevels.Steps;
-                    Glow.Ellipse(context, centre, radius, MeterGradient.Gain.GlowBrushes(_colors[k], LitTier * lit));
-                    context.DrawEllipse(_steps[(k * Stride) + step], ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.5 * (1 - lit)), 0.6), centre, radius, radius);
-                    context.DrawEllipse(ConsolePaint.Brush(ConsolePaint.Alpha(ConsolePaint.White, 0.35 * lit)), null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
+                    // Between dark and lit: glow, fill, rim, and dot each part of the way, all prebuilt in EnsureColors.
+                    Glow.Ellipse(context, centre, radius, _stepGlows[(k * Stride) + step]);
+                    context.DrawEllipse(_steps[(k * Stride) + step], _stepRims[step], centre, radius, radius);
+                    context.DrawEllipse(_stepHighlights[step], null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
                 }
             }
         }
@@ -164,12 +166,23 @@ public sealed class GainLedGutter : Control
     }
 
     /// <summary>
-    /// The gain gradient sampled once per LED, at its fraction of the travel, rebuilt only when the count or the gradient
-    /// changes. The brushes come from <see cref="MeterGradient.Gain"/>'s caches, which empty on each change.
+    /// The gain gradient sampled once per LED, at its fraction of the travel, with every brush, glow and pen a step of the
+    /// fade or warm-up draws, rebuilt only when the count or the gradient changes, so a draw part-way allocates nothing more than one at rest. The brushes
+    /// come from <see cref="MeterGradient.Gain"/>'s caches, which empty on each change.
     /// </summary>
     private void EnsureColors(int count)
     {
         var gradient = MeterGradient.Gain;
+        if (_stepRims[0] is null)
+        {
+            for (var step = 0; step <= LedLevels.Steps; step++)
+            {
+                var lit = step / (double)LedLevels.Steps;
+                _stepRims[step] = ConsolePaint.Pen(ConsolePaint.Alpha(ConsolePaint.Black, 0.5 * (1 - lit)), 0.6);
+                _stepHighlights[step] = ConsolePaint.Brush(ConsolePaint.Alpha(ConsolePaint.White, 0.35 * lit));
+            }
+        }
+
         if (_colors.Length == count && _version == gradient.Version)
         {
             return;
@@ -181,6 +194,7 @@ public sealed class GainLedGutter : Control
         _unlit = new IBrush[count];
         _glows = new IImmutableSolidColorBrush[count][];
         _steps = new IBrush[count * Stride];
+        _stepGlows = new IImmutableSolidColorBrush[count * Stride][];
         for (var k = 0; k < count; k++)
         {
             var color = Swatch(k / (double)(count - 1));
@@ -191,6 +205,7 @@ public sealed class GainLedGutter : Control
             for (var step = 0; step <= LedLevels.Steps; step++)
             {
                 _steps[(k * Stride) + step] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * step / LedLevels.Steps)));
+                _stepGlows[(k * Stride) + step] = gradient.GlowBrushes(color, LitTier * step / LedLevels.Steps);
             }
         }
     }

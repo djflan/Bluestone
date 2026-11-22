@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Bluestone.Desktop.Controls;
 
 namespace Bluestone.Tests.Ui;
@@ -10,17 +11,17 @@ namespace Bluestone.Tests.Ui;
 internal sealed class ManualLedClock : IDisposable
 {
     private readonly Func<double> _clock = LedMotion.Clock;
-    private readonly Action<Avalonia.Controls.TopLevel, Action<TimeSpan>> _request = LedMotion.RequestFrame;
+    private readonly Action<TopLevel, Action<TimeSpan>> _request = LedMotion.RequestFrame;
     private readonly bool _fade = LedMotion.Fade;
     private readonly bool _warmup = LedMotion.Warmup;
     private readonly bool _reduce = LedMotion.ReduceMotion;
-    private List<Action<TimeSpan>> _due = [];
-    private List<Action<TimeSpan>> _running = [];
+    private List<(TopLevel Top, Action<TimeSpan> Tick)> _due = [];
+    private List<(TopLevel Top, Action<TimeSpan> Tick)> _running = [];
 
     public ManualLedClock()
     {
         LedMotion.Clock = () => Time;
-        LedMotion.RequestFrame = (_, tick) => _due.Add(tick);
+        LedMotion.RequestFrame = (top, tick) => _due.Add((top, tick));
         LedMotion.Fade = true;
         LedMotion.Warmup = true;
         LedMotion.ReduceMotion = false;
@@ -31,14 +32,36 @@ internal sealed class ManualLedClock : IDisposable
     /// <summary>How many frames have been asked for and not yet run.</summary>
     public int Pending => _due.Count;
 
-    /// <summary>Moves the time to <paramref name="at"/> and runs the frames asked for until now.</summary>
-    public void Frame(double at)
+    /// <summary>How many frames <paramref name="top"/> has asked for and not yet run.</summary>
+    public int PendingFor(TopLevel top)
+    {
+        var count = 0;
+        foreach (var (asker, _) in _due)
+        {
+            count += asker == top ? 1 : 0;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Moves the time to <paramref name="at"/> and runs the frames asked for until now: every window's, or only
+    /// <paramref name="only"/>'s (the others stay pending, as a window that has closed or is not drawing gets no frames).
+    /// </summary>
+    public void Frame(double at, TopLevel? only = null)
     {
         Time = at;
         (_due, _running) = (_running, _due);
-        foreach (var tick in _running)
+        foreach (var frame in _running)
         {
-            tick(TimeSpan.Zero);
+            if (only is null || frame.Top == only)
+            {
+                frame.Tick(TimeSpan.Zero);
+            }
+            else
+            {
+                _due.Add(frame);
+            }
         }
 
         _running.Clear();

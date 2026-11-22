@@ -166,7 +166,7 @@ public sealed class ChainMeterCostTests
 
     // As Bluestone.Tests.Unit's Allocations.InSteadyState: the last of up to ten rounds, stopping at the first from the third
     // on that allocates nothing, so one-time runtime work (a tier-up) cannot fail a path that does not allocate.
-    private static long InSteadyState(Action step, int steps)
+    internal static long InSteadyState(Action step, int steps)
     {
         long allocated = 0;
         for (var round = 0; round < 10; round++)
@@ -187,7 +187,7 @@ public sealed class ChainMeterCostTests
         return allocated;
     }
 
-    private static void Report(string message) => TestContext.Current.TestOutputHelper?.WriteLine(message);
+    internal static void Report(string message) => TestContext.Current.TestOutputHelper?.WriteLine(message);
 
     private static MeterReading Reading(double rms, double peak) => new(Linear(peak), Linear(peak), Linear(rms), Linear(rms));
 

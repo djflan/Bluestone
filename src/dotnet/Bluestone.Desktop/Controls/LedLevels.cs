@@ -7,9 +7,13 @@ namespace Bluestone.Desktop.Controls;
 /// How lit each of a control's LEDs is, from 0 (dark) to 1 (lit), moving toward its target on <see cref="LedMotion"/>'s
 /// clock: going dark it fades, eased (fast at first, then a short tail), over <see cref="FadeMs"/>; going lit it warms up
 /// in a linear ramp over <see cref="WarmupMs"/> (0 lights at once). Levels are quantized to <see cref="Steps"/> steps
-/// so a control can prebuild one brush per step and a frame allocates nothing (ADR 0043). The arrays are reallocated only
-/// when the LED count changes. Changes are instant while the control is in no window, while the matching switch on
-/// <see cref="LedMotion"/> is off, or under Reduce motion. UI thread only.
+/// so a control can prebuild one brush per step: the clock's tick allocates nothing, and a draw part-way allocates nothing
+/// of ours (ADR 0043; the drawing backend's own cost per draw is the control's, at rest or not). The arrays are
+/// reallocated only when the LED count changes. Changes are instant while the control is in no window, while the matching switch on
+/// <see cref="LedMotion"/> is off, or under Reduce motion. Leaving its window settles every LED on its target, so a control
+/// moved to another window mid-fade is never left part-lit, and its next change runs on the new window's clock. Turning
+/// a switch off or Reduce motion on mid-motion shows the end state on the next frame; a change of target mid-motion moves
+/// on from the level shown. UI thread only.
 /// </summary>
 internal sealed class LedLevels : ILedAnimator
 {
@@ -23,6 +27,7 @@ internal sealed class LedLevels : ILedAnimator
     private double[] _since = [];
     private int[] _step = [];
     private bool _running;
+    private TopLevel? _top;
 
     public LedLevels(Visual owner, double fadeMs, double warmupMs = 0, int count = 0)
     {
@@ -30,6 +35,7 @@ internal sealed class LedLevels : ILedAnimator
         FadeMs = fadeMs;
         WarmupMs = warmupMs;
         Resize(count);
+        owner.DetachedFromVisualTree += (_, _) => Settle();
     }
 
     /// <summary>How long a fully lit LED takes to go dark, in milliseconds.</summary>
@@ -81,7 +87,13 @@ internal sealed class LedLevels : ILedAnimator
 
         _target[index] = lit;
         var moves = !instant && (lit ? WarmupMs > 0 && LedMotion.WarmsUp : FadeMs > 0 && LedMotion.Fades);
-        if (moves && (_running || (_running = LedMotion.Start(_owner, this))))
+        if (moves && !_running && LedMotion.Start(_owner, this) is { } top)
+        {
+            _top = top;
+            _running = true;
+        }
+
+        if (moves && _running)
         {
             _from[index] = _level[index];
             _since[index] = now;
@@ -93,9 +105,15 @@ internal sealed class LedLevels : ILedAnimator
         }
     }
 
-    public bool Advance(double now)
+    public bool Advance(TopLevel top, double now)
     {
-        var attached = TopLevel.GetTopLevel(_owner) is not null;
+        if (!_running || top != _top)
+        {
+            // Settled since, or now running in another window: nothing to do here.
+            return false;
+        }
+
+        var attached = TopLevel.GetTopLevel(_owner) == top;
         var fades = attached && LedMotion.Fades;
         var warms = attached && LedMotion.WarmsUp;
         var moving = false;
@@ -138,6 +156,26 @@ internal sealed class LedLevels : ILedAnimator
 
         _running = moving;
         return moving;
+    }
+
+    /// <summary>Puts every LED on its target at once and leaves the clock (the owner left its window).</summary>
+    private void Settle()
+    {
+        _running = false;
+        _top = null;
+        var changed = false;
+        for (var i = 0; i < _level.Length; i++)
+        {
+            var goal = _target[i] ? 1.0 : 0.0;
+            changed |= _level[i] != goal;
+            _level[i] = goal;
+            _step[i] = _target[i] ? Steps : 0;
+        }
+
+        if (changed)
+        {
+            _owner.InvalidateVisual();
+        }
     }
 
     private static int Quantize(double level) => (int)Math.Round(level * Steps, MidpointRounding.AwayFromZero);

@@ -8,8 +8,11 @@ namespace Bluestone.Desktop.Controls;
 /// <summary>Something that moves LEDs on <see cref="LedMotion"/>'s clock.</summary>
 internal interface ILedAnimator
 {
-    /// <summary>Moves to <paramref name="now"/> (milliseconds on <see cref="LedMotion.Clock"/>); false once settled, which stops its frames.</summary>
-    bool Advance(double now);
+    /// <summary>
+    /// Moves to <paramref name="now"/> (milliseconds on <see cref="LedMotion.Clock"/>) on a frame of <paramref name="top"/>;
+    /// false once settled, or when it no longer runs in <paramref name="top"/>, which takes it off that window's clock.
+    /// </summary>
+    bool Advance(TopLevel top, double now);
 }
 
 /// <summary>
@@ -46,14 +49,15 @@ internal static class LedMotion
     public static double Now => Clock();
 
     /// <summary>
-    /// Runs <paramref name="animator"/> on the frames of <paramref name="owner"/>'s window until it settles. False (and
-    /// nothing runs) when the owner is in no window; the caller then shows the end state at once.
+    /// Runs <paramref name="animator"/> on the frames of <paramref name="owner"/>'s window until it settles, and returns that
+    /// window; starting one already running there adds nothing. Null (and nothing runs) when the owner is in no window; the
+    /// caller then shows the end state at once.
     /// </summary>
-    public static bool Start(Visual owner, ILedAnimator animator)
+    public static TopLevel? Start(Visual owner, ILedAnimator animator)
     {
         if (TopLevel.GetTopLevel(owner) is not { } top)
         {
-            return false;
+            return null;
         }
 
         if (!Loops.TryGetValue(top, out var loop))
@@ -63,7 +67,7 @@ internal static class LedMotion
         }
 
         loop.Add(animator);
-        return true;
+        return top;
     }
 
     /// <summary>How many animators are moving in <paramref name="top"/>, and whether it has a frame requested (for tests).</summary>
@@ -92,18 +96,28 @@ internal static class LedMotion
 
         public void Add(ILedAnimator animator)
         {
-            _animators.Add(animator);
+            if (!_animators.Contains(animator))
+            {
+                _animators.Add(animator);
+            }
+
             Schedule();
         }
 
         private void Run()
         {
             Scheduled = false;
+            if (!_top.TryGetTarget(out var top))
+            {
+                _animators.Clear();
+                return;
+            }
+
             var now = Now;
             // Backwards, so a settled animator can take the last one's place.
             for (var i = _animators.Count - 1; i >= 0; i--)
             {
-                if (!_animators[i].Advance(now))
+                if (!_animators[i].Advance(top, now))
                 {
                     _animators[i] = _animators[^1];
                     _animators.RemoveAt(_animators.Count - 1);

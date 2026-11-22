@@ -44,10 +44,12 @@ public sealed class LedMotionTests
             Render(window);
             Assert.Equal(1, cells.Level(loud));
             Assert.Equal(1, clock.Pending);
-            clock.Frame(1000 + (LedLadderMeter.CellFadeMs / 2));
+            clock.Frame(1045);
             Assert.Equal(0.25, cells.Level(loud), 6);
             Assert.Equal(1, cells.Level(quiet));
-            clock.Frame(1000 + LedLadderMeter.CellFadeMs);
+            clock.Frame(1089);
+            Assert.True(cells.Level(loud) > 0, "A meter cell is still fading 89 ms on.");
+            clock.Frame(1090);
             Assert.Equal(0, cells.Level(loud));
 
             // Rising: a dark cell warms up in a straight line.
@@ -55,9 +57,11 @@ public sealed class LedMotionTests
             ladder.Show(-6, -6, double.NaN, double.NaN);
             Render(window);
             Assert.Equal(0, cells.Level(loud));
-            clock.Frame(2000 + (LedLadderMeter.CellWarmupMs / 2));
+            clock.Frame(2010);
             Assert.Equal(0.5, cells.Level(loud), 6);
-            clock.Frame(2000 + LedLadderMeter.CellWarmupMs);
+            clock.Frame(2019);
+            Assert.True(cells.Level(loud) < 1, "A meter cell is still warming up 19 ms on.");
+            clock.Frame(2020);
             Assert.Equal(1, cells.Level(loud));
 
             // The held peak lights at once and fades.
@@ -67,12 +71,14 @@ public sealed class LedMotionTests
             var peak = ladder.Cells(-30, -6, cells.Count).Held;
             Assert.True(peak > quiet, $"Held cell {peak}.");
             Assert.Equal(LedLevels.Steps, held.Step(peak));
-            clock.Frame(3000 + LedLadderMeter.CellFadeMs);
+            clock.Frame(3090);
             clock.Time = 4000;
             ladder.Show(-30, -30, double.NaN, double.NaN);
             Render(window);
-            clock.Frame(4000 + (LedLadderMeter.CellFadeMs / 2));
+            clock.Frame(4045);
             Assert.Equal(0.25, held.Level(peak), 6);
+            clock.Frame(4090);
+            Assert.Equal(0, held.Level(peak));
 
             // The clip lamp lights at once and fades over its own, longer time.
             clock.Time = 5000;
@@ -84,9 +90,11 @@ public sealed class LedMotionTests
             clock.Time = 6000;
             ladder.IsClipped = false;
             Render(window);
-            clock.Frame(6000 + (LedLadderMeter.LampFadeMs / 2));
+            clock.Frame(6070);
             Assert.Equal(0.25, lamps.Level(0), 6);
-            clock.Frame(6000 + LedLadderMeter.LampFadeMs);
+            clock.Frame(6139);
+            Assert.True(lamps.Level(0) > 0, "A clip lamp is still fading 139 ms on.");
+            clock.Frame(6140);
             Assert.Equal(0, lamps.Level(0));
 
             // Settled: the clock has stopped.
@@ -116,17 +124,21 @@ public sealed class LedMotionTests
             clock.Time = 1000;
             gutter.Value = double.NegativeInfinity;
             Render(window);
-            clock.Frame(1000 + (GainLedGutter.FadeMs / 2));
+            clock.Frame(1070);
             Assert.Equal(0.25, leds.Level(0), 6);
-            clock.Frame(1000 + GainLedGutter.FadeMs);
+            clock.Frame(1139);
+            Assert.True(leds.Level(0) > 0, "A gain LED is still fading 139 ms on.");
+            clock.Frame(1140);
             Assert.Equal(0, leds.Level(0));
 
             clock.Time = 2000;
             gutter.Value = 0;
             Render(window);
-            clock.Frame(2000 + (GainLedGutter.WarmupMs / 2));
+            clock.Frame(2010);
             Assert.Equal(0.5, leds.Level(0), 6);
-            clock.Frame(2000 + GainLedGutter.WarmupMs);
+            clock.Frame(2019);
+            Assert.True(leds.Level(0) < 1, "A gain LED is still warming up 19 ms on.");
+            clock.Frame(2020);
             Assert.Equal(1, leds.Level(0));
             Assert.Equal((0, false), LedMotion.StateOf(window));
         }
@@ -150,8 +162,6 @@ public sealed class LedMotionTests
         var window = Show(junction);
         try
         {
-            var release = junction.LampRelease.TotalMilliseconds;
-            Assert.Equal(140, release);
             clock.Time = 1000;
             update.Invoke(signal, [true, null, 1_000_000_000L]);
             Assert.Equal(1, junction.LampGlow);
@@ -159,9 +169,11 @@ public sealed class LedMotionTests
 
             update.Invoke(signal, [false, null, 1_000_000_000L]);
             Assert.Equal(1, junction.LampGlow);
-            clock.Frame(1000 + (release / 2));
+            clock.Frame(1070);
             Assert.Equal(0.25, junction.LampGlow, 6);
-            clock.Frame(1000 + release);
+            clock.Frame(1139);
+            Assert.True(junction.LampGlow > 0, "The MIDI LED is still fading 139 ms on.");
+            clock.Frame(1140);
             Assert.Equal(0, junction.LampGlow);
             Assert.Equal((0, false), LedMotion.StateOf(window));
         }
@@ -317,7 +329,7 @@ public sealed class LedMotionTests
             Assert.Equal(0, second.Lamp.Level(0));
             Assert.Equal((1, true), LedMotion.StateOf(window));
 
-            clock.Frame(1000 + SquareKey.FadeMs);
+            clock.Frame(1060);
             Assert.Equal((0, false), LedMotion.StateOf(window));
             Assert.Equal(0, clock.Pending);
 
@@ -333,22 +345,185 @@ public sealed class LedMotionTests
         return Task.CompletedTask;
     });
 
+    [Fact]
+    public Task AKeyMovedToAnotherWindowMidFade_SettlesThere_AnimatesOnTheNewClock_AndBothClocksSettle() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var key = new SquareKey { Glyph = "M" };
+        var first = new StackPanel { Children = { key } };
+        var second = new StackPanel();
+        var windowA = Show(first);
+        var windowB = Show(second);
+        try
+        {
+            key.IsChecked = true;
+            clock.Time = 1000;
+            key.IsChecked = false;
+            Assert.Equal((1, true), LedMotion.StateOf(windowA));
+
+            // Moved mid-fade: it settles dark on leaving rather than staying part-lit on the first window's clock.
+            first.Children.Remove(key);
+            second.Children.Add(key);
+            Assert.Equal(0, key.Lamp.Level(0));
+            Assert.False(key.Lamp.IsRunning);
+
+            // Its next change fades on the second window's frames alone.
+            clock.Time = 1100;
+            key.IsChecked = true;
+            key.IsChecked = false;
+            Assert.Equal((1, true), LedMotion.StateOf(windowB));
+            Assert.Equal(1, clock.PendingFor(windowB));
+            clock.Frame(1130, windowB);
+            Assert.Equal(0.25, key.Lamp.Level(0), 6);
+            clock.Frame(1160, windowB);
+            Assert.Equal(0, key.Lamp.Level(0));
+            Assert.Equal((0, false), LedMotion.StateOf(windowB));
+
+            // The first window's next frame drops what it held, and nothing more is asked for anywhere.
+            clock.Frame(1200, windowA);
+            Assert.Equal((0, false), LedMotion.StateOf(windowA));
+            Assert.Equal(0, clock.Pending);
+
+            // Out and back into the same window mid-fade: one registration, not two.
+            clock.Time = 2000;
+            key.IsChecked = true;
+            key.IsChecked = false;
+            second.Children.Remove(key);
+            second.Children.Add(key);
+            key.IsChecked = true;
+            key.IsChecked = false;
+            Assert.Equal((1, true), LedMotion.StateOf(windowB));
+            clock.Frame(2060);
+            Assert.Equal(0, key.Lamp.Level(0));
+            Assert.Equal((0, false), LedMotion.StateOf(windowB));
+            Assert.Equal(0, clock.Pending);
+        }
+        finally
+        {
+            windowA.Close();
+            windowB.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task AReversedLed_MovesOnFromTheLevelShown() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var owner = new Border();
+        var window = Show(owner);
+        try
+        {
+            // A 90 ms fade and a 20 ms warm-up, as the meter cells.
+            var leds = new LedLevels(owner, 90, 20, 1);
+
+            // Warming up, then sent dark half-way: the fade starts from 0.5 and still takes 90 ms.
+            clock.Time = 1000;
+            leds.Set(0, true, clock.Time);
+            clock.Frame(1010);
+            Assert.Equal(0.5, leds.Level(0), 6);
+            leds.Set(0, false, clock.Time);
+            clock.Frame(1055);
+            Assert.Equal(0.125, leds.Level(0), 6);
+            clock.Frame(1100);
+            Assert.Equal(0, leds.Level(0));
+
+            // Fading, then lit again at a quarter: the warm-up ramps from 0.25 at the same rate, so it is lit in 15 ms.
+            clock.Time = 2000;
+            leds.Set(0, true, clock.Time, instant: true);
+            leds.Set(0, false, clock.Time);
+            clock.Frame(2045);
+            Assert.Equal(0.25, leds.Level(0), 6);
+            leds.Set(0, true, clock.Time);
+            clock.Frame(2050);
+            Assert.Equal(0.5, leds.Level(0), 6);
+            clock.Frame(2060);
+            Assert.Equal(1, leds.Level(0));
+            Assert.Equal((0, false), LedMotion.StateOf(window));
+            Assert.Equal(0, clock.Pending);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    public static TheoryData<string> Switches => ["Fade", "Warmup", "ReduceMotion"];
+
+    [Theory]
+    [MemberData(nameof(Switches))]
+    public Task ASwitchTurnedOffMidMotion_ShowsTheEndStateOnTheNextFrame(string change) => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var owner = new Border();
+        var window = Show(owner);
+        try
+        {
+            // LED 0 fades, LED 1 warms up.
+            var leds = new LedLevels(owner, 90, 20, 2);
+            clock.Time = 1000;
+            leds.Set(0, true, clock.Time, instant: true);
+            leds.Set(0, false, clock.Time);
+            leds.Set(1, true, clock.Time);
+            clock.Frame(1010);
+            var fading = leds.Level(0);
+            Assert.True(fading is > 0 and < 1, $"Fading at {fading}.");
+            Assert.Equal(0.5, leds.Level(1), 6);
+
+            switch (change)
+            {
+                case "Fade":
+                    LedMotion.Fade = false;
+                    break;
+                case "Warmup":
+                    LedMotion.Warmup = false;
+                    break;
+                default:
+                    LedMotion.ReduceMotion = true;
+                    break;
+            }
+
+            clock.Frame(1011);
+            var fadeStops = change != "Warmup";
+            var warmupStops = change != "Fade";
+            Assert.Equal(fadeStops, leds.Level(0) == 0);
+            Assert.Equal(warmupStops, leds.Level(1) == 1);
+            Assert.Equal(fadeStops && warmupStops ? (0, false) : (1, true), LedMotion.StateOf(window));
+
+            // Whatever was left still runs out on time, and the clock stops.
+            clock.Frame(1100);
+            Assert.Equal(0, leds.Level(0));
+            Assert.Equal(1, leds.Level(1));
+            Assert.Equal((0, false), LedMotion.StateOf(window));
+            Assert.Equal(0, clock.Pending);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
     private static (ToggleButton Key, LedLevels Lamp, double FadeMs) Key(string kind)
     {
         if (kind == nameof(SquareKey))
         {
             var square = new SquareKey { Glyph = "M", OnColor = Palette.Mute };
-            return (square, square.Lamp, SquareKey.FadeMs);
+            return (square, square.Lamp, 60);
         }
 
         if (kind == nameof(TextKey))
         {
             var text = new TextKey { Text = "Auto" };
-            return (text, text.Lamp, TextKey.FadeMs);
+            return (text, text.Lamp, 60);
         }
 
         var power = new PowerGlyph { GlyphSize = 12, Bloom = true, Width = 24, Height = 24 };
-        return (power, power.Lamp, PowerGlyph.FadeMs);
+        return (power, power.Lamp, 60);
     }
 
     private static Window Show(Control control)
