@@ -12,7 +12,8 @@ mockup A for a bounded Settings surface that leaves the workspace visible and us
 
 Settings is a bounded, right-anchored, non-dockable popover in the main window, over the still-visible workspace.
 Done, Escape, or a click-away closes it. Merely opening or closing Settings does not change project or workspace
-state.
+state, except that a field edit still being typed (tempo, time signature, loop, or a name) is committed when focus
+moves into Settings, as it is on any focus change.
 
 This supersedes ADR 0038 only where it places Settings in the workspace's place. The existing Settings content,
 `SettingsViewModel`, and settings apply/save behavior are retained; the view model remains independent of its

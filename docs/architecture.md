@@ -560,7 +560,8 @@ ADR 0051 specifies Settings as a bounded, right-anchored, non-dockable popover o
 `WorkspaceViewKind`. `SettingsViewModel` remains independent of its desktop host; the existing Audio, Plugins, and
 Display pages, their entry points, and their apply/save behavior are retained. The pages and picker must remain
 usable at compact and normal window sizes. Done, Escape, or focus or a click outside it closes the popover;
-opening or closing Settings alone does not change project or workspace state. Closing it with a nested
+opening or closing Settings alone does not change project or workspace state, except that a field edit
+still being typed is committed when focus moves into Settings, as on any focus change. Closing it with a nested
 color-picker preview pending cancels the preview. Project and workspace commands close it before they act.
 Headless UI tests cover the popover and its dismissal and focus behavior at 1040 × 640 and 1440 × 900; the
 running app, HiDPI, and screen readers are not yet verified.
