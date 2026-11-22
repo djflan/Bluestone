@@ -120,6 +120,9 @@
   <SolidColorBrush x:Key="State.Selected" Color="{StaticResource State.SelectedColor}" />
   <SolidColorBrush x:Key="State.SelectedSubtle" Color="{StaticResource State.SelectedSubtleColor}" />
   <SolidColorBrush x:Key="State.Focus" Color="{StaticResource State.FocusColor}" />
+  <!-- Keyboard focus on a control whose "on" state is already an aqua rim (the tool-strip toggles): a neutral ring, so a
+       focused control that is off can never read as on. Elsewhere use State.Focus. -->
+  <SolidColorBrush x:Key="State.FocusOnLit" Color="{StaticResource Text.PrimaryColor}" />
   <SolidColorBrush x:Key="State.Warning" Color="{StaticResource State.WarningColor}" />
   <SolidColorBrush x:Key="State.Error" Color="{StaticResource State.ErrorColor}" />
   <SolidColorBrush x:Key="State.Success" Color="{StaticResource State.SuccessColor}" />
@@ -336,6 +339,8 @@
   <Thickness x:Key="Inset.Row">8,3</Thickness>
   <!-- The popover stops one Space.M clear of the right rail (Width.Rail 30 + 8); the pointer sits centered under the gear. -->
   <Thickness x:Key="Inset.SettingsPopover">0,8,38,16</Thickness>
+  <!-- A focus ring drawn outside its control, clear of the control's own edge (a check box's box); the extra right inset keeps label glyphs off the ring. -->
+  <Thickness x:Key="Inset.FocusRingOutset">-3,-3,-6,-3</Thickness>
   <Thickness x:Key="Inset.SettingsPointer">0,-6,14,0</Thickness>
   <Thickness x:Key="Inset.MixerTop">0,4,0,0</Thickness>
   <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>

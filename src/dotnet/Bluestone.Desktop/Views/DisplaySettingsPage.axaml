@@ -218,9 +218,9 @@
       <StackPanel Classes="settingsGroup">
         <TextBlock Classes="overline" Text="LED MOTION" />
         <CheckBox x:Name="LedFadeCheck" Classes="settingCheck" Content="LED fade: lit LEDs fall away smoothly instead of switching off" IsChecked="{Binding LedFade}"
-                  AutomationProperties.Name="LED fade" />
+                  AutomationProperties.Name="LED fade" AutomationProperties.HelpText="Lit LEDs fall away smoothly instead of switching off." />
         <CheckBox x:Name="LedWarmupCheck" Classes="settingCheck" Content="LED warm-up: LEDs ease on as they light, like a lamp warming" IsChecked="{Binding LedWarmup}"
-                  AutomationProperties.Name="LED warm-up" />
+                  AutomationProperties.Name="LED warm-up" AutomationProperties.HelpText="LEDs ease on as they light, like a lamp warming." />
         <TextBlock Classes="settingHint" TextWrapping="Wrap"
                    Text="Both are ignored while the system's Reduce motion setting is on, or when Bluestone can't read it; LEDs then switch instantly." />
       </StackPanel>

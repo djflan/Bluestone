@@ -190,6 +190,13 @@ public sealed class SettingsTests : IDisposable
             var warmup = AppUnderTest.Within<CheckBox>(page, k => k.Name == "LedWarmupCheck");
             Assert.Equal(("LED fade", "LED warm-up"), (Avalonia.Automation.AutomationProperties.GetName(fade), Avalonia.Automation.AutomationProperties.GetName(warmup)));
             Assert.True(fade.IsChecked == true && warmup.IsChecked == true);
+
+            // Keyboard focus draws one ring round the whole check box, not a second rim tight round its label.
+            Assert.True(fade.Focus(NavigationMethod.Tab));
+            app.Settle();
+            Assert.Contains(":focus-visible", fade.Classes);
+            Assert.NotNull(fade.FocusAdorner);
+            Assert.All(fade.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ContentPresenter>(), p => Assert.Equal(default, p.BorderThickness));
             app.Click(fade);
             Assert.False(display.LedFade);
             Assert.False(store.Load().LedFade);

@@ -22,7 +22,7 @@ The toolbar at the top shows or hides the inspector, Browser, Mixer, and editors
 
 Open **Settings** from the toolbar, the menu, or Ctrl/Cmd + ,. **Window ▸ Audio Settings…** and **Window ▸ Plugins…** open their pages directly.
 
-Settings opens in a compact popover on the right, over the workspace, which stays visible ([ADR 0051](adr/0051-settings-popover.md)). **Done**, Escape, clicking outside it, or tabbing out of it closes it; Escape closes an open list or color picker first. Shortcuts that edit the project, such as Ctrl/Cmd + T, close Settings before they act; single-key shortcuts such as I wait until Settings is closed. Opening or closing Settings alone doesn't change your project or workspace.
+Settings opens in a compact popover on the right, over the workspace, which stays visible ([ADR 0051](adr/0051-settings-popover.md)). **Done**, Escape, clicking outside it, or tabbing out of it closes it; Escape closes an open list or color picker first. Shortcuts that edit the project, such as Ctrl/Cmd + T, close Settings before they act; single-key shortcuts such as I do nothing while Settings is open. Opening or closing Settings alone doesn't change your project or workspace.
 
 ## Essential shortcuts
 

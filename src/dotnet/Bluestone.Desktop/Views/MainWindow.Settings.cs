@@ -144,8 +144,9 @@ public partial class MainWindow
     private ColourPickerPopup? OpenSettingsPicker() =>
         SettingsHost.GetVisualDescendants().OfType<ColourPickerPopup>().FirstOrDefault(p => p.IsOpen);
 
+    // Only a light-dismiss popup: one that stays open on a click outside must not swallow clicks in Settings.
     private Popup? OpenSettingsPopup() =>
-        SettingsHost.GetVisualDescendants().OfType<Popup>().FirstOrDefault(p => p.IsOpen);
+        SettingsHost.GetVisualDescendants().OfType<Popup>().FirstOrDefault(p => p.IsOpen && p.IsLightDismissEnabled);
 
     private void ConfigureSettingsPopups()
     {

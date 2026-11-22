@@ -132,7 +132,7 @@ public sealed class WorkspaceToolbarTests
         Assert.Contains(":focus-visible", inspector.Classes);
         Assert.Null(inspector.FocusAdorner);
         // Focus is a neutral ring, never the aqua rim that means "on", so a focused toggle that is off cannot read as on.
-        Assert.Equal(ResourceColor(app, "Text.Primary"), ColorOf(Face(inspector).BorderBrush));
+        Assert.Equal(ResourceColor(app, "State.FocusOnLit"), ColorOf(Face(inspector).BorderBrush));
         Assert.NotEqual(ResourceColor(app, "Accent"), ColorOf(Face(inspector).BorderBrush));
         Assert.Equal(new Thickness(2), Face(inspector).BorderThickness);
         Assert.True(File.Exists(app.SaveFrame("toolbar-A-keyboard-focus")));
@@ -140,7 +140,7 @@ public sealed class WorkspaceToolbarTests
         Assert.False(app.ViewModel.IsInspectorVisible);
         Assert.False(inspector.IsChecked is true);
         Assert.Contains(":focus-visible", inspector.Classes);
-        Assert.Equal(ResourceColor(app, "Text.Primary"), ColorOf(Face(inspector).BorderBrush));
+        Assert.Equal(ResourceColor(app, "State.FocusOnLit"), ColorOf(Face(inspector).BorderBrush));
         Assert.Equal(new Thickness(2), Face(inspector).BorderThickness);
         app.Press(Key.I);
         Assert.True(app.ViewModel.IsInspectorVisible);

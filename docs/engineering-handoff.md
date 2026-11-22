@@ -191,7 +191,7 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
   prebuilt with its colors; the clip lamp's cached step brushes are warmed by the test's first pass, so that part is
   not proven). If a system reduce-motion read fails, LEDs reduce motion and a warning is traced
   once; that failure path is not exercised by a test.
-- The Settings popover, color picker, and toolbar selected states on `4dcb9d1` were verified headless only:
+- The Settings popover, color picker, and toolbar selected states on the `9f2d092` tree were verified headless only:
   Avalonia UI tests plus real-control renders at 1040 and 1440 wide. The live app was not captured (macOS
   Accessibility and Screen Recording permissions were missing), and the user waived final UI approval for this
   change. Not checked on HiDPI or GPU rendering or with a screen reader.
