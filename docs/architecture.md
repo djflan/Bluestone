@@ -565,9 +565,10 @@ Device View picks the chain and gap, or, over the middle of a device's panel, th
 project changes); Return inserts into the most recently active Device View that shows a chain, or nowhere.
 
 Between panels, each junction is a `ChainJunction` drawn from a `JunctionSignal` (ADR 0037): a MIDI port glyph lit
-while notes are held, and a stereo `LedLadderMeter` with its clip lamp, lit to the average with the held peak above it or to the peak alone
-(`LadderLevels`, following Settings ▸ Display's level style), updated each frame
-without allocating and redrawn only when they change. The Out card's `ChainOutMeter` shows the chain's last junction
+while notes are held, and a stereo `LedLadderMeter` with its clip lamp that follows Settings ▸ Display's **Levels
+show** (`LadderLevels`): the average with the held peak above it (the default) or the peak alone. They update each
+frame and redraw only when what they show changes. The update does not allocate, except that while a junction is
+hovered its tooltip text is rebuilt when its signal changes. The Out card's `ChainOutMeter` shows the chain's last junction
 with a dB scale and peak readout. Only junctions a visible Device View shows are metered
 (`IAudioPlayback.WatchJunctions`). A junction also aims the Browser at its gap
 (`DeviceViewViewModel.InsertionGap`), opens the routing inspector from that point, and marks a junction that is routed
