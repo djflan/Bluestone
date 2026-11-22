@@ -24,12 +24,13 @@ separate user-approved organizational decision.
 
 ## Staffing heuristics
 
-Staff the smallest team that covers the risk. A member with nothing to look at is noise.
+The required signers in `governance.md` ("Definition of done") are always staffed; these heuristics never remove
+one. Beyond them, staff the smallest team that covers the risk. A member with nothing to look at is noise.
 
 | The change touches | Add |
 |---|---|
 | Directional or material `.axaml`, `Theme/`, `Controls/`, `Views/`, or visible behavior | Max, Caroline |
-| Routine visual correction | Max; add Caroline when accessibility, flow, terminology, or focus is involved |
+| Routine visual correction | Max and Caroline (the independent visual and accessibility signer) |
 | A new workflow, a default, terminology, or anything a musician sees | Jules |
 | Visual identity, a new control family, theme presets, or a look-and-feel direction | Iris (with Max) |
 | More than one project layer, a new abstraction, a protocol, or a format | Theo |
@@ -37,7 +38,9 @@ Staff the smallest team that covers the risk. A member with nothing to look at i
 | `src/native/`, `Bluestone.Platform.*`, CoreMIDI, WinMM, ALSA, WASAPI, plugin host | Kenji |
 | User-visible docs, ADRs, release notes, release preparation, or a complex PR narrative | Sabrina |
 
-- **build:** Lucas directs. Add the member who owns the changed files and one independent reviewer. Add Alice for
+- **build:** Lucas directs. Add the member who owns the changed files and one independent reviewer, plus every
+  required signer for the touched areas (`governance.md`, "Definition of done"); staff them at intake, not at the end.
+  Add Alice for
   meaningful test design, lifecycle coverage, flaky-risk tests, or final gates; add Grace for non-trivial review;
   add specialists from the table only when their ownership or risk is present. Sabrina joins only when docs, release
   notes, or PR preparation are needed.

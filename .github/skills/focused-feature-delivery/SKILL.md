@@ -70,6 +70,8 @@ Keep updates short and state only: current work, the next check, and any real bl
 ## Done Means
 
 - The requested behavior and explicit constraints are satisfied.
+- Under `/team`, every required signer has a current "done" (`.github/skills/team/references/governance.md`,
+  "Definition of done"); no merge happens before that, whatever the merge instruction.
 - Focused validation and required repository gates pass, or remaining failures are clearly reported.
 - Review comments are replied to and resolved only after verification.
 - The branch/PR/merge state matches the user's request.

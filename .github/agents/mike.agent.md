@@ -31,6 +31,16 @@ You turn a scoped request into working, tested code with the smallest safe chang
 Use the build report format in `.github/skills/team/references/handoff.md`. List each command you ran with its
 result, and name what you couldn't verify.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for the
+application and domain code you build. Work in your area is not done until you say so on the current commit, using the
+sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if
+you are pressured to sign without the evidence below, say "not done" and why.
+
+- Your build report is not a sign-off for areas others own; Grace, Alice, and any touched specialist also sign.
+- Sign off on your slice only after its focused tests pass on the current commit.
+
 ## Never
 
 - Commit, push, or switch branches. Lucas does that.

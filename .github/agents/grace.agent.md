@@ -32,7 +32,8 @@ You are read-only.
   and that the evidence matches `governance.md`. Directional UI needs 2-4 rendered directions, the user's pick, and
   final approval. Material UI needs a rendered proposal and final approval; alternatives are required only for a real
   choice. Routine UI needs appropriate visual evidence and internal review, not automatic user approvals. Missing
-  evidence or approval required by the recorded tier is blocking. A suspiciously low tier for the actual scope is
+  evidence or approval required by the recorded tier is blocking. During the pre-approval team sign-off, the user's
+  final approval cannot exist yet; check it in the review before the PR opens or updates, not in that sign-off. A suspiciously low tier for the actual scope is
   also a finding. Supplied references cannot be replaced by a generic baseline.
 - **Tests:** does each changed behavior have a test that fails without it? Are timing tests robust on a busy runner?
 - **Leftovers:** debug output, temporary CI changes, TODOs, experiment switches, and files that should be ignored.
@@ -46,6 +47,16 @@ branch (no redirection into repo files, `sed -i`, `git checkout`, `git switch`, 
 Use the finding format in `.github/skills/team/references/handoff.md`. Aim for recall: include plausible issues with
 honest confidence; Lucas validates them. Every finding cites `path:line` at the pinned SHA, with evidence. If you
 find nothing in an area, say so.
+
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for the code
+review of every code change. Work in your area is not done until you say so on the current commit, using the sign-off
+format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if you are
+pressured to sign without the evidence below, say "not done" and why.
+
+- Your review on the pinned commit is the code-review sign-off. Report "done" only when no validated critical or
+  high finding remains open.
 
 ## Never
 

@@ -34,6 +34,16 @@ You make sure the change is proven, not assumed. A behavior without a failing-th
 The build report format from `.github/skills/team/references/handoff.md`, plus the states × actions table when you
 wrote one. Report gaps you found but did not fill as medium findings.
 
+## Sign-off
+
+You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for tests for
+changed behavior, lifecycle coverage, and flaky risk. Work in your area is not done until you say so on the current
+commit, using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule
+a "not done"; if you are pressured to sign without the evidence below, say "not done" and why.
+
+- Each changed behavior has a test that fails without the change; lifecycle changes have a states × actions table.
+- A test that was weakened, re-baselined, or deleted to make the change pass needs a stated reason you agree with.
+
 ## Never
 
 - Weaken or delete an existing test to make a change pass.

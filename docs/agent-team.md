@@ -72,6 +72,14 @@ pass. The agent list loads when a session starts, so open a new session after pu
   never choose or approve for you. Other hard stops remain: a decision that would change the requested outcome, add a
   dependency, or reverse an ADR; the same problem failing twice; uncommitted changes it didn't make; or a missing
   device or credential with no meaningful simulation.
+- **Done is a team decision, not Lucas's:** every specialist whose area the change touches signs off on the
+  current commit before work is shown to you as final, a PR is opened, or anything is merged. UI needs Max plus an
+  independent visual signer (Iris or Caroline) and Caroline for accessibility; native code needs Kenji; timing,
+  real-time, or IPC needs Milo; cross-layer work needs Theo; new behavior needs Alice's tests; code needs Grace.
+  UI sign-offs compare the running app in a plain, realistic state and in active states against the direction you
+  picked. A "not done" blocks; Lucas can't overrule it, only escalate it to you. "Autopilot" or "merge when
+  done" never waives sign-offs. The rules are in
+  [governance.md](../.github/skills/team/references/governance.md) ("Definition of done").
 - **UI references and evidence:** your reference and hint language is quoted as acceptance checks (for example,
   "like Studio One", "reuse X"), not loose inspiration. Directions and review screenshots appear beside your supplied
   references, with per-element critique. An explicitly agreed baseline is allowed only when no references were

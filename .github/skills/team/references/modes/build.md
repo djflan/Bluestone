@@ -14,6 +14,8 @@ stops in `SKILL.md`, including the user UI decisions required by the directional
    record the supplied references, and classify the work as directional, material, or routine under
    `.github/skills/team/references/governance.md`.
    Only when no references were supplied may the user explicitly agree a comparison baseline.
+   For any change a user can see in the app, also list the states to capture (`governance.md`, "Evidence for
+   signers"): a plain, realistic state plus the populated and active states the change affects.
 2. Read only enough to find the owning code: repository instructions, the nearest owner, its caller, and its test.
    Use `.github/skills/team/references/roster.md` to staff the team.
 3. Classify technical risk as routine, elevated, or high. Pick the smallest team and a model for each member, and
@@ -78,26 +80,47 @@ stable tree; only read-only work (Caroline) may overlap another step.
 - Max (when the UI changed): launches the app and collects the evidence required by the recorded UI tier. For
   directional and material work, capture compact and normal screenshots and review them against the approved direction
   and supplied references with per-element critique. For routine work, capture appropriate before/after or final
-  evidence. Use realistic, populated content, long names, varied states, and signal playing where applicable.
+  evidence. Capture BOTH a plain, realistic state (a fresh or small project, stopped, nothing selected, the default
+  docked layout) AND populated, active states (long names, selection, playing, armed, signal present). A showcase
+  scene alone hides what a user sees on first launch.
   He reaches the feature the way a user would, starting from the app,
   and tries every option it offers; an option that looks the same as another, or a feature with no way to reach it,
   is a finding. A gallery or test harness is extra evidence, not a substitute. Caroline then checks keyboard use and accessibility on the same
   build.
 - Kenji (when native code changed): `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`
   in `src/native/`, plus the Docker cross-target clippy for every touched crate on Windows or Linux.
-- Alice (when test design, lifecycle coverage, or flaky-risk work warrants her): adds missing tests that fail without
-  the change, writes the states × actions table for lifecycle changes, and runs the focused tests. Otherwise the
-  owning builder supplies the changed-behavior tests and Lucas checks the evidence.
+- Alice (when test design, lifecycle coverage, or flaky-risk work warrants her, and always when she is a required
+  signer under `governance.md`): adds missing tests that fail without the change, writes the states × actions table
+  for lifecycle changes, and runs the focused tests. When she is not a required signer, the owning builder supplies
+  the changed-behavior tests and Grace checks them in review.
 - Milo (when timing, real-time, or IPC changed): checks allocations and locks on the real-time path, and runs the
   relevant probes from `docs/hardware-test-plan.md`. Probes need a quiet machine, so nothing else runs alongside them.
 
 A failing check goes straight back to the owner of that slice. Fix it, then rerun that check before widening again.
 The full repository gates are not run here; they run once, on the final tree, in phase 6.
 
-For directional and material UI, after checks and fixes Max captures FINAL compact and normal screenshots beside the
-same references and stops for the user approval required by `.github/skills/team/references/governance.md`. For
-routine UI, preserve the internal
-evidence without an automatic user stop. If later edits materially change approved UI, recapture it and obtain the
+### Team sign-off
+
+Before anything is shown to the user as final, committed for review, or put in a PR, Lucas commits the batch, pins the
+SHA, has Max capture the states listed at intake when the change is visible in the app (`governance.md`, "Evidence for signers"), and dispatches every required signer from `.github/skills/team/references/governance.md` ("Definition of
+done") read-only, in this order: every required signer except Jules and Milo (each slice's builder, such as Max or Mike, plus the independent visual signer, Caroline,
+Kenji, Theo, Alice, Grace, Sabrina, as the table requires) in parallel; then Jules, from the capture set the visual signer checked; then Milo alone, because probes need a quiet
+machine; with the acceptance checks quoted verbatim and the approved direction and references
+attached. Each returns the sign-off format in `handoff.md`.
+
+- Any "not done" goes back to the owner of that slice; the same signer re-checks the fix on the new SHA.
+- A builder's claim that an acceptance check is "unchanged" or "already satisfied" is a claim for the signer to
+  verify, never a reason to skip it.
+- Lucas records every sign-off in the run log. He cannot sign off for a member or proceed past a "not done"; after
+  two fix rounds without agreement he escalates to the user under `governance.md`.
+
+Grace's sign-off here is the code review; the user's final approval is checked later, in the phase 5 review, not as
+part of this sign-off, so it is not a circular gate.
+
+For directional and material UI, only after every required signer has said "done" does Max capture FINAL compact and
+normal screenshots beside the same references and Lucas stops for the user approval required by
+`.github/skills/team/references/governance.md`. For routine UI, preserve the internal evidence and sign-offs without
+an automatic user stop. If later edits materially change approved UI, re-sign and recapture it and obtain the
 approval required by the tier before opening or updating the PR.
 
 ## 5. Review
@@ -105,17 +128,19 @@ approval required by the tier before opening or updating the PR.
 1. Commit, then pin the snapshot: `git rev-parse HEAD`, and the diff `git --no-pager diff origin/main...HEAD`.
 2. Lucas reads the whole diff himself and sweeps it for leftovers (`pr-readiness` step 1, items 1 and 3): temporary CI
    changes, debug output, experiment switches, TODOs, and files that should be ignored.
-3. Dispatch, in parallel and read-only, on the pinned SHA:
+3. Dispatch read-only, on the pinned SHA, in parallel except Milo, who runs alone after the others finish because
+   timing probes need a quiet machine:
    - Grace once for ordinary localized work, or twice on different available model families for the high-risk and
      broad categories in `.github/skills/team/references/model-selection.md`;
    - every specialist who worked on or owns a touched area, reviewing only their area.
    For UI work, include the recorded tier and all evidence and approvals that tier requires. Missing required evidence
    or an incorrectly low tier is a BLOCKING gate failure.
 4. Lucas validates each finding against the code. Drop findings that are wrong, duplicated, or out of scope, and record
-   why. Group the rest by root cause.
+   why. Group the rest by root cause. Findings attached to a signer's "not done" are not Lucas's to drop or defer;
+   see `governance.md`.
 5. The owners fix all critical and high findings, and medium findings that are cheap or user-visible, then rerun the
    focused checks those fixes affect. Record the rest as known limitations; blocking UI gates cannot be waived as
-   known limitations.
+   known limitations. A fix that touches a signed-off area makes that sign-off stale: the same signer re-checks it.
 6. **At most 2 fix rounds.** Run a second review round only if the fixes were substantial or created a new class of
    risk. One exception, from `pr-readiness` ("Ready means"): if its states × actions or claims steps turned up more
    than a couple of problems, one more pass of steps 1–6 is allowed after fixing them.
@@ -133,10 +158,12 @@ Order matters: every edit happens before the final gates, and the PR reports the
 2. When documentation changes, Sabrina updates the affected ADRs, `docs/architecture.md`,
    `docs/engineering-handoff.md`, roadmap, README, or user guide. Lucas commits. Do not staff her when no docs or
    release material need work.
-3. **Final gates:** with every editor stopped, Alice runs `pr-readiness` step 7 when she is staffed; otherwise Lucas
+3. **Re-sign:** any commit in this phase (docs, gate fixes, CI fixes) that touches a signed area goes back to that
+   signer before it is pushed.
+4. **Final gates:** with every editor stopped, Alice runs `pr-readiness` step 7 when she is staffed; otherwise Lucas
    runs it. Record each command and result once on the final commit. If anything changes after this, rerun the gates
    that change affects.
-4. Sabrina writes the PR body when she is staffed; otherwise Lucas writes it from
+5. Sabrina writes the PR body when she is staffed; otherwise Lucas writes it from
    `.github/pull_request_template.md`, using the final gate results. It lists each
    command with its result and what was physically verified versus simulated. Keep the template headings and
    checklist intact. For UI, attach the evidence required by the recorded tier beside supplied references.
@@ -144,16 +171,19 @@ Order matters: every edit happens before the final gates, and the PR reports the
    UI includes its proposal, final screenshots, comparisons, and final approval; routine UI includes its internal
    visual evidence and any applicable comparison. These must survive in the PR, not only the run log. If approval
    evidence no longer matches the current UI, return to Max and the user for refreshed screenshots and approval.
-5. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
-   `gh pr edit`. Do not open or update a PR until all approvals required by the recorded UI tier are present. Add a
-   version token to the title only if the user asked.
-6. CI does not start on push. Once the review rounds are finished and the branch is pushed, start it once with
+   The body includes the sign-off table (signer, area, commit, verdict, evidence) from the run log.
+6. Push the branch. Open the PR with `gh pr create`, or, when working on an existing PR, update its body with
+   `gh pr edit`. Do not open or update a PR until every required sign-off is current and all approvals required by
+   the recorded UI tier are present. Add a version token to the title only if the user asked.
+7. CI does not start on push. Once the review rounds are finished and the branch is pushed, start it once with
    `gh workflow run ci.yml --ref <branch>` and check it once. If a job fails, read its log, fix it in one follow-up
-   commit, push, and run CI once more. Do not poll an unchanged pending state; report that it is pending and finish.
+   commit, get that area's signer to re-check it, push, and run CI once more. Do not poll an unchanged pending state; report that it is pending and finish.
 
 ## Done
 
-The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
+Done is the team's verdict, not Lucas's: every required signer in `governance.md` has a current "done" (no later
+commit touched their area) on the shipped commit. The PR is open (or the existing PR is updated), the final gates pass on the shipped commit or the failures are
 reported, every validated finding is fixed or listed as a known limitation, and the summary names the team, models,
-staffing reasons, and PR link. UI evidence and approvals match the recorded tier and current UI; missing required
-gates are blockers, not known limitations.
+staffing reasons, sign-offs, and PR link. UI evidence and approvals match the recorded tier and current UI; missing
+required gates or sign-offs are blockers, not known limitations. When the user has authorized a merge, merge only
+after all of this holds.
