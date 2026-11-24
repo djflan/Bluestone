@@ -195,6 +195,30 @@ yielding: that would use its whole computation budget and the kernel would demot
 `nanosleep` slices, blocked rather than computing. That costs about 30 µs of median wake-up at depth 1 and uses
 less CPU than yielding did.
 
+### Linux container diagnostic (2026-11-23)
+
+One Release run per configuration at commit `91715cd8fde5b35ebef4414717f15748a8d4f466`: Ubuntu 24.04.5 x64
+in Docker Desktop on Windows, WSL2 kernel 6.18.58.1, Ryzen 7 2700X, 16 logical CPUs exposed, .NET runtime 10.0.15
+and SDK 10.0.404. The source was exported from that commit without Git metadata, so the generated reports' commit
+field is empty. The probe reported the machine quiet; the one-minute Linux load average at the start of the four
+runs was 3.66, 0.55, 0.27, and 1.37 respectively. The host was not controlled as a dedicated quiet machine.
+These are container/VM diagnostics, not native Linux hardware measurements. `--sched default` was used; no Linux
+real-time policy was requested, and the final approach spun. The complete JSON reports are in
+[issue 117](https://github.com/djflan/Bluestone/issues/117#issuecomment-7117773401).
+
+| Probe, 60 s per phase | Result |
+| ---- | ---- |
+| `--jitter 60 --pressure none --sched default` | Immediate dispatch max and p99.9 1.978 ms; 0 messages over 2 ms and 0 dropped. |
+| `--jitter 60 --pressure app --sched default` | Immediate dispatch max and p99.9 8.462 ms; 400 messages over 2 ms, 0 dropped. GC pauses reached 16.679 ms; this run does not attribute individual late messages to GC. |
+| `--plugin-pipeline 60 --pressure none --sched default --buffer 128` | Depth 1: 0 steady-state blocks not processed, 1 during startup; maximum steady-state call 1.091 ms. Maximum call-start lateness was 21.293 ms. |
+| `--plugin-pipeline 60 --pressure none --sched default --buffer 64` | Depth 1: 1 steady-state block not processed, 3 during startup; maximum steady-state call 1.717 ms against a 1.333 ms period. Maximum call-start lateness was 22.902 ms. |
+
+The dispatch probe uses a counting endpoint, not ALSA or a receiving MIDI device. Its scheduled-delivery results do
+not measure Linux MIDI arrival. The plugin probe uses the reference sine in a real worker, but no audio device; a
+zero not-processed count does not account for a call that started late. Neither result establishes audible deadlines,
+physical loopback, or performance under native Linux scheduling. Repeat on native Linux with real or explicitly
+identified software devices before changing Linux defaults.
+
 ## Decisions
 
 1. **The targets above are Bluestone's timing contract** and are judged by these probes. Release 1.0 Slice 0 takes them
@@ -255,8 +279,9 @@ less CPU than yielding did.
   converters, which the device may not report.
 - The application process still uses tiered compilation. With the engine process it does no real-time work, and the
   re-measurement found no JIT pause over 0.14 ms on the in-process path either.
-- All numbers come from one Mac with a synthetic load. Rerun the probes on other machines, and on Windows and Linux
-  when their adapters gain precise waits, before changing a target or a default.
+- The macOS measurements come from one Mac with a synthetic load; the Linux container diagnostic is not native
+  hardware evidence. Rerun the probes on other machines and on Windows and Linux hardware before changing a target or
+  a default.
 
 ## Measurement note: LED display motion (2026-11-22)
 

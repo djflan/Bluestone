@@ -23,7 +23,7 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | Hardware parameter automation: profile parameter maps → CC, RPN, NRPN, SysEx with checksums, thinning, chase (ADR 0031) | Done, tested; not verified on hardware |
 | Audio engine: cpal output in Rust, render graph in C# behind a render-ahead ring, WAVE/AIFF clips with SRC and disk streaming, track-owned strips, Effect returns, Group buses, Master chain and meters (ADRs 0032, 0050), clip gain and fades, device-loss fallback, one transport | Existing Core Audio/WASAPI/ASIO evidence is recorded in ADRs 0032/0049; the professional mixer has no physical audio verification recorded here |
 | Live input through every device on the live route (built-in, plugin MIDI effects, plugin instruments), live render-ahead queue, plugin delay compensation across the graph (ADR 0035) | Done, tested sample-accurately; latency measured on macOS and through Windows WinMM software loopback (Windows result misses target) |
-| Engine process: MIDI playback, endpoints, live input and thru, the audio device rendering in the callback, the graph, clips, meters, and the plugin data plane in a NativeAOT C# process with its own protocol and supervisor; depth 1 for the monitored plugin instrument; real-time plugin worker threads (ADRs 0043, 0044) | Done; default on macOS. Windows x64 WinMM live input and WASAPI were measured through software loopback; live added latency missed target, so remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux |
+| Engine process: MIDI playback, endpoints, live input and thru, the audio device rendering in the callback, the graph, clips, meters, and the plugin data plane in a NativeAOT C# process with its own protocol and supervisor; depth 1 for the monitored plugin instrument; real-time plugin worker threads (ADRs 0043, 0044) | Done; default on macOS. Windows x64 WinMM live input and WASAPI were measured through software loopback; live added latency missed target. Linux NativeAOT allocation checks passed in a container, not on devices; the engine remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux |
 | Third-party plugins: VST 3 and CLAP through a Rust host in the worker; scanning, parameters, state, processing, editors, crash recovery (ADR 0033) | Done; CI runs Rust test plugins on all platforms; installed CLAP processing and Pro-Q 3/Surge XT editors tested on native Windows and macOS |
 | Plugin hosting modes: together, by manufacturer, by plugin (default), individually; per-plugin override; crash blast radius and counts (ADR 0034) | Done, tested with real workers |
 | UI: Plugins view (rescan, quarantine retry, hosting), dockable/detachable track-owned Mixer console and meter modes, Audio Settings, editor button, group menu, instrument parameter lanes | Focused view-model/UI tests for independent Master selection and Inspector scope passed; Max reviewed the running mixer at 1318×847 (compact) and 1620×1000 (normal), including Master selection and LUFS-S warm-up. The later C2 strip rebuild (insert stack, LED meter rail, gain bar, pan ramp) was reviewed in headless renders with simulated meter data only; physical audio remains unverified |
@@ -38,7 +38,7 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 Use the README commands on a machine with the .NET SDK from `global.json` (10.0.403 or a later 10.0 feature band) and
 a Rust toolchain (`cargo`; the hosted CI runners have one). `dotnet build` builds the Rust crates through
 `src/dotnet/Native.targets` (`cargo build --locked`; after changing Rust dependencies run `cargo build` in
-`src/native/` once). Linux needs `libasound2-dev`. One test project, one namespace:
+`src/native/` once). Linux needs `libasound2-dev` and `pkg-config`. One test project, one namespace:
 `dotnet test --project src/dotnet/Bluestone.Tests.Unit --filter-namespace "Bluestone.Tests.Unit.Signal"`. Rust:
 `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` in `src/native/`.
 
@@ -168,6 +168,7 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 
 - Real MIDI hardware and a profile parameter map against a hardware instrument; Windows MIDI input timing is measured only through a Windows MIDI Services software loopback.
 - Audio output heard on Windows and Linux (Windows WASAPI callbacks run but output was not listened to; ASIO was measured in a local build and is currently excluded from standard builds); unplugging a real device (device loss is tested with a test backend).
+- Linux ALSA sequencer, audio and engine timing on native devices: the 2026-11-23 WSL2 container had no ALSA sequencer or audio device. Loaded dispatch and a 64-frame reference plugin worker missed targets there; see ADR 0043 for limits and results, and [issue 117](https://github.com/djflan/Bluestone/issues/117) for the native Linux follow-up.
 - Plugin editors on Linux and hand-checking Windows editor resize/focus/multi-monitor behavior; Windows editor lifecycle, follow/pin, and key-routing tests pass with installed plugins.
 - ASIO on an external audio interface: the installed Realtek ASIO driver was exercised, but the RME MADIface was not connected; the acoustic round trip is unmeasured.
 - A third-party MIDI effect plugin (none installed: Scaler 3 and Melody Sauce 3 report as instruments); third-party
@@ -202,7 +203,7 @@ This is the backlog captured before ADR 0041 redefined the product direction. It
 known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) for execution order and acceptance gates.
 
 1. **Audio engine:** importing audio files as clips (today they come only from project files), audio input and recording, compressed formats (FLAC, MP3, Ogg), send and fader automation,
-   real-device timing and recovery verification on Windows and Linux.
+   real-device timing and recovery verification on Windows and Linux. Native Linux ALSA, engine and plugin-worker timing checks remain open in [issue 117](https://github.com/djflan/Bluestone/issues/117); WSL2 results are not hardware evidence.
 2. **Plugins:** editors verified on Linux, embedded (not floating) editors, second-architecture workers
    (Rosetta), SysEx to native plugins, note expressions, a protocol message for a worker-side idle-handler failure
    (today it is logged to standard error and that instance's notifications stop). The full list is in

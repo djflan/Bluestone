@@ -147,6 +147,10 @@ Timing targets, the probes that judge them, and current measurements are in [ADR
 
 A loopback capture agrees with the heard-time model within 0.4 ms. MIDI arrival at the receiver, immediate MIDI output, and MIDI thru have been measured through the engine only on macOS. On native x64 Windows, the high-resolution waitable timer measured 0.32 ms p50 and 0.87 ms p99 immediate WinMM dispatch lateness (0.902 ms max); spinning had a 3.067 ms maximum and 32 messages over 2 ms late. A Windows MIDI Services software loopback measured 0.077 ms median WinMM OS hop and 0.312 ms median thru round trip, with no dropped messages. Engine live input over that loopback averaged 9.5 ms added latency and peaked at 16.8 ms, above the 2 ms target, so the engine remains opt-in (`BLUESTONE_ENGINE=1`) on Windows and Linux. These software-loopback measurements do not establish physical-device clock accuracy or acoustic latency.
 
+A Linux WSL2 container diagnostic found dispatch and plugin-worker timing misses under some conditions, but had no
+MIDI or audio devices; it does not establish native Linux hardware timing. The configuration and results are in
+[ADR 0043](docs/adr/0043-timing-targets-and-measurement.md#linux-container-diagnostic-2026-11-23).
+
 ## Build and run
 
 Bluestone is a C#/.NET application by default. Rust is reserved for measured real-time constraints and native interfaces, with small, versioned boundaries between the two. See [ADR 0026](docs/adr/0026-native-technology-policy.md) for the language policy.
