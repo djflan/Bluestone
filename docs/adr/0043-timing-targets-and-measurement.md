@@ -279,8 +279,9 @@ identified software devices before changing Linux defaults.
   converters, which the device may not report.
 - The application process still uses tiered compilation. With the engine process it does no real-time work, and the
   re-measurement found no JIT pause over 0.14 ms on the in-process path either.
-- All numbers come from one Mac with a synthetic load. Rerun the probes on other machines, and on Windows and Linux
-  when their adapters gain precise waits, before changing a target or a default.
+- The macOS measurements come from one Mac with a synthetic load; the Linux container diagnostic is not native
+  hardware evidence. Rerun the probes on other machines and on Windows and Linux hardware before changing a target or
+  a default.
 
 ## Measurement note: LED display motion (2026-11-22)
 
