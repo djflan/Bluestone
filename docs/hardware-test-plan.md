@@ -202,3 +202,18 @@ interface was connected; the callback probes rendered silence.
 Still requiring a physical session: play and record a hardware instrument; check SysEx ordering on a synth; listen through
 the RME MADIface/ASIO path; measure its actual buffer and acoustic round trip; unplug/reconnect real MIDI and audio
 devices; hand-check editor resize/focus and multi-monitor recovery.
+
+## Linux container diagnostic (2026-11-23)
+
+A Docker Desktop/WSL2 run measured playback dispatch and a reference plugin worker, but had no ALSA sequencer, audio
+device, or desktop. The loaded dispatch and 64-frame plugin probes missed targets; see
+[ADR 0043](adr/0043-timing-targets-and-measurement.md#linux-container-diagnostic-2026-11-23) for the setup, numbers,
+and limits. Native Linux device, loopback, editor, and timing checks remain outstanding.
+
+On that container, `cargo test --locked` passed 38 Rust tests, and the Linux NativeAOT engine published and its
+`--check-allocations` probe passed. The integration run below passed 26 plugin tests and skipped all 5 ALSA tests
+because `/dev/snd/seq` was absent; the Rust default-device test also had no output device to exercise:
+
+```sh
+dotnet test --project src/dotnet/Bluestone.Tests.Integration -c Release -- --filter-class "*NativePluginTests" --filter-class "*ReferencePluginProcessTests" --filter-class "*AlsaProviderTests"
+```
