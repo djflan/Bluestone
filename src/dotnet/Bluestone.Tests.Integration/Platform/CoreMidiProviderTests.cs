@@ -61,6 +61,21 @@ public sealed class CoreMidiProviderTests
     }
 
     [Fact]
+    public void Provider_ResolvesEveryPropertyKeyAfterCreatingItsClient()
+    {
+        RequireMacOS();
+        using var provider = new CoreMidiProvider(Clock, "Bluestone Tests");
+
+        // Issue #112: these exports can read as null before MIDIClientCreate and must never be cached as null.
+        var keys = Native.Properties.TryResolve();
+
+        Assert.NotNull(keys);
+        Assert.All(
+            new[] { keys.Name, keys.DisplayName, keys.UniqueId, keys.Manufacturer, keys.Model, keys.Offline, keys.DriverOwner },
+            key => Assert.NotEqual(IntPtr.Zero, key));
+    }
+
+    [Fact]
     public async Task VirtualOutput_IsReceivedByAnotherClient()
     {
         RequireMacOS();

@@ -123,13 +123,13 @@ internal static unsafe partial class Native
     private static readonly IntPtr CoreMidiHandle = NativeLibrary.Load(CoreMidi);
     private static readonly IntPtr CoreFoundationHandle = NativeLibrary.Load(CoreFoundation);
 
-    public static readonly IntPtr PropertyName = Constant(CoreMidiHandle, "kMIDIPropertyName");
-    public static readonly IntPtr PropertyDisplayName = Constant(CoreMidiHandle, "kMIDIPropertyDisplayName");
-    public static readonly IntPtr PropertyUniqueId = Constant(CoreMidiHandle, "kMIDIPropertyUniqueID");
-    public static readonly IntPtr PropertyManufacturer = Constant(CoreMidiHandle, "kMIDIPropertyManufacturer");
-    public static readonly IntPtr PropertyModel = Constant(CoreMidiHandle, "kMIDIPropertyModel");
-    public static readonly IntPtr PropertyOffline = Constant(CoreMidiHandle, "kMIDIPropertyOffline");
-    public static readonly IntPtr PropertyDriverOwner = Constant(CoreMidiHandle, "kMIDIPropertyDriverOwner");
+    /// <summary>
+    /// The CoreMIDI property constants. They can read as null before <c>MIDIClientCreate</c>, and this
+    /// class's static initializer can run before any client exists (the CoreMIDI run loop reads
+    /// <see cref="RunLoopDefaultMode"/>), so they are never read here; see <see cref="CoreMidiPropertyKeyCache"/>.
+    /// </summary>
+    public static readonly CoreMidiPropertyKeyCache Properties = new(static name => Constant(CoreMidiHandle, name));
+
     public static readonly IntPtr RunLoopDefaultMode = Constant(CoreFoundationHandle, "kCFRunLoopDefaultMode");
 
     private static IntPtr Constant(IntPtr library, string name) => *(IntPtr*)NativeLibrary.GetExport(library, name);

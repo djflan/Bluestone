@@ -25,6 +25,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
     private readonly List<CoreMidiOutput> _outputs = [];
     private readonly List<CoreMidiInput> _inputs = [];
     private readonly Dictionary<string, uint> _virtualSources = new(StringComparer.Ordinal);
+    private readonly CoreMidiPropertyKeys _properties;
     private GCHandle _self;
     private uint _client;
     private uint _outputPort;
@@ -42,6 +43,15 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
             Dispose();
             throw new EndpointUnavailableException(string.Create(CultureInfo.InvariantCulture, $"CoreMIDI could not start (OSStatus {status})."));
         }
+
+        // Only now that a client exists are the property constants safe to read.
+        if (Native.Properties.TryResolve() is not { } properties)
+        {
+            Dispose();
+            throw new EndpointUnavailableException("CoreMIDI could not start (its property constants were unavailable after creating a client).");
+        }
+
+        _properties = properties;
     }
 
     public string Id => ProviderId;
@@ -86,7 +96,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
 
                 // A stable unique ID lets other applications remember the connection across launches.
                 // If CoreMIDI refuses it (an ID collision), it keeps the one it assigned.
-                _ = Native.MIDIObjectSetIntegerProperty(source, Native.PropertyUniqueId, StableUniqueId(name));
+                _ = Native.MIDIObjectSetIntegerProperty(source, _properties.UniqueId, StableUniqueId(name));
                 _virtualSources[name] = source;
             }
             finally
@@ -114,7 +124,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
             var destinations = Native.MIDIGetNumberOfDestinations();
             for (nuint i = 0; i < destinations; i++)
             {
-                if (Describe(Native.MIDIGetDestination(i), EndpointDirection.Output) is { } d)
+                if (Describe(_properties, Native.MIDIGetDestination(i), EndpointDirection.Output) is { } d)
                 {
                     result.Add(d);
                 }
@@ -124,7 +134,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
             for (nuint i = 0; i < sources; i++)
             {
                 var source = Native.MIDIGetSource(i);
-                if (!ownSources.Contains(source) && Describe(source, EndpointDirection.Input) is { } d)
+                if (!ownSources.Contains(source) && Describe(_properties, source, EndpointDirection.Input) is { } d)
                 {
                     result.Add(d);
                 }
@@ -253,26 +263,26 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
         return endpoint;
     }
 
-    private static EndpointDescriptor? Describe(uint endpoint, EndpointDirection direction)
+    private static EndpointDescriptor? Describe(CoreMidiPropertyKeys properties, uint endpoint, EndpointDirection direction)
     {
-        if (endpoint == 0 || Native.GetInteger(endpoint, Native.PropertyOffline) is 1 || Native.GetInteger(endpoint, Native.PropertyUniqueId) is not { } uniqueId)
+        if (endpoint == 0 || Native.GetInteger(endpoint, properties.Offline) is 1 || Native.GetInteger(endpoint, properties.UniqueId) is not { } uniqueId)
         {
             return null;
         }
 
-        var name = Native.GetString(endpoint, Native.PropertyDisplayName) ?? Native.GetString(endpoint, Native.PropertyName) ?? "MIDI endpoint";
+        var name = Native.GetString(endpoint, properties.DisplayName) ?? Native.GetString(endpoint, properties.Name) ?? "MIDI endpoint";
         var capabilities = EndpointCapabilities.SystemExclusive | (direction == EndpointDirection.Output ? EndpointCapabilities.ScheduledDelivery : EndpointCapabilities.None);
         return new EndpointDescriptor(
             new EndpointId(ProviderId, uniqueId.ToString(CultureInfo.InvariantCulture)),
             name,
             direction,
-            Classify(endpoint),
+            Classify(properties, endpoint),
             capabilities,
-            Native.GetString(endpoint, Native.PropertyManufacturer),
-            Native.GetString(endpoint, Native.PropertyModel));
+            Native.GetString(endpoint, properties.Manufacturer),
+            Native.GetString(endpoint, properties.Model));
     }
 
-    private static EndpointTransport Classify(uint endpoint)
+    private static EndpointTransport Classify(CoreMidiPropertyKeys properties, uint endpoint)
     {
         // Endpoints without an entity are virtual ports created by applications.
         if (Native.MIDIEndpointGetEntity(endpoint, out var entity) != Native.NoError || entity == 0
@@ -281,7 +291,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
             return EndpointTransport.Virtual;
         }
 
-        var driver = Native.GetString(device, Native.PropertyDriverOwner) ?? string.Empty;
+        var driver = Native.GetString(device, properties.DriverOwner) ?? string.Empty;
         if (driver.Contains("IAC", StringComparison.OrdinalIgnoreCase))
         {
             return EndpointTransport.Virtual;
@@ -304,6 +314,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
                 return status;
             }
 
+            Native.Properties.OnClientCreated();
             var portName = Native.CreateString(clientName + " Out");
             try
             {
