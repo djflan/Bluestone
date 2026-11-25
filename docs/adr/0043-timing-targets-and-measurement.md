@@ -302,3 +302,11 @@ the ladder prebuilt its intermediate glow steps, a pass allocated 90,312 bytes i
 when the colors are rebuilt, it reports 0 B for both ticks and draws. The clip lamp's step brushes are app-lifetime
 caches warmed by the test's first pass, so the test cannot fail on them; only the glow prebuild is proven. The gain
 LEDs' test is judged the same way. The same manual-clock, headless limits apply.
+
+## Runtime note: .NET 11 (2026-11-24)
+
+The measurements above were taken on .NET 10, the runtime at the time. On 2026-11-24 Bluestone moved to .NET 11. The
+targets, including the 1 ms GC-pause gate, are unchanged. Matched .NET 10 and .NET 11 engine runs on one Windows PC
+and one physical Mac, and the start-up compaction that keeps .NET 11's first playback collection under 1 ms on that
+Mac (ADR 0044), are in the [.NET 11 migration report](../dotnet11-feasibility.md). The earlier measurements in this
+ADR were not repeated on .NET 11 except where that report says so.

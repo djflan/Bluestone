@@ -138,6 +138,8 @@ macOS is the current development platform. Windows x64 has also been built and t
 
 The Release 1.0 work begins by converting this into an explicit supported, experimental, and deferred matrix with measurable timing and latency gates.
 
+Bluestone runs on .NET 11. On x64 (Intel Macs, Windows, Linux) it needs an x86-64-v2 CPU (SSE4.2 and POPCNT). On Windows on Arm, Bluestone requires Armv8.0-A with LSE; Microsoft's own pages disagree on that minimum. Apple silicon and Linux Arm64 requirements are unchanged. See the [.NET 11 migration report](docs/dotnet11-feasibility.md#hardware-requirements-on-net-11).
+
 Timing targets, the probes that judge them, and current measurements are in [ADR 0043](docs/adr/0043-timing-targets-and-measurement.md). On macOS the real-time work (audio rendered in the device callback, MIDI playback and thru, live input, and the plugin data plane) runs in a separate C# engine process compiled ahead of time with NativeAOT ([ADR 0044](docs/adr/0044-engine-process.md)). Measured on an Apple silicon Mac at 128 frames (2.7 ms), with the application process collecting garbage hundreds of times a minute, the engine:
 - had no xruns;
 - rendered in at most 0.26 ms;
@@ -155,7 +157,7 @@ MIDI or audio devices; it does not establish native Linux hardware timing. The c
 
 Bluestone is a C#/.NET application by default. Rust is reserved for measured real-time constraints and native interfaces, with small, versioned boundaries between the two. See [ADR 0026](docs/adr/0026-native-technology-policy.md) for the language policy.
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) required by `global.json` and Rust 1.88 or later. Linux also needs the ALSA development files. Standard Windows builds, CI, and releases use WASAPI only while ASIO licensing is pending. Do not enable the ASIO feature until the required Steinberg agreement is signed. For an explicitly enabled ASIO development build after signing, install LLVM with `libclang`, obtain ASIO SDK 2.3.4, set `CPAL_ASIO_DIR`, and pass `-p:BluestoneAsio=true`; always set the SDK path because `asio-sys` otherwise downloads its own copy. Windows ARM64 remains WASAPI-only. From the repository root:
+Install the [.NET 11 SDK](https://dotnet.microsoft.com/download) required by `global.json` and Rust 1.88 or later. Linux also needs the ALSA development files. Standard Windows builds, CI, and releases use WASAPI only while ASIO licensing is pending. Do not enable the ASIO feature until the required Steinberg agreement is signed. For an explicitly enabled ASIO development build after signing, install LLVM with `libclang`, obtain ASIO SDK 2.3.4, set `CPAL_ASIO_DIR`, and pass `-p:BluestoneAsio=true`; always set the SDK path because `asio-sys` otherwise downloads its own copy. Windows ARM64 remains WASAPI-only. From the repository root:
 
 ```sh
 dotnet restore src/dotnet/Bluestone.slnx
