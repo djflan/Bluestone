@@ -34,6 +34,7 @@ public sealed class EngineSupervisorTests
         Assert.True(await engine.PingAsync(TimeSpan.FromSeconds(5)) < TimeSpan.FromSeconds(1));
         await WaitUntilAsync(() => engine.Telemetry is not null, Patience, "a heartbeat");
         Assert.True(engine.Telemetry!.Value.WorkingSetBytes > 0);
+        Assert.True(engine.Telemetry!.Value.Collections >= 1, "The engine should compact its start-up heap before Ready (#112).");
         Assert.Contains(Snapshot(ended), e => e.Activity.Text == "Starting the engine…" && e.Outcome == ActivityOutcome.Completed);
 
         await engine.DisposeAsync();
@@ -63,6 +64,8 @@ public sealed class EngineSupervisorTests
         Assert.StartsWith("The engine stopped (", restart.Text, StringComparison.Ordinal);
         Assert.EndsWith("was restarted; playback is stopped.", restart.Text, StringComparison.Ordinal);
         Assert.True(await engine.PingAsync(TimeSpan.FromSeconds(5)) < TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => engine.Telemetry is not null, Patience, "the new engine's heartbeat");
+        Assert.True(engine.Telemetry!.Value.Collections >= 1, "The restarted engine should compact its start-up heap before Ready (#112).");
     }
 
     [Fact]

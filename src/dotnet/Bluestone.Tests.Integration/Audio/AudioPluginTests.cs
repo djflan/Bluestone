@@ -37,7 +37,7 @@ public sealed class AudioPluginTests
         Assert.InRange(crossings, 43, 45);
         // The reference sine peaks at 0.25; the strip halves it.
         Assert.InRange(left.Take(4800..20_000).Max(), 0.124f, 0.126f);
-        Assert.All(left.Take((24_000 + Block + 1024)..), s => Assert.Equal(0f, s));
+        Assert.All(left.AsSpan((24_000 + Block + 1024)..).ToArray(), s => Assert.Equal(0f, s));
         Assert.InRange(strip.Meter.Read().PeakLeft, 0f, 0.126f);
         Assert.Equal(0, node.FailedBlocks);
     }
