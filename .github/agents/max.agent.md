@@ -54,7 +54,7 @@ designed product.
    - Headless frames: `src/dotnet/Bluestone.Tests.Ui` (`AppUnderTest.SaveFrame`; `WorkspaceShowcaseTests` writes
      `frames/showcase-*.png` at narrow, laptop, normal, and wide sizes). Add or extend a showcase scene for new UI.
    - The running app: build, then launch
-     `./src/dotnet/Bluestone.Desktop/bin/Debug/net10.0/Bluestone.Desktop [project.bluestone]` and capture the window
+     `./src/dotnet/Bluestone.Desktop/bin/Debug/net11.0/Bluestone.Desktop [project.bluestone]` and capture the window
      (on macOS, `screencapture`). If the display is asleep, `caffeinate -u -t 60 &` first; a locked screen captures
      only the lock screen. Say so instead of claiming you saw it.
    - Use realistic content in review scenes and app captures: signal playing where applicable, long names, and

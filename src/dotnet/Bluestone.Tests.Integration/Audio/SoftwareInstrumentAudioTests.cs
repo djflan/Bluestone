@@ -51,9 +51,9 @@ public sealed class SoftwareInstrumentAudioTests
         var left = output.Where((_, i) => i % 2 == 0).ToArray();
 
         // The note plays from 0.5 s to 1 s (ticks 480 to 960 at 960 ticks a second), one block late.
-        Assert.All(left[..(Rate / 2)], s => Assert.Equal(0f, s));
-        Assert.True(left[(Rate / 2 + Block + 100)..(Rate - 100)].Max() > 0.2f);
-        Assert.All(left[(Rate + Block + 2048)..], s => Assert.Equal(0f, s));
+        Assert.All(left.AsSpan(..(Rate / 2)).ToArray(), s => Assert.Equal(0f, s));
+        Assert.True(left.Take((Rate / 2 + Block + 100)..(Rate - 100)).Max() > 0.2f);
+        Assert.All(left.AsSpan((Rate + Block + 2048)..).ToArray(), s => Assert.Equal(0f, s));
         Assert.True(graphs.TrackStripOf(track)!.Meter.Read().PeakLeft > 0f);
     }
 

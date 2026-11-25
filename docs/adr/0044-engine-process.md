@@ -1,6 +1,7 @@
 # 0044. A separate C# engine process for real-time work
 
-- Status: Accepted (after the ahead-of-time compilation spike, step 2 of the migration below); applies ADR 0043
+- Status: Accepted (after the ahead-of-time compilation spike, step 2 of the migration below); applies ADR 0043;
+  amended 2026-11-24 (one compacting collection before Ready, with the move to .NET 11)
 - Date: 2026-11-03
 
 ## Context
@@ -155,6 +156,14 @@ round of commands.
   and ReadyToRun is used.
 - **Collections are reported:** the engine counts every collection and its pause. A probe fails on any pause longer
   than 1 ms during playback.
+- **One compacting collection before Ready** (added 2026-11-24 with the move to .NET 11): the engine runs one forced,
+  blocking, compacting full collection just before it sends Ready, once per engine process.
+  A restart is a new process, so it runs again then, never on a real-time path. It moves about 200 KB left over from
+  start-up out of gen0. On a physical Mac without it, .NET 11 missed 1 ms in 5 of 7 runs; in the one GC-logged run
+  the miss was the first gen0 collection, which promoted 216 KB. With it, all 4 experiment runs (2 per runtime,
+  virtual Core MIDI) passed, with maximum pauses of 0.50–0.62 ms; this has not yet been repeated on a Mac on the
+  migrated commit. The start-up collection is not a playback pause. See the
+  [.NET 11 migration report](../dotnet11-feasibility.md).
 - Thread policies as today: the macOS real-time policy for the playback thread and render threads, and MMCSS, a 1 ms
   timer-resolution request, and a high-resolution final wait on Windows (ADRs 0012, 0013, 0043, 0047).
 
@@ -548,9 +557,10 @@ The skeleton is in place:
   references nothing else) defines the messages: Hello, Welcome, Ready, Heartbeat (with the engine's collections,
   pause time, allocations, working set, and JIT count), Ping, Pong, Shutdown, Fault, and test commands. Frames are a
   length and a type, decoded strictly; random bytes decode or fail with a protocol error, nothing else.
-- **`Bluestone.Engine`**, given a pipe and a token, connects, says Hello, reports Ready, sends a heartbeat every
-  250 ms, answers pings, and stops on Shutdown or when Bluestone goes away. Test commands (crash, hang, fault) are
-  obeyed only with `--allow-test-commands`. With `--spike` it still runs the step-2 smoke test.
+- **`Bluestone.Engine`**, given a pipe and a token, connects, says Hello, compacts its heap once (see "Rules inside the
+  engine"), reports Ready, sends a heartbeat every 250 ms, answers pings, and stops on Shutdown or when Bluestone goes
+  away. Test commands (crash, hang, fault) are obeyed only with `--allow-test-commands`. With `--spike` it still runs
+  the step-2 smoke test.
 - **`EngineSupervisor`** (Application) launches it on a pipe restricted to the current user, checks the handshake
   (version, token, process id), and watches for each kind of stop above: the process ending, 1 s without a message, a
   broken or invalid channel, and a reported fault. A stopped engine is killed if still running and replaced, with a

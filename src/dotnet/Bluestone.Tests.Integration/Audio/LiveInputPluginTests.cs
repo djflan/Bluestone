@@ -202,7 +202,7 @@ public sealed class LiveInputPluginTests
         live.Update(session.Project, devices, (_, _) => null, new Dictionary<EndpointId, IMidiOutput>());
         live.UseInstruments(graphs.PluginNodes, node => result.Graph.DelayToMasterOf(node) ?? 0);
         var channel = MidiChannel.FromIndex(0);
-        float Peak() => Left(driver.Render(8 * Block, Block))[(4 * Block)..].Max();
+        float Peak() => Left(driver.Render(8 * Block, Block)).Take((4 * Block)..).Max();
         float Play(TrackId track, int note, int velocity)
         {
             Assert.True(live.Post(track, ChannelMessage.NoteOn(channel, new NoteNumber(note), new Velocity(velocity)), clock.Now));

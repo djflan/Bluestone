@@ -48,3 +48,9 @@ memory-safe.
 - No Rust and no Bluestone-owned C or C++ exist today; the operating-system MIDI APIs are called from C#.
 - Every native component starts with a measurement or a native-interface constraint in its ADR.
 - CI gains a cargo build for each target platform only when the first Rust component lands.
+
+## Note (2026-11-24): the CPU floor comes from .NET 11
+
+On .NET 11 the managed runtime sets Bluestone's minimum CPU: x86-64-v2 on x64, and the Arm64 minimums listed in
+[the .NET 11 migration report](../dotnet11-feasibility.md#hardware-requirements-on-net-11). The NativeAOT engine is
+bound by it as much as the JIT-run desktop app. The Rust crates set no `target-cpu`, so they do not raise it.

@@ -779,6 +779,10 @@ managed code cannot meet a real-time or throughput requirement after tuning, or 
 (such as plugin binaries) requires it; it replaces C or C++ for new Bluestone-owned native code. C and C++
 appear only as third-party libraries, vendor SDK requirements, or thin ABI shims.
 
+The managed code targets .NET 11 (`net11.0`, ADR 0002). Its CPU minimum (x86-64-v2 on x64; Arm64 minimums in the
+[.NET 11 migration report](dotnet11-feasibility.md#hardware-requirements-on-net-11)) applies to the NativeAOT engine
+and the JIT-run desktop app alike. The Rust crates set no `target-cpu`, so they do not raise it.
+
 Rust code lives in a Cargo workspace, `src/native/`, one crate per component (`src/native/crates/*`), each
 a cdylib with a small, versioned C ABI. `dotnet build` builds the crates a project names
 (`src/dotnet/Native.targets`) and copies the library beside the assemblies. The crates and why each is Rust:

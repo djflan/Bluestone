@@ -35,7 +35,7 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 
 ## 2. Build environment
 
-Use the README commands on a machine with the .NET SDK from `global.json` (10.0.403 or a later 10.0 feature band) and
+Use the README commands on a machine with the .NET SDK from `global.json` (11.0.100 or a later 11.0 feature band) and
 a Rust toolchain (`cargo`; the hosted CI runners have one). `dotnet build` builds the Rust crates through
 `src/dotnet/Native.targets` (`cargo build --locked`; after changing Rust dependencies run `cargo build` in
 `src/native/` once). Linux needs `libasound2-dev` and `pkg-config`. One test project, one namespace:
@@ -50,10 +50,13 @@ a Rust toolchain (`cargo`; the hosted CI runners have one). `dotnet build` build
   (`AudioDeviceTests`) skip with a reason where those are absent (CI).
 - The app cannot start while the Mac's display is asleep (Avalonia: "RenderTimer -6661"). `caffeinate -u -t 60 &`
   wakes it; with the screen locked, screenshots show only the lock screen.
-- To look at the UI: `./src/dotnet/Bluestone.Desktop/bin/Debug/net10.0/Bluestone.Desktop path/to/project.bluestone`.
+- To look at the UI: `./src/dotnet/Bluestone.Desktop/bin/Debug/net11.0/Bluestone.Desktop path/to/project.bluestone`.
 
 ## 3. Analyzer traps already hit (warnings are errors)
 
+- `CA2027` (new in .NET 11): a `Task.Delay` raced in `Task.WhenAny` must be cancelled after the wait; pass a
+  token from a `CancellationTokenSource` and cancel it (`WorkerProcess`).
+- `CA1832` (new in .NET 11): use `AsSpan()` or `AsMemory()` instead of a range indexer on an array to get a slice.
 - `CA2208`: `new ArgumentException(msg, nameof(X))` must name a *parameter of the enclosing method*; `nameof(Property)` is only allowed inside the property's own accessor.
 - `CA1711`: an enum member cannot end in `Ex` (`SysEx` became `SystemExclusive`).
 - `IDE0005`: unused `using` is an error, including in tests.
@@ -283,3 +286,26 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       left (already on `main`).
     - Tests still wanted: a `LedFade` detach or retarget mid-fade, the picker consuming its own clicks, and the
       search-box focus fallback.
+13. **.NET 11 migration (#112), deferred or not verified** (details in [dotnet11-feasibility.md](dotnet11-feasibility.md)):
+    - The engine GC probe (at least 300 s, 1 ms gate, 0 allocations, 0 JIT-compiled methods) on a physical Mac on
+      the migrated commit. Not run: no Mac was reachable. The owner accepted proceeding without it on 2026-11-24, so
+      it is a follow-up, not a merge gate; the startup compaction's 4-of-4 result is from experiment builds only.
+    - The Windows Arm64 minimum: Microsoft's breaking-change page says armv8.0-a, its runtime What's-new page says
+      armv8.0-a + LSE. Bluestone states the stricter one. Recheck both pages and update the README and the report
+      when they agree.
+    - `osx-x64` and `win-arm64`: launched only on hosted CI runners (`--check-allocations`, run 45520109671,
+      0 bytes); no physical hardware or timing.
+    - The desktop app has not been launched on any of the six RIDs; CI only publishes it.
+    - Native Linux timing on either runtime ([issue 117](https://github.com/djflan/Bluestone/issues/117)).
+    - Same-time MIDI ordering and the first-due startup error. Both appear on .NET 10 and .NET 11, so they are not
+      migration regressions; they are tracked separately.
+    - The Windows .NET 10 engine's GC pauses (about 312 KB promoted per gen0 collection, 1.3–3.1 ms pauses) are
+      unexplained. .NET 11 does not show them, so they no longer block anything, but they return on a rollback.
+    - Physical MIDI and audio devices and third-party plugins on .NET 11.
+    - Desktop memory: on a Mac, a JIT-run probe process committed more GC memory on .NET 11 (329–371 MB against
+      189 MB). Not compared on the migrated commit; measure the desktop app on both runtimes.
+    - Targeted checks for .NET 11 behavior changes: signal-gradient positions finer than 0.001 can round to a
+      different label, and Unix engine and worker pipes now use mode 0600. Neither has a dedicated test.
+    - BenchmarkDotNet is `0.16.0-preview.1`; move to a stable release with .NET 11 support when one ships.
+    - Optional: assert that NativeAOT publish logs contain "Generating native code", so a silent fallback to a JIT
+      build fails CI.

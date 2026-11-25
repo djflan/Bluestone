@@ -53,6 +53,11 @@ internal static class EngineHost
                 InstrumentsChanged = midi.UseInstruments,
                 PostLive = midi.PostLive,
             };
+
+            // Once per engine process, before Ready and before anything can play: compact the start-up leftovers so the
+            // first gen0 collection during playback does not promote them and miss ADR 0043's 1 ms pause (#112). The
+            // supervisor relaunches the whole process on restart, so this never runs on a real-time path.
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
             await channel.WriteAsync(new Ready(), stop.Token).ConfigureAwait(false);
             var hung = false;
             var heartbeats = Task.Run(() => HeartbeatAsync(channel, () => Volatile.Read(ref hung), stop.Token), CancellationToken.None);
