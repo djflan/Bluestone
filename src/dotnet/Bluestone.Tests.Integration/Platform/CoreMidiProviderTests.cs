@@ -61,18 +61,24 @@ public sealed class CoreMidiProviderTests
     }
 
     [Fact]
-    public void Provider_ResolvesEveryPropertyKeyAfterCreatingItsClient()
+    public async Task Provider_ResolvesPropertyKeysAndListsAnotherClientsSource()
     {
         RequireMacOS();
-        using var provider = new CoreMidiProvider(Clock, "Bluestone Tests");
+        var name = $"Bluestone Test {Guid.NewGuid():N}"[..24];
+        using var publisher = new CoreMidiProvider(Clock, "Bluestone Test Publisher");
+        using var listener = new CoreMidiProvider(Clock, "Bluestone Test Listener");
 
         // Issue #112: these exports can read as null before MIDIClientCreate and must never be cached as null.
         var keys = Native.Properties.TryResolve();
-
         Assert.NotNull(keys);
         Assert.All(
             new[] { keys.Name, keys.DisplayName, keys.UniqueId, keys.Manufacturer, keys.Model, keys.Offline, keys.DriverOwner },
             key => Assert.NotEqual(IntPtr.Zero, key));
+
+        // The symptom of null keys was a missing endpoint: Describe skipped anything without a unique ID or name.
+        publisher.CreateVirtualOutput(name);
+        var source = await EventuallyAsync(() => listener.GetEndpoints().FirstOrDefault(e => e.Direction == EndpointDirection.Input && e.DisplayName == name), "the virtual source");
+        Assert.True(int.TryParse(source.Id.Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _), $"'{source.Id.Value}' is not a CoreMIDI unique ID.");
     }
 
     [Fact]

@@ -125,8 +125,9 @@ internal static unsafe partial class Native
 
     /// <summary>
     /// The CoreMIDI property constants. They can read as null before <c>MIDIClientCreate</c>, and this
-    /// class's static initializer can run before any client exists (the CoreMIDI run loop reads
-    /// <see cref="RunLoopDefaultMode"/>), so they are never read here; see <see cref="CoreMidiPropertyKeyCache"/>.
+    /// class's static initializer runs before any client exists (any use of <see cref="Native"/>, such as
+    /// <see cref="CreateString"/> while creating the client, triggers it), so they are never read here;
+    /// see <see cref="CoreMidiPropertyKeyCache"/>.
     /// </summary>
     public static readonly CoreMidiPropertyKeyCache Properties = new(static name => Constant(CoreMidiHandle, name));
 

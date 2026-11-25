@@ -21,11 +21,16 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
     public const string ProviderId = "coremidi";
     private const string VirtualPrefix = "virtual:";
 
+    /// <summary>Returned by <see cref="CreateClient"/> when the property keys cannot be resolved; not a CoreMIDI OSStatus.</summary>
+    private const int PropertiesUnavailableStatus = int.MinValue;
+
     private readonly Lock _gate = new();
     private readonly List<CoreMidiOutput> _outputs = [];
     private readonly List<CoreMidiInput> _inputs = [];
     private readonly Dictionary<string, uint> _virtualSources = new(StringComparer.Ordinal);
-    private readonly CoreMidiPropertyKeys _properties;
+    // Assigned by CreateClient on the CoreMIDI run loop before any notification for this client can be
+    // delivered there; null only while construction is failing.
+    private CoreMidiPropertyKeys? _properties;
     private GCHandle _self;
     private uint _client;
     private uint _outputPort;
@@ -41,17 +46,10 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
         if (status != Native.NoError)
         {
             Dispose();
-            throw new EndpointUnavailableException(string.Create(CultureInfo.InvariantCulture, $"CoreMIDI could not start (OSStatus {status})."));
+            throw new EndpointUnavailableException(status == PropertiesUnavailableStatus
+                ? "CoreMIDI could not start (its property constants were unavailable after creating a client)."
+                : string.Create(CultureInfo.InvariantCulture, $"CoreMIDI could not start (OSStatus {status})."));
         }
-
-        // Only now that a client exists are the property constants safe to read.
-        if (Native.Properties.TryResolve() is not { } properties)
-        {
-            Dispose();
-            throw new EndpointUnavailableException("CoreMIDI could not start (its property constants were unavailable after creating a client).");
-        }
-
-        _properties = properties;
     }
 
     public string Id => ProviderId;
@@ -67,6 +65,9 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
     internal uint OutputPort => _outputPort;
 
     internal uint Client => _client;
+
+    /// <summary>Non-null once construction succeeds; a provider whose construction failed is already disposed.</summary>
+    private CoreMidiPropertyKeys Properties => _properties ?? throw new ObjectDisposedException(nameof(CoreMidiProvider));
 
     public event EventHandler? EndpointsChanged;
 
@@ -96,7 +97,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
 
                 // A stable unique ID lets other applications remember the connection across launches.
                 // If CoreMIDI refuses it (an ID collision), it keeps the one it assigned.
-                _ = Native.MIDIObjectSetIntegerProperty(source, _properties.UniqueId, StableUniqueId(name));
+                _ = Native.MIDIObjectSetIntegerProperty(source, Properties.UniqueId, StableUniqueId(name));
                 _virtualSources[name] = source;
             }
             finally
@@ -115,6 +116,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            var properties = Properties;
             var ownSources = _virtualSources.Values.ToHashSet();
             foreach (var (name, _) in _virtualSources.OrderBy(v => v.Key, StringComparer.Ordinal))
             {
@@ -124,7 +126,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
             var destinations = Native.MIDIGetNumberOfDestinations();
             for (nuint i = 0; i < destinations; i++)
             {
-                if (Describe(_properties, Native.MIDIGetDestination(i), EndpointDirection.Output) is { } d)
+                if (Describe(properties, Native.MIDIGetDestination(i), EndpointDirection.Output) is { } d)
                 {
                     result.Add(d);
                 }
@@ -134,7 +136,7 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
             for (nuint i = 0; i < sources; i++)
             {
                 var source = Native.MIDIGetSource(i);
-                if (!ownSources.Contains(source) && Describe(_properties, source, EndpointDirection.Input) is { } d)
+                if (!ownSources.Contains(source) && Describe(properties, source, EndpointDirection.Input) is { } d)
                 {
                     result.Add(d);
                 }
@@ -314,7 +316,15 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
                 return status;
             }
 
+            // The property constants can read as null until a client exists (issue #112). Resolve them here,
+            // on the run loop, so they are assigned before any notification for this client is delivered.
             Native.Properties.OnClientCreated();
+            _properties = Native.Properties.TryResolve();
+            if (_properties is null)
+            {
+                return PropertiesUnavailableStatus;
+            }
+
             var portName = Native.CreateString(clientName + " Out");
             try
             {
@@ -357,11 +367,26 @@ public sealed unsafe class CoreMidiProvider : IMidiEndpointProvider
         List<CoreMidiInput> inputs;
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             outputs = [.. _outputs];
             inputs = [.. _inputs];
         }
 
-        var present = GetEndpoints().Select(e => (e.Id, e.Direction)).ToHashSet();
+        HashSet<(EndpointId Id, EndpointDirection Direction)> present;
+        try
+        {
+            present = GetEndpoints().Select(e => (e.Id, e.Direction)).ToHashSet();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed (or construction failed) after this notification was queued.
+            return;
+        }
+
         foreach (var output in outputs.Where(o => !present.Contains((o.Endpoint.Id, EndpointDirection.Output))))
         {
             output.MarkDisconnected();

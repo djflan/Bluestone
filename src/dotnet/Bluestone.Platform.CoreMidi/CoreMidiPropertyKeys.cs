@@ -29,8 +29,8 @@ internal sealed record CoreMidiPropertyKeys(
 /// </summary>
 /// <remarks>
 /// CoreMIDI's exported property constants can read as null until the process has created a client
-/// (issue #112). Resolving them earlier, for example from a static initializer that the CoreMIDI run
-/// loop triggers before <c>MIDIClientCreate</c>, cached nulls that made every endpoint lookup fail. This
+/// (issue #112). Resolving them earlier, from a static initializer that any CoreMIDI binding call
+/// triggers before <c>MIDIClientCreate</c>, cached nulls that made every endpoint lookup fail. This
 /// cache therefore never reads the exports before <see cref="OnClientCreated"/> and never caches a null.
 /// Thread-safe; it has no platform dependency so it can be tested on any OS.
 /// </remarks>
