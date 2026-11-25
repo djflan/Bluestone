@@ -288,8 +288,8 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       search-box focus fallback.
 13. **.NET 11 migration (#112), deferred or not verified** (details in [dotnet11-feasibility.md](dotnet11-feasibility.md)):
     - The engine GC probe (at least 300 s, 1 ms gate, 0 allocations, 0 JIT-compiled methods) on a physical Mac on
-      the migrated commit. Not run: no Mac was reachable. This is the open acceptance item; the startup compaction's
-      4-of-4 result is from experiment builds only.
+      the migrated commit. Not run: no Mac was reachable. The owner accepted proceeding without it on 2026-11-24, so
+      it is a follow-up, not a merge gate; the startup compaction's 4-of-4 result is from experiment builds only.
     - The Windows Arm64 minimum: Microsoft's breaking-change page says armv8.0-a, its runtime What's-new page says
       armv8.0-a + LSE. Bluestone states the stricter one. Recheck both pages and update the README and the report
       when they agree.
