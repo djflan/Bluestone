@@ -159,9 +159,10 @@ round of commands.
 - **One compacting collection before Ready** (added 2026-11-24 with the move to .NET 11): the engine runs one forced,
   blocking, compacting full collection just before it sends Ready, once per engine process.
   A restart is a new process, so it runs again then, never on a real-time path. It moves about 200 KB left over from
-  start-up out of gen0. On a physical Mac, without it, .NET 11's first gen0 collection during playback promoted that
-  memory and missed 1 ms in 5 of 7 runs; with it, all 4 runs (2 per runtime, virtual Core MIDI) passed, with maximum
-  pauses of 0.50–0.62 ms. The start-up collection is not a playback pause. See the
+  start-up out of gen0. On a physical Mac without it, .NET 11 missed 1 ms in 5 of 7 runs; in the one GC-logged run
+  the miss was the first gen0 collection, which promoted 216 KB. With it, all 4 experiment runs (2 per runtime,
+  virtual Core MIDI) passed, with maximum pauses of 0.50–0.62 ms; this has not yet been repeated on a Mac on the
+  migrated commit. The start-up collection is not a playback pause. See the
   [.NET 11 migration report](../dotnet11-feasibility.md).
 - Thread policies as today: the macOS real-time policy for the playback thread and render threads, and MMCSS, a 1 ms
   timer-resolution request, and a high-resolution final wait on Windows (ADRs 0012, 0013, 0043, 0047).

@@ -15,8 +15,9 @@ not the migrated code, and none of it is a release claim.
 - **Windows:** on one Ryzen 7 2700X machine, the .NET 10 NativeAOT engine missed ADR 0043's 1 ms GC-pause gate in
   32 of 32 runs under app or full pressure, at about 2.5 ms per pause. On .NET 11 the median maximum pause was about
   0.4 ms (47 of 48 runs met the gate). The .NET 10 cause is not identified.
-- **macOS:** on a physical M5 Max, the two runtimes are equal once the engine runs one compacting collection at
-  startup. Without it, .NET 11's first collection during playback missed 1 ms in 5 of 7 runs.
+- **macOS:** on a physical M5 Max with one compacting collection at engine startup, both runtimes passed the 1 ms gate
+  in all 4 experiment runs (2 per runtime; maximum pauses 0.50–0.62 ms on .NET 11, 0.50–0.56 ms on .NET 10). Without
+  it, .NET 11 missed 1 ms in 5 of 7 runs. The compaction has not yet been run on a Mac on the migrated commit.
 - **MIDI dispatch timing:** no difference between runtimes on either platform tested.
 - **Linux:** untested on both runtimes; it neither supports nor blocks the decision.
 - **Support:** when checked on 2026-11-22, .NET 10 (LTS) and .NET 11 (STS) both ended support on
@@ -32,10 +33,10 @@ The migration is one reversible pull request. It changes:
    startup out of gen0, so the first gen0 collection during playback stays short.
 4. CA2027 (`WorkerProcess`, `SplashWindow`) and CA1832 fixed in code. Warnings stay errors; no analyzer is
    downgraded.
-5. BenchmarkDotNet upgraded to <!-- OUTCOME: BenchmarkDotNet version --> (0.15.8's SDK validator did not recognize
+5. BenchmarkDotNet upgraded to `0.16.0-preview.1` (0.15.8's SDK validator did not recognize
    .NET 11).
-6. `.github/workflows/ci.yml`: a new opt-in dispatch input (<!-- OUTCOME: input name -->) that publishes the engine for
-   all six release RIDs with trim/AOT warnings as failures and runs `--check-allocations`.
+6. `.github/workflows/ci.yml`: a new opt-in dispatch input (`release_rids`) that publishes the desktop app and the
+   engine for all six release RIDs with trim/AOT warnings as failures and runs `--check-allocations`.
 
 ## Hardware requirements on .NET 11
 
@@ -69,31 +70,37 @@ not a Microsoft-confirmed requirement. No Windows Arm64 hardware ran the migrate
 
 Results on the migrated commit. Each row is filled from a recorded run; a row left as a placeholder was not run.
 
-| Gate | Result |
-| --- | --- |
-| Commit measured | <!-- OUTCOME: commit SHA of the migrated branch used for the results below --> |
-| Strict Release build of `Bluestone.slnx` on `net11.0`, warnings as errors, no downgrades | <!-- OUTCOME: strict build command, host, result, warning count --> |
-| `dotnet format --verify-no-changes` | <!-- OUTCOME: format result --> |
-| Unit, integration, and UI tests | <!-- OUTCOME: per-project passed/skipped/failed counts and host --> |
-| Rust `cargo fmt --check`, `clippy`, `test` | <!-- OUTCOME: Rust check results, or "not run" --> |
-| Engine NativeAOT publish, six RIDs, no trim/AOT warnings | <!-- OUTCOME: CI run link and per-RID result for osx-arm64, osx-x64, win-x64, win-arm64, linux-x64, linux-arm64 --> |
-| `Bluestone.Engine --check-allocations` (0 bytes in checked paths) | <!-- OUTCOME: per-RID result; which RIDs ran on native hardware vs only published --> |
-| Zero JIT-compiled methods in the NativeAOT engine | <!-- OUTCOME: JIT count evidence and where it was observed --> |
-| EngineHost startup compaction runs once, before Ready, and again after an engine restart | <!-- OUTCOME: test name(s) and result --> |
-| Windows engine GC probe, ≥ 300 s, 1 ms gate | <!-- OUTCOME: Windows probe command, host, duration, GC count, max pause, verdict --> |
-| Physical-Mac engine GC probe, ≥ 300 s, 1 ms gate | <!-- OUTCOME: physical-Mac probe status (expected: not run, no Mac reachable from the Windows host) --> |
-| Desktop app memory on .NET 11 against .NET 10 | <!-- OUTCOME: desktop memory comparison (gc.committed, working set) or "not measured" --> |
-| BenchmarkDotNet suites run on .NET 11 | <!-- OUTCOME: BenchmarkDotNet version and which suites ran --> |
+| Gate | Class | Result |
+| --- | --- | --- |
+| Commit measured | — | `c37b9eb` (code `141df41` plus docs). SDK `11.0.100`, target `net11.0`. |
+| Strict Release build of `Bluestone.slnx`, warnings as errors, no downgrades | Verified (local Windows) | 0 warnings, 0 errors. |
+| `dotnet format --verify-no-changes` | Verified | Clean. |
+| Tests, local | — | See the pull request. |
+| Tests, [CI run 45520109671](https://github.com/djflan/Bluestone/actions/runs/45520109671) at `c37b9eb` | Simulated (hosted VMs) | Success. ubuntu-26.04: 2,585 passed, 37 skipped, 0 failed. windows-2025: 2,583 / 37 / 0. macos-26-arm64: 2,588 / 34 / 0. |
+| Rust | Simulated (hosted VMs) | `cargo test` and `cargo fmt --check` passed. Clippy was not run on this commit (no Rust changes). |
+| Desktop and engine NativeAOT publish, six RIDs | Simulated (hosted VMs, native architecture, no emulation) | Same CI run. 0 IL/AOT warnings on all six: `osx-arm64` (macos-26-arm64), `osx-x64` (macos-15, Intel), `win-x64` (windows-2025), `win-arm64` (windows-11-arm64), `linux-x64` (ubuntu-26.04), `linux-arm64` (ubuntu-24.04-arm). The desktop app was not launched on any RID. |
+| `Bluestone.Engine --check-allocations` | Simulated (hosted VMs); win-x64 also local | 0 bytes for MIDI, audio, and live on all six RIDs. Live-input depth-1 deadlines missed (not gated, shared VMs): linux-x64 2, osx-arm64 3, osx-x64 3, others 0. Local win-x64: 0 / 0 / 0 bytes; its live check printed "2 depth-1 deadlines missed" (not compared with `main`). |
+| Zero JIT-compiled methods in the NativeAOT engine | Verified (local Windows) | The engine heartbeat reported `JitCompiledMethods` = 0 in both Windows probe runs. |
+| EngineHost startup compaction: once per process, before Ready, again after a restart | Reviewed | Placement reviewed by Grace, Milo, and Theo: once per process, before Ready; a restart is a new process; within the supervisor's 10 s `StartTimeout`. Test: see the pull request. |
+| Windows engine GC probe, 300 s, 1 ms gate | Verified (physical Windows) | AMD Ryzen 7 2700X, quiet desktop but not isolated; the probe forwarded output to itself (no MIDI device). `Bluestone.Benchmarks --jitter 300 --engine --engine-path <win-x64 AOT engine> --pressure app`, 2 runs. 12 engine GCs each. Max GC pause 0.330 ms (p50 0.204) and 0.316 ms (p50 0.200). Dispatch lateness p99.9 / max 0.66 / 0.963 ms and 0.72 / 1.048 ms. 0 late, missing, or dropped of 115,264 messages; engine allocation about 165 KB/s; working set about 40 MB. Both runs: all targets met. Raw reports are attached to the pull request. |
+| Physical-Mac engine GC probe, 300 s, 1 ms gate | **Unverified** | Not run: no Mac was reachable from the Windows host. This is the open acceptance item. |
+| Desktop app memory, .NET 11 against .NET 10 | Unverified | Not measured in this run. #112's observation (higher `gc.committed` in a JIT-run process) is unconfirmed on the migrated commit. |
+| BenchmarkDotNet on .NET 11 | Verified (local Windows) | 0.15.8 reproduced the `NotImplementedException`. `0.16.0-preview.1` ran `MixerMeterBenchmarks` (`ShortRunJob`, 60 benchmarks), exit 0. |
+| Unix `CurrentUserOnly` pipes (mode 0600) | Reviewed; simulated | Engine and worker pipes are same-user. Covered by the passing Linux and macOS integration suites; no direct permission test. |
 
 ### Verified, simulated, and unverified
 
-<!-- OUTCOME: after the gates above are filled, move each item to the class it belongs to. -->
-
-- **Verified on physical hardware (migrated commit):** <!-- OUTCOME: list -->
-- **Simulated (emulated, virtual device, or hosted VM):** <!-- OUTCOME: list -->
+- **Verified on physical hardware (migrated commit):** the strict build, `dotnet format`, BenchmarkDotNet, and the
+  Windows engine GC probe with zero JIT, all on one Windows x64 desktop.
+- **Simulated (hosted VMs):** the CI test suites on Linux, Windows, and macOS; Rust tests; the six-RID desktop and
+  engine publishes and their `--check-allocations` runs.
 - **Unverified:**
-  - Physical-Mac GC confirmation on the migrated commit, unless the table above records it.
-  - `osx-x64` and `win-arm64` launch on real hardware (CI publish only).
+  - Physical-Mac GC confirmation on the migrated commit.
+  - `osx-x64` and `win-arm64` were launched only on hosted CI runners (`--check-allocations`, run 45520109671,
+    0 bytes); no physical hardware or timing.
+  - The desktop app launched on any RID.
+  - Desktop memory on .NET 11 against .NET 10.
+  - Clippy on this commit.
   - Linux timing on native hardware ([#117](https://github.com/djflan/Bluestone/issues/117)), on either runtime.
   - Physical MIDI and audio devices and third-party plugins on .NET 11.
   - The Windows Arm64 minimum (Microsoft's pages conflict).
@@ -123,7 +130,7 @@ durations. They exclude vendor delays, hardware, and open timing or platform wor
 | Packages | `src/dotnet/Directory.Packages.props` | BenchmarkDotNet upgrade |
 | Engine | `src/dotnet/Bluestone.Engine/EngineHost.cs` | Startup compaction before Ready |
 | Analyzer fixes | CA2027: `src/dotnet/Bluestone.Plugins/Workers/WorkerProcess.cs`, `src/dotnet/Bluestone.Desktop/Views/SplashWindow.cs`; CA1832: integration and unit test files | Fix in code, no downgrades |
-| CI | `.github/workflows/ci.yml` | Opt-in six-RID engine publish |
+| CI | `.github/workflows/ci.yml` | Opt-in six-RID desktop and engine publish |
 | Developer settings | `.vscode/launch.json` | Output path `net11.0` |
 | Docs | `README.md`, `CONTRIBUTING.md`, `docs/engineering-handoff.md`, `docs/architecture.md`, ADRs 0002, 0026, 0043, 0044, `.github/agents/max.agent.md`, this report | SDK, paths, hardware floor, startup compaction |
 

@@ -6,7 +6,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | ADR | Title | Status |
 | --- | ----- | ------ |
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
-| [0002](0002-build-and-test-conventions.md) | Build and test conventions | Accepted |
+| [0002](0002-build-and-test-conventions.md) | Build and test conventions | Accepted; runtime amended 2026-11-24 (.NET 11) |
 | [0003](0003-deterministic-event-ordering.md) | Deterministic ordering of simultaneous events | Accepted |
 | [0004](0004-musical-time-representation.md) | Musical time representation | Accepted |
 | [0005](0005-midi-endpoint-contracts.md) | MIDI endpoint contracts | Accepted |
@@ -48,7 +48,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0041](0041-product-direction.md) | Bluestone is a device-centric production DAW with progressive routing | Accepted; amends the product and interaction direction of 0023 and 0038; ecosystem direction amended by 0042 |
 | [0042](0042-complete-studio-in-any-configuration.md) | Bluestone is a complete studio in any configuration | Accepted; amends the device-ecosystem direction of 0041 |
 | [0043](0043-timing-targets-and-measurement.md) | Timing targets, how they are measured, and how C# meets them | Accepted; amends 0012, 0026, 0032, and 0035 |
-| [0044](0044-engine-process.md) | A separate C# engine process for real-time work | Accepted |
+| [0044](0044-engine-process.md) | A separate C# engine process for real-time work | Accepted; applies ADR 0043; amended 2026-11-24 (one compacting collection before Ready) |
 | [0045](0045-winmm-midi-input.md) | Windows MIDI input and WinMM endpoint polling | Accepted |
 | [0046](0046-windows-asio-audio-host.md) | ASIO audio host on Windows x64 | Accepted; amended by 0049 |
 | [0047](0047-windows-precise-wait-and-measurements.md) | Windows precise waits and native timing evidence | Accepted |

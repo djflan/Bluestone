@@ -54,6 +54,9 @@ a Rust toolchain (`cargo`; the hosted CI runners have one). `dotnet build` build
 
 ## 3. Analyzer traps already hit (warnings are errors)
 
+- `CA2027` (new in .NET 11): a `Task.Delay` raced in `Task.WhenAny` must be cancelled after the wait; pass a
+  token from a `CancellationTokenSource` and cancel it (`WorkerProcess`).
+- `CA1832` (new in .NET 11): use `AsSpan()` or `AsMemory()` instead of a range indexer on an array to get a slice.
 - `CA2208`: `new ArgumentException(msg, nameof(X))` must name a *parameter of the enclosing method*; `nameof(Property)` is only allowed inside the property's own accessor.
 - `CA1711`: an enum member cannot end in `Ex` (`SysEx` became `SystemExclusive`).
 - `IDE0005`: unused `using` is an error, including in tests.
@@ -285,12 +288,14 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       search-box focus fallback.
 13. **.NET 11 migration (#112), deferred or not verified** (details in [dotnet11-feasibility.md](dotnet11-feasibility.md)):
     - The engine GC probe (at least 300 s, 1 ms gate, 0 allocations, 0 JIT-compiled methods) on a physical Mac on
-      the migrated commit. <!-- OUTCOME: remove this item if the physical-Mac probe result is supplied -->
+      the migrated commit. Not run: no Mac was reachable. This is the open acceptance item; the startup compaction's
+      4-of-4 result is from experiment builds only.
     - The Windows Arm64 minimum: Microsoft's breaking-change page says armv8.0-a, its runtime What's-new page says
       armv8.0-a + LSE. Bluestone states the stricter one. Recheck both pages and update the README and the report
       when they agree.
-    - `osx-x64` and `win-arm64`: the engine is published in CI only; nothing has been launched or measured on that
-      hardware.
+    - `osx-x64` and `win-arm64`: launched only on hosted CI runners (`--check-allocations`, run 45520109671,
+      0 bytes); no physical hardware or timing.
+    - The desktop app has not been launched on any of the six RIDs; CI only publishes it.
     - Native Linux timing on either runtime ([issue 117](https://github.com/djflan/Bluestone/issues/117)).
     - Same-time MIDI ordering and the first-due startup error. Both appear on .NET 10 and .NET 11, so they are not
       migration regressions; they are tracked separately.
@@ -298,8 +303,10 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       unexplained. .NET 11 does not show them, so they no longer block anything, but they return on a rollback.
     - Physical MIDI and audio devices and third-party plugins on .NET 11.
     - Desktop memory: on a Mac, a JIT-run probe process committed more GC memory on .NET 11 (329–371 MB against
-      189 MB). <!-- OUTCOME: desktop memory comparison; keep this item only if desktop memory is higher on .NET 11 -->
+      189 MB). Not compared on the migrated commit; measure the desktop app on both runtimes.
     - Targeted checks for .NET 11 behavior changes: signal-gradient positions finer than 0.001 can round to a
       different label, and Unix engine and worker pipes now use mode 0600. Neither has a dedicated test.
-    - BenchmarkDotNet is <!-- OUTCOME: BenchmarkDotNet version -->; move to a stable release with .NET 11 support if
-      that is a preview.
+    - BenchmarkDotNet is `0.16.0-preview.1`; move to a stable release with .NET 11 support when one ships.
+    - Clippy was not run on the migration commit (no Rust changes); run it on the next Rust change.
+    - Optional: assert that NativeAOT publish logs contain "Generating native code", so a silent fallback to a JIT
+      build fails CI.
