@@ -307,6 +307,5 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     - Targeted checks for .NET 11 behavior changes: signal-gradient positions finer than 0.001 can round to a
       different label, and Unix engine and worker pipes now use mode 0600. Neither has a dedicated test.
     - BenchmarkDotNet is `0.16.0-preview.1`; move to a stable release with .NET 11 support when one ships.
-    - Clippy was not run on the migration commit (no Rust changes); run it on the next Rust change.
     - Optional: assert that NativeAOT publish logs contain "Generating native code", so a silent fallback to a JIT
       build fails CI.

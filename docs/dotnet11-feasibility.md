@@ -75,15 +75,15 @@ Results on the migrated commit. Each row is filled from a recorded run; a row le
 | Commit measured | — | `c37b9eb` (code `141df41` plus docs). SDK `11.0.100`, target `net11.0`. |
 | Strict Release build of `Bluestone.slnx`, warnings as errors, no downgrades | Verified (local Windows) | 0 warnings, 0 errors. |
 | `dotnet format --verify-no-changes` | Verified | Clean. |
-| Tests, local | — | See the pull request. |
+| Tests, local | Verified (local Windows) | `dotnet test src/dotnet/Bluestone.slnx --no-build -c Release --max-parallel-test-modules 1` at `c37b9eb`: 2,625 total, 2,606 passed, 19 skipped, 0 failed. |
 | Tests, [CI run 45520109671](https://github.com/djflan/Bluestone/actions/runs/45520109671) at `c37b9eb` | Simulated (hosted VMs) | Success. ubuntu-26.04: 2,585 passed, 37 skipped, 0 failed. windows-2025: 2,583 / 37 / 0. macos-26-arm64: 2,588 / 34 / 0. |
-| Rust | Simulated (hosted VMs) | `cargo test` and `cargo fmt --check` passed. Clippy was not run on this commit (no Rust changes). |
+| Rust | Simulated (hosted VMs) | `cargo test`, `cargo fmt --check`, and `cargo clippy --locked --all-targets -- -D warnings` passed (ubuntu job). |
 | Desktop and engine NativeAOT publish, six RIDs | Simulated (hosted VMs, native architecture, no emulation) | Same CI run. 0 IL/AOT warnings on all six: `osx-arm64` (macos-26-arm64), `osx-x64` (macos-15, Intel), `win-x64` (windows-2025), `win-arm64` (windows-11-arm64), `linux-x64` (ubuntu-26.04), `linux-arm64` (ubuntu-24.04-arm). The desktop app was not launched on any RID. |
 | `Bluestone.Engine --check-allocations` | Simulated (hosted VMs); win-x64 also local | 0 bytes for MIDI, audio, and live on all six RIDs. Live-input depth-1 deadlines missed (not gated, shared VMs): linux-x64 2, osx-arm64 3, osx-x64 3, others 0. Local win-x64: 0 / 0 / 0 bytes; its live check printed "2 depth-1 deadlines missed" (not compared with `main`). |
 | Zero JIT-compiled methods in the NativeAOT engine | Verified (local Windows) | The engine heartbeat reported `JitCompiledMethods` = 0 in both Windows probe runs. |
-| EngineHost startup compaction: once per process, before Ready, again after a restart | Reviewed | Placement reviewed by Grace, Milo, and Theo: once per process, before Ready; a restart is a new process; within the supervisor's 10 s `StartTimeout`. Test: see the pull request. |
+| EngineHost startup compaction: once per process, before Ready, again after a restart | Reviewed | Placement reviewed by Grace, Milo, and Theo: once per process, before Ready; a restart is a new process; within the supervisor's 10 s `StartTimeout`. Test: `EngineSupervisorTests.TheEngine_StartsReady_Answers_ReportsItsFigures_AndShutsDownWithoutCountingAsAStop` and `EngineSupervisorTests.AKilledEngine_IsReplaced_AndTheRestartIsAWarning` assert that the first heartbeat reports a collection; both fail with the `GC.Collect` removed. They cannot tell the forced collection from an ordinary one. |
 | Windows engine GC probe, 300 s, 1 ms gate | Verified (physical Windows) | AMD Ryzen 7 2700X, quiet desktop but not isolated; the probe forwarded output to itself (no MIDI device). `Bluestone.Benchmarks --jitter 300 --engine --engine-path <win-x64 AOT engine> --pressure app`, 2 runs. 12 engine GCs each. Max GC pause 0.330 ms (p50 0.204) and 0.316 ms (p50 0.200). Dispatch lateness p99.9 / max 0.66 / 0.963 ms and 0.72 / 1.048 ms. 0 late, missing, or dropped of 115,264 messages; engine allocation about 165 KB/s; working set about 40 MB. Both runs: all targets met. Raw reports are attached to the pull request. |
-| Physical-Mac engine GC probe, 300 s, 1 ms gate | **Unverified** | Not run: no Mac was reachable from the Windows host. This is the open acceptance item. |
+| Physical-Mac engine GC probe, 300 s, 1 ms gate | **Unverified** | Not run: no Mac was reachable from the Windows host. The owner accepted this gap on 2026-11-24 and merged without it; it remains a follow-up. |
 | Desktop app memory, .NET 11 against .NET 10 | Unverified | Not measured in this run. #112's observation (higher `gc.committed` in a JIT-run process) is unconfirmed on the migrated commit. |
 | BenchmarkDotNet on .NET 11 | Verified (local Windows) | 0.15.8 reproduced the `NotImplementedException`. `0.16.0-preview.1` ran `MixerMeterBenchmarks` (`ShortRunJob`, 60 benchmarks), exit 0. |
 | Unix `CurrentUserOnly` pipes (mode 0600) | Reviewed; simulated | Engine and worker pipes are same-user. Covered by the passing Linux and macOS integration suites; no direct permission test. |
@@ -100,7 +100,6 @@ Results on the migrated commit. Each row is filled from a recorded run; a row le
     0 bytes); no physical hardware or timing.
   - The desktop app launched on any RID.
   - Desktop memory on .NET 11 against .NET 10.
-  - Clippy on this commit.
   - Linux timing on native hardware ([#117](https://github.com/djflan/Bluestone/issues/117)), on either runtime.
   - Physical MIDI and audio devices and third-party plugins on .NET 11.
   - The Windows Arm64 minimum (Microsoft's pages conflict).
@@ -217,7 +216,8 @@ changes. Two 60 s app-pressure runs per runtime, 23,104 messages each, **virtual
 
 These are arrival errors against native packet timestamps, not physical-hardware results. Same-time ordering
 reversals and a first-due startup error of about 8 ms appeared on **both** runtimes. A CoreMIDI endpoint-visibility
-race (property exports cached before `MIDIClientCreate`) also affected both. One 60 s run per runtime had no engine
+race (property exports cached before `MIDIClientCreate`) also affected both; it was fixed separately in #119 (merged
+before the migration, not verified on a physical Mac). One 60 s run per runtime had no engine
 GC; a 240 s .NET 11 run hung, cause unknown, and did not recur on November 24.
 
 ### November 24: hosted macOS runner (simulated)
