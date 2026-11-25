@@ -249,7 +249,13 @@ internal sealed class WorkerProcess : IAsyncDisposable
         await WaitForExitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         await _lifetime.CancelAsync().ConfigureAwait(false);
         await _pipe.DisposeAsync().ConfigureAwait(false);
-        await Task.WhenAny(Task.WhenAll(_readLoop, _heartbeatLoop), Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+        using (var loopWait = new CancellationTokenSource())
+        {
+            // Bounded wait for the loops; cancel the timer once they finish so it does not outlive disposal (CA2027).
+            await Task.WhenAny(Task.WhenAll(_readLoop, _heartbeatLoop), Task.Delay(TimeSpan.FromSeconds(5), loopWait.Token)).ConfigureAwait(false);
+            await loopWait.CancelAsync().ConfigureAwait(false);
+        }
+
         OnTerminated();
         _process.Dispose();
     }

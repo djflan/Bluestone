@@ -74,8 +74,8 @@ public sealed class ReferencePluginTests
         sine.Process(Args(1024, [], output, [PluginEvent.NoteOn(0, 0, 69, 127), PluginEvent.NoteOff(512, 0, 69)]), new OutputEventList(1));
 
         Assert.Equal(0.0f, output[0]);
-        Assert.True(output[..SinePlugin.AttackFrames].Max() < output[SinePlugin.AttackFrames..512].Max());
-        Assert.Contains(output[512..(512 + SinePlugin.ReleaseFrames)], s => s != 0);
+        Assert.True(output.Take(..SinePlugin.AttackFrames).Max() < output.Take(SinePlugin.AttackFrames..512).Max());
+        Assert.Contains(output.Take(512..(512 + SinePlugin.ReleaseFrames)), s => s != 0);
         Assert.All(output[(512 + SinePlugin.ReleaseFrames)..], s => Assert.Equal(0.0f, s));
         Assert.Equal(0, sine.ActiveVoices);
     }

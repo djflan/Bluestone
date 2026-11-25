@@ -36,8 +36,8 @@ public sealed class AudioPluginTests
 
         Assert.InRange(crossings, 43, 45);
         // The reference sine peaks at 0.25; the strip halves it.
-        Assert.InRange(left[4800..20_000].Max(), 0.124f, 0.126f);
-        Assert.All(left[(24_000 + Block + 1024)..], s => Assert.Equal(0f, s));
+        Assert.InRange(left.Take(4800..20_000).Max(), 0.124f, 0.126f);
+        Assert.All(left.Take((24_000 + Block + 1024)..), s => Assert.Equal(0f, s));
         Assert.InRange(strip.Meter.Read().PeakLeft, 0f, 0.126f);
         Assert.Equal(0, node.FailedBlocks);
     }
@@ -118,7 +118,7 @@ public sealed class AudioPluginTests
         using var engine = Engine(node, out _);
         engine.Transport.Play(0);
         var driver = new OfflineAudioDriver(engine);
-        Assert.True(Left(driver.Render(Block * 20, Block))[(Block * 10)..].Max() > 0.3f);
+        Assert.True(Left(driver.Render(Block * 20, Block)).Take((Block * 10)..).Max() > 0.3f);
 
         // Note 64 is gone and a later note was added; note 60 (peak 0.25) still holds at the play position.
         node.Schedule = new PluginSchedule([.. held, new(Rate * 20, PluginEvent.NoteOn(0, 0, 67, 127)), new(Rate * 21, PluginEvent.NoteOff(0, 0, 67))], []);

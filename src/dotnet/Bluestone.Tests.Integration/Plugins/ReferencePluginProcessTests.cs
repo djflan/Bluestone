@@ -55,10 +55,10 @@ public sealed class ReferencePluginProcessTests
         }
 
         Assert.InRange(crossings, 43, 45);
-        Assert.InRange(a440.Left[4800..].Max(), 0.249f, 0.251f);
+        Assert.InRange(a440.Left.Take(4800..).Max(), 0.249f, 0.251f);
 
         var chord = Render(second, [PluginEvent.NoteOn(0, 1, 60, 127), PluginEvent.NoteOn(0, 1, 64, 127), PluginEvent.NoteOn(0, 1, 67, 127), PluginEvent.NoteOn(0, 1, 72, 127)], blocks: 20);
-        Assert.True(chord.Left[2560..].Max() > 0.3f, "Four voices together must exceed one voice's peak.");
+        Assert.True(chord.Left.Take(2560..).Max() > 0.3f, "Four voices together must exceed one voice's peak.");
 
         var released = Render(second, [PluginEvent.ControlChange(0, 0, 123, 0), PluginEvent.ControlChange(0, 1, 123, 0)], blocks: 4);
         Assert.All(released.Left[512..], s => Assert.Equal(0.0f, s));

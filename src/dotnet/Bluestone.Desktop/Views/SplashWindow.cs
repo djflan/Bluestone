@@ -250,7 +250,13 @@ internal sealed class SplashWindow : Window
     {
         var frame = new TaskCompletionSource();
         RequestAnimationFrame(_ => frame.TrySetResult());
-        await Task.WhenAny(frame.Task, Task.Delay(100));
+        using (var frameWait = new CancellationTokenSource())
+        {
+            // Wait at most 100 ms for the frame, then cancel the timer so it does not linger (CA2027).
+            await Task.WhenAny(frame.Task, Task.Delay(100, frameWait.Token));
+            await frameWait.CancelAsync();
+        }
+
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 

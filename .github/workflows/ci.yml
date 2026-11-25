@@ -3,6 +3,7 @@ name: CI
 # On demand only: pushes and pull requests do not start it. Run it once a pull request's review rounds are done:
 #   gh workflow run ci.yml --ref <branch>
 # For a macOS-only diagnostic: gh workflow run ci.yml --ref <branch> -f macos_only=true
+# To also publish every release runtime identifier (as Version does): gh workflow run ci.yml --ref <branch> -f release_rids=true
 # A dispatched run is not attached to the pull request, so its checks are not required by main's ruleset: whoever
 # merges confirms the run on the branch's head commit is green (a later push needs another run). main takes changes
 # only through pull requests, so the merged commit is not tested again. Run it on main by hand to check main. A branch
@@ -12,6 +13,10 @@ on:
     inputs:
       macos_only:
         description: Run only macOS (not a full cross-platform gate)
+        type: boolean
+        default: false
+      release_rids:
+        description: Also publish all six release runtime identifiers on the release runners
         type: boolean
         default: false
 
@@ -129,3 +134,49 @@ jobs:
       - name: Check formatting
         if: needs.changes.outputs.code == 'true' && (matrix.os == 'ubuntu-latest')
         run: dotnet format src/dotnet/Bluestone.slnx --no-restore --verify-no-changes
+
+  # On request only: the release publish (Version's build matrix: the same runners and runtime identifiers) without
+  # packaging or releasing, so a toolchain or runtime change is proven on every shipped platform before it lands.
+  # Self-contained Bluestone, then the NativeAOT engine over it as the release does; any trim or AOT warning fails, and
+  # the published engine must keep its input and thru path and audio render free of allocation.
+  release-rids:
+    name: Publish ${{ matrix.rid }}
+    needs: changes
+    if: inputs.release_rids && needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: osx-arm64, os: macos-latest }
+          - { rid: osx-x64, os: macos-15-intel }
+          - { rid: win-x64, os: windows-latest }
+          - { rid: win-arm64, os: windows-11-arm }
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      # cpal's ALSA backend links libasound.
+      - name: Install ALSA development files
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Publish
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet publish src/dotnet/Bluestone.Desktop --configuration Release --runtime ${{ matrix.rid }} --self-contained --output publish/Bluestone | tee publish.log
+          if grep -E "warning (IL|AOT)[0-9]+" publish.log; then echo "Trim or AOT warnings"; exit 1; fi
+
+      - name: Publish the engine ahead of time
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet publish src/dotnet/Bluestone.Engine --configuration Release --runtime ${{ matrix.rid }} --output publish/Bluestone | tee aot.log
+          if grep -E "warning (IL|AOT)[0-9]+" aot.log; then echo "Trim or AOT warnings"; exit 1; fi
+          ./publish/Bluestone/Bluestone.Engine --check-allocations
