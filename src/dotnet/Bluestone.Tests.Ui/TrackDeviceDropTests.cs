@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
+using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Desktop.Views;
 using Bluestone.Domain.Devices;
@@ -14,6 +15,105 @@ namespace Bluestone.Tests.Ui;
 
 public sealed class TrackDeviceDropTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task EmptyArrangement_ActionsAreVisibleAndClickable_WithScrollingWhenCompressed(bool compressed) => HeadlessApp.RunAsync(async () =>
+    {
+        var dialogs = new ImportDialog();
+        await using var app = await AppUnderTest.OpenAsync(dialogs: dialogs, nativeMenuBar: true);
+        app.Window.SetRenderScaling(1.1);
+        app.Window.Width = 1040;
+        app.Window.Height = compressed ? 640 : 671;
+        app.Find<NativeMenuBar>("MenuBar").IsVisible = false;
+        app.ViewModel.Workspace.Inspector.CollapseCommand.Execute(null);
+        app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+        app.ViewModel.Workspace.Mixer.ShowCommand.Execute(null);
+        app.ViewModel.Workspace.RightExtent = 272;
+        app.ViewModel.Workspace.DetailExtent = 346;
+        if (compressed)
+        {
+            // Both side panes open and wide leave a narrow arranger whose empty state must scroll.
+            app.ViewModel.Workspace.Inspector.ShowCommand.Execute(null);
+            app.ViewModel.Workspace.LeftExtent = 400;
+            app.ViewModel.Workspace.RightExtent = 400;
+            app.ViewModel.Workspace.DetailExtent = 1000;
+        }
+
+        app.Settle();
+        Assert.Empty(app.ViewModel.Tracks);
+        Assert.True(app.ViewModel.Workspace.Browser.IsDocked);
+        Assert.True(app.ViewModel.Workspace.Mixer.IsDocked);
+        var import = app.Window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && Equals(b.Content, "Import MIDI…"));
+        var newTrack = app.Window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && Equals(b.Content, "New Track"));
+        var area = app.Find<Control>("TrackDropArea");
+
+        if (compressed)
+        {
+            var scroll = import.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault();
+            Assert.NotNull(scroll);
+            Assert.True(scroll.Extent.Height > scroll.Viewport.Height, "The compressed empty state should need scrolling.");
+            app.Window.MouseWheel(app.InWindow(scroll, new Point(scroll.Bounds.Width / 2, scroll.Bounds.Height / 2)), new Vector(0, -20));
+            app.Settle();
+            Assert.True(scroll.Offset.Y > 0, "The empty state should scroll with the mouse wheel.");
+        }
+
+        AssertWithinArranger(app, area, import);
+        // Do not call AppUnderTest.Click: its BringIntoView could mask a clipped action.
+        app.ClickAt(import, new Point(import.Bounds.Width / 2, import.Bounds.Height / 2));
+        await AppUnderTest.WaitUntilAsync(() => dialogs.OpenCount == 1, "the MIDI import dialog to open");
+        Assert.Equal("Import MIDI File", dialogs.LastTitle);
+        Assert.Empty(app.ViewModel.Tracks); // The fake dialog cancels without changing the project.
+        AssertWithinArranger(app, area, newTrack);
+        app.ClickAt(newTrack, new Point(newTrack.Bounds.Width / 2, newTrack.Bounds.Height / 2));
+        Assert.Single(app.ViewModel.Tracks);
+    });
+
+    private static void AssertWithinArranger(AppUnderTest app, Control area, Button button)
+    {
+        var bounds = new Rect(app.InWindow(button, default), button.Bounds.Size);
+        var available = new Rect(app.InWindow(area, default), area.Bounds.Size);
+        var browser = app.Find<Panel>("BrowserDock");
+        if (browser.IsEffectivelyVisible)
+        {
+            var browserLeft = app.InWindow(browser, default).X;
+            available = available.Intersect(new Rect(0, 0, browserLeft, app.Window.Bounds.Height));
+        }
+
+        var inspector = app.Find<Panel>("InspectorDock");
+        if (inspector.IsEffectivelyVisible)
+        {
+            var inspectorRight = app.InWindow(inspector, default).X + inspector.Bounds.Width;
+            available = available.Intersect(new Rect(inspectorRight, 0, Math.Max(0, app.Window.Bounds.Width - inspectorRight), app.Window.Bounds.Height));
+        }
+
+        Assert.True(button.IsEffectivelyEnabled);
+        Assert.True(
+            bounds.Left >= available.Left - 0.01 && bounds.Top >= available.Top - 0.01 &&
+            bounds.Right <= available.Right + 0.01 && bounds.Bottom <= available.Bottom + 0.01,
+            $"{button.Content} is not entirely in the arranger: button {bounds}, arranger {available}.");
+    }
+
+    private sealed class ImportDialog : IUserInteraction
+    {
+        public int OpenCount { get; private set; }
+
+        public string? LastTitle { get; private set; }
+
+        public Task<string?> PickOpenFileAsync(string title, IReadOnlyList<FileFilter> filters)
+        {
+            OpenCount++;
+            LastTitle = title;
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string?> PickSaveFileAsync(string title, string suggestedName, FileFilter filter) => Task.FromResult<string?>(null);
+
+        public Task<bool> ConfirmAsync(string title, string message, string confirmLabel, bool destructive) => Task.FromResult(false);
+
+        public Task<UnsavedChangesChoice> AskToSaveChangesAsync(string projectName) => Task.FromResult(UnsavedChangesChoice.Cancel);
+    }
+
     private static Point At(AppUnderTest app, double x, double y) =>
         app.InWindow(app.Find<Control>("TrackDropArea"), new Point(x, y));
 

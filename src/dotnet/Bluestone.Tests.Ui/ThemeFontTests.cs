@@ -12,6 +12,18 @@ namespace Bluestone.Tests.Ui;
 
 public sealed class ThemeFontTests
 {
+    [Theory]
+    [InlineData("JetBrainsMono-OFL.txt", "The JetBrains Mono Project Authors")]
+    [InlineData("NotoMusic-OFL.txt", "The Noto Project Authors")]
+    public void TheBuildOutput_ContainsReadableFontLicenseNotices(string fileName, string authors)
+    {
+        // The Desktop project's output content is copied alongside its assembly in this test build.
+        var notice = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "licenses", fileName));
+        Assert.Contains(authors, notice, StringComparison.Ordinal);
+        Assert.Contains("SIL OPEN FONT LICENSE Version 1.1", notice, StringComparison.Ordinal);
+        Assert.Contains("TERMINATION", notice, StringComparison.Ordinal);
+    }
+
     [Fact]
     public Task TheAppTheme_ResolvesInterJetBrainsMono_AndNotoMusicForTheSharpAccidental() => HeadlessApp.RunAsync(() =>
     {
