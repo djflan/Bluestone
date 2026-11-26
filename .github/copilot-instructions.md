@@ -6,5 +6,6 @@ fix what it finds first. Don't request extra review rounds to make up for skippi
 
 Build, test, and contribution rules are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-`/team` runs a named multi-agent team (build, council, review, triage) led by Lucas, the Director: usage is in
+`/team` runs a named multi-agent team (build, council, review, triage) led by Lucas, the product and delivery lead, who
+offers options with time estimates before building: usage is in
 `docs/agent-team.md`, the workflow in `.github/skills/team/SKILL.md`, and member charters in `.github/agents/`.

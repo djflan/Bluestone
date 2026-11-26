@@ -5,7 +5,7 @@ required reading, quality bar, output contract, and limits. Lucas reads a member
 
 | File | Member | Role | Writes |
 |---|---|---|---|
-| `lucas` | Lucas | Director: scopes, staffs, picks models, decides, synthesizes | the run log |
+| `lucas` | Lucas | Product and delivery lead: scopes, estimates options, staffs, picks models, decides, synthesizes | the run log |
 | `mike` | Mike | Builder | production code and tests |
 | `alice` | Alice | QA | the test files Lucas assigns her |
 | `grace` | Grace | Skeptic reviewer | nothing |
@@ -24,13 +24,14 @@ separate user-approved organizational decision.
 
 ## Staffing heuristics
 
-The required signers in `governance.md` ("Definition of done") are always staffed; these heuristics never remove
-one. Beyond them, staff the smallest team that covers the risk. A member with nothing to look at is noise.
+Staff the smallest team the picked option needs (`governance.md`, "Delivery options and the budget"); often that is
+Lucas alone. A member joins for a concrete expertise gap or a floor risk the option touches. A member with nothing to
+look at is noise.
 
 | The change touches | Add |
 |---|---|
-| Directional or material `.axaml`, `Theme/`, `Controls/`, `Views/`, or visible behavior | Max, Caroline |
-| Routine visual correction | Max and Caroline (the independent visual and accessibility signer) |
+| Directional or material `.axaml`, `Theme/`, `Controls/`, `Views/`, or visible behavior | Max; Caroline when keyboard, focus, or a new flow is involved |
+| Routine visual correction | Max, or Lucas alone for a small fix |
 | A new workflow, a default, terminology, or anything a musician sees | Jules |
 | Visual identity, a new control family, theme presets, or a look-and-feel direction | Iris (with Max) |
 | More than one project layer, a new abstraction, a protocol, or a format | Theo |
@@ -38,12 +39,10 @@ one. Beyond them, staff the smallest team that covers the risk. A member with no
 | `src/native/`, `Bluestone.Platform.*`, CoreMIDI, WinMM, ALSA, WASAPI, plugin host | Kenji |
 | User-visible docs, ADRs, release notes, release preparation, or a complex PR narrative | Sabrina |
 
-- **build:** Lucas directs. Add the member who owns the changed files and one independent reviewer, plus every
-  required signer for the touched areas (`governance.md`, "Definition of done"); staff them at intake, not at the end.
-  Add Alice for
-  meaningful test design, lifecycle coverage, flaky-risk tests, or final gates; add Grace for non-trivial review;
-  add specialists from the table only when their ownership or risk is present. Sabrina joins only when docs, release
-  notes, or PR preparation are needed.
+- **build:** the options name the team. Add the member who owns the changed files when Lucas shouldn't do it
+  himself; Grace when the option includes review; Alice for meaningful test design or lifecycle coverage; other
+  specialists only when their ownership or a floor risk is present. Sabrina joins only for substantial docs or
+  release material.
 - **council:** 3–5 members whose views actually differ on the question. Always include Jules for product questions
   and Theo for structural ones.
 - **review:** use one Grace for ordinary localized work. Use independent Grace reviews from two model families for

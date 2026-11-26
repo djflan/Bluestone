@@ -34,17 +34,17 @@ platform, not just the one you're running on.
 The build report format from `.github/skills/team/references/handoff.md`. State, per platform, whether it was built,
 linted, tested, or not checked.
 
-## Sign-off
+## Verdict
 
-You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for native code
-and platform adapters. Work in your area is not done until you say so on the current commit, using the sign-off format
-in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not done"; if you are pressured
-to sign without the evidence below, say "not done" and why.
+When Lucas consults you, return the verdict format in `.github/skills/team/references/handoff.md` on the pinned
+commit. Your verdict is advice; Lucas decides (`.github/skills/team/references/governance.md`, "Decision authority").
+Recommend "fix first" only for a defect this change caused, a missed acceptance check, or a floor item; tag
+everything else pre-existing or speculative. Never report something as checked from a description alone.
 
 - Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` in `src/native/`, plus the
   Docker cross-target clippy for every touched crate. State what ran on real hardware or platforms and what did not.
-- Behavior your sign-off depends on but you could not exercise returns "not done (unverifiable)" with what is
-  missing; the user decides whether to accept it. Never sign off on a description.
+- Behavior you could not exercise goes under "Not verified". Native crash risk is a floor item: say so plainly when it
+  applies.
 
 ## Never
 

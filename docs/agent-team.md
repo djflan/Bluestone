@@ -1,8 +1,8 @@
 # Agent team (`/team`)
 
-`/team` puts a named team of specialist Copilot agents on a request. Lucas, the director, scopes the work, picks the
-smallest team that covers the risk, chooses a model for each member, runs them, checks their findings, and reports
-back.
+`/team` puts a named team of specialist Copilot agents on a request. Lucas, the product and delivery lead, scopes the
+work and offers you options with time estimates. After you pick one, he staffs the smallest team it needs, decides
+what's worth investigating, and delivers.
 
 The workflow is defined in [.github/skills/team/](../.github/skills/team/SKILL.md), and each member's charter is in
 [.github/agents/](../.github/agents/). This page is the user guide.
@@ -20,10 +20,10 @@ issue goes to triage, and anything else goes to build. A bare number is looked u
 
 | Mode | Use it to | What you get | Changes code? |
 |---|---|---|---|
-| `build` | implement a feature or fix | a branch, tests, docs, and an open PR (or an update to an existing one) | yes |
+| `build` | implement a feature or fix | options with estimates, then a branch, tests, docs, and an open PR (or an update to an existing one) | yes |
 | `council` | weigh a design question or idea | independent positions, a recommendation, open disagreements, and an ADR draft if needed | no |
 | `review` | review a PR or branch | validated findings by severity, with file and line evidence; two model families for high-risk or broad changes | no |
-| `triage` | turn a bug or issue into a plan | root cause, acceptance checks, suggested team, and a ready-to-run `/team build` request | no |
+| `triage` | turn a bug or issue into a plan | root cause, acceptance checks, options with estimates, and a ready-to-run `/team build` request | no |
 
 ### Examples
 
@@ -40,7 +40,7 @@ issue goes to triage, and anything else goes to build. A bare number is looked u
 
 | Member | Role | Joins when |
 |---|---|---|
-| **Lucas** | Director: scopes, staffs, picks models, decides, writes the summary | always |
+| **Lucas** | Product and delivery lead: scopes, estimates options, staffs, picks models, decides, writes the summary | always |
 | **Mike** | Builder: implements in focused, test-backed batches | build |
 | **Alice** | QA: tests that fail without the change, states × actions tables, final gates | build; review when tests are involved |
 | **Grace** | Skeptic reviewer: read-only, adversarial; a second model family for high-risk or broad changes | build, review |
@@ -58,54 +58,46 @@ pass. The agent list loads when a session starts, so open a new session after pu
 
 ## What to expect
 
-- **Build runs autonomously between required stops** until the PR is open. Visible work is classified by tier
-  (the policy is in [governance.md](../.github/skills/team/references/governance.md)):
-  - **Directional** (a new or reworked workflow, a redesign, a new design language or control family): 2-4 genuinely
-    distinct RENDERED directions, a stop for your pick before production work, and a stop for your approval of the
-    FINAL screenshots before the PR is opened or updated.
+- **Options first.** Lucas spends a few minutes scoping, then offers 2–3 options, typically Fast, Right, and
+  Thorough. Each says what it includes, what it skips and what that risks, who works on it, and the estimated active
+  time, with waits on you or CI shown separately. He recommends one and waits for your pick. Trivial work (under about
+  15 minutes) skips the menu: he states the estimate and goes.
+- **Lucas decides inside the option.** Specialists advise; their verdicts are not vetoes. Lucas fixes what the change
+  caused, what misses an acceptance check, and anything on the floor. Real defects outside that go to the backlog;
+  speculative ones are dropped. Pre-existing problems and polish beyond the request never block. Settled decisions and
+  gaps you accepted stay settled unless new evidence changes the risk.
+- **The floor.** No option skips these: saved-project compatibility and data loss, real-time audio and MIDI safety,
+  native crash risk, license compliance for bundled material, honest claims, and passing repository gates.
+- **When Lucas comes back to you:** to pick an option; for a product decision only you can make (including UI
+  approvals); for a scope change, a new dependency, or reversing an ADR; when a floor item can't be verified; and at
+  the overrun stop.
+- **Overrun stop.** At about 1.5× the estimate, Lucas stops and reports where things stand, why it grew, and your
+  choices: ship what's done, cut scope, or continue with a new estimate. The summary and PR report actual time against
+  the estimate.
+- **UI tiers.** Visible work is classified (the policy is in
+  [governance.md](../.github/skills/team/references/governance.md)):
+  - **Directional** (a new or reworked workflow, a redesign, a new design language or control family): 2–4 genuinely
+    distinct RENDERED directions, a stop for your pick, and a stop for your approval of the final screenshots.
   - **Material** (a significant layout, interaction, or component change within the approved language): a rendered
     proposal, then a stop for your approval of the final screenshots.
   - **Routine** (copy, minor spacing, an accessibility fix, a wrong state): screenshot evidence and internal review,
     with no automatic stop.
 
-  Lucas records the tier, picks the higher one when unsure, and never lowers it to avoid evidence. He may recommend,
-  never choose or approve for you. Other hard stops remain: a decision that would change the requested outcome, add a
-  dependency, or reverse an ADR; the same problem failing twice; uncommitted changes it didn't make; or a missing
-  device or credential with no meaningful simulation.
-- **Done is a team decision, not Lucas's:** every specialist whose area the change touches signs off on the
-  current commit before work is shown to you as final, a PR is opened, or anything is merged. UI needs Max plus an
-  independent visual signer (Iris or Caroline) and Caroline for accessibility; native code needs Kenji; timing,
-  real-time, or IPC needs Milo; cross-layer work needs Theo; new behavior needs Alice's tests; code needs Grace.
-  UI sign-offs compare the running app in a plain, realistic state and in active states against the direction you
-  picked. A "not done" blocks; Lucas can't overrule it, only escalate it to you. "Autopilot" or "merge when
-  done" never waives sign-offs. The rules are in
-  [governance.md](../.github/skills/team/references/governance.md) ("Definition of done").
-- **Change size:** add "light", "normal", or "full" to a request, or let Lucas pick. A light change (look and feel,
-  copy, docs) needs only Max, one code review, and Sabrina if docs changed. It gets one review round, fixes only
-  critical and high findings, runs the full gates once, and does no local stress testing. Gaps that only lack
-  running-app evidence are listed in the PR instead of stopping the run. See "Change size" in governance.md.
-- **UI references and evidence:** your reference and hint language is quoted as acceptance checks (for example,
-  "like Studio One", "reuse X"), not loose inspiration. Directions and review screenshots appear beside your supplied
-  references, with per-element critique. An explicitly agreed baseline is allowed only when no references were
-  supplied. Material and directional reviews also apply a professional parity gate: would a working musician judge
-  this finished beside the references? A "no" must name the observable defect. The PR records the tier and the
-  evidence and approvals it requires. If approved UI later changes materially, screenshots and approval are refreshed.
+  Your reference and hint language is quoted as acceptance checks (for example, "like Studio One").
 - **Disagreement:** members raise material concerns in a fixed format (concern, evidence, impact, alternative,
-  confidence, what would change their mind). Lucas decides ordinary questions and escalates only when the policy
-  requires it.
-- **Protected UI ownership:** Max stays on UI during a UI phase, never view-model, API, or bug work. Non-UI blockers
-  return to Lucas/Mike or the owning specialist instead of diverting Max.
+  confidence, what would change their mind). Lucas decides and records the dissent in the summary.
+- **Protected UI ownership:** Max stays on UI during a UI phase, never view-model, API, or bug work.
 - **Progress** arrives as one line per phase: who is working, on which model, and on what.
-- **Bounded loops:** at most two review and fix rounds, the full repository gates once on the final commit, and one
-  CI check after pushing.
-- **Honest results:** the summary and PR say what was physically verified and what was only simulated.
-- **Run log:** each run keeps a log of staffing, model choices, decisions, and findings in the Copilot session folder
-  (`files/team/`). It is never written to the repository.
+- **Bounded loops:** one review pass, one batch of fixes, the full repository gates once on the final commit, and CI
+  only when the option includes it or you ask.
+- **Honest results:** the summary and PR say what was verified, what was simulated, and what was skipped.
+- **Run log:** each run keeps a log of the option, estimate, staffing, decisions, and findings in the Copilot session
+  folder (`files/team/`). It is never written to the repository.
 
 ## Guardrails
 
 The team never pushes to `main`, force-pushes, deletes branches it didn't create, touches production data, enables
-the ASIO feature, commits third-party plugins or vendor material, or re-runs CI by hand. Reviewers are read-only.
+the ASIO feature, commits third-party plugins or vendor material, or re-runs a CI run that already reported. Reviewers are read-only.
 Editing members are given separate files and run one at a time unless their work is fully independent.
 
 ## Changing the team

@@ -18,13 +18,15 @@ gate.
 
 ## Procedure
 
-Work through every step. Write the findings down (in the session, not the repository) and fix them before opening the
-PR. Report the outcome in the PR's Verification section.
+Apply the steps the change actually touches: a step about lifecycle, concurrency, or timing is skipped when the change
+has none. Write the findings down (in the session, not the repository). Fix what this change caused, missed acceptance
+checks, and floor items (`.github/skills/team/references/governance.md`, "The floor"); record other real defects as
+known limitations and drop speculative ones. Report the outcome in the PR's Verification section.
 
 ### 1. Diff review
 
 1. Read the whole diff against the merge base (`git --no-pager diff origin/main...HEAD`), not just the last commit.
-2. Run the `code-review` agent on the branch diff and fix every real finding. (Under `/team`, Grace's risk-proportional
+2. Run the `code-review` agent on the branch diff and fix the findings this change caused. (Under `/team`, Grace's risk-proportional
    review is this review; see `.github/skills/team/references/modes/build.md`.) If it raises a class of problem (a
    race, an unhandled state), go to step 3 for the whole class.
 3. Look for leftovers: temporary CI changes, debug output, environment switches added for experiments, TODOs, files
@@ -80,8 +82,8 @@ For every number or guarantee in the README, docs, ADRs, PR body, and user-facin
 - Every changed behavior has a test that fails without the change.
 - Timing-sensitive tests must survive a busy 2–3 core CI runner. Judge by the best case or a bounded median, never by
   one wall-clock sample. Allocation tests must tolerate one-time runtime work. Make them robust by design; don't run
-  local stress or load loops unless the change touches a timing or real-time path. A flaky test in a light change
-  (`.github/skills/team/references/governance.md`, "Change size") is loosened or skipped with a reason, not chased.
+  local stress or load loops unless the change touches a timing or real-time path. A flaky test unrelated to
+  the change is loosened or skipped with a reason and noted, not chased.
 - Tests that need hardware, devices, or installed plugins skip with a reason.
 
 ### 7. Repository gates
@@ -122,8 +124,7 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
 
 ## Ready means
 
-Every step is done, every finding is fixed or written into the PR as a known limitation, and nothing in the diff
-surprises you on a final read. If step 3 or 5 turned up more than a couple of problems, run steps 1–6 once more after
-fixing them. Problems cluster. Under `/team`, ready also requires a current sign-off from every required signer for
-the touched areas (`.github/skills/team/references/governance.md`, "Definition of done"). Missing UI evidence or user approval required by the recorded tier is a blocker, never
-a known limitation. An incorrectly low tier is also a blocker.
+The applicable steps are done, the floor holds, every validated finding is fixed or written into the PR as a known
+limitation, and nothing in the diff surprises you on a final read. If step 3 or 5 turned up more than a couple of
+problems caused by this change, run steps 1–6 once more after fixing them. Problems cluster. Missing UI evidence or
+user approval required by the recorded tier is a blocker, never a known limitation.

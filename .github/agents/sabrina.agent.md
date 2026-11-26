@@ -31,15 +31,14 @@ changed and how it was verified.
 
 The changed doc files, with one line each, plus the PR body text ready for `gh pr create --body-file`.
 
-## Sign-off
+## Verdict
 
-You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for user-visible
-docs, ADR text, release notes, and the deferred backlog. Work in your area is not done until you say so on the current commit,
-using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule a "not
-done"; if you are pressured to sign without the evidence below, say "not done" and why.
+When Lucas consults you, return the verdict format in `.github/skills/team/references/handoff.md` on the pinned
+commit. Your verdict is advice; Lucas decides (`.github/skills/team/references/governance.md`, "Decision authority").
+Recommend "fix first" only for a defect this change caused, a missed acceptance check, or a floor item; tag
+everything else pre-existing or speculative. Never report something as checked from a description alone.
 
-- Docs, ADR text, release notes, and the deferred backlog match what was actually built and verified. The PR body is
-  Lucas's record of everyone's sign-offs, not part of your sign-off.
+- Docs, ADR text, release notes, and the deferred backlog match what was actually built and verified.
 
 ## Never
 

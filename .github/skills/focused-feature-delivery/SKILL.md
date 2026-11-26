@@ -8,6 +8,8 @@ argument-hint: 'Describe the outcome, constraints, and any hard deadline'
 
 Deliver the requested outcome with the smallest safe change set. Optimize for short feedback loops and a clear finish, not for exhaustive exploration or repeated reassurance.
 
+Bluestone has one user today. Spend verification where a miss would be expensive or hard to undo (the floor in `.github/skills/team/references/governance.md`: saved work, real-time safety, native stability, licensing, honest claims, the build). Fix everything else forward. Before any investigation, ask: could the answer change what we ship, and would a miss be expensive or hard to undo? If not, note it and move on.
+
 ## When to Use
 
 - A feature spans multiple files or layers.
@@ -16,10 +18,11 @@ Deliver the requested outcome with the smallest safe change set. Optimize for sh
 
 ## 1. Lock the Scope
 
-1. Restate the observable outcome, hard constraints, and acceptance checks in a few bullets.
+1. Restate the observable outcome, hard constraints, and acceptance checks in a few bullets, with an estimate of active time. Under `/team`, this is part of the options the user picks from.
 2. Separate required work from adjacent ideas. Put deferred ideas in a short list; do not implement them without authorization.
 3. Resolve only decisions that block safe implementation. For decisions that can be reversed cheaply, choose the repository convention and proceed.
-4. If new information changes a constraint, revise the scope once and continue from the new constraint. Do not reopen settled decisions without new evidence.
+4. If new information changes a constraint, revise the scope once and continue from the new constraint. Do not reopen settled decisions, or gaps the user accepted, without new evidence that materially changes the risk.
+5. Check elapsed active time at each commit. At about 1.5× the estimate, stop and report where things stand, why, and the choices (ship what's done, cut scope, or continue with a new estimate).
 
 ## 2. Route to the Owner
 
@@ -49,18 +52,19 @@ Do not rerun the full suite after every small edit. When a focused check fails, 
 
 ## 5. Bound Review Work
 
-- Run the repository's required pre-PR readiness workflow once after local gates pass.
+- Run the repository's pre-PR readiness workflow once after local gates pass, at the depth the change warrants.
+- Fix findings this change caused, missed acceptance checks, and floor items. Put other real defects in the backlog; drop speculative ones.
 - Group review findings by root cause. Fix the complete related set in one batch, then run the narrow checks they affect and the required gates once.
 - For each review thread, verify the comment, make or explain the change, post one specific reply, and confirm the reply exists before resolving the thread. Do not bulk-resolve unverified comments.
 - Do not repeat a review solely for reassurance. Repeat only when substantial code changed after the review or a new concrete issue was found.
 
 ## 6. Bound CI Monitoring
 
-- CI runs only on demand. Start it once, after the review rounds are finished: `gh workflow run ci.yml --ref <branch>`. A later push needs one more run before merge. The ruleset does not require these checks (dispatched runs are not attached to the PR), so confirm the run on the head commit is green before merging.
+- CI runs only on demand, and only when the change needs it or the user asks (appearance-only and docs-only changes usually don't). Start it once, after review is finished: `gh workflow run ci.yml --ref <branch>`. A later push needs one more run before merge. The ruleset does not require these checks (dispatched runs are not attached to the PR), so confirm the run on the head commit is green before merging.
 - After starting it, inspect the workflow run once and identify its run ID and required jobs.
 - Poll only after a meaningful interval or a notification. Do not repeatedly query an unchanged pending state.
 - Act immediately on a failed job: read its log, identify the failing command, fix the cause, push one follow-up commit, and run CI once more.
-- Never merge with a failing or missing CI run unless the user explicitly authorizes a specific waiver. Distinguish queued, running, failed, canceled, and waived jobs accurately.
+- When a run was started, never merge with it failing unless the user explicitly authorizes it. Distinguish queued, running, failed, canceled, and skipped jobs accurately.
 - Stop once the agreed checks are green, review threads are handled, and the requested merge/release action is complete.
 
 ## Progress Updates
@@ -70,9 +74,7 @@ Keep updates short and state only: current work, the next check, and any real bl
 ## Done Means
 
 - The requested behavior and explicit constraints are satisfied.
-- Under `/team`, every required signer has a current "done" (`.github/skills/team/references/governance.md`,
-  "Definition of done"); no merge happens before that, whatever the merge instruction.
 - Focused validation and required repository gates pass, or remaining failures are clearly reported.
 - Review comments are replied to and resolved only after verification.
 - The branch/PR/merge state matches the user's request.
-- Deferred ideas remain deferred.
+- Deferred ideas remain deferred, and actual time is reported against the estimate.

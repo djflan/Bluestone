@@ -33,8 +33,9 @@ Outcome: <observable fix>
 Acceptance checks: <2–5, including the test that fails today>
 Scope: <files and areas> · Out of scope: <list>
 Risks: <lifecycle, timing, platform, compatibility>
-Suggested team: <members, with a one-line reason each>
-Next: /team build <a ready-to-run request>
+Options: <2–3 options per governance.md: includes, skips and risk, team, estimate of active time and waits>
+Recommended: <option and why>
+Next: /team build <a ready-to-run request naming the recommended option>
 ```
 
 When an issue exists, offer to post the plan as a comment; don't post without being asked.
