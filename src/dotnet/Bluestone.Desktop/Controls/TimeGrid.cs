@@ -58,7 +58,7 @@ internal static class TimeGrid
     private static readonly IBrush PlayheadBrush = new SolidColorBrush(Palette.Playhead);
     private static readonly IBrush RecordBrush = new SolidColorBrush(Palette.Record);
     private static readonly StreamGeometry PlayheadHead = StreamGeometry.Parse("M -5,0 L 5,0 L 5,3 L 0,8 L -5,3 Z");
-    private static readonly Typeface Face = new("Inter", FontStyle.Normal, FontWeight.Medium);
+    private static readonly Typeface Face = ConsolePaint.Typeface("Font.Ui", FontWeight.Medium);
 
     /// <summary>The platform's command modifier: ⌘ on macOS, Ctrl elsewhere. Held while dragging, it ignores the grid.</summary>
     public static KeyModifiers CommandModifier =>

@@ -16,6 +16,7 @@
     <CornerRadius x:Key="ControlCornerRadius">3</CornerRadius>
     <CornerRadius x:Key="OverlayCornerRadius">4</CornerRadius>
     <x:Double x:Key="ControlContentThemeFontSize">12</x:Double>
+    <StaticResource x:Key="ContentControlThemeFontFamily" ResourceKey="Font.Ui" />
     <Thickness x:Key="ComboBoxPadding">8,2,0,2</Thickness>
     <x:Double x:Key="TextControlThemeMinHeight">24</x:Double>
     <Thickness x:Key="TextControlThemePadding">6,3,6,3</Thickness>
@@ -89,6 +90,7 @@
   <Style Selector="Window">
     <Setter Property="Background" Value="{StaticResource Surface.Base}" />
     <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
     <Setter Property="FontSize" Value="12" />
   </Style>
 
