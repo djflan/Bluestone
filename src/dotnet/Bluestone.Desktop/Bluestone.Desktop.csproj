@@ -35,5 +35,6 @@
   <ItemGroup>
     <!-- Shipped device profiles are data, copied beside the executable. -->
     <None Include="Profiles/*.bluestone-profile.json" Link="profiles/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets/Fonts/*-OFL.txt" TargetPath="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
