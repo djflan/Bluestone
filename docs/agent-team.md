@@ -51,7 +51,7 @@ issue goes to triage, and anything else goes to build. A bare number is looked u
 | **Kenji** | Native and platforms: Rust crates, FFI, CoreMIDI, WinMM, ALSA, WASAPI | `src/native/`, `Bluestone.Platform.*` |
 | **Jules** | DAW-fluent musician advocate: compares workflow, visual quality, and feel against Bitwig, Studio One, and other named DAWs | user-facing behavior, councils |
 | **Sabrina** | Docs and release: keeps docs true, writes the PR body | build (ship phase) |
-| **Iris** *(contract)* | Principal Product Designer and UX Architect: design direction, workflows, design system, rendered validation | identity and look-and-feel work, new control families, major workflows |
+| **Iris** | Principal Product Designer and UX Architect: design direction, workflows, design system, rendered validation | identity and look-and-feel work, new control families, major workflows |
 
 You can also call any member on their own, for example by picking **Max** from the agent list and asking for a UI
 pass. The agent list loads when a session starts, so open a new session after pulling changes to the charters.
