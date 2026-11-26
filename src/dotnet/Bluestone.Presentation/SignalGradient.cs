@@ -38,15 +38,15 @@ public sealed class SignalGradient : IEquatable<SignalGradient>
         }
     }
 
-    /// <summary>The R4-C meter colours: cyan through teal and violet to purple.</summary>
+    /// <summary>The mixer and device chain meter colors: pale blue through teal, cyan, violet, and purple to pink.</summary>
     public static SignalGradient Default { get; } = Create(
     [
-        new("#34C6F4", 0),
-        new("#34C6F4", 0.40),
-        new("#3FE0D8", 0.62),
-        new("#7C6BFF", 0.78),
-        new("#B65CFF", 0.86),
-        new("#B65CFF", 1.0),
+        new("#B2E0F4", 0),
+        new("#3FE0D8", 0.136),
+        new("#34C6F4", 0.323),
+        new("#7C6BFF", 0.571),
+        new("#B65CFF", 0.719),
+        new("#FF2E93", 1.0),
     ]);
 
     /// <summary>The gain LEDs' colours: violet through orchid to rose, evenly spaced (the gain palette before it was editable).</summary>

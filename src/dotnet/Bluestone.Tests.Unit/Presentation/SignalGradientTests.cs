@@ -9,10 +9,10 @@ public sealed class SignalGradientTests
         SignalGradient.Create(stops.Select(s => new SignalGradientStop(s.Colour, s.Position)));
 
     [Fact]
-    public void Default_HasTheR4CStops()
+    public void Default_HasThePaleBlueToPinkStops()
     {
         Assert.Equal<SignalGradientStop>(
-            [new("#34C6F4", 0), new("#34C6F4", 0.40), new("#3FE0D8", 0.62), new("#7C6BFF", 0.78), new("#B65CFF", 0.86), new("#B65CFF", 1.0)],
+            [new("#B2E0F4", 0), new("#3FE0D8", 0.136), new("#34C6F4", 0.323), new("#7C6BFF", 0.571), new("#B65CFF", 0.719), new("#FF2E93", 1.0)],
             SignalGradient.Default.Stops);
     }
 
