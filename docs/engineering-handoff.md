@@ -309,3 +309,8 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     - BenchmarkDotNet is `0.16.0-preview.1`; move to a stable release with .NET 11 support when one ships.
     - Optional: assert that NativeAOT publish logs contain "Generating native code", so a silent fallback to a JIT
       build fails CI.
+14. **Typography and compact workspace verification:** review the fixed fonts and revised empty state in the running
+    app at compact and normal sizes, including populated and active states, keyboard focus, and a screen reader.
+    The user accepted proceeding without those live checks. Status text also has low contrast against its background.
+    At extremely narrow center widths, the mixer heading can overlap the meter-mode selector; whether the font change
+    caused or worsened this has not been established.

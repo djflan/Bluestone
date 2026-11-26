@@ -311,7 +311,8 @@
   </LinearGradientBrush>
 
   <!-- Typography. -->
-  <FontFamily x:Key="Font.Mono">SF Mono, Menlo, Cascadia Mono, JetBrains Mono, Consolas, DejaVu Sans Mono, monospace</FontFamily>
+  <FontFamily x:Key="Font.Ui">fonts:Inter#Inter, avares://Bluestone.Desktop/Assets/Fonts#Noto Music</FontFamily>
+  <FontFamily x:Key="Font.Mono">avares://Bluestone.Desktop/Assets/Fonts#JetBrains Mono, avares://Bluestone.Desktop/Assets/Fonts#Noto Music</FontFamily>
   <x:Double x:Key="FontSize.Micro">9</x:Double>
   <x:Double x:Key="FontSize.Caption">10</x:Double>
   <x:Double x:Key="FontSize.Small">11</x:Double>

@@ -61,7 +61,7 @@ public sealed class PianoRollView : Control
     private static readonly IBrush NoteText = new SolidColorBrush(Color.Parse("#111113"));
     private static readonly IBrush LaneText = new SolidColorBrush(Palette.TextMuted);
     private static readonly IBrush EmptyText = new SolidColorBrush(Palette.TextMuted);
-    private static readonly Typeface Face = new("Inter", FontStyle.Normal, FontWeight.Medium);
+    private static readonly Typeface Face = ConsolePaint.Typeface("Font.Ui", FontWeight.Medium);
 
     private EditorViewModel? _editor;
     private double _scrollX;

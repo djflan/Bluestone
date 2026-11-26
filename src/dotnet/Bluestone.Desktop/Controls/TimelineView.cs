@@ -66,7 +66,7 @@ public sealed class TimelineView : Control
     private static readonly Color RegionTextColor = Color.Parse("#F4F6F8");
     private static readonly IBrush RegionText = new SolidColorBrush(RegionTextColor);
     private static readonly IBrush RegionInk = new SolidColorBrush(Palette.Base);
-    private static readonly Typeface RegionFace = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
+    private static readonly Typeface RegionFace = ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold);
 
     // Clip drag state
     private readonly List<(Track Track, Clip Clip, List<NoteEvent> Notes, (int Start, int End) Slice, (int Low, int High) Range, int Lane)> _moving = [];

@@ -1,5 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Layout;
+using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Sessions;
 using Bluestone.Desktop.Controls;
@@ -37,6 +40,68 @@ public sealed class TimelineNavigationUiTests
 
     // The beat ruler's lower part (below the loop strip).
     private const double BeatRulerY = 22;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task EmptyArrangement_HorizontalScrollbarRespondsToPointer(bool wideDocks) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync(nativeMenuBar: wideDocks);
+        app.Window.Width = wideDocks ? 1040 : 1440;
+        app.Window.Height = wideDocks ? 640 : 900;
+        if (wideDocks)
+        {
+            app.Window.SetRenderScaling(1.1);
+            app.Find<NativeMenuBar>("MenuBar").IsVisible = false;
+            app.ViewModel.Workspace.Inspector.ShowCommand.Execute(null);
+            app.ViewModel.Workspace.Browser.ShowCommand.Execute(null);
+            app.ViewModel.Workspace.Mixer.ShowCommand.Execute(null);
+            app.ViewModel.Workspace.LeftExtent = 300;
+            app.ViewModel.Workspace.RightExtent = 400;
+            app.ViewModel.Workspace.DetailExtent = 1000;
+        }
+
+        app.Settle();
+        Assert.Empty(app.ViewModel.Tracks);
+        if (wideDocks)
+        {
+            var import = app.Window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && Equals(b.Content, "Import MIDI…"));
+            var emptyScroller = import.GetVisualAncestors().OfType<ScrollViewer>().First();
+            Assert.True(emptyScroller.Extent.Height > emptyScroller.Viewport.Height, "The empty state should need vertical scrolling.");
+            var vertical = emptyScroller.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ScrollBar>()
+                .Single(bar => bar.Orientation == Orientation.Vertical && bar.IsEffectivelyVisible);
+            Assert.True(vertical.Bounds.Width > 0 && vertical.Bounds.Height > 0, "The empty-state vertical scrollbar should be present.");
+        }
+
+        var scroller = app.Find<ScrollViewer>("TimelineScroller");
+        Assert.True(scroller.Extent.Width > scroller.Viewport.Width, "The empty timeline must extend beyond the viewport.");
+        var scrollbar = scroller.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ScrollBar>()
+            .Single(bar => bar.Orientation == Orientation.Horizontal && bar.IsEffectivelyVisible);
+        Assert.True(scrollbar.IsEffectivelyEnabled);
+        Assert.Equal(0, scroller.Offset.X);
+
+        // Click inside the visible scrollbar, away from the adjacent dock and detail resize handles.
+        var local = new Point(scrollbar.Bounds.Width * (wideDocks ? 0.75 : 0.8), scrollbar.Bounds.Height * (wideDocks ? 0.35 : 0.5));
+        var point = app.InWindow(scrollbar, local);
+        if (wideDocks)
+        {
+            var browser = app.Find<Control>("BrowserDock");
+            var handle = app.Find<Control>("DetailHandle");
+            Assert.True(point.X < app.InWindow(browser, default).X - 5, "The click must avoid the browser resize handle.");
+            Assert.True(point.Y < app.InWindow(handle, default).Y - 2, "The click must avoid the detail resize handle.");
+            // In this narrow viewport the scroll track collapses; its right-arrow button is still visible.
+            var rightArrow = scrollbar.GetVisualDescendants().OfType<Control>()
+                .Single(button => button.Name == "PART_LineDownButton");
+            var arrowBounds = new Rect(app.InWindow(rightArrow, default), rightArrow.Bounds.Size);
+            Assert.True(point.X > arrowBounds.Left + 1 && point.X < arrowBounds.Right - 1 &&
+                        point.Y > arrowBounds.Top + 1 && point.Y < arrowBounds.Bottom - 1,
+                $"The click must be inside the scrollbar's right arrow: click {point}, arrow {arrowBounds}.");
+        }
+
+        app.ClickAt(scrollbar, local);
+
+        Assert.True(scroller.Offset.X > 0, $"Clicking the horizontal scrollbar should scroll the empty timeline; offset was {scroller.Offset.X}, scrollbar bounds {scrollbar.Bounds}, click {point}.");
+    });
 
     [Fact]
     public Task AClickInTheBeatRuler_Seeks_AndADragUpZoomsInAroundThePressedPosition() => HeadlessApp.RunAsync(async () =>

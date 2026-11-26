@@ -337,17 +337,36 @@
             </Panel>
           </ScrollViewer>
 
-          <!-- Empty state -->
-          <StackPanel Grid.Row="2" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12"
-                      IsVisible="{Binding !Tracks.Count}">
-            <PathIcon Classes="stroke" Data="{StaticResource Icon.PianoRoll}" Width="34" Height="34" Foreground="{StaticResource Line.BorderStrong}" />
-            <TextBlock Text="Start with a device, MIDI file, or new track" Classes="title" HorizontalAlignment="Center" />
-            <TextBlock Text="Drag a device here from the Browser, or drop a .mid or .bluestone file." Classes="secondary" HorizontalAlignment="Center" />
-            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-              <Button Classes="primary" Content="Import MIDI…" Command="{Binding ImportMidiCommand}" />
-              <Button Classes="raised" Content="New Track" Command="{Binding AddTrackCommand}" />
-            </StackPanel>
-          </StackPanel>
+          <!-- Constrain the empty state to the visible center, and leave the timeline scrollbar's band uncovered. -->
+          <Grid Grid.Row="2" Grid.ColumnSpan="2" RowDefinitions="*,Auto"
+                Width="{Binding #MainArea.Bounds.Width}" HorizontalAlignment="Left" IsVisible="{Binding !Tracks.Count}">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="{StaticResource Inset.Header}">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Height.Compact}" MaxHeight="{StaticResource Height.Header}" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Space.XXS}" MaxHeight="{StaticResource Space.L}" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Space.XXS}" MaxHeight="{StaticResource Space.L}" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Space.XXS}" MaxHeight="{StaticResource Space.L}" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+              <Viewbox Grid.Row="1" Width="{StaticResource Height.Header}" HorizontalAlignment="Center">
+                <PathIcon Classes="stroke" Data="{StaticResource Icon.PianoRoll}" Width="{StaticResource Icon.SizeLarge}" Height="{StaticResource Icon.SizeLarge}"
+                          Foreground="{StaticResource Line.BorderStrong}" />
+              </Viewbox>
+              <TextBlock Grid.Row="3" Text="Start with a device, MIDI file, or new track" Classes="title" TextAlignment="Center" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="5" Text="Drag a device here from the Browser, or drop a .mid or .bluestone file." Classes="secondary" TextAlignment="Center" TextWrapping="Wrap" />
+              <WrapPanel Grid.Row="7" Orientation="Horizontal" ItemsAlignment="Center" ItemSpacing="{StaticResource Space.M}" LineSpacing="{StaticResource Space.XS}">
+                <Button Classes="primary" Content="Import MIDI…" Command="{Binding ImportMidiCommand}" />
+                <Button Classes="raised" Content="New Track" Command="{Binding AddTrackCommand}" />
+              </WrapPanel>
+            </Grid>
+          </ScrollViewer>
+          <Border Grid.Row="1" Height="{StaticResource Space.XL}" IsHitTestVisible="False" />
+          </Grid>
           <Grid x:Name="TrackDropArea" Grid.Row="2" Grid.ColumnSpan="2" IsHitTestVisible="False" ClipToBounds="True">
             <Border x:Name="DeviceDropOverlay" IsVisible="False" VerticalAlignment="Top"
                     Background="{StaticResource Overlay.Scrim}" BorderBrush="{StaticResource Accent}" BorderThickness="2" CornerRadius="4">
