@@ -16,7 +16,7 @@ required reading, quality bar, output contract, and limits. Lucas reads a member
 | `kenji` | Kenji | Native and platforms | `src/native/`, `Bluestone.Platform.*` |
 | `jules` | Jules | Musician advocate | nothing |
 | `sabrina` | Sabrina | Docs and release | `docs/`, README, PR body |
-| `iris` | Iris (contract) | Principal Product Designer and UX Architect: design direction, workflows, design system, rendered validation | design specs; design-only scratch scenes Lucas assigns |
+| `iris` | Iris | Principal Product Designer and UX Architect: design direction, workflows, design system, rendered validation | design specs; design-only scratch scenes Lucas assigns |
 
 **Contract** members are approved, bounded trials. Hiring, performance review, and release/extend/retain decisions
 follow `governance.md`. Successful work does not silently make a role permanent, and replacing a current member is a
