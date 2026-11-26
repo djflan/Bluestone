@@ -135,23 +135,23 @@ public sealed class DisplaySettingsTests : IDisposable
 
         // A new stop takes the colour already there, so the gradient looks the same.
         var before = display.Mixer.Gradient.Evaluate(0.2);
-        Assert.Equal(1, display.Mixer.AddGradientStop(0.2));
+        Assert.Equal(2, display.Mixer.AddGradientStop(0.2));
         Assert.Equal(7, display.Mixer.Gradient.Stops.Length);
-        Assert.Equal(new SignalGradientStop("#34C6F4", 0.2), display.Mixer.Gradient.Stops[1]);
+        Assert.Equal(new SignalGradientStop("#3BD7E2", 0.2), display.Mixer.Gradient.Stops[2]);
         Assert.Equal(before, display.Mixer.Gradient.Evaluate(0.2));
         Assert.Contains(nameof(GradientEditorViewModel.Gradient), notified);
         Assert.Equal(display.Mixer.Gradient, store.Load().MixerGradient);
 
-        Assert.True(display.Mixer.SetGradientStopColour(1, "#ff0000"));
-        Assert.Equal(new SignalGradientStop("#FF0000", 0.2), store.Load().MixerGradient.Stops[1]);
-        Assert.False(display.Mixer.SetGradientStopColour(1, "red"));
+        Assert.True(display.Mixer.SetGradientStopColour(2, "#ff0000"));
+        Assert.Equal(new SignalGradientStop("#FF0000", 0.2), store.Load().MixerGradient.Stops[2]);
+        Assert.False(display.Mixer.SetGradientStopColour(2, "red"));
         Assert.False(display.Mixer.SetGradientStopColour(9, "#FF0000"));
 
         // Moving past a neighbour reorders; the returned index follows the stop.
-        Assert.Equal(2, display.Mixer.MoveGradientStop(1, 0.5));
-        Assert.Equal(new SignalGradientStop("#FF0000", 0.5), store.Load().MixerGradient.Stops[2]);
+        Assert.Equal(4, display.Mixer.MoveGradientStop(2, 0.6));
+        Assert.Equal(new SignalGradientStop("#FF0000", 0.6), store.Load().MixerGradient.Stops[4]);
         // At a tie it keeps its order relative to the stop already there.
-        Assert.Equal(5, display.Mixer.MoveGradientStop(2, 1.5));
+        Assert.Equal(5, display.Mixer.MoveGradientStop(4, 1.5));
         Assert.Equal(new SignalGradientStop("#FF0000", 1), store.Load().MixerGradient.Stops[5]);
         Assert.Equal(-1, display.Mixer.MoveGradientStop(7, 0.5));
 
@@ -183,11 +183,12 @@ public sealed class DisplaySettingsTests : IDisposable
         var display = new DisplayViewModel();
         display.Use(store);
 
-        // Default's widest gap is 0 to 0.40, so the new stop goes at 0.20 and is selected.
+        // Default's widest gap is purple to pink, so its midpoint is selected.
         display.Mixer.AddGradientStopInLargestGapCommand.Execute(null);
-        Assert.Equal(1, display.Mixer.SelectedGradientStopIndex);
-        Assert.Equal(new SignalGradientStop("#34C6F4", 0.2), display.Mixer.SelectedGradientStop);
-        Assert.Equal("20%", display.Mixer.SelectedGradientStopPercent);
+        Assert.Equal(5, display.Mixer.SelectedGradientStopIndex);
+        Assert.Equal("#DB45C9", display.Mixer.SelectedGradientStop.Colour);
+        Assert.Equal(0.8595, display.Mixer.SelectedGradientStop.Position, precision: 6);
+        Assert.Equal("86%", display.Mixer.SelectedGradientStopPercent);
         Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
 
         display.Mixer.AddGradientStopInLargestGapCommand.Execute(null);
@@ -222,22 +223,22 @@ public sealed class DisplaySettingsTests : IDisposable
 
         display.Mixer.NudgeGradientStop(1, 0.01);
         Assert.Equal(1, display.Mixer.SelectedGradientStopIndex);
-        Assert.Equal(0.41, store.Load().MixerGradient.Stops[1].Position);
-        Assert.Equal("41%", display.Mixer.SelectedGradientStopPercent);
+        Assert.Equal(0.146, store.Load().MixerGradient.Stops[1].Position);
+        Assert.Equal("15%", display.Mixer.SelectedGradientStopPercent);
 
-        // Past the 0.62 stop: the selection follows the stop to its new place.
+        // Past the cyan and violet stops: the selection follows the stop to its new place.
         display.Mixer.MoveAndSelectGradientStop(1, 0.7);
-        Assert.Equal(2, display.Mixer.SelectedGradientStopIndex);
-        Assert.Equal(new SignalGradientStop("#34C6F4", 0.7), display.Mixer.SelectedGradientStop);
-        display.Mixer.NudgeGradientStop(2, -0.05);
-        Assert.Equal(0.65, store.Load().MixerGradient.Stops[2].Position);
+        Assert.Equal(3, display.Mixer.SelectedGradientStopIndex);
+        Assert.Equal(new SignalGradientStop("#3FE0D8", 0.7), display.Mixer.SelectedGradientStop);
+        display.Mixer.NudgeGradientStop(3, -0.05);
+        Assert.Equal(0.65, store.Load().MixerGradient.Stops[3].Position);
 
         var notified = new List<string?>();
         display.Mixer.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
         display.Mixer.SelectedGradientStopColour = "#12";
-        Assert.Equal("#34C6F4", display.Mixer.SelectedGradientStopColour);
+        Assert.Equal("#3FE0D8", display.Mixer.SelectedGradientStopColour);
         display.Mixer.SelectedGradientStopColour = "ff8800";
-        Assert.Equal("#FF8800", store.Load().MixerGradient.Stops[2].Colour);
+        Assert.Equal("#FF8800", store.Load().MixerGradient.Stops[3].Colour);
         Assert.Contains(nameof(GradientEditorViewModel.SelectedGradientStopColour), notified);
         display.Mixer.ChooseGradientStopColourCommand.Execute("#7C6BFF");
         Assert.Equal("#7C6BFF", display.Mixer.SelectedGradientStopColour);
@@ -368,12 +369,12 @@ public sealed class DisplaySettingsTests : IDisposable
 
         var saved = store.Load();
         Assert.Equal("#FF0000", saved.MixerGradient.Stops[0].Colour);
-        Assert.Equal(0.40, saved.MixerGradient.Stops[1].Position);
-        Assert.Equal("#34C6F4", saved.ChainGradient.Stops[0].Colour);
-        Assert.Equal(0.5, saved.ChainGradient.Stops[1].Position);
+        Assert.Equal(0.136, saved.MixerGradient.Stops[1].Position);
+        Assert.Equal("#B2E0F4", saved.ChainGradient.Stops[0].Colour);
+        Assert.Equal(0.5, saved.ChainGradient.Stops[2].Position);
         Assert.Equal(5, saved.GainGradient.Stops.Length);
         Assert.Equal(0, display.Mixer.SelectedGradientStopIndex);
-        Assert.Equal(1, display.Chain.SelectedGradientStopIndex);
+        Assert.Equal(2, display.Chain.SelectedGradientStopIndex);
 
         display.Gain.ResetGradientCommand.Execute(null);
         Assert.Equal(SignalGradient.GainDefault, store.Load().GainGradient);
