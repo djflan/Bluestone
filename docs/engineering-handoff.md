@@ -312,3 +312,5 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
 14. **Typography and compact workspace verification:** review the fixed fonts and revised empty state in the running
     app at compact and normal sizes, including populated and active states, keyboard focus, and a screen reader.
     The user accepted proceeding without those live checks. Status text also has low contrast against its background.
+    At extremely narrow center widths, the mixer heading can overlap the meter-mode selector; whether the font change
+    caused or worsened this has not been established.

@@ -337,19 +337,19 @@
             </Panel>
           </ScrollViewer>
 
-          <!-- The fixed track-header column can overflow the center when both docks are wide; constrain the empty
-               state to the actual center so its wrapping and scroll viewport remain inside the visible workspace. -->
-          <ScrollViewer Grid.Row="2" Grid.ColumnSpan="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
-                        Width="{Binding #MainArea.Bounds.Width}" HorizontalAlignment="Left" IsVisible="{Binding !Tracks.Count}">
-            <Grid Margin="{StaticResource Inset.Row}">
+          <!-- Constrain the empty state to the visible center, and leave the timeline scrollbar's band uncovered. -->
+          <Grid Grid.Row="2" Grid.ColumnSpan="2" RowDefinitions="*,Auto"
+                Width="{Binding #MainArea.Bounds.Width}" HorizontalAlignment="Left" IsVisible="{Binding !Tracks.Count}">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="{StaticResource Inset.Header}">
               <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="*" MinHeight="{StaticResource Height.Compact}" MaxHeight="{StaticResource Height.Header}" />
-                <RowDefinition Height="*" MinHeight="{StaticResource Space.XS}" MaxHeight="{StaticResource Space.L}" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Space.XXS}" MaxHeight="{StaticResource Space.L}" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" MinHeight="{StaticResource Space.XS}" MaxHeight="{StaticResource Space.L}" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Space.XXS}" MaxHeight="{StaticResource Space.L}" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" MinHeight="{StaticResource Space.XS}" MaxHeight="{StaticResource Space.L}" />
+                <RowDefinition Height="*" MinHeight="{StaticResource Space.XXS}" MaxHeight="{StaticResource Space.L}" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
               </Grid.RowDefinitions>
@@ -365,6 +365,8 @@
               </WrapPanel>
             </Grid>
           </ScrollViewer>
+          <Border Grid.Row="1" Height="{StaticResource Space.XL}" IsHitTestVisible="False" />
+          </Grid>
           <Grid x:Name="TrackDropArea" Grid.Row="2" Grid.ColumnSpan="2" IsHitTestVisible="False" ClipToBounds="True">
             <Border x:Name="DeviceDropOverlay" IsVisible="False" VerticalAlignment="Top"
                     Background="{StaticResource Overlay.Scrim}" BorderBrush="{StaticResource Accent}" BorderThickness="2" CornerRadius="4">

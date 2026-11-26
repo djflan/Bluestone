@@ -93,7 +93,7 @@ custom-drawn controls need, and a UI test keeps the two in step. Small Bluestone
 are custom where the stock control would look generic; ordinary layout and text stay stock.
 
 `Font.Ui` uses the packaged Avalonia Inter family, and `Font.Mono` uses bundled JetBrains Mono. Both use bundled
-Noto Music as a fallback for musical symbols. The bundled fonts include their SIL OFL 1.1 licenses in
+Noto Music as a fallback for musical symbols. All three include their SIL OFL 1.1 licenses in
 `Bluestone.Desktop/Assets/Fonts`; fonts are fixed rather than user-selectable.
 
 ### Local layout state

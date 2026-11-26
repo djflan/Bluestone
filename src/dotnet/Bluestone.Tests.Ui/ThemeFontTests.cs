@@ -13,6 +13,7 @@ namespace Bluestone.Tests.Ui;
 public sealed class ThemeFontTests
 {
     [Theory]
+    [InlineData("Inter-OFL.txt", "The Inter Project Authors")]
     [InlineData("JetBrainsMono-OFL.txt", "The JetBrains Mono Project Authors")]
     [InlineData("NotoMusic-OFL.txt", "The Noto Project Authors")]
     public void TheBuildOutput_ContainsReadableFontLicenseNotices(string fileName, string authors)
