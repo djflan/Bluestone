@@ -10,12 +10,12 @@ namespace Bluestone.Presentation;
 public sealed record ThemeLoadResult(ThemeDefinition Theme, string? Problem);
 
 /// <summary>
-/// Reads and writes one theme as a JSON file (ADR 0053), over its shipped <see cref="Defaults"/>. The file holds only what
-/// differs from the shipped theme, so a later Bluestone's improved colors reach every member nobody changed; the shipped
-/// values are written beside it (<see cref="ReferencePath"/>) as a reference to copy from. Every member is read on its own:
-/// a missing value takes its default, and a value that can't be used takes its default and is reported. Comments and
-/// trailing commas are allowed. A file that can't be parsed is kept aside (renamed) and the defaults are used; a file that
-/// can't be read, or kept aside, is never written over (<see cref="CanSave"/>).
+/// Reads and writes one theme as a JSON file (ADR 0053), over its shipped <see cref="Defaults"/>. The file is Bluestone's:
+/// Settings writes it, and editing it by hand is at the user's own risk. It holds only what differs from the shipped theme,
+/// so a later Bluestone's improved colors reach every member nobody changed. Every member is read on its own: a missing
+/// value takes its default, and a value that can't be used takes its default and is reported. A file that can't be parsed
+/// falls back to the default theme and is kept aside (renamed); a file that can't be read, or kept aside, is never written
+/// over (<see cref="CanSave"/>).
 /// </summary>
 public sealed class ThemeStore
 {
@@ -29,7 +29,6 @@ public sealed class ThemeStore
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         Defaults = defaults ?? throw new ArgumentNullException(nameof(defaults));
         Path = System.IO.Path.Combine(directory, ThemeDefinition.FileName(defaults.Name));
-        ReferencePath = System.IO.Path.ChangeExtension(Path, ".shipped.json");
     }
 
     /// <summary>The theme as it ships: what reverting a member, or resetting the theme, puts back.</summary>
@@ -37,9 +36,6 @@ public sealed class ThemeStore
 
     /// <summary>The theme's file: the musician's changes.</summary>
     public string Path { get; }
-
-    /// <summary>Every member's shipped value, rewritten when it changes; Bluestone never reads it.</summary>
-    public string ReferencePath { get; }
 
     /// <summary>
     /// False once <see cref="Load"/> found a file it could neither read nor move aside: <see cref="Save"/> then refuses, so the
@@ -51,7 +47,6 @@ public sealed class ThemeStore
     public ThemeLoadResult Load()
     {
         CanSave = true;
-        WriteReference();
         string text;
         try
         {
@@ -221,7 +216,7 @@ public sealed class ThemeStore
 
     // Only what differs from the shipped theme is written (with the name, variant, and version), so members the musician
     // never changed follow the shipped theme when a later Bluestone improves it.
-    private static byte[] Write(ThemeDefinition theme, ThemeDefinition? shipped)
+    private static byte[] Write(ThemeDefinition theme, ThemeDefinition shipped)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
@@ -230,15 +225,13 @@ public sealed class ThemeStore
             writer.WriteString("name", theme.Name);
             writer.WriteString("variant", theme.Variant.ToString().ToLowerInvariant());
             writer.WriteNumber("version", Version);
-            writer.WriteString("about", shipped is null
-                ? $"{theme.Name} as it ships. Bluestone rewrites this file and never reads it: copy a value into {ThemeDefinition.FileName(theme.Name)} to change it."
-                : $"Your changes to {theme.Name}. A color or gradient that isn't listed uses its shipped value ({System.IO.Path.ChangeExtension(ThemeDefinition.FileName(theme.Name), ".shipped.json")} lists every one). Colors apply when Bluestone starts.");
+            writer.WriteString("about", $"Your changes to {theme.Name}, written by Bluestone's Settings. Editing this file by hand is at your own risk: a file Bluestone can't read falls back to the default theme.");
             writer.WriteStartObject("gradients");
-            WriteGradient(writer, "mixer", theme.MixerGradient, shipped?.MixerGradient);
-            WriteGradient(writer, "chain", theme.ChainGradient, shipped?.ChainGradient);
-            WriteGradient(writer, "gain", theme.GainGradient, shipped?.GainGradient);
+            WriteGradient(writer, "mixer", theme.MixerGradient, shipped.MixerGradient);
+            WriteGradient(writer, "chain", theme.ChainGradient, shipped.ChainGradient);
+            WriteGradient(writer, "gain", theme.GainGradient, shipped.GainGradient);
             writer.WriteEndObject();
-            if (shipped is null || theme.MidiColor != shipped.MidiColor)
+            if (theme.MidiColor != shipped.MidiColor)
             {
                 writer.WriteString("midiColor", theme.MidiColor);
             }
@@ -246,7 +239,7 @@ public sealed class ThemeStore
             writer.WriteStartObject("colors");
             foreach (var (key, value) in theme.Colors)
             {
-                if (shipped is null || !shipped.Colors.TryGetValue(key, out var original) || original != value)
+                if (!shipped.Colors.TryGetValue(key, out var original) || original != value)
                 {
                     writer.WriteString(key, value);
                 }
@@ -260,7 +253,7 @@ public sealed class ThemeStore
         return stream.ToArray();
     }
 
-    private static void WriteGradient(Utf8JsonWriter writer, string name, SignalGradient gradient, SignalGradient? shipped)
+    private static void WriteGradient(Utf8JsonWriter writer, string name, SignalGradient gradient, SignalGradient shipped)
     {
         if (gradient == shipped)
         {
@@ -279,23 +272,7 @@ public sealed class ThemeStore
         writer.WriteEndArray();
     }
 
-    // The reference copy is best effort: it helps hand editing and is never read, so failing to write it isn't reported.
-    private void WriteReference()
-    {
-        try
-        {
-            var bytes = Write(Defaults, shipped: null);
-            if (!File.Exists(ReferencePath) || !File.ReadAllBytes(ReferencePath).AsSpan().SequenceEqual(bytes))
-            {
-                WriteFile(ReferencePath, bytes);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
-        {
-        }
-    }
-
-    // First run: the file is written so it can be edited by hand. Failing to write it is reported, not fatal.
+    // First run: the file is written with no changes. Failing to write it is reported, not fatal.
     private string? TrySave(ThemeDefinition theme)
     {
         try

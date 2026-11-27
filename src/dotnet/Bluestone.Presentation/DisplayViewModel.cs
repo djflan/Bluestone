@@ -441,7 +441,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     }
 
     // A theme member changed: it is written to the theme's file only, so changing a display preference never rewrites the
-    // theme (and never replaces a hand edit made to it while Bluestone runs).
+    // theme.
     private void SaveTheme()
     {
         if (!_loading)
@@ -454,7 +454,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     // Writes whatever changed, unless a preview holds saves until it ends. Each file reports its own failure once per run of
     // failures, so dragging a control on a read-only disk does not flood the messages; the change still applies for this
     // session, and stays pending so the next save of that kind tries again. A display preference never retries the theme,
-    // so it can't write over a hand edit made after a theme save failed.
+    // so a display change never writes the theme file.
     private void Flush(bool includeTheme = true)
     {
         if (Previewing)

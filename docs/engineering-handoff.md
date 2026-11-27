@@ -352,8 +352,8 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       differ; component tokens repeat hex values instead of referring to base tokens.
     - `Colour*` identifiers (`ColourPicker`, `LedColours`, `MidiColour`, …) to rename to US English.
     - Themes: no theme picker, live switching (`DynamicResource`), import or export, or Light and Midtoned themes.
-      A hand edit to the theme file while Bluestone runs is overwritten by the next gradient or MIDI light edit (display
-      preferences never write the theme). A hand-edited `variant` other than `dark` applies but is untested.
+      The theme file is Bluestone's; hand editing is unsupported (owner decision). A `variant` other than `dark` in the
+      file applies but is untested.
     - Escape while the Reset theme confirmation is open closes Settings (window-level handling in
       `MainWindow.Settings.cs`) rather than only the question; nothing is reset.
     - The raw-color lint doesn't catch named colors (`Colors.White`, `Brushes.Black`) in code.

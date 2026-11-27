@@ -37,10 +37,8 @@ public sealed class ThemeStoreTests : IDisposable
         Assert.Throws<ArgumentException>(() => ThemeDefinition.DarkSodalite([new("Surface.BaseColor", "slate")]));
     }
 
-    private string ReferenceFile => Path.Combine(_directory, "dark-sodalite.shipped.json");
-
     [Fact]
-    public void AMissingFile_GivesTheDefaults_AndIsWrittenEmpty_BesideAReferenceOfEveryShippedValue()
+    public void AMissingFile_GivesTheDefaults_AndIsWrittenWithNoChanges()
     {
         var loaded = Store().Load();
 
@@ -51,10 +49,7 @@ public sealed class ThemeStoreTests : IDisposable
         Assert.Contains("\"variant\": \"dark\"", text, StringComparison.Ordinal);
         Assert.Contains("\"colors\": {}", text, StringComparison.Ordinal);
         Assert.DoesNotContain("#12151A", text, StringComparison.Ordinal);
-        var reference = File.ReadAllText(ReferenceFile);
-        Assert.Contains("\"Surface.BaseColor\": \"#12151A\"", reference, StringComparison.Ordinal);
-        Assert.Contains("\"color\": \"#B2E0F4\"", reference, StringComparison.Ordinal);
-        Assert.Contains("\"midiColor\": \"#3CCBF4\"", reference, StringComparison.Ordinal);
+        Assert.Equal(["dark-sodalite.json"], Directory.GetFiles(_directory).Select(Path.GetFileName));
         Assert.Equal(Shipped, Store().Load().Theme);
     }
 
@@ -105,7 +100,7 @@ public sealed class ThemeStoreTests : IDisposable
               "gradients": { "mixer": "rainbow", "chain": [{ "color": "#000000", "position": 0 }, { "color": "#ff0000", "position": 1 }], "gain": [{ "colour": "#000000", "position": 0 }] },
               "midiColor": "red",
               "colors": { "Surface.BaseColor": "#010203", "Accent.Color": "aqua", "Made.UpColor": "#FFFFFF", "Overlay.ScrimColor": "#80ffffff", },
-              // A comment, and the trailing comma above, are fine in a hand-edited file.
+              // A comment, and the trailing comma above, don't stop the file being read.
             }
             """);
 

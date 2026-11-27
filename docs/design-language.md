@@ -303,10 +303,9 @@ geometry, type, or any rule in this guide.
   hairlines, with a few points of light, like the stone. Its shipped values are the colors in `Tokens.axaml` and the
   gradient and MIDI defaults.
 - A theme is a JSON file in the settings folder (`themes/dark-sodalite.json`) holding only what differs from the
-  shipped theme, so improvements to the shipped colors reach everything nobody changed. `dark-sodalite.shipped.json`
-  beside it lists every shipped value to copy from. Editing a gradient or the MIDI light in Settings ▸ Display writes
-  into the theme; **Reset theme** puts every member back. Colors edited by hand (with Bluestone closed) apply the next
-  time it starts.
+  shipped theme, so improvements to the shipped colors reach everything nobody changed. Settings writes it: editing a
+  gradient or the MIDI light saves into the theme, and **Reset theme** puts every member back. The file is Bluestone's;
+  editing it by hand is at your own risk, and a file Bluestone can't read falls back to the default theme.
 - **Adding a color:** add a Color token (and its brush) to `Tokens.axaml` with a semantic name and a role in
   [section 3](#3-color-roles); read it in custom-drawn controls through `Theme/Palette.cs`. The theme picks it up
   automatically, and a UI test checks that every token brush follows its theme color. A gradient or shadow token must

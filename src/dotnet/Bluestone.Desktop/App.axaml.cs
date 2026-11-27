@@ -71,7 +71,7 @@ public partial class App : Avalonia.Application
     /// <summary>
     /// Chooses the theme while the design tokens load (Theme/ThemedTokens.cs), before any style, window, or code-drawn
     /// control reads a color (ADR 0053). <paramref name="shipped"/> is Dark Sodalite as Tokens.axaml and App.axaml hold it;
-    /// the theme file in the settings folder overrides it, and is written on first run so it can be edited by hand. A file
+    /// the theme file in the settings folder (written by Settings) overrides it. A file
     /// that can't be used is reported in the Messages pane once the workspace is up, never fatal. Under test (no desktop
     /// lifetime) the shipped theme is used and nothing is read or written.
     /// </summary>
