@@ -314,3 +314,8 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     The user accepted proceeding without those live checks. Status text also has low contrast against its background.
     At extremely narrow center widths, the mixer heading can overlap the meter-mode selector; whether the font change
     caused or worsened this has not been established.
+15. **LED glow (branch `feature/led-glow`), deferred or not built:** the brightness fader's mark in the color picker
+    builds its glow once, so it picks up a new glow strength only when it is rebuilt; the shared bloom cache grows by
+    one small brush per MIDI color tried until the next glow change; the selected device card's halo and the color
+    wheel's thumb halo mark selection, not light, so they ignore the glow setting by design. Not measured: drawing
+    cost on a slower or integrated GPU, or HiDPI beyond the 2x headless frames.
