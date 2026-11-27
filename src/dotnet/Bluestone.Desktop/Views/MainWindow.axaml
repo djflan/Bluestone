@@ -56,24 +56,36 @@
         <StackPanel x:Name="WorkspaceTools" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <controls:GutterPanel Classes="toolGutter">
             <StackPanel Orientation="Horizontal">
-              <ToggleButton x:Name="InspectorButton" Classes="tool" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I; Enter to toggle)"
+              <ToggleButton x:Name="InspectorButton" Classes="tool glyph" IsChecked="{Binding IsInspectorVisible}" ToolTip.Tip="Show or hide the inspector (I; Enter to toggle)"
                             AutomationProperties.Name="Inspector" AutomationProperties.HelpText="Press Enter to toggle. Shortcut: I.">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
+                <controls:LedFade IsLit="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Inspector}" />
+                  <PathIcon Classes="stroke lit" Data="{StaticResource Icon.Inspector}" />
+                </controls:LedFade>
               </ToggleButton>
-              <ToggleButton x:Name="BrowserButton" Classes="tool" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
+              <ToggleButton x:Name="BrowserButton" Classes="tool glyph" IsChecked="{Binding Workspace.Browser.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Browser.ToggleCommand}"
                             ToolTip.Tip="Show or hide the Browser (Shift+B; Enter to toggle)" AutomationProperties.Name="Browser"
                             AutomationProperties.HelpText="Press Enter to toggle. Shortcut: Shift+B.">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
+                <controls:LedFade IsLit="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Browser}" />
+                  <PathIcon Classes="stroke lit" Data="{StaticResource Icon.Browser}" />
+                </controls:LedFade>
               </ToggleButton>
-              <ToggleButton x:Name="MixerButton" Classes="tool" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
+              <ToggleButton x:Name="MixerButton" Classes="tool glyph" IsChecked="{Binding Workspace.Mixer.IsDocked, Mode=OneWay}" Command="{Binding Workspace.Mixer.ToggleCommand}"
                             ToolTip.Tip="Show or hide the track mixer (Enter to toggle)" AutomationProperties.Name="Mixer"
                             AutomationProperties.HelpText="Press Enter to toggle.">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" />
+                <controls:LedFade IsLit="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.Mixer}" />
+                  <PathIcon Classes="stroke lit" Data="{StaticResource Icon.Mixer}" />
+                </controls:LedFade>
               </ToggleButton>
-              <ToggleButton x:Name="EditorsButton" Classes="tool" IsChecked="{Binding IsEditorVisible}"
+              <ToggleButton x:Name="EditorsButton" Classes="tool glyph" IsChecked="{Binding IsEditorVisible}"
                             ToolTip.Tip="Show or hide the detail region (Enter to toggle; P: piano roll, D: event list)" AutomationProperties.Name="Editors"
                             AutomationProperties.HelpText="Press Enter to toggle. Shortcuts: P for piano roll, D for event list.">
-                <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
+                <controls:LedFade IsLit="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
+                  <PathIcon Classes="stroke" Data="{StaticResource Icon.EditorPane}" />
+                  <PathIcon Classes="stroke lit" Data="{StaticResource Icon.EditorPane}" />
+                </controls:LedFade>
               </ToggleButton>
             </StackPanel>
           </controls:GutterPanel>

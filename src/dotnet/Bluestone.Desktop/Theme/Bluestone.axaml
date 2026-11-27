@@ -693,6 +693,32 @@
     <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
     <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
   </Style>
+  <!-- Workspace glyphs share the transport's light-only state; the existing targets and centers stay fixed. -->
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool.glyph /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool.glyph:pointerover /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool.glyph:checked /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool.glyph:checked:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool.glyph:pressed /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool.glyph:checked:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool.glyph controls|LedFade > PathIcon">
+    <Setter Property="Foreground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool.glyph:pointerover controls|LedFade > PathIcon">
+    <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool.glyph controls|LedFade > PathIcon.lit">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    <Setter Property="Effect" Value="{Binding Accent, Source={x:Static theme:GlowEffects.Current}, DataType=theme:GlowEffects}" />
+  </Style>
+  <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool.glyph:disabled controls|LedFade > PathIcon">
+    <Setter Property="Foreground" Value="{StaticResource Text.Disabled}" />
+    <Setter Property="Effect" Value="{x:Null}" />
+  </Style>
   <Style Selector="controls|GutterPanel.transport > StackPanel > :is(Button)">
     <Setter Property="Width" Value="44" />
     <Setter Property="Height" Value="30" />
@@ -1403,10 +1429,11 @@
     <Setter Property="BorderBrush" Value="{StaticResource Accent.Hover}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
-  <!-- A checked toolbar toggle already has an aqua rim, so keyboard focus is a thicker, neutral (not aqua) ring that
-       cannot be read as "on". -->
+  <!-- Keyboard focus stays distinct from both outlined settings and light-only workspace states. -->
   <Style Selector="controls|GutterPanel.toolGutter ToggleButton.tool:focus-visible /template/ ContentPresenter,
-                   controls|GutterPanel.toolGutter ToggleButton.tool:checked:focus-visible /template/ ContentPresenter">
+                   controls|GutterPanel.toolGutter ToggleButton.tool:checked:focus-visible /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool.glyph:focus-visible /template/ ContentPresenter,
+                   controls|GutterPanel.toolGutter ToggleButton.tool.glyph:checked:focus-visible /template/ ContentPresenter">
     <Setter Property="BorderBrush" Value="{StaticResource State.FocusOnLit}" />
     <Setter Property="BorderThickness" Value="2" />
   </Style>
