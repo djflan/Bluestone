@@ -60,6 +60,13 @@ public partial class MainWindow
                 Dispatcher.UIThread.Post(ConfigureSettingsPopups, DispatcherPriority.Loaded);
             }
         };
+        // Settings keeps one height whichever page it shows: as tall as the workspace row allows, up to its maximum, so
+        // changing page never makes it jump.
+        if (SettingsHost.Parent is Grid frame)
+        {
+            frame.SizeChanged += (_, _) => FitSettingsHeight(frame);
+        }
+
         SettingsHost.AddHandler(PointerPressedEvent, (_, _) => ConfigureSettingsPopups(), RoutingStrategies.Tunnel, handledEventsToo: true);
         SettingsHost.AddHandler(KeyDownEvent, (_, _) => ConfigureSettingsPopups(), RoutingStrategies.Tunnel, handledEventsToo: true);
 
@@ -267,6 +274,13 @@ public partial class MainWindow
         {
             ShowSettings();
         }
+    }
+
+    private void FitSettingsHeight(Grid frame)
+    {
+        var margin = SettingsHost.Margin;
+        var room = frame.RowDefinitions[Grid.GetRow(SettingsHost)].ActualHeight - margin.Top - margin.Bottom;
+        SettingsHost.Height = Math.Max(0, Math.Min(SettingsHost.MaxHeight, room));
     }
 }
 

@@ -422,6 +422,20 @@ public sealed class SettingsTests : IDisposable
         var hostBounds = new Rect(app.InWindow(host, default), host.Bounds.Size);
         Assert.InRange(hostBounds.Width, 500, 880);
         Assert.InRange(hostBounds.Height, 200, 840);
+
+        // One height for every page (as tall as the workspace allows, up to the maximum), so changing page never jumps.
+        var shown = app.Window.Settings.SelectedCategory;
+        foreach (var category in app.Window.Settings.Categories)
+        {
+            app.Window.Settings.SelectedCategory = category;
+            app.Settle();
+            Assert.Equal(hostBounds.Height, host.Bounds.Height);
+        }
+
+        app.Window.Settings.SelectedCategory = shown;
+        app.Settle();
+
+        Assert.Equal(Math.Min(host.MaxHeight, workspaceBounds.Bottom - hostBounds.Top - host.Margin.Bottom), hostBounds.Height, 1);
         Assert.True(hostBounds.Left > workspaceBounds.Left + 100);
         // The popover stops clear of the right rail, so the rotated Browser label is never covered.
         var rail = app.Find<Border>("RightRail");
