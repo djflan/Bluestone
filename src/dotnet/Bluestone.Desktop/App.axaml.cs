@@ -34,6 +34,18 @@ public partial class App : Avalonia.Application
 
     private static WindowIcon? _icon;
 
+    /// <summary>The theme's file when Bluestone runs as an application; null under test, which uses the shipped theme.</summary>
+    private static ThemeStore? _themeStore;
+
+    /// <summary>Why the theme's file could not be used at startup, for the Messages pane, or null.</summary>
+    private static string? _themeProblem;
+
+    /// <summary>The theme applied at startup (ADR 0053): Dark Sodalite as shipped, with the theme file's changes.</summary>
+    internal static ThemeDefinition? AppliedTheme { get; private set; }
+
+    /// <summary>Dark Sodalite as it ships: the colors in Tokens.axaml and App.axaml, read before the theme was applied.</summary>
+    internal static ThemeDefinition? ShippedTheme { get; private set; }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -54,6 +66,28 @@ public partial class App : Avalonia.Application
                 MatchTitleBar(window);
             }
         });
+    }
+
+    /// <summary>
+    /// Chooses the theme while the design tokens load (Theme/ThemedTokens.cs), before any style, window, or code-drawn
+    /// control reads a color (ADR 0053). <paramref name="shipped"/> is Dark Sodalite as Tokens.axaml and App.axaml hold it;
+    /// the theme file in the settings folder overrides it, and is written on first run so it can be edited by hand. A file
+    /// that can't be used is reported in the Messages pane once the workspace is up, never fatal. Under test (no desktop
+    /// lifetime) the shipped theme is used and nothing is read or written.
+    /// </summary>
+    internal ThemeDefinition ChooseTheme(ThemeDefinition shipped)
+    {
+        ArgumentNullException.ThrowIfNull(shipped);
+        ShippedTheme = shipped;
+        var theme = shipped;
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime)
+        {
+            _themeStore = new ThemeStore(ThemeDirectory, shipped);
+            (theme, _themeProblem) = _themeStore.Load();
+        }
+
+        AppliedTheme = theme;
+        return theme;
     }
 
     /// <summary>Draws a window's title bar in the menu bar's colour, so the two read as one.</summary>
@@ -220,6 +254,16 @@ public partial class App : Avalonia.Application
             LayoutStore = new WorkspaceStore(SettingsDirectory),
         };
         viewModel.Display.Use(new DisplaySettingsStore(DisplaySettingsPath));
+        if (_themeStore is { } themeStore && AppliedTheme is { } theme)
+        {
+            viewModel.Display.UseTheme(themeStore, theme);
+        }
+
+        if (_themeProblem is { } problem)
+        {
+            viewModel.Messages.Add(new MessageItem(MessageSeverity.Warning, "Settings", problem));
+        }
+
         FollowSignalGradient(viewModel.Display);
         viewModel.MixerConsole.UseSettingsStore(new MixerMeterDisplaySettingsStore(MixerMeterSettingsPath));
         var initialized = viewModel.InitializeAsync();
@@ -325,6 +369,9 @@ public partial class App : Avalonia.Application
     /// <summary>Bluestone's local settings folder, e.g. ~/Library/Application Support/Bluestone on macOS. Workspace layouts live here, not in projects.</summary>
     public static string SettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bluestone");
+
+    /// <summary>Themes (ADR 0053), e.g. ~/Library/Application Support/Bluestone/themes/dark-sodalite.json on macOS.</summary>
+    public static string ThemeDirectory => Path.Combine(SettingsDirectory, "themes");
 
     /// <summary>Where the audio settings are kept, e.g. ~/Library/Application Support/Bluestone/audio-settings.json on macOS.</summary>
     public static string AudioSettingsPath =>

@@ -22,8 +22,11 @@ public sealed partial class GradientEditorViewModel : ObservableObject
     /// <summary>What the musician reads for this gradient, for example "Mixer meters".</summary>
     public string Name { get; }
 
-    /// <summary>What <see cref="ResetGradientCommand"/> puts back.</summary>
-    public SignalGradient DefaultGradient { get; }
+    /// <summary>What <see cref="ResetGradientCommand"/> puts back: the theme's shipped gradient.</summary>
+    public SignalGradient DefaultGradient { get; private set; }
+
+    /// <summary>Makes <paramref name="gradient"/> what <see cref="ResetGradientCommand"/> puts back.</summary>
+    internal void UseDefault(SignalGradient gradient) => DefaultGradient = gradient ?? throw new ArgumentNullException(nameof(gradient));
 
     /// <summary>Whether the indicators this gradient colours have a clip lamp above them (in its own fixed colour, not part of the gradient).</summary>
     public bool HasClipLamp { get; }

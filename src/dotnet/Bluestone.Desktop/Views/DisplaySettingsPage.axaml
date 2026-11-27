@@ -91,6 +91,26 @@
       <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
+    <!-- The theme: its name, and a reset that asks first, in place, before it puts every color back. -->
+    <Style Selector="TextBlock.themeName">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Title}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.confirmReset">
+      <Setter Property="Background" Value="{StaticResource Surface.Raised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line.BorderStrong}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Panel}" />
+      <Setter Property="Padding" Value="{StaticResource Inset.Section}" />
+    </Style>
+    <Style Selector="Border.confirmReset TextBlock.question">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+      <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
     <Style Selector="Border.segmented.stageTargets">
       <Setter Property="Width" Value="186" />
       <Setter Property="Height" Value="20" />
@@ -102,6 +122,33 @@
   <Panel>
     <controls:ColourPickerPopup x:Name="Picker" />
     <StackPanel Classes="settingsGroups">
+      <StackPanel x:Name="ThemeGroup" Classes="settingsGroup">
+        <TextBlock Classes="overline" Text="THEME" />
+        <Grid Classes="settingRow" ColumnDefinitions="*,Auto">
+          <TextBlock x:Name="ThemeNameText" Classes="themeName" Text="{Binding ThemeName}"
+                     AutomationProperties.Name="{Binding ThemeName, StringFormat='Theme: {0}'}" />
+          <controls:TextKey x:Name="ResetThemeKey" Grid.Column="1" Classes="action" IsAction="True" Text="Reset theme"
+                            IsEnabled="{Binding IsThemeChanged}" Click="OnResetTheme"
+                            AutomationProperties.Name="Reset theme"
+                            AutomationProperties.HelpText="Puts back the theme's shipped colors, gradients, and MIDI color, after you confirm." />
+        </Grid>
+        <TextBlock x:Name="RestartNote" Classes="settingHint" TextWrapping="Wrap" IsVisible="{Binding IsRestartNeeded}"
+                   Text="Restart Bluestone to see the theme's colors." />
+        <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                   Text="The theme holds every color in Bluestone, including the indicator colors below." />
+        <Border x:Name="ResetThemeConfirm" Classes="confirmReset" IsVisible="False" AutomationProperties.Name="Confirm theme reset">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.L}">
+            <TextBlock x:Name="ResetThemeQuestion" Classes="question" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.S}" VerticalAlignment="Center">
+              <Button x:Name="ConfirmResetThemeButton" Classes="danger" Content="Reset theme" Click="OnConfirmResetTheme"
+                      AutomationProperties.Name="Reset theme now" />
+              <Button x:Name="CancelResetThemeButton" Classes="raised" Content="Cancel" Click="OnCancelResetTheme"
+                      AutomationProperties.Name="Cancel theme reset" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </StackPanel>
+
       <StackPanel Classes="settingsGroup">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Classes="overline" Text="INDICATOR COLORS" VerticalAlignment="Center" />
@@ -201,6 +248,8 @@
                   </Border>
                 </Button>
                 <TextBox x:Name="MidiColourBox" Classes="hex" Text="{Binding MidiColour}" MaxLength="7" AutomationProperties.Name="MIDI light color (hex)" />
+                <controls:TextKey x:Name="ResetMidiKey" Classes="action" IsAction="True" Text="Reset to default" Command="{Binding ResetMidiColourCommand}"
+                                  AutomationProperties.Name="Reset MIDI light color to default" />
               </StackPanel>
               <ItemsControl x:Name="MidiSwatches" ItemsSource="{x:Static vm:DisplayViewModel.GradientSwatches}" VerticalAlignment="Center"
                             AutomationProperties.Name="MIDI light color swatches">

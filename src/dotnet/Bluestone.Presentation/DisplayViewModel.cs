@@ -15,25 +15,13 @@ public enum JunctionLevelStyle
     Peak,
 }
 
-/// <summary>How Bluestone draws things that are a matter of taste, not of the project. One set for the whole application.</summary>
+/// <summary>
+/// How Bluestone draws things that are a matter of taste, not of the project. One set for the whole application. Colors are
+/// not here: the meter gradients and the MIDI LED color belong to the theme (<see cref="ThemeDefinition"/>, ADR 0053).
+/// </summary>
 public sealed record DisplaySettings
 {
-    /// <summary>The colour of a lit MIDI LED by default: the accent (Palette.Accent).</summary>
-    public const string DefaultMidiColour = "#3CCBF4";
-
     public JunctionLevelStyle LevelStyle { get; init; } = JunctionLevelStyle.Peak;
-
-    /// <summary>The colours the mixer's meters run through. The clip lamp is not part of it.</summary>
-    public SignalGradient MixerGradient { get; init; } = SignalGradient.Default;
-
-    /// <summary>The colours a device chain's junction meters run through. The clip lamp is not part of it.</summary>
-    public SignalGradient ChainGradient { get; init; } = SignalGradient.Default;
-
-    /// <summary>The colours the gain LEDs run through.</summary>
-    public SignalGradient GainGradient { get; init; } = SignalGradient.GainDefault;
-
-    /// <summary>The colour of a lit MIDI LED, "#RRGGBB".</summary>
-    public string MidiColour { get; init; } = DefaultMidiColour;
 
     /// <summary>Whether LEDs fade out rather than go dark at once.</summary>
     public bool LedFade { get; init; } = true;
@@ -54,9 +42,8 @@ public sealed record DisplaySettings
 
 /// <summary>
 /// Reads and writes <see cref="DisplaySettings"/> as a small JSON file. A missing or unreadable file gives the defaults; an
-/// unreadable value gives that preference's default and leaves the others as saved. A file from before the gradients were
-/// split has one "signalGradient", which loads into both the mixer and chain gradients; it is no longer written (a file
-/// saved now carries "mixerGradient" and "chainGradient" instead, and an older build reading it shows its default gradient).
+/// unreadable value gives that preference's default and leaves the others as saved. Keys from older versions (the
+/// gradients and MIDI color, which moved to the theme file in ADR 0053) are ignored and dropped at the next save.
 /// </summary>
 public sealed class DisplaySettingsStore(string path)
 {
@@ -86,19 +73,12 @@ public sealed class DisplaySettingsStore(string path)
             }
 
             // Each preference on its own: one unknown value does not reset the others. Keys this version no longer has (the
-            // old indicator positions, sizes, and LED shapes) are ignored.
+            // old indicator positions, sizes, and LED shapes, and the colors now in the theme) are ignored.
             var defaults = new DisplaySettings();
-            var legacy = Gradient(root, "signalGradient");
             var levelStyle = root.TryGetProperty("levelStyle", out var style) ? style.Deserialize<JunctionLevelStyle>(Options) : defaults.LevelStyle;
             return new DisplaySettings
             {
                 LevelStyle = Enum.IsDefined(levelStyle) ? levelStyle : defaults.LevelStyle,
-                MixerGradient = Gradient(root, "mixerGradient") ?? legacy ?? defaults.MixerGradient,
-                ChainGradient = Gradient(root, "chainGradient") ?? legacy ?? defaults.ChainGradient,
-                GainGradient = Gradient(root, "gainGradient") ?? defaults.GainGradient,
-                MidiColour = root.TryGetProperty("midiColour", out var midi) && midi.ValueKind == JsonValueKind.String && SignalGradient.IsColour(midi.GetString())
-                    ? midi.GetString()!.ToUpperInvariant()
-                    : defaults.MidiColour,
                 LedFade = Flag(root, "ledFade") ?? defaults.LedFade,
                 LedWarmup = Flag(root, "ledWarmup") ?? defaults.LedWarmup,
                 LedGlow = Flag(root, "ledGlow") ?? defaults.LedGlow,
@@ -112,10 +92,6 @@ public sealed class DisplaySettingsStore(string path)
             return new DisplaySettings();
         }
     }
-
-    // The converter reads an invalid gradient as null; an explicit null stays null too.
-    private static SignalGradient? Gradient(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var value) ? value.Deserialize<SignalGradient>(Options) : null;
 
     private static bool? Flag(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : null;
@@ -160,10 +136,16 @@ public sealed record LevelStyleOption(JunctionLevelStyle Style, string Name)
     public override string ToString() => Name;
 }
 
-/// <summary>Settings ▸ Display: application-wide display preferences, saved as soon as they change.</summary>
+/// <summary>
+/// Settings ▸ Display: application-wide display preferences, saved as soon as they change. The meter gradients and the MIDI
+/// LED color are the active theme's (ADR 0053): editing one writes it into the theme's file.
+/// </summary>
 public sealed partial class DisplayViewModel : ObservableObject
 {
     private DisplaySettingsStore? _store;
+    private ThemeStore? _themeStore;
+    private ThemeDefinition? _theme;
+    private ThemeDefinition? _applied;
     private bool _loading;
     private bool _unsaved;
     private bool _saveFailing;
@@ -234,7 +216,7 @@ public sealed partial class DisplayViewModel : ObservableObject
                 Save();
             }
         }
-    } = DisplaySettings.DefaultMidiColour;
+    } = ThemeDefinition.DefaultMidiColor;
 
     /// <summary>
     /// Whether a MIDI colour preview (a picker open on it) is open: <see cref="MidiColour"/> changes apply at once, but are
@@ -274,6 +256,89 @@ public sealed partial class DisplayViewModel : ObservableObject
     [RelayCommand]
     private void ChooseMidiColour(string? colour) => MidiColour = colour ?? string.Empty;
 
+    /// <summary>Puts the MIDI LED's color back to the theme's shipped one.</summary>
+    [RelayCommand]
+    private void ResetMidiColour() => MidiColour = _themeStore?.Defaults.MidiColor ?? ThemeDefinition.DefaultMidiColor;
+
+    /// <summary>The active theme's name, for example "Dark Sodalite".</summary>
+    [ObservableProperty]
+    public partial string ThemeName { get; private set; } = ThemeDefinition.DarkSodaliteName;
+
+    /// <summary>Whether any member of the theme (a color, a gradient, or the MIDI color) differs from what it shipped with.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ResetThemeCommand))]
+    public partial bool IsThemeChanged { get; private set; }
+
+    /// <summary>
+    /// Whether the theme's saved colors differ from the ones in use: colors apply when Bluestone starts, so after
+    /// <see cref="ResetThemeCommand"/> puts back colors that were changed, they take effect at the next start.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsRestartNeeded { get; private set; }
+
+    /// <summary>
+    /// Puts every member of the theme back to what it shipped with: its colors, the gradients, and the MIDI color. The view
+    /// asks the musician to confirm first.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsThemeChanged))]
+    private void ResetTheme()
+    {
+        if (_themeStore is not { } store)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            _theme = store.Defaults;
+            Mixer.Gradient = store.Defaults.MixerGradient;
+            Chain.Gradient = store.Defaults.ChainGradient;
+            Gain.Gradient = store.Defaults.GainGradient;
+            MidiColour = store.Defaults.MidiColor;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        Save();
+    }
+
+    /// <summary>
+    /// Takes the gradients and the MIDI color from <paramref name="theme"/> (as loaded and applied when Bluestone started) and
+    /// saves every later change to them, and <see cref="ResetThemeCommand"/>, into <paramref name="store"/>'s file. Each
+    /// gradient's reset puts back <paramref name="store"/>'s shipped gradient.
+    /// </summary>
+    public void UseTheme(ThemeStore store, ThemeDefinition theme)
+    {
+        _themeStore = store ?? throw new ArgumentNullException(nameof(store));
+        _theme = _applied = theme ?? throw new ArgumentNullException(nameof(theme));
+        ThemeName = theme.Name;
+        Mixer.UseDefault(store.Defaults.MixerGradient);
+        Chain.UseDefault(store.Defaults.ChainGradient);
+        Gain.UseDefault(store.Defaults.GainGradient);
+        _loading = true;
+        try
+        {
+            Mixer.Gradient = theme.MixerGradient;
+            Chain.Gradient = theme.ChainGradient;
+            Gain.Gradient = theme.GainGradient;
+            MidiColour = theme.MidiColor;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        RefreshThemeState();
+    }
+
+    /// <summary>The theme as it is now: its colors as saved, with the gradients and the MIDI color as edited.</summary>
+    public ThemeDefinition? Theme => _theme is { } theme
+        ? theme with { MixerGradient = Mixer.Gradient, ChainGradient = Chain.Gradient, GainGradient = Gain.Gradient, MidiColor = MidiColour }
+        : null;
+
     /// <summary>Reads the saved settings from <paramref name="store"/> and saves every later change there.</summary>
     public void Use(DisplaySettingsStore store)
     {
@@ -283,10 +348,6 @@ public sealed partial class DisplayViewModel : ObservableObject
         {
             var settings = store.Load();
             LevelStyle = settings.LevelStyle;
-            Mixer.Gradient = settings.MixerGradient;
-            Chain.Gradient = settings.ChainGradient;
-            Gain.Gradient = settings.GainGradient;
-            MidiColour = settings.MidiColour;
             LedFade = settings.LedFade;
             LedWarmup = settings.LedWarmup;
             LedGlow = settings.LedGlow;
@@ -302,10 +363,6 @@ public sealed partial class DisplayViewModel : ObservableObject
     public DisplaySettings Current => new()
     {
         LevelStyle = LevelStyle,
-        MixerGradient = Mixer.Gradient,
-        ChainGradient = Chain.Gradient,
-        GainGradient = Gain.Gradient,
-        MidiColour = MidiColour,
         LedFade = LedFade,
         LedWarmup = LedWarmup,
         LedGlow = LedGlow,
@@ -371,11 +428,17 @@ public sealed partial class DisplayViewModel : ObservableObject
         }
 
         _unsaved = false;
-        if (_store is { } store)
+        RefreshThemeState();
+        if (_store is not null || _themeStore is not null)
         {
             try
             {
-                store.Save(Current);
+                _store?.Save(Current);
+                if (_themeStore is { } themeStore && Theme is { } theme)
+                {
+                    themeStore.Save(theme);
+                }
+
                 _saveFailing = false;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -389,5 +452,16 @@ public sealed partial class DisplayViewModel : ObservableObject
                 }
             }
         }
+    }
+
+    private void RefreshThemeState()
+    {
+        if (_themeStore is not { } store || Theme is not { } theme)
+        {
+            return;
+        }
+
+        IsThemeChanged = theme != store.Defaults;
+        IsRestartNeeded = _applied is { } applied && !applied.SameColorsAs(theme);
     }
 }

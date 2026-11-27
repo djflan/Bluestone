@@ -134,6 +134,8 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
   appropriate before/after or final screenshots and internal review, without an automatic user stop. Only when no
   references were supplied may the user explicitly agree a baseline. Rendering is not user approval when approval is
   required. If approved UI changes materially, raise or preserve the tier, recapture, and obtain approval again.
+  Every UI tier conforms to `docs/design-language.md` (its checklist, states, and accessibility floor) or updates it in
+  the same PR, with the reason.
 
 ## Ready means
 

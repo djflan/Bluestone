@@ -254,7 +254,7 @@ public sealed class MeterGradientTests
         var settings = Path.Combine(Path.GetTempPath(), $"bluestone-display-{Guid.NewGuid():N}.json");
         try
         {
-            Assert.Equal(Color.Parse(DisplaySettings.DefaultMidiColour), LedColours.Midi);
+            Assert.Equal(Color.Parse(ThemeDefinition.DefaultMidiColor), LedColours.Midi);
             Assert.True(junction.LampGlow > 0.5, "Held notes light the MIDI LED.");
             Assert.True(ReddestPixel(window, junction, 0, ChainJunction.IconY + 20) < 60, "The default MIDI colour is the accent, which has no red in it.");
 
@@ -309,7 +309,7 @@ public sealed class MeterGradientTests
             display.Mixer.ResetGradientCommand.Execute(null);
             display.Chain.ResetGradientCommand.Execute(null);
             display.Gain.ResetGradientCommand.Execute(null);
-            display.MidiColour = DisplaySettings.DefaultMidiColour;
+            display.MidiColour = ThemeDefinition.DefaultMidiColor;
             LedColours.UseMidi(null);
             (LedMotion.Fade, LedMotion.Warmup) = (fade, warmup);
             File.Delete(settings);

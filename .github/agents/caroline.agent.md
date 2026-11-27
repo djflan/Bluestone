@@ -14,6 +14,8 @@ keyboard, or a screen reader, without needing documentation for the common path.
 - `docs/product-vision.md`: "Start without ceremony", "Progressive depth", "Visual and interaction quality", and the
   "Decision test".
 - `docs/user-guide.md` for the current flows and terminology.
+- `docs/design-language.md`: the states table, the accessibility floor (contrast, focus, hit targets, screen-reader
+  names), and copy rules. Its "Known gaps" section lists failures new work must not copy.
 - The ADRs for the touched views (for example, 0036, 0038, and 0039).
 - The supplied user references and approved rendered direction; compare screenshots beside them. Use an explicitly
   agreed baseline only when no references were supplied.

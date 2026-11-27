@@ -9,7 +9,26 @@ public sealed class DisplaySettingsTests : IDisposable
 
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
+    private static readonly ThemeDefinition Shipped = ThemeDefinition.DarkSodalite([new("Surface.BaseColor", "#12151A"), new("Accent.Color", "#3CCBF4")]);
+
     private string File(string name = "display-settings.json") => Path.Combine(_directory, name);
+
+    private string ThemeFile => Path.Combine(_directory, "dark-sodalite.json");
+
+    private ThemeStore Themes() => new(_directory, Shipped);
+
+    // What the theme file holds now (the gradients and the MIDI color are saved there, ADR 0053).
+    private ThemeDefinition Saved => Themes().Load().Theme;
+
+    // A view model on a display settings store and the theme, as Bluestone sets it up.
+    private DisplayViewModel Display(DisplaySettingsStore store)
+    {
+        var display = new DisplayViewModel();
+        display.Use(store);
+        var themes = Themes();
+        display.UseTheme(themes, themes.Load().Theme);
+        return display;
+    }
 
     [Fact]
     public void TheStore_RoundTrips_AndAMissingDamagedOrUnknownFileGivesTheDefault()
@@ -89,8 +108,7 @@ public sealed class DisplaySettingsTests : IDisposable
 
         // Unknown values in them do not matter either, and saving drops them.
         System.IO.File.WriteAllText(File(), "{ \"indicatorSize\": 7, \"ledShape\": \"star\", \"levelStyle\": \"peak\" }");
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
         var saved = System.IO.File.ReadAllText(File());
         Assert.DoesNotContain("indicatorSize", saved, StringComparison.Ordinal);
@@ -99,43 +117,10 @@ public sealed class DisplaySettingsTests : IDisposable
     }
 
     [Fact]
-    public void TheGradient_RoundTrips_AndAnInvalidOneGivesTheDefaultWithoutResettingTheOthers()
-    {
-        var store = new DisplaySettingsStore(File());
-        Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
-
-        var gradient = SignalGradient.Create([new("#000000", 0), new("#FF0000", 0.5), new("#FF0000", 0.5), new("#FFFFFF", 1)]);
-        store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, MixerGradient = gradient });
-        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, MixerGradient = gradient }, store.Load());
-        Assert.Contains("\"colour\": \"#FF0000\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
-
-        string[] invalid =
-        [
-            "[{ \"colour\": \"#000000\", \"position\": 0 }]",
-            "[{ \"colour\": \"#000000\", \"position\": 0 }, { \"colour\": \"blue\", \"position\": 1 }]",
-            "[{ \"colour\": \"#000000\", \"position\": 0 }, { \"colour\": \"#FFFFFF\", \"position\": \"top\" }]",
-            "[{ \"colour\": \"#000000\" }, { \"colour\": \"#FFFFFF\", \"position\": 1 }]",
-            "\"rainbow\"",
-            "{ \"stops\": [] }",
-            "null",
-        ];
-        foreach (var json in invalid)
-        {
-            System.IO.File.WriteAllText(File(), $"{{ \"levelStyle\": \"peak\", \"signalGradient\": {json}, \"indicatorSize\": \"large\" }}");
-            Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak }, store.Load());
-        }
-
-        // Out-of-range and unsorted positions are clamped and sorted, not rejected.
-        System.IO.File.WriteAllText(File(), "{ \"signalGradient\": [{ \"colour\": \"#ffffff\", \"position\": 2 }, { \"colour\": \"#000000\", \"position\": -1 }] }");
-        Assert.Equal(SignalGradient.Create([new("#000000", 0), new("#FFFFFF", 1)]), store.Load().MixerGradient);
-    }
-
-    [Fact]
     public void TheViewModel_EditsTheGradient_AndSavesEveryEdit()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         Assert.Equal(SignalGradient.Default, display.Mixer.Gradient);
         var notified = new List<string?>();
         display.Mixer.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
@@ -147,32 +132,32 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(new SignalGradientStop("#3BD7E2", 0.2), display.Mixer.Gradient.Stops[2]);
         Assert.Equal(before, display.Mixer.Gradient.Evaluate(0.2));
         Assert.Contains(nameof(GradientEditorViewModel.Gradient), notified);
-        Assert.Equal(display.Mixer.Gradient, store.Load().MixerGradient);
+        Assert.Equal(display.Mixer.Gradient, Saved.MixerGradient);
 
         Assert.True(display.Mixer.SetGradientStopColour(2, "#ff0000"));
-        Assert.Equal(new SignalGradientStop("#FF0000", 0.2), store.Load().MixerGradient.Stops[2]);
+        Assert.Equal(new SignalGradientStop("#FF0000", 0.2), Saved.MixerGradient.Stops[2]);
         Assert.False(display.Mixer.SetGradientStopColour(2, "red"));
         Assert.False(display.Mixer.SetGradientStopColour(9, "#FF0000"));
 
         // Moving past a neighbour reorders; the returned index follows the stop.
         Assert.Equal(4, display.Mixer.MoveGradientStop(2, 0.6));
-        Assert.Equal(new SignalGradientStop("#FF0000", 0.6), store.Load().MixerGradient.Stops[4]);
+        Assert.Equal(new SignalGradientStop("#FF0000", 0.6), Saved.MixerGradient.Stops[4]);
         // At a tie it keeps its order relative to the stop already there.
         Assert.Equal(5, display.Mixer.MoveGradientStop(4, 1.5));
-        Assert.Equal(new SignalGradientStop("#FF0000", 1), store.Load().MixerGradient.Stops[5]);
+        Assert.Equal(new SignalGradientStop("#FF0000", 1), Saved.MixerGradient.Stops[5]);
         Assert.Equal(-1, display.Mixer.MoveGradientStop(7, 0.5));
 
         Assert.True(display.Mixer.RemoveGradientStop(5));
-        Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
+        Assert.Equal(SignalGradient.Default, Saved.MixerGradient);
         Assert.False(display.Mixer.RemoveGradientStop(-1));
 
         Assert.Equal(5, display.Mixer.AddGradientStop(0.9));
         Assert.Equal(6, display.Mixer.AddGradientStop(0.95));
         Assert.Equal(-1, display.Mixer.AddGradientStop(0.5));
-        Assert.Equal(8, store.Load().MixerGradient.Stops.Length);
+        Assert.Equal(8, Saved.MixerGradient.Stops.Length);
 
         display.Mixer.ResetGradientCommand.Execute(null);
-        Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
+        Assert.Equal(SignalGradient.Default, Saved.MixerGradient);
 
         // Never fewer than two stops; the other preferences are kept alongside.
         display.LevelStyle = JunctionLevelStyle.Peak;
@@ -181,14 +166,14 @@ public sealed class DisplaySettingsTests : IDisposable
         }
 
         Assert.Equal(2, display.Mixer.Gradient.Stops.Length);
-        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, MixerGradient = display.Mixer.Gradient }, store.Load());
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak }, store.Load());
+        Assert.Equal(display.Mixer.Gradient, Saved.MixerGradient);
     }
     [Fact]
     public void TheEditor_AddsInTheWidestGap_RemovesTheSelectedStop_AndKeepsTwo()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
 
         // Default's widest gap is purple to pink, so its midpoint is selected.
         display.Mixer.AddGradientStopInLargestGapCommand.Execute(null);
@@ -196,7 +181,7 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal("#DB45C9", display.Mixer.SelectedGradientStop.Colour);
         Assert.Equal(0.8595, display.Mixer.SelectedGradientStop.Position, precision: 6);
         Assert.Equal("86%", display.Mixer.SelectedGradientStopPercent);
-        Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
+        Assert.Equal(7, Saved.MixerGradient.Stops.Length);
 
         display.Mixer.AddGradientStopInLargestGapCommand.Execute(null);
         Assert.False(display.Mixer.AddGradientStopInLargestGapCommand.CanExecute(null));
@@ -205,7 +190,7 @@ public sealed class DisplaySettingsTests : IDisposable
         var removed = display.Mixer.SelectedGradientStop;
         display.Mixer.RemoveSelectedGradientStopCommand.Execute(null);
         Assert.Equal(2, display.Mixer.SelectedGradientStopIndex);
-        Assert.DoesNotContain(removed, store.Load().MixerGradient.Stops);
+        Assert.DoesNotContain(removed, Saved.MixerGradient.Stops);
         Assert.True(display.Mixer.AddGradientStopInLargestGapCommand.CanExecute(null));
 
         var notified = new List<string?>();
@@ -215,7 +200,7 @@ public sealed class DisplaySettingsTests : IDisposable
             display.Mixer.RemoveSelectedGradientStopCommand.Execute(null);
         }
 
-        Assert.Equal(2, store.Load().MixerGradient.Stops.Length);
+        Assert.Equal(2, Saved.MixerGradient.Stops.Length);
         Assert.False(display.Mixer.RemoveSelectedGradientStopCommand.CanExecute(null));
         Assert.Contains("can remove", notified);
         Assert.InRange(display.Mixer.SelectedGradientStopIndex, 0, 1);
@@ -225,12 +210,11 @@ public sealed class DisplaySettingsTests : IDisposable
     public void TheEditor_NudgesAndRecoloursTheSelectedStop_AndFollowsItWhenItPassesANeighbour()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
 
         display.Mixer.NudgeGradientStop(1, 0.01);
         Assert.Equal(1, display.Mixer.SelectedGradientStopIndex);
-        Assert.Equal(0.146, store.Load().MixerGradient.Stops[1].Position);
+        Assert.Equal(0.146, Saved.MixerGradient.Stops[1].Position);
         Assert.Equal("15%", display.Mixer.SelectedGradientStopPercent);
 
         // Past the cyan and violet stops: the selection follows the stop to its new place.
@@ -238,14 +222,14 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(3, display.Mixer.SelectedGradientStopIndex);
         Assert.Equal(new SignalGradientStop("#3FE0D8", 0.7), display.Mixer.SelectedGradientStop);
         display.Mixer.NudgeGradientStop(3, -0.05);
-        Assert.Equal(0.65, store.Load().MixerGradient.Stops[3].Position);
+        Assert.Equal(0.65, Saved.MixerGradient.Stops[3].Position);
 
         var notified = new List<string?>();
         display.Mixer.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
         display.Mixer.SelectedGradientStopColour = "#12";
         Assert.Equal("#3FE0D8", display.Mixer.SelectedGradientStopColour);
         display.Mixer.SelectedGradientStopColour = "ff8800";
-        Assert.Equal("#FF8800", store.Load().MixerGradient.Stops[3].Colour);
+        Assert.Equal("#FF8800", Saved.MixerGradient.Stops[3].Colour);
         Assert.Contains(nameof(GradientEditorViewModel.SelectedGradientStopColour), notified);
         display.Mixer.ChooseGradientStopColourCommand.Execute("#7C6BFF");
         Assert.Equal("#7C6BFF", display.Mixer.SelectedGradientStopColour);
@@ -253,7 +237,7 @@ public sealed class DisplaySettingsTests : IDisposable
 
         display.Mixer.ResetGradientCommand.Execute(null);
         Assert.Equal(0, display.Mixer.SelectedGradientStopIndex);
-        Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
+        Assert.Equal(SignalGradient.Default, Saved.MixerGradient);
     }
 
     [Fact]
@@ -261,8 +245,7 @@ public sealed class DisplaySettingsTests : IDisposable
     {
         var path = File();
         var store = new DisplaySettingsStore(path);
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
         var before = System.IO.File.ReadAllText(path);
         var notified = 0;
@@ -276,7 +259,7 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(before, System.IO.File.ReadAllText(path));
 
         display.Mixer.EndGradientPreview();
-        Assert.Equal(0.2, store.Load().MixerGradient.Stops[1].Position);
+        Assert.Equal(0.2, Saved.MixerGradient.Stops[1].Position);
 
         // Ending it again, or a preview with no edits, writes nothing.
         System.IO.File.Delete(path);
@@ -287,71 +270,36 @@ public sealed class DisplaySettingsTests : IDisposable
 
         // Outside a preview every edit saves again.
         display.Mixer.NudgeGradientStop(1, 0.01);
-        Assert.Equal(0.21, store.Load().MixerGradient.Stops[1].Position);
+        Assert.Equal(0.21, Saved.MixerGradient.Stops[1].Position);
     }
 
     [Fact]
     public void Nudges_StopAtTheEndsOfTheScale()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
 
         display.Mixer.NudgeGradientStop(0, -0.01);
         display.Mixer.NudgeGradientStop(0, -0.05);
-        Assert.Equal(0, store.Load().MixerGradient.Stops[0].Position);
+        Assert.Equal(0, Saved.MixerGradient.Stops[0].Position);
         Assert.Equal("0%", display.Mixer.SelectedGradientStopPercent);
 
         var last = display.Mixer.Gradient.Stops.Length - 1;
         display.Mixer.NudgeGradientStop(last, 0.01);
         display.Mixer.NudgeGradientStop(last, 0.05);
-        Assert.Equal(1, store.Load().MixerGradient.Stops[last].Position);
+        Assert.Equal(1, Saved.MixerGradient.Stops[last].Position);
         Assert.Equal("100%", display.Mixer.SelectedGradientStopPercent);
-    }
-
-    [Fact]
-    public void ALegacyFile_LoadsItsOneGradientIntoTheMixerAndChain_WithoutSaving_AndTheNextSaveDropsTheLegacyKey()
-    {
-        var path = File();
-        var store = new DisplaySettingsStore(path);
-        var legacy = SignalGradient.Create([new("#000000", 0), new("#FF0000", 1)]);
-        System.IO.File.WriteAllText(path, "{ \"levelStyle\": \"peak\", \"signalGradient\": [{ \"colour\": \"#000000\", \"position\": 0 }, { \"colour\": \"#ff0000\", \"position\": 1 }] }");
-        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, MixerGradient = legacy, ChainGradient = legacy }, store.Load());
-
-        var written = System.IO.File.ReadAllText(path);
-        var display = new DisplayViewModel();
-        display.Use(store);
-        Assert.Equal(legacy, display.Mixer.Gradient);
-        Assert.Equal(legacy, display.Chain.Gradient);
-        Assert.Equal(SignalGradient.GainDefault, display.Gain.Gradient);
-        Assert.Equal(DisplaySettings.DefaultMidiColour, display.MidiColour);
-        Assert.True(display.LedFade);
-        Assert.True(display.LedWarmup);
-        Assert.Equal(written, System.IO.File.ReadAllText(path));
-
-        display.LedFade = false;
-        var saved = System.IO.File.ReadAllText(path);
-        Assert.DoesNotContain("signalGradient", saved, StringComparison.Ordinal);
-        Assert.Contains("mixerGradient", saved, StringComparison.Ordinal);
-        Assert.Contains("chainGradient", saved, StringComparison.Ordinal);
-        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, MixerGradient = legacy, ChainGradient = legacy, LedFade = false }, store.Load());
-
-        // A key of its own wins over the legacy one.
-        System.IO.File.WriteAllText(path, "{ \"signalGradient\": [{ \"colour\": \"#000000\", \"position\": 0 }, { \"colour\": \"#FF0000\", \"position\": 1 }], \"chainGradient\": [{ \"colour\": \"#FFFFFF\", \"position\": 0 }, { \"colour\": \"#FFFFFF\", \"position\": 1 }] }");
-        Assert.Equal(legacy, store.Load().MixerGradient);
-        Assert.Equal(SignalGradient.Create([new("#FFFFFF", 0), new("#FFFFFF", 1)]), store.Load().ChainGradient);
     }
 
     [Fact]
     public void UnreadableValues_FallBackOneByOne()
     {
         var store = new DisplaySettingsStore(File());
-        var gain = SignalGradient.Create([new("#111111", 0), new("#222222", 1)]);
-        System.IO.File.WriteAllText(File(), "{ \"levelStyle\": \"peak\", \"mixerGradient\": \"rainbow\", \"gainGradient\": [{ \"colour\": \"#111111\", \"position\": 0 }, { \"colour\": \"#222222\", \"position\": 1 }], \"midiColour\": \"red\", \"ledFade\": \"no\", \"ledWarmup\": false }");
-        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, GainGradient = gain, LedWarmup = false }, store.Load());
+        System.IO.File.WriteAllText(File(), "{ \"levelStyle\": \"peak\", \"ledFade\": \"no\", \"ledWarmup\": false }");
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak, LedWarmup = false }, store.Load());
 
-        System.IO.File.WriteAllText(File(), "{ \"midiColour\": \"#ff8800\", \"ledFade\": 0, \"ledWarmup\": null }");
-        Assert.Equal(new DisplaySettings { MidiColour = "#FF8800" }, store.Load());
+        System.IO.File.WriteAllText(File(), "{ \"ledFade\": 0, \"ledWarmup\": null }");
+        Assert.Equal(new DisplaySettings(), store.Load());
 
         System.IO.File.WriteAllText(File(), "[1, 2]");
         Assert.Equal(new DisplaySettings(), store.Load());
@@ -361,8 +309,7 @@ public sealed class DisplaySettingsTests : IDisposable
     public void TheThreeGradients_EditIndependently_AndEachResetsToItsOwnDefault()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         Assert.Equal([display.Mixer, display.Chain, display.Gain], display.Editors);
         Assert.Equal(SignalGradient.Default, display.Chain.DefaultGradient);
         Assert.Equal(SignalGradient.GainDefault, display.Gain.DefaultGradient);
@@ -374,7 +321,7 @@ public sealed class DisplaySettingsTests : IDisposable
         display.Chain.MoveAndSelectGradientStop(1, 0.5);
         Assert.Equal(3, display.Gain.AddGradientStop(0.9));
 
-        var saved = store.Load();
+        var saved = Saved;
         Assert.Equal("#FF0000", saved.MixerGradient.Stops[0].Colour);
         Assert.Equal(0.136, saved.MixerGradient.Stops[1].Position);
         Assert.Equal("#B2E0F4", saved.ChainGradient.Stops[0].Colour);
@@ -384,11 +331,11 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(2, display.Chain.SelectedGradientStopIndex);
 
         display.Gain.ResetGradientCommand.Execute(null);
-        Assert.Equal(SignalGradient.GainDefault, store.Load().GainGradient);
-        Assert.Equal("#FF0000", store.Load().MixerGradient.Stops[0].Colour);
+        Assert.Equal(SignalGradient.GainDefault, Saved.GainGradient);
+        Assert.Equal("#FF0000", Saved.MixerGradient.Stops[0].Colour);
         display.Mixer.ResetGradientCommand.Execute(null);
         display.Chain.ResetGradientCommand.Execute(null);
-        Assert.Equal(new DisplaySettings(), store.Load());
+        Assert.Equal(Shipped, Saved);
     }
 
     [Fact]
@@ -396,8 +343,7 @@ public sealed class DisplaySettingsTests : IDisposable
     {
         var path = File();
         var store = new DisplaySettingsStore(path);
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         Assert.False(System.IO.File.Exists(path), "Loading never saves.");
 
         display.Chain.BeginGradientPreview();
@@ -409,8 +355,8 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.False(System.IO.File.Exists(path), "Nothing is written while any preview is open.");
 
         display.Gain.EndGradientPreview();
-        Assert.Equal(0.2, store.Load().ChainGradient.Stops[1].Position);
-        Assert.Equal(0.5, store.Load().GainGradient.Stops[1].Position);
+        Assert.Equal(0.2, Saved.ChainGradient.Stops[1].Position);
+        Assert.Equal(0.5, Saved.GainGradient.Stops[1].Position);
 
         // That was the only write: ending again, or a preview with no edits, writes nothing.
         System.IO.File.Delete(path);
@@ -424,15 +370,14 @@ public sealed class DisplaySettingsTests : IDisposable
     public void TheMidiColour_TakesSixHexDigits_IgnoresAnythingElse_AndSaves()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         var notified = new List<string?>();
         display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
 
         foreach (var invalid in new[] { "red", "#12", "#GGGGGG", "#3CCBF4FF", string.Empty, null })
         {
             display.MidiColour = invalid!;
-            Assert.Equal(DisplaySettings.DefaultMidiColour, display.MidiColour);
+            Assert.Equal(ThemeDefinition.DefaultMidiColor, display.MidiColour);
         }
 
         Assert.Empty(notified);
@@ -440,11 +385,11 @@ public sealed class DisplaySettingsTests : IDisposable
 
         display.MidiColour = "ff8800";
         Assert.Equal("#FF8800", display.MidiColour);
-        Assert.Equal("#FF8800", store.Load().MidiColour);
+        Assert.Equal("#FF8800", Saved.MidiColor);
         Assert.Contains(nameof(DisplayViewModel.MidiColour), notified);
 
         display.ChooseMidiColourCommand.Execute("#7C6BFF");
-        Assert.Equal("#7C6BFF", store.Load().MidiColour);
+        Assert.Equal("#7C6BFF", Saved.MidiColor);
         display.ChooseMidiColourCommand.Execute("blue");
         Assert.Equal("#7C6BFF", display.MidiColour);
     }
@@ -454,8 +399,7 @@ public sealed class DisplaySettingsTests : IDisposable
     {
         var path = File();
         var store = new DisplaySettingsStore(path);
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
         display.MidiColour = "#7C6BFF";
         var notified = new List<string?>();
         display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
@@ -471,7 +415,7 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.False(System.IO.File.Exists(path), "Nothing is written during a preview.");
         display.EndMidiColourPreview();
         Assert.False(display.IsMidiColourPreviewing);
-        Assert.Equal("#E0A43A", store.Load().MidiColour);
+        Assert.Equal("#E0A43A", Saved.MidiColor);
 
         // That was the only write: ending again, or a preview with no change, writes nothing; a second begin is no nesting.
         System.IO.File.Delete(path);
@@ -490,11 +434,11 @@ public sealed class DisplaySettingsTests : IDisposable
         display.MidiColour = original;
         display.EndMidiColourPreview();
         Assert.Equal(original, display.MidiColour);
-        Assert.Equal(original, store.Load().MidiColour);
+        Assert.Equal(original, Saved.MidiColor);
 
         // Outside a preview every change saves again.
         display.MidiColour = "#4CB873";
-        Assert.Equal("#4CB873", store.Load().MidiColour);
+        Assert.Equal("#4CB873", Saved.MidiColor);
     }
 
     [Fact]
@@ -502,8 +446,7 @@ public sealed class DisplaySettingsTests : IDisposable
     {
         var path = File();
         var store = new DisplaySettingsStore(path);
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
 
         // A gradient drag pending while the MIDI picker is open is kept, and written once the picker closes.
         display.Mixer.BeginGradientPreview();
@@ -513,8 +456,8 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.False(System.IO.File.Exists(path), "The open MIDI preview holds the gradient's save.");
         display.MidiColour = "#FF2E93";
         display.EndMidiColourPreview();
-        Assert.Equal(0.3, store.Load().MixerGradient.Stops[1].Position);
-        Assert.Equal("#FF2E93", store.Load().MidiColour);
+        Assert.Equal(0.3, Saved.MixerGradient.Stops[1].Position);
+        Assert.Equal("#FF2E93", Saved.MidiColor);
 
         // And the other way round: a MIDI change waits for a gradient drag that outlasts it.
         System.IO.File.Delete(path);
@@ -525,17 +468,16 @@ public sealed class DisplaySettingsTests : IDisposable
         display.Chain.MoveAndSelectGradientStop(1, 0.2);
         Assert.False(System.IO.File.Exists(path), "The open gradient preview holds the MIDI colour's save.");
         display.Chain.EndGradientPreview();
-        Assert.Equal("#3FE0D8", store.Load().MidiColour);
-        Assert.Equal(0.2, store.Load().ChainGradient.Stops[1].Position);
-        Assert.Equal(0.3, store.Load().MixerGradient.Stops[1].Position);
+        Assert.Equal("#3FE0D8", Saved.MidiColor);
+        Assert.Equal(0.2, Saved.ChainGradient.Stops[1].Position);
+        Assert.Equal(0.3, Saved.MixerGradient.Stops[1].Position);
     }
 
     [Fact]
     public void LedFadeAndWarmup_RoundTrip()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
 
         display.LedFade = false;
         Assert.Equal(new DisplaySettings { LedFade = false }, store.Load());
@@ -554,8 +496,7 @@ public sealed class DisplaySettingsTests : IDisposable
     public void LedGlowAndStrength_RoundTrip_AndStrengthIsClamped()
     {
         var store = new DisplaySettingsStore(File());
-        var display = new DisplayViewModel();
-        display.Use(store);
+        var display = Display(store);
 
         display.LedGlow = false;
         display.GlowStrength = 150;

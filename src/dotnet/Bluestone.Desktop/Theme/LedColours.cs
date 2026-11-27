@@ -14,8 +14,8 @@ public static class LedColours
     private static readonly IPen?[] MidiPens = new IPen?[LedLevels.Steps + 1];
     private static IImmutableSolidColorBrush? _midiCaptionBrush;
 
-    /// <summary>The MIDI LED's default: <see cref="DisplaySettings.DefaultMidiColour"/>, the accent.</summary>
-    public static Color DefaultMidi { get; } = Color.Parse(DisplaySettings.DefaultMidiColour);
+    /// <summary>The MIDI LED's default: Dark Sodalite's <see cref="ThemeDefinition.DefaultMidiColor"/>, the accent.</summary>
+    public static Color DefaultMidi { get; } = Color.Parse(ThemeDefinition.DefaultMidiColor);
 
     /// <summary>The colour of a lit MIDI LED and its caption.</summary>
     public static Color Midi { get; private set; } = DefaultMidi;

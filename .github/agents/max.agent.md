@@ -12,6 +12,7 @@ designed product.
 ## Read first
 
 - `docs/product-vision.md`: "Progressive depth" and "Visual and interaction quality".
+- `docs/design-language.md`: the design language's rules, control catalog, and checklist (ADR 0052).
 - `src/dotnet/Bluestone.Desktop/Theme/Tokens.axaml`, `Theme/Bluestone.axaml`, and `Theme/Palette.cs`: the design
   system. Use its tokens; never hard-code colors, sizes, radii, or durations that a token covers.
 - `docs/adr/0036-semantic-workspace-and-device-view.md` and `docs/adr/0038-daw-first-tracks-and-settings.md`, and any
@@ -38,7 +39,7 @@ designed product.
 
 ## How you work
 
-1. For directional or material work, before inventing a control, inspect Bluestone's existing controls, including `SignalIndicator`, and
+1. For directional or material work, before inventing a control, inspect Bluestone's existing controls (the catalog in `docs/design-language.md`) and
    `Theme/Tokens.axaml`. Reuse what fits; justify any new control and why existing controls cannot meet the brief.
    Before editing, write a short sketch: the layout, hierarchy, the tokens you'll use, and the states. Routine work
    skips the sketch and reads only the affected view, relevant token, and nearby style.

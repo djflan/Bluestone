@@ -40,7 +40,7 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0033](0033-third-party-plugin-hosting.md) | Third-party plugins: VST 3 and CLAP through a Rust host in the worker | Accepted; amends 0025 and 0026 |
 | [0034](0034-plugin-hosting-modes.md) | Plugin hosting modes: how plugins share worker processes | Accepted; amends 0025 |
 | [0035](0035-live-input-and-delay-compensation.md) | Live input through every device, a live render-ahead queue, and plugin delay compensation | Accepted; amends 0028 and 0032; amended by 0043 |
-| [0036](0036-semantic-workspace-and-device-view.md) | A semantic workspace, Device Views as view instances, and local layout state | Accepted |
+| [0036](0036-semantic-workspace-and-device-view.md) | A semantic workspace, Device Views as view instances, and local layout state | Accepted; amended by 0052 and 0053 |
 | [0037](0037-parallel-signal-bundle.md) | A device chain carries a parallel signal bundle | Accepted; amends 0022 |
 | [0038](0038-daw-first-tracks-and-settings.md) | DAW-first tracks: hybrid by default, heard through explicit connections; Settings in the workspace's place | Accepted; amends 0021 and 0036; amended by 0041; Settings-hosting decision superseded by [0051](0051-settings-popover.md) |
 | [0039](0039-arranger-and-clip-loops.md) | Arranger and clip loops: ranges kept apart from looping, repeats produced at plan time | Accepted; amends 0009, 0020, and 0032 |
@@ -54,7 +54,10 @@ change its decision; a later ADR supersedes it and the superseded record is mark
 | [0047](0047-windows-precise-wait-and-measurements.md) | Windows precise waits and native timing evidence | Accepted |
 | [0048](0048-plugin-editor-window-header.md) | Plugin editor windows: a Bluestone header, and floating above Bluestone | Accepted; amends 0040 |
 | [0049](0049-audio-thread-priority-and-automatic-format.md) | Audio and plugin-worker scheduling, and Automatic sample rate and block size | Accepted; amends 0032 and 0046 |
+| [0050](0050-track-owned-professional-mixer.md) | Track-owned mixer strips, routable Effect tracks, and Master processing | Accepted |
 | [0051](0051-settings-popover.md) | Settings as a popover over the workspace | Accepted; supersedes the Settings-hosting portion of 0038 |
+| [0052](0052-design-language.md) | Design language: Machined & Precision Milled | Accepted; amends 0036 |
+| [0053](0053-themes.md) | Themes | Accepted; amends 0036 |
 
 ## Template
 

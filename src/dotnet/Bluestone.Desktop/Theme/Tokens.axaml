@@ -2,13 +2,17 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="using:System">
   <!--
-    Bluestone design tokens (ADR 0036): the one place colours, type, spacing, radii, standard heights, device panel
+    Bluestone design tokens (ADR 0036): the one place colors, type, spacing, radii, standard heights, device panel
     geometry, icon sizes, and motion are defined. Styles and views use these keys, never raw values. Custom-drawn
-    controls read the same values through Theme/Palette.cs, which a UI test keeps in step with this file.
+    controls read the colors through Theme/Palette.cs, which reads these resources.
 
-    One dark theme, "Machined" (identity round 6): cool slate surfaces divided by hairlines, recessed gutters and wells,
-    an aqua accent with a restrained, realistic glow, compact fixed geometry, and colour reserved for meaning (selection,
-    state, track identity, and the kind of signal a device works on).
+    The colors here are "Dark Sodalite", the shipped and default theme of the "Machined & Precision Milled" design
+    language (docs/design-language.md, ADR 0052 and ADR 0053): cool slate surfaces divided by hairlines, recessed
+    gutters and wells, an aqua accent with a restrained, realistic glow, and color reserved for meaning (selection,
+    state, track identity, and the kind of signal a device works on). Every color is a Color resource, so the theme file
+    (<settings>/themes/dark-sodalite.json) can override each one by its key; Theme/ThemeApplier.cs applies it at
+    startup and keeps every brush below following its color. Geometry, type, spacing, and motion are the language's and
+    are not themed.
   -->
 
   <!-- Surfaces, darkest to lightest. -->
@@ -53,7 +57,10 @@
   <Color x:Key="Signal.InstrumentColor">#9C82D9</Color>
   <Color x:Key="Signal.AudioColor">#4FB3B0</Color>
   <Color x:Key="Signal.OtherColor">#8A8A92</Color>
-  <!-- Levels (the mixer's meters, a junction's level): cyan, brightening to white-cyan near full scale, red past it. -->
+  <!--
+    Levels drawn without the meter gradients (the code palette's level colors): cyan low, blue in the middle, magenta
+    near full scale, and a red clip. The mixer, chain, and gain indicators draw the theme's editable gradients instead.
+  -->
   <Color x:Key="Meter.LowColor">#3CC8FF</Color>
   <Color x:Key="Meter.MidColor">#3D5BFF</Color>
   <Color x:Key="Meter.HotColor">#FF2E93</Color>
@@ -66,14 +73,16 @@
   <Color x:Key="MixerMeter.PeakHoldColor">#F2F2F2</Color>
   <Color x:Key="MixerMeter.WarmingColor">#E0A43A</Color>
   <Color x:Key="MixerMeter.UnavailableColor">#6E6E75</Color>
-  <!-- A junction's note lamp: a warm pilot-lamp amber segment under its level, lit while notes are held there. -->
-  <!-- The MIDI icon: the level's first segment colour (Meter.Low), lightened 25%. -->
+  <!--
+    A junction's note lamp: a light cyan, the level's first segment color (Meter.Low) lightened 25%. The lit MIDI icon
+    itself draws the theme's MIDI color.
+  -->
   <Color x:Key="Junction.LampColor">#6DD6FF</Color>
 
   <!--
-    Console surfaces (the Machined identity): the darker panel header, recessed gutters and wells that hold glyphs, LEDs,
+    Console surfaces (the Machined language): the darker panel header, recessed gutters and wells that hold glyphs, LEDs,
     and readouts, the key face of square keys, the overhead sheen on a panel, and the fader slot. Lit things glow with
-    Console.GlowAlpha at Console.GlowReach (Theme/Glow.cs); unlit LEDs and cells keep Console.UnlitAlpha of their colour.
+    Console.GlowAlpha at Console.GlowReach (Theme/Glow.cs); unlit LEDs and cells keep Console.UnlitAlpha of their color.
   -->
   <Color x:Key="Console.PanelHeaderColor">#20252D</Color>
   <Color x:Key="Console.GutterColor">#11141A</Color>
@@ -83,11 +92,16 @@
   <Color x:Key="Console.SlotColor">#050506</Color>
   <Color x:Key="Console.SelectedTextColor">#F4F7FA</Color>
   <Color x:Key="Console.SoloInkColor">#1A1608</Color>
-  <!-- The clip lamp: one colour, never part of the signal gradient (Theme/MeterGradient.cs). -->
+  <!-- The clip lamp: one color, never part of the signal gradient (Theme/MeterGradient.cs). -->
   <Color x:Key="Console.ClipColor">#FF3640</Color>
   <!-- The bed the console's strips sit on, a step below the base so each strip reads as its own panel. -->
   <Color x:Key="Console.BedColor">#101317</Color>
-  <!-- The fader gain ladder, rose to violet, bottom to top. -->
+  <!-- The bed under a pointer: lifted toward State.Hover, so a stage tile answers before it is chosen. -->
+  <Color x:Key="Console.BedHoverColor">#1C2026</Color>
+  <!--
+    The fader gain ladder, violet to rose, bottom to top: the shipped gain gradient's stops. The gutter draws the
+    theme's gain gradient (Theme/MeterGradient.cs), which starts as these.
+  -->
   <Color x:Key="Console.GainLed0Color">#6B4BE0</Color>
   <Color x:Key="Console.GainLed1Color">#A45CF2</Color>
   <Color x:Key="Console.GainLed2Color">#E070C8</Color>
@@ -104,8 +118,7 @@
   <SolidColorBrush x:Key="Console.SelectedText" Color="{StaticResource Console.SelectedTextColor}" />
   <SolidColorBrush x:Key="Console.Clip" Color="{StaticResource Console.ClipColor}" />
   <SolidColorBrush x:Key="Console.Bed" Color="{StaticResource Console.BedColor}" />
-  <!-- The bed under a pointer: lifted toward State.Hover, so a stage tile answers before it is chosen. -->
-  <SolidColorBrush x:Key="Console.BedHover" Color="#1C2026" />
+  <SolidColorBrush x:Key="Console.BedHover" Color="{StaticResource Console.BedHoverColor}" />
 
   <!-- Brushes for the tokens above. -->
   <SolidColorBrush x:Key="Surface.Sunken" Color="{StaticResource Surface.SunkenColor}" />
@@ -203,7 +216,35 @@
   <Color x:Key="Overlay.ScrimColor">#CC0C0F13</Color>
   <Color x:Key="Overlay.ReplaceColor">#F0181C22</Color>
 
-  <!-- Lit keys (identity: ladder + focus). A latched key shows its state on its whole face, lit from below in its colour,
+  <!-- Arrangement and editor surfaces drawn in code (Theme/Palette.cs): lane rows, the grid, selection, and the playhead. -->
+  <Color x:Key="Lane.AlternateColor">#14171C</Color>
+  <Color x:Key="Lane.SelectedColor">#1A2128</Color>
+  <Color x:Key="Lane.DividerColor">#0A0C0F</Color>
+  <Color x:Key="Lane.RulerEdgeColor">#2A2F37</Color>
+  <Color x:Key="Lane.SelectionColor">#E9EEF6</Color>
+  <Color x:Key="Lane.PlayheadColor">#E6E6E8</Color>
+  <Color x:Key="Grid.BarColor">#262A31</Color>
+  <Color x:Key="Grid.BeatColor">#1C2026</Color>
+  <Color x:Key="Grid.StepColor">#171A1F</Color>
+  <!-- The piano roll's rows and keyboard. -->
+  <Color x:Key="PianoRoll.WhiteKeyRowColor">#1A1E24</Color>
+  <Color x:Key="PianoRoll.BlackKeyRowColor">#14171C</Color>
+  <Color x:Key="PianoRoll.OctaveLineColor">#0A0C0F</Color>
+  <Color x:Key="PianoRoll.WhiteKeyColor">#DADADC</Color>
+  <Color x:Key="PianoRoll.WhiteKeyPressedColor">#8FE2F8</Color>
+  <Color x:Key="PianoRoll.BlackKeyColor">#0C0F13</Color>
+  <Color x:Key="PianoRoll.KeyLabelColor">#4E535B</Color>
+  <!-- Track colors, muted so dense arrangements stay readable; status is never conveyed by these alone. -->
+  <Color x:Key="Track.Swatch1Color">#3D7FD6</Color>
+  <Color x:Key="Track.Swatch2Color">#3FA86B</Color>
+  <Color x:Key="Track.Swatch3Color">#C99A2E</Color>
+  <Color x:Key="Track.Swatch4Color">#C8534F</Color>
+  <Color x:Key="Track.Swatch5Color">#8A63D2</Color>
+  <Color x:Key="Track.Swatch6Color">#3EA9AC</Color>
+  <Color x:Key="Track.Swatch7Color">#CF7AAB</Color>
+  <Color x:Key="Track.Swatch8Color">#A3AC48</Color>
+
+  <!-- Lit keys (identity: ladder + focus). A latched key shows its state on its whole face, lit from below in its color,
        with a lit rim and a tight glow; no side LED. Glyphs use Key.LitInk, which clears 4.5:1 on both face stops. -->
   <Color x:Key="Key.LitInkColor">#0B0D10</Color>
   <SolidColorBrush x:Key="Key.LitInk" Color="{StaticResource Key.LitInkColor}" />
@@ -241,10 +282,13 @@
   <SolidColorBrush x:Key="Key.Solo.Rim" Color="{StaticResource Key.Solo.RimColor}" />
 
   <!-- Focus lighting: the selected device panel is lit (accent pool from the top, lit edge); the rest stay calm. -->
+  <Color x:Key="DevicePanel.SelectedFill.TopColor">#2B3B50</Color>
+  <Color x:Key="DevicePanel.SelectedFill.MiddleColor">#27303B</Color>
+  <Color x:Key="DevicePanel.SelectedFill.BottomColor">#252527</Color>
   <LinearGradientBrush x:Key="DevicePanel.SelectedFill" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Color="#2B3B50" Offset="0" />
-    <GradientStop Color="#27303B" Offset="0.22" />
-    <GradientStop Color="#252527" Offset="0.62" />
+    <GradientStop Color="{StaticResource DevicePanel.SelectedFill.TopColor}" Offset="0" />
+    <GradientStop Color="{StaticResource DevicePanel.SelectedFill.MiddleColor}" Offset="0.22" />
+    <GradientStop Color="{StaticResource DevicePanel.SelectedFill.BottomColor}" Offset="0.62" />
   </LinearGradientBrush>
   <SolidColorBrush x:Key="Transport.Cycle" Color="{StaticResource Transport.CycleColor}" />
   <SolidColorBrush x:Key="Track.Mute" Color="{StaticResource Track.MuteColor}" />
@@ -297,17 +341,23 @@
   <SolidColorBrush x:Key="Overlay.Replace" Color="{StaticResource Overlay.ReplaceColor}" />
 
   <!-- The control bar and pane headers: slate chrome, faintly lit from above. -->
+  <Color x:Key="Gradient.Bar.TopColor">#1E232A</Color>
+  <Color x:Key="Gradient.Bar.BottomColor">#1A1E25</Color>
+  <Color x:Key="Gradient.Header.TopColor">#1E232A</Color>
+  <Color x:Key="Gradient.Header.BottomColor">#1A1E25</Color>
+  <Color x:Key="Gradient.Button.TopColor">#323740</Color>
+  <Color x:Key="Gradient.Button.BottomColor">#2B3038</Color>
   <LinearGradientBrush x:Key="Gradient.Bar" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#1E232A" />
-    <GradientStop Offset="1" Color="#1A1E25" />
+    <GradientStop Offset="0" Color="{StaticResource Gradient.Bar.TopColor}" />
+    <GradientStop Offset="1" Color="{StaticResource Gradient.Bar.BottomColor}" />
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="Gradient.Header" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#1E232A" />
-    <GradientStop Offset="1" Color="#1A1E25" />
+    <GradientStop Offset="0" Color="{StaticResource Gradient.Header.TopColor}" />
+    <GradientStop Offset="1" Color="{StaticResource Gradient.Header.BottomColor}" />
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="Gradient.Button" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#323740" />
-    <GradientStop Offset="1" Color="#2B3038" />
+    <GradientStop Offset="0" Color="{StaticResource Gradient.Button.TopColor}" />
+    <GradientStop Offset="1" Color="{StaticResource Gradient.Button.BottomColor}" />
   </LinearGradientBrush>
 
   <!-- Typography. -->
@@ -474,12 +524,28 @@
   <x:Double x:Key="Signal.Large.SegmentHeight">2</x:Double>
   <x:Double x:Key="Signal.Large.SegmentGap">1</x:Double>
   <x:Double x:Key="Signal.Large.TickLength">3</x:Double>
+  <!--
+    Shadows. A BoxShadows value cannot reference a Color resource, so each layer's color is a token below, written
+    out again in its shadow; Theme/ThemeApplier.cs rebuilds each shadow from its color tokens (a UI test keeps the two in
+    step).
+  -->
+  <Color x:Key="Shadow.FocusColor">#806AA2E4</Color>
+  <Color x:Key="Shadow.PopoverColor">#C0000000</Color>
+  <Color x:Key="Shadow.PopoverContactColor">#80000000</Color>
+  <Color x:Key="Shadow.AccentGlowColor">#403CCBF4</Color>
+  <Color x:Key="Shadow.AccentGlowTightColor">#663CCBF4</Color>
+  <Color x:Key="Shadow.InsetColor">#90000000</Color>
+  <Color x:Key="Shadow.RecordGlowColor">#73E5484D</Color>
   <BoxShadows x:Key="Shadow.Focus">0 0 6 0 #806AA2E4</BoxShadows>
   <!-- A popover lifted over the page (the color picker): a soft fall-off and a tight contact shadow. -->
   <BoxShadows x:Key="Shadow.Popover">0 12 32 0 #C0000000, 0 2 6 0 #80000000</BoxShadows>
   <!-- The accent lit round a selected tile or an open chip, as an LED's bloom. -->
   <BoxShadows x:Key="Shadow.AccentGlow">0 0 12 0 #403CCBF4</BoxShadows>
   <BoxShadows x:Key="Shadow.AccentGlowTight">0 0 8 0 #663CCBF4</BoxShadows>
+  <!-- A recessed display (the LCD, the keyboard readout): shade from the top edge. -->
+  <BoxShadows x:Key="Shadow.Inset">inset 0 1 3 0 #90000000</BoxShadows>
+  <!-- A lit record-arm key's bloom. -->
+  <BoxShadows x:Key="Shadow.RecordGlow">0 0 5 0 #73E5484D</BoxShadows>
 
   <!-- Icons. -->
   <x:Double x:Key="Icon.SizeSmall">11</x:Double>
