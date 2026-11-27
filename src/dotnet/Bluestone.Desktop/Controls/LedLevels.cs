@@ -5,8 +5,9 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// How lit each of a control's LEDs is, from 0 (dark) to 1 (lit), moving toward its target on <see cref="LedMotion"/>'s
-/// clock: going dark it fades, eased (fast at first, then a short tail), over <see cref="FadeMs"/>; going lit it warms up
-/// in a linear ramp over <see cref="WarmupMs"/> (0 lights at once). Levels are quantized to <see cref="Steps"/> steps
+/// clock: falling brightness fades, eased (fast at first, then a short tail), over <see cref="FadeMs"/>; rising
+/// brightness warms up in a linear ramp over <see cref="WarmupMs"/> (0 changes at once). Levels are quantized to
+/// <see cref="Steps"/> steps
 /// so a control can prebuild one brush per step: the clock's tick allocates nothing, and a draw part-way allocates nothing
 /// of ours (ADR 0043; the drawing backend's own cost per draw is the control's, at rest or not). The arrays are
 /// reallocated only when the LED count changes. Changes are instant while the control is in no window, while the matching switch on
@@ -21,7 +22,7 @@ internal sealed class LedLevels : ILedAnimator
     public const int Steps = 8;
 
     private readonly Visual _owner;
-    private bool[] _target = [];
+    private double[] _target = [];
     private double[] _level = [];
     private double[] _from = [];
     private double[] _since = [];
@@ -57,7 +58,7 @@ internal sealed class LedLevels : ILedAnimator
             return false;
         }
 
-        _target = new bool[count];
+        _target = new double[count];
         _level = new double[count];
         _from = new double[count];
         _since = new double[count];
@@ -72,28 +73,36 @@ internal sealed class LedLevels : ILedAnimator
     public int Step(int index) => _step[index];
 
     /// <summary>Whether LED <paramref name="index"/> is heading for lit.</summary>
-    public bool Target(int index) => _target[index];
+    public bool Target(int index) => _target[index] > 0;
 
     /// <summary>
     /// Sends LED <paramref name="index"/> toward lit or dark from <paramref name="now"/> (<see cref="LedMotion.Now"/>);
     /// <paramref name="instant"/> skips the motion (a control's first frame at a new size).
     /// </summary>
-    public void Set(int index, bool lit, double now, bool instant = false)
+    public void Set(int index, bool lit, double now, bool instant = false) => Set(index, lit ? 1 : 0, now, instant);
+
+    /// <summary>
+    /// Sends LED <paramref name="index"/> toward a brightness from 0 (dark) to 1 (lit) from
+    /// <paramref name="now"/> (<see cref="LedMotion.Now"/>); <paramref name="instant"/> skips the motion.
+    /// </summary>
+    public void Set(int index, double target, double now, bool instant = false)
     {
-        if (_target[index] == lit)
+        target = Math.Clamp(target, 0, 1);
+        if (_target[index] == target)
         {
             // An instant request still settles an LED caught mid-motion toward the same target.
             if (instant)
             {
-                _level[index] = lit ? 1 : 0;
-                _step[index] = lit ? Steps : 0;
+                _level[index] = target;
+                _step[index] = Quantize(target);
             }
 
             return;
         }
 
-        _target[index] = lit;
-        var moves = !instant && (lit ? WarmupMs > 0 && LedMotion.WarmsUp : FadeMs > 0 && LedMotion.Fades);
+        _target[index] = target;
+        var warming = target > _level[index];
+        var moves = !instant && (warming ? WarmupMs > 0 && LedMotion.WarmsUp : FadeMs > 0 && LedMotion.Fades);
         if (moves && !_running && LedMotion.Start(_owner, this) is { } top)
         {
             _top = top;
@@ -107,8 +116,8 @@ internal sealed class LedLevels : ILedAnimator
         }
         else
         {
-            _level[index] = lit ? 1 : 0;
-            _step[index] = lit ? Steps : 0;
+            _level[index] = target;
+            _step[index] = Quantize(target);
         }
     }
 
@@ -127,7 +136,7 @@ internal sealed class LedLevels : ILedAnimator
         var changed = false;
         for (var i = 0; i < _level.Length; i++)
         {
-            var goal = _target[i] ? 1.0 : 0.0;
+            var goal = _target[i];
             if (_level[i] == goal)
             {
                 continue;
@@ -135,15 +144,15 @@ internal sealed class LedLevels : ILedAnimator
 
             var elapsed = Math.Max(0, now - _since[i]);
             double level;
-            if (_target[i])
+            if (goal > _from[i])
             {
-                level = warms && WarmupMs > 0 ? Math.Min(1, _from[i] + (elapsed / WarmupMs)) : 1;
+                level = warms && WarmupMs > 0 ? Math.Min(goal, _from[i] + (elapsed / WarmupMs)) : goal;
             }
             else
             {
                 var progress = fades && FadeMs > 0 ? elapsed / FadeMs : 1;
                 var remaining = 1 - progress;
-                level = progress >= 1 ? 0 : _from[i] * remaining * remaining;
+                level = progress >= 1 ? goal : goal + ((_from[i] - goal) * remaining * remaining);
             }
 
             _level[i] = level;
@@ -173,10 +182,10 @@ internal sealed class LedLevels : ILedAnimator
         var changed = false;
         for (var i = 0; i < _level.Length; i++)
         {
-            var goal = _target[i] ? 1.0 : 0.0;
+            var goal = _target[i];
             changed |= _level[i] != goal;
             _level[i] = goal;
-            _step[i] = _target[i] ? Steps : 0;
+            _step[i] = Quantize(goal);
         }
 
         if (changed)
