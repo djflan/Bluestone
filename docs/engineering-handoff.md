@@ -29,6 +29,7 @@ architecture (ADRs 0021 to 0029), then the audio engine and plugins (ADRs 0030 t
 | UI: Plugins view (rescan, quarantine retry, hosting), dockable/detachable track-owned Mixer console and meter modes, Audio Settings, editor button, group menu, instrument parameter lanes | Focused view-model/UI tests for independent Master selection and Inspector scope passed; Max reviewed the running mixer at 1318×847 (compact) and 1620×1000 (normal), including Master selection and LUFS-S warm-up. The later C2 strip rebuild (insert stack, LED meter rail, gain bar, pan ramp) was reviewed in headless renders with simulated meter data only; physical audio remains unverified |
 | Device-centric workspace: design tokens, semantic regions and rails, dockable/detachable Browser, multiple follow/lock Device Views with per-view presentation, drag-and-drop insertion and reordering, local layout persistence with monitor recovery (ADR 0036); parallel signal bundle in chains (ADR 0037) | Done; view-model and headless UI tests with frames at 1280×800 and 1920×1080; the real app launched under Xvfb; not checked on real multiple monitors |
 | Interaction polish: arranger loop kept while off, clip loops on note and audio clips with Consolidate, format 5 (ADR 0039); ruler drag zoom and scroll, Zoom to Fit/Selection/Loop; drag to replace a device; floating editors that follow the selection, pin, and send keys to Bluestone (ADR 0040) | Done; unit, view-model, and headless UI tests; editor lifecycle and key routing checked on macOS and native Windows ([worklog](worklogs/bitwig-interaction-polish.md)) |
+| Design language "Machined & Precision Milled" ([guide](design-language.md), ADR 0052) and themes (ADR 0053): Dark Sodalite as a JSON theme file owning every color token, the meter gradients, and the MIDI color; Reset theme | Done; unit tests for the theme store and Display view model, UI tests that every token brush follows its theme color, a guide drift test, and a raw-color lint; colors apply at startup |
 | Headless UI tests: Device View, Browser, Racks, Mixer, Track, Routing, Connections, arrangement, piano roll, shortcuts, groups, plugins, mixer console | Done |
 | Acceptance scenarios 1–15 | All have tests: tables in [architecture.md](architecture.md#acceptance-scenarios-and-their-tests) and [plugin-hosting.md](plugin-hosting.md#acceptance-scenarios) |
 | Rust | Two cdylib crates (`bluestone_audio`, `bluestone_plugin_host`) plus test plugins, each with a measured or native-ABI reason (ADRs 0032, 0033) |
@@ -183,7 +184,7 @@ Ordering that must be preserved: plan events sort by `(tick, EventPhase, source 
 - Max reviewed the track-owned professional mixer in the running app at 1318×847 (compact) and 1620×1000 (normal),
   including independent Master selection and Inspector scope, LUFS-S warm-up, and the since-removed Bar/Round meter
   presentation. This was a no-signal UI review only; physical audio remains unverified.
-- The Identity R6 redesign (Machined theme, rebuilt mixer strip and Device View, bottom transport bar, signal gradient
+- The Identity R6 redesign (the theme then called Machined, now Dark Sodalite; rebuilt mixer strip and Device View, bottom transport bar, signal gradient
   editor) was verified headless only: Avalonia UI tests with simulated meter data, rendered at 1040×700 and 1440×900.
   The screen was locked, so there was no capture of the running app. It has not been checked with real-time audio, on
   HiDPI or GPU rendering, or with a screen reader.
@@ -331,3 +332,30 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     - Tests: no allocation test with glow off or at a strength other than 100%, and no UI test that the strength
       slider is disabled while glow is off.
     - Not measured: drawing cost on a slower or integrated GPU, or HiDPI beyond the 2x headless frames.
+16. **Design language and themes (ADRs 0052, 0053), deferred or not built.** The known gaps listed in
+    [design-language.md](design-language.md#18-known-gaps), for a follow-up material UI change:
+    - Contrast below the guide's floor: `Text.Muted` on every surface (3.1–3.9:1; 2.6:1 on `Surface.Overlay`),
+      including the console's 7.5–8.5 pt captions; `Key.LitInk` on the record key's top face stop (4.1:1); `State.Error`
+      on `State.ErrorSurface` (3.8:1). `Track.Offline` passes only as an icon.
+    - Focus: the default focus ring is 1 px of `Accent.Hover`, about 1.1:1 on aqua-rimmed controls; `Shadow.Focus` is a
+      blue that isn't `State.Focus`.
+    - Colors outside the theme: fixed colors in the knob cap and face (`ArcKnobPaint`), the fader body
+      (`ConsoleFader`), the timeline, the time grid, the piano roll, and the shortcut sheet, and the other sites
+      allowlisted in `RawColorLintTests`, don't follow a theme until they move to tokens.
+    - The armed track key glows through `Shadow.RecordGlow`, which ignores the LED glow setting.
+    - Hit targets: the mixer's M, S, and arm keys are 15 px with 1 px spacing (WCAG 2.5.8). Knobs have no typed entry.
+    - Motion: style transitions hard-code their durations instead of `Motion.Fast`/`Motion.Normal` and ignore reduced
+      motion; only LEDs honor it.
+    - Off-ramp font sizes (11.5, 10.5, 8.5) and raw layout sizes in `MainWindow.axaml` (about 220) and
+      `Theme/Bluestone.axaml` (about 350).
+    - Naming: `Key.Accent.*` is blue, not the accent; the transport's loop toggle (aqua) and `Key.Cycle` (gold)
+      differ; component tokens repeat hex values instead of referring to base tokens.
+    - `Colour*` identifiers (`ColourPicker`, `LedColours`, `MidiColour`, …) to rename to US English.
+    - Themes: no theme picker, live switching (`DynamicResource`), import or export, or Light and Midtoned themes.
+      The theme file is Bluestone's; hand editing is unsupported (owner decision). A `variant` other than `dark` in the
+      file applies but is untested.
+    - Escape while the Reset theme confirmation is open closes Settings (window-level handling in
+      `MainWindow.Settings.cs`) rather than only the question; nothing is reset.
+    - The raw-color lint doesn't catch named colors (`Colors.White`, `Brushes.Black`) in code.
+    - Gradients and the MIDI color saved in `display-settings.json` by earlier builds aren't carried into the theme
+      (owner decision: the shipped defaults equal the maintainer's saved values).

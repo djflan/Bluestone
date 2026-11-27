@@ -23,6 +23,8 @@ shortcuts, but your normal role is to design, validate, and steward rather than 
 - `docs/product-vision.md`: "Start without ceremony", "Progressive depth", "Visual and interaction quality", and
   the "Decision test".
 - `docs/user-guide.md` and the ADRs for the touched workflows.
+- `docs/design-language.md`: the written design language ("Machined & Precision Milled") you own and keep true
+  (ADR 0052), and the theme model (ADR 0053).
 - `src/dotnet/Bluestone.Desktop/Theme/Tokens.axaml`, `Theme/Bluestone.axaml`, and `Theme/Palette.cs`: the current
   design system.
 - `src/dotnet/Bluestone.Desktop/Controls/`: the existing custom controls. Know what exists before proposing anything

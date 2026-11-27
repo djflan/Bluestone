@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.VisualTree;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
 using Bluestone.Presentation;
@@ -39,6 +40,9 @@ public partial class DisplaySettingsPage : UserControl
         StopColourBox.TextChanged += (_, _) => MarkHex(StopColourBox);
         MidiColourBox.TextChanged += (_, _) => MarkHex(MidiColourBox);
     }
+
+    /// <summary>Whether the theme reset is asking to be confirmed.</summary>
+    public bool IsConfirmingThemeReset => ResetThemeConfirm.IsVisible;
 
     /// <summary>"#RRGGBB" as a brush; anything else draws nothing.</summary>
     public static IValueConverter HexToBrush { get; } = new FuncValueConverter<string?, IBrush?>(hex =>
@@ -85,7 +89,11 @@ public partial class DisplaySettingsPage : UserControl
         }
 
         Picker.Dismiss();
+        CloseThemeConfirm();
+        Watch(false);
         _display = DataContext as DisplayViewModel;
+        Watch(this.IsAttachedToVisualTree());
+
         if (_display is null)
         {
             Stage.ItemsSource = null;
@@ -103,11 +111,42 @@ public partial class DisplaySettingsPage : UserControl
         Select(items[0]);
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Watch(true);
+    }
+
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        // Leaving the page (or Settings) cancels an open picker, so no preview outlives it.
+        // Leaving the page (or Settings) cancels an open picker, so no preview outlives it, and an unanswered reset.
         Picker.Dismiss();
+        CloseThemeConfirm();
+
+        // Off screen, the page follows nothing, so the application-long view model never keeps a discarded page alive.
+        Watch(false);
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private bool _watching;
+
+    private void Watch(bool watch)
+    {
+        watch &= _display is not null;
+        if (watch == _watching)
+        {
+            return;
+        }
+
+        _watching = watch;
+        if (watch)
+        {
+            _display!.PropertyChanged += OnDisplayChanged;
+        }
+        else if (_display is not null)
+        {
+            _display.PropertyChanged -= OnDisplayChanged;
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -116,8 +155,53 @@ public partial class DisplaySettingsPage : UserControl
         if (change.Property == IsVisibleProperty && !IsVisible)
         {
             Picker.Dismiss();
+            CloseThemeConfirm();
         }
     }
+
+    // Reset theme asks first, in place: what it puts back, and Cancel (focused, so Enter or Space keeps the theme). Escape
+    // closes Settings, as everywhere in it, which leaves the question unanswered and the theme as it was.
+    private void OnResetTheme(object? sender, RoutedEventArgs e)
+    {
+        if (_display is not { IsThemeChanged: true } display)
+        {
+            return;
+        }
+
+        Picker.Dismiss();
+        ResetThemeQuestion.Text = $"Reset {display.ThemeName} to its shipped colors, gradients, and MIDI color?";
+        ResetThemeConfirm.IsVisible = true;
+        CancelResetThemeButton.Focus(NavigationMethod.Tab);
+    }
+
+    private void OnConfirmResetTheme(object? sender, RoutedEventArgs e)
+    {
+        _display?.ResetThemeCommand.Execute(null);
+        CloseThemeConfirm();
+
+        // The reset key is off once the theme is as shipped: focus goes on to the indicator being edited.
+        if (Stage.ContainerFromIndex(Stage.SelectedIndex) is { } tile)
+        {
+            tile.Focus(NavigationMethod.Tab);
+        }
+    }
+
+    private void OnCancelResetTheme(object? sender, RoutedEventArgs e)
+    {
+        CloseThemeConfirm();
+        ResetThemeKey.Focus(NavigationMethod.Tab);
+    }
+
+    // A theme already as shipped has nothing to reset: an open question about it goes.
+    private void OnDisplayChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DisplayViewModel.IsThemeChanged) && _display is { IsThemeChanged: false })
+        {
+            CloseThemeConfirm();
+        }
+    }
+
+    private void CloseThemeConfirm() => ResetThemeConfirm.IsVisible = false;
 
     private void Select(IndicatorStageItem? item)
     {

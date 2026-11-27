@@ -117,7 +117,7 @@ public sealed class ColourPickerTests : IDisposable
             var mixer = display.Mixer.Gradient;
             var gain = display.Gain.Gradient;
             var chain = display.Chain.Gradient;
-            store.Save(store.Load());
+            store.Save(store.Load().Theme);
             var saved = File.ReadAllText(path);
             var chip = AppUnderTest.Within<Button>(page, b => b.Name == "StopChip");
 
@@ -180,7 +180,7 @@ public sealed class ColourPickerTests : IDisposable
             Assert.Equal("#E162F5", display.Chain.Gradient.Stops[3].Colour);
             app.Click(PickerButton(popup, "Apply color"));
             Assert.False(popup.IsOpen);
-            var after = store.Load();
+            var after = store.Load().Theme;
             Assert.Equal("#E162F5", after.ChainGradient.Stops[3].Colour);
             Assert.Equal(chain.Stops.Where((_, i) => i != 3), after.ChainGradient.Stops.Where((_, i) => i != 3));
             Assert.Equal((mixer, gain), (after.MixerGradient, after.GainGradient));
@@ -203,7 +203,7 @@ public sealed class ColourPickerTests : IDisposable
             var chip = AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip");
             Assert.True(chip.IsEffectivelyVisible);
             var was = display.MidiColour;
-            store.Save(store.Load());
+            store.Save(store.Load().Theme);
             var saved = File.ReadAllText(path);
 
             app.Click(chip);
@@ -235,7 +235,7 @@ public sealed class ColourPickerTests : IDisposable
             popup.Picker.FindControl<ColourWheel>("Wheel")!.Focus();
             app.Press(Key.Enter);
             Assert.False(popup.IsOpen);
-            Assert.Equal("#9C82D9", store.Load().MidiColour);
+            Assert.Equal("#9C82D9", store.Load().Theme.MidiColor);
             Assert.False(display.IsMidiColourPreviewing);
             Assert.True(chip.IsFocused);
         }
@@ -267,7 +267,7 @@ public sealed class ColourPickerTests : IDisposable
             app.Click(StageTile(page, "Device chain"));
             var originalMidi = display.MidiColour;
             var originalGradient = display.Chain.Gradient;
-            store.Save(store.Load());
+            store.Save(store.Load().Theme);
             var saved = File.ReadAllText(path);
             var chip = AppUnderTest.Within<Button>(page, b => b.Name == (midi ? "MidiChip" : "StopChip"));
             app.Click(chip);
@@ -278,8 +278,9 @@ public sealed class ColourPickerTests : IDisposable
 
             if (close == "Outside")
             {
+                // A field at the transport's far left: the open picker can reach down over the transport's middle.
                 Control target = midi
-                    ? app.Find<TextBox>("TempoBox")
+                    ? app.Find<TextBox>("LoopStartBox")
                     : AppUnderTest.Within<Button>(app.Window, b => AutomationProperties.GetName(b) == "New track");
                 var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
                 app.Window.MouseDown(point, MouseButton.Left);
@@ -379,7 +380,7 @@ public sealed class ColourPickerTests : IDisposable
         {
             app.Click(StageTile(page, "Device chain"));
             var original = display.MidiColour;
-            store.Save(store.Load());
+            store.Save(store.Load().Theme);
             var saved = File.ReadAllText(path);
             app.Click(AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip"));
             var popup = page.ColourPicker;
@@ -561,7 +562,7 @@ public sealed class ColourPickerTests : IDisposable
             display.Chain.SelectedGradientStopIndex = 3;
             app.Settle();
             var chain = display.Chain.Gradient;
-            store.Save(store.Load());
+            store.Save(store.Load().Theme);
             var saved = File.ReadAllText(path);
             var chip = AppUnderTest.Within<Button>(page, b => b.Name == "StopChip");
             app.Click(chip);
@@ -649,7 +650,7 @@ public sealed class ColourPickerTests : IDisposable
             app.Settle();
             var chain = display.Chain.Gradient;
             var midi = display.MidiColour;
-            store.Save(store.Load());
+            store.Save(store.Load().Theme);
             var saved = File.ReadAllText(path);
             var chip = AppUnderTest.Within<Button>(page, b => b.Name == "StopChip");
             var midiChip = AppUnderTest.Within<Button>(page, b => b.Name == "MidiChip");
@@ -698,8 +699,8 @@ public sealed class ColourPickerTests : IDisposable
             Assert.True(display.IsMidiColourPreviewing);
             app.Click(PickerSwatch(popup, "#E0A43A"));
             app.Click(PickerButton(popup, "Apply color"));
-            var after = store.Load();
-            Assert.Equal("#E0A43A", after.MidiColour);
+            var after = store.Load().Theme;
+            Assert.Equal("#E0A43A", after.MidiColor);
             Assert.Equal(chain, after.ChainGradient);
             Assert.False(display.IsMidiColourPreviewing);
         }
@@ -770,18 +771,24 @@ public sealed class ColourPickerTests : IDisposable
         }
     }
 
-    private (DisplaySettingsStore Store, string Path, DisplayViewModel Display, DisplaySettingsPage Page) Open(AppUnderTest app, double width, double height = 900)
+    // The theme's store and file: the gradients and the MIDI color are saved in the theme (ADR 0053).
+    private (ThemeStore Store, string Path, DisplayViewModel Display, DisplaySettingsPage Page) Open(AppUnderTest app, double width, double height = 900)
     {
         app.Window.Width = width;
         app.Window.Height = height;
-        var path = Path.Combine(_directory, "display-settings.json");
-        var store = new DisplaySettingsStore(path);
         var display = app.ViewModel.Display;
-        display.Use(store);
+        display.Use(new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json")));
+        var store = TestThemes.Use(display, _directory);
+        var path = store.Path;
         Desktop.App.FollowSignalGradient(display);
         app.Window.ShowSettings(SettingsPage.Display);
         app.Settle();
         var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
+
+        // Scrolled past the theme to the indicator colors, as a musician editing them would be.
+        var theme = AppUnderTest.Within<StackPanel>(page, p => p.Name == "ThemeGroup");
+        page.FindAncestorOfType<ScrollViewer>()!.Offset = new Vector(0, theme.Bounds.Height + theme.Margin.Bottom + ((StackPanel)theme.Parent!).Spacing);
+        app.Settle();
         return (store, path, display, page);
     }
 
@@ -792,7 +799,7 @@ public sealed class ColourPickerTests : IDisposable
             editor.ResetGradientCommand.Execute(null);
         }
 
-        display.MidiColour = DisplaySettings.DefaultMidiColour;
+        display.MidiColour = ThemeDefinition.DefaultMidiColor;
     }
 
     internal static ListBoxItem StageTile(DisplaySettingsPage page, string title) =>

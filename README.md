@@ -13,7 +13,7 @@
 
 Bluestone is a modern, open-source digital audio workstation. It brings hardware instruments, software instruments, effects, and note processors into one modular environment without making musicians work like routing engineers. Bluestone on its own is meant to be a complete virtual studio; plugins and hardware join it as peers.
 
-Bluestone combines deep, flexible signal flow with clear, approachable workflows. Its interface is designed as a cohesive professional product: fresh, responsive, musically focused, and consistent across every feature.
+Bluestone combines deep, flexible signal flow with clear, approachable workflows. Its interface is designed as a cohesive professional product: fresh, responsive, musically focused, and consistent across every feature. It looks and behaves like well-made studio hardware, machined and precision milled: quiet slate surfaces, keys and meters cut cleanly into them, and light only where something is actually happening ([design language](docs/design-language.md)).
 
 > [!IMPORTANT]
 > Bluestone is alpha software. It is usable for music production today and intended for musicians who enjoy adopting new creative tools early. Important production workflows are still incomplete, project formats may evolve, and several hardware and platform paths still need physical verification.
@@ -203,11 +203,11 @@ Engineering decisions belong in an ADR. Current implementation traps, frozen reg
 
 ## Contributing
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [product vision](docs/product-vision.md), and the relevant Release 1.0 slice. New work should preserve timing and project correctness, fit the shared interaction and visual system, and state clearly which behavior was simulated and which was verified on real hardware. Copilot users can put a specialist agent team on a change with `/team`; see [Agent team](docs/agent-team.md).
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [product vision](docs/product-vision.md), and the relevant Release 1.0 slice. New work should preserve timing and project correctness, fit the shared interaction and visual system ([design language](docs/design-language.md)), and state clearly which behavior was simulated and which was verified on real hardware. Copilot users can put a specialist agent team on a change with `/team`; see [Agent team](docs/agent-team.md).
 
-## Third-party names and trademarks
+## Names and trademarks
 
-Bluestone is independent and is not affiliated with, sponsored, endorsed, or authorized by the owners of the products, formats, and standards it names. Those names identify what Bluestone works with, was tested against, or used as a workflow reference. See [TRADEMARKS.md](TRADEMARKS.md).
+Bluestone is independent and is not affiliated with, sponsored, endorsed, or authorized by the owners of the products, formats, and standards it names. Those names identify what Bluestone works with, was tested against, or used as a workflow reference. The Bluestone name and logo identify this project: forks are welcome under the MIT License but must use their own name and logo. See [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Supporting Bluestone
 

@@ -43,6 +43,7 @@ public sealed class SettingsTests : IDisposable
         var store = new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json"));
         var display = app.ViewModel.Display;
         display.Use(store);
+        var themes = TestThemes.Use(display, _directory);
         Desktop.App.FollowSignalGradient(display);
         try
         {
@@ -58,7 +59,7 @@ public sealed class SettingsTests : IDisposable
             // Add: a stop in the widest gap (purple to pink), selected, saved, and on every meter.
             app.Click(ActionKey("Add gradient stop"));
             Assert.False(ActionKey("Add gradient stop").IsChecked, "An action key springs back.");
-            Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
+            Assert.Equal(7, themes.Load().Theme.MixerGradient.Stops.Length);
             Assert.Equal("Gradient stop 6 at 86%", Names()[5]);
             Assert.Equal("86%", AppUnderTest.Within<TextBlock>(page, t => t.Name == "StopPositionText").Text);
             Assert.Equal(7, Desktop.Theme.MeterGradient.Mixer.Stops.Count);
@@ -67,18 +68,18 @@ public sealed class SettingsTests : IDisposable
             var handle = editor.Handles[5];
             var from = new Point(handle.Bounds.Center.X, handle.Bounds.Center.Y);
             app.Drag(editor, from, new Point(editor.XAt(0.2), from.Y));
-            Assert.Equal(0.2, store.Load().MixerGradient.Stops[2].Position, 2);
+            Assert.Equal(0.2, themes.Load().Theme.MixerGradient.Stops[2].Position, 2);
             Assert.True(editor.Handles[2].IsFocused);
             app.Press(Key.Right);
-            Assert.Equal(0.21, store.Load().MixerGradient.Stops[2].Position, 3);
+            Assert.Equal(0.21, themes.Load().Theme.MixerGradient.Stops[2].Position, 3);
             app.Press(Key.Right, RawInputModifiers.Shift);
-            Assert.Equal(0.26, store.Load().MixerGradient.Stops[2].Position, 3);
+            Assert.Equal(0.26, themes.Load().Theme.MixerGradient.Stops[2].Position, 3);
             Assert.Equal("Gradient stop 3 at 26%", Names()[2]);
             Assert.Equal(0.26, Desktop.Theme.MeterGradient.Mixer.Stops[2].Position, 3);
 
             // A swatch recolours the selected stop.
             app.Click(AppUnderTest.Within<Button>(page, b => Avalonia.Automation.AutomationProperties.GetName(b) == "Color #4CB873"));
-            Assert.Equal(new SignalGradientStop("#4CB873", 0.26), store.Load().MixerGradient.Stops[2]);
+            Assert.Equal(new SignalGradientStop("#4CB873", 0.26), themes.Load().Theme.MixerGradient.Stops[2]);
             app.Window.MouseMove(new Point(1300, 800), RawInputModifiers.None);
             await app.SettleTransitionsAsync();
             var frame = app.SaveFrame("settings-display-gradient-editor");
@@ -92,19 +93,19 @@ public sealed class SettingsTests : IDisposable
 
             // Remove: the selected stop goes; at two stops the key is disabled.
             app.Click(ActionKey("Remove gradient stop"));
-            Assert.Equal(6, store.Load().MixerGradient.Stops.Length);
-            Assert.DoesNotContain(store.Load().MixerGradient.Stops, s => s.Colour == "#4CB873");
+            Assert.Equal(6, themes.Load().Theme.MixerGradient.Stops.Length);
+            Assert.DoesNotContain(themes.Load().Theme.MixerGradient.Stops, s => s.Colour == "#4CB873");
             while (display.Mixer.CanRemoveGradientStop)
             {
                 app.Click(ActionKey("Remove gradient stop"));
             }
 
-            Assert.Equal(2, store.Load().MixerGradient.Stops.Length);
+            Assert.Equal(2, themes.Load().Theme.MixerGradient.Stops.Length);
             Assert.False(ActionKey("Remove gradient stop").IsEffectivelyEnabled);
             Assert.Equal(2, editor.Handles.Count);
 
             app.Click(ActionKey("Reset gradient to default"));
-            Assert.Equal(SignalGradient.Default, store.Load().MixerGradient);
+            Assert.Equal(SignalGradient.Default, themes.Load().Theme.MixerGradient);
             Assert.Equal(6, editor.Handles.Count);
         }
         finally
@@ -143,6 +144,7 @@ public sealed class SettingsTests : IDisposable
         var store = new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json"));
         var display = app.ViewModel.Display;
         display.Use(store);
+        var themes = TestThemes.Use(display, _directory);
         Desktop.App.FollowSignalGradient(display);
         try
         {
@@ -160,7 +162,7 @@ public sealed class SettingsTests : IDisposable
             Assert.False(midi.IsEffectivelyVisible);
             display.Gain.SelectedGradientStopIndex = 0;
             app.Click(Swatch("#B65CFF"));
-            var saved = store.Load();
+            var saved = themes.Load().Theme;
             Assert.Equal("#B65CFF", saved.GainGradient.Stops[0].Colour);
             Assert.Equal((SignalGradient.Default, SignalGradient.Default), (saved.MixerGradient, saved.ChainGradient));
             Assert.Equal(Avalonia.Media.Color.Parse("#B65CFF"), Desktop.Theme.MeterGradient.Gain.Stops[0].Color);
@@ -174,7 +176,7 @@ public sealed class SettingsTests : IDisposable
             Assert.True(midi.IsEffectivelyVisible);
             display.Chain.SelectedGradientStopIndex = 1;
             app.Click(Swatch("#E0A43A"));
-            saved = store.Load();
+            saved = themes.Load().Theme;
             Assert.Equal("#E0A43A", saved.ChainGradient.Stops[1].Colour);
             Assert.Equal(SignalGradient.Default, saved.MixerGradient);
             Assert.Equal("#B65CFF", saved.GainGradient.Stops[0].Colour);
@@ -229,6 +231,7 @@ public sealed class SettingsTests : IDisposable
         var store = new DisplaySettingsStore(path);
         var display = app.ViewModel.Display;
         display.Use(store);
+        var themes = TestThemes.Use(display, _directory);
         Desktop.App.FollowSignalGradient(display);
         try
         {
@@ -237,9 +240,9 @@ public sealed class SettingsTests : IDisposable
             var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
             var editor = AppUnderTest.Within<SignalGradientEditor>(page, _ => true);
 
-            // A drag previews on the meters as it goes, but writes the file only once, on release.
-            store.Save(store.Load());
-            var saved = File.ReadAllText(path);
+            // A drag previews on the meters as it goes, but writes the theme file only once, on release.
+            themes.Save(themes.Load().Theme);
+            var saved = File.ReadAllText(themes.Path);
             var handle = editor.Handles[1];
             var start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), app.Window)!.Value;
             app.Window.MouseMove(start, RawInputModifiers.None);
@@ -251,24 +254,24 @@ public sealed class SettingsTests : IDisposable
                 app.Settle();
                 Assert.Equal(position, display.Mixer.Gradient.Stops[1].Position, 2);
                 Assert.Equal(position, Desktop.Theme.MeterGradient.Mixer.Stops[1].Position, 2);
-                Assert.Equal(saved, File.ReadAllText(path));
+                Assert.Equal(saved, File.ReadAllText(themes.Path));
             }
 
             app.Window.MouseUp(new Point(editor.TranslatePoint(new Point(editor.XAt(0.20), 0), app.Window)!.Value.X, start.Y), MouseButton.Left, RawInputModifiers.None);
             app.Settle();
-            Assert.Equal(0.20, store.Load().MixerGradient.Stops[1].Position, 2);
+            Assert.Equal(0.20, themes.Load().Theme.MixerGradient.Stops[1].Position, 2);
 
             // Nudges stop at the ends of the scale, by 1% or by 5% with Shift.
             editor.Handles[0].Focus();
             app.Press(Key.Left);
             app.Press(Key.Left, RawInputModifiers.Shift);
-            Assert.Equal(0, store.Load().MixerGradient.Stops[0].Position);
+            Assert.Equal(0, themes.Load().Theme.MixerGradient.Stops[0].Position);
             Assert.Equal("Gradient stop 1 at 0%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[0]));
             var last = editor.Handles.Count - 1;
             editor.Handles[last].Focus();
             app.Press(Key.Right);
             app.Press(Key.Right, RawInputModifiers.Shift);
-            Assert.Equal(1, store.Load().MixerGradient.Stops[last].Position);
+            Assert.Equal(1, themes.Load().Theme.MixerGradient.Stops[last].Position);
             Assert.Equal($"Gradient stop {last + 1} at 100%", Avalonia.Automation.AutomationProperties.GetName(editor.Handles[last]));
 
             // A stop is a slider over 0 to 100 described by its colour; setting it moves the stop.
@@ -278,7 +281,7 @@ public sealed class SettingsTests : IDisposable
             var range = Assert.IsAssignableFrom<IRangeValueProvider>(stopPeer);
             Assert.Equal((0, 100, 32.3), (range.Minimum, range.Maximum, range.Value));
             range.SetValue(50);
-            Assert.Equal(0.5, store.Load().MixerGradient.Stops[2].Position, 3);
+            Assert.Equal(0.5, themes.Load().Theme.MixerGradient.Stops[2].Position, 3);
 
             // The gradient's actions are buttons, not toggles, and stay unchecked.
             var add = AppUnderTest.Within<TextKey>(page, k => Avalonia.Automation.AutomationProperties.GetName(k) == "Add gradient stop");
@@ -288,10 +291,10 @@ public sealed class SettingsTests : IDisposable
             Assert.False(addPeer is IToggleProvider, "An action key must not offer a toggle.");
             app.Click(add);
             Assert.False(add.IsChecked == true, "An action key never stays checked.");
-            Assert.Equal(7, store.Load().MixerGradient.Stops.Length);
+            Assert.Equal(7, themes.Load().Theme.MixerGradient.Stops.Length);
 
             // Leaving the page during a gradient drag commits that drag, unlike cancelling a color-picker preview.
-            var beforeDetach = File.ReadAllText(path);
+            var beforeDetach = File.ReadAllText(themes.Path);
             handle = editor.Handles[1];
             start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), app.Window)!.Value;
             app.Window.MouseDown(start, MouseButton.Left);
@@ -300,12 +303,12 @@ public sealed class SettingsTests : IDisposable
             app.Settle();
             Assert.True(display.Mixer.IsPreviewing);
             Assert.Equal(0.15, display.Mixer.Gradient.Stops[1].Position, 2);
-            Assert.Equal(beforeDetach, File.ReadAllText(path));
+            Assert.Equal(beforeDetach, File.ReadAllText(themes.Path));
             app.Window.ShowSettings(SettingsPage.Audio);
             app.Settle();
             Assert.True(app.Window.Settings.IsOpen);
             Assert.False(display.Mixer.IsPreviewing);
-            Assert.Equal(0.15, store.Load().MixerGradient.Stops[1].Position, 2);
+            Assert.Equal(0.15, themes.Load().Theme.MixerGradient.Stops[1].Position, 2);
             app.Window.MouseUp(moved, MouseButton.Left);
             app.Settle();
         }
@@ -417,8 +420,22 @@ public sealed class SettingsTests : IDisposable
         var host = app.Find<SettingsView>("SettingsHost");
         Assert.True(host.IsEffectivelyVisible);
         var hostBounds = new Rect(app.InWindow(host, default), host.Bounds.Size);
-        Assert.InRange(hostBounds.Width, 500, 800);
-        Assert.InRange(hostBounds.Height, 200, 560);
+        Assert.InRange(hostBounds.Width, 500, 880);
+        Assert.InRange(hostBounds.Height, 200, 840);
+
+        // One height for every page (as tall as the workspace allows, up to the maximum), so changing page never jumps.
+        var shown = app.Window.Settings.SelectedCategory;
+        foreach (var category in app.Window.Settings.Categories)
+        {
+            app.Window.Settings.SelectedCategory = category;
+            app.Settle();
+            Assert.Equal(hostBounds.Height, host.Bounds.Height);
+        }
+
+        app.Window.Settings.SelectedCategory = shown;
+        app.Settle();
+
+        Assert.Equal(Math.Min(host.MaxHeight, workspaceBounds.Bottom - hostBounds.Top - host.Margin.Bottom), hostBounds.Height, 1);
         Assert.True(hostBounds.Left > workspaceBounds.Left + 100);
         // The popover stops clear of the right rail, so the rotated Browser label is never covered.
         var rail = app.Find<Border>("RightRail");

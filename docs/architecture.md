@@ -612,8 +612,10 @@ arranger's loop strip is reserved for loop editing (`LoopStripDrag`, committed o
 Layout is local state, never project state: `WorkspaceStore` keeps user defaults and per-project state as small
 versioned JSON in the settings folder, with window bounds per display configuration. `LayoutRecovery` never
 restores a window off-screen and shows a detached view whose monitor is missing as a rail icon while keeping its
-saved window. Colours, type, spacing, and device-panel geometry are design tokens in `Theme/Tokens.axaml`: the
-"Machined" slate theme with an aqua accent (#3CCBF4). Shared custom controls (`SquareKey`, `TextKey`, `PowerGlyph`,
+saved window. Colors, type, spacing, and device-panel geometry are design tokens in `Theme/Tokens.axaml`, following
+the "Machined & Precision Milled" design language ([guide](design-language.md), ADR 0052). Colors, the meter
+gradients, and the MIDI color form a theme (ADR 0053): Dark Sodalite, the default, ships with the token values; the
+user's copy is `themes/dark-sodalite.json` in the settings folder, applied at startup by `Theme/ThemeApplier`. Shared custom controls (`SquareKey`, `TextKey`, `PowerGlyph`,
 `Knob` arc rings, `RecessedWell`, `GutterPanel`, `DeviceCardPanel`) draw its keys, wells, and gutters; custom-drawn glows
 use `Theme/Glow`'s exponential falloff.
 

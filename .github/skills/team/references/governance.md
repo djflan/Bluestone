@@ -166,7 +166,7 @@ Required evidence and stops:
 ### Material UI
 
 Use this tier for a significant layout, interaction, density, hierarchy, or component change within an already
-approved design language.
+approved design language ([docs/design-language.md](../../../../docs/design-language.md)).
 
 Required evidence and stops:
 

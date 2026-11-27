@@ -20,6 +20,6 @@
 - [ ] Tests do not require specific hardware, an audio device, or installed plugins (they skip with a reason)
 - [ ] Documentation and ADRs are updated where needed
 - [ ] Everything deferred or not built is listed in this PR and in `docs/engineering-handoff.md` ("Unresolved implementation backlog")
-- [ ] User-facing work was reviewed in the running app at relevant window sizes and scaling; keyboard and accessibility behavior was considered
+- [ ] User-facing work follows the design language checklist (`docs/design-language.md`, "Quick-start checklist") and was reviewed in the running app at relevant window sizes and scaling; list the states, focus, contrast, and screen-reader names you checked
 - [ ] Timing, latency, recording-placement, or export claims include reproducible measurements and configuration
 - [ ] Contributed data (profiles, samples) is redistributable and has provenance; no third-party plugins are committed

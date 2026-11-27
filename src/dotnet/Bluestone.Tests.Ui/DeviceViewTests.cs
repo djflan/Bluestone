@@ -616,41 +616,13 @@ public sealed class DeviceViewTests
     [Fact]
     public Task TheCodePalette_MatchesTheDesignTokens() => HeadlessApp.RunAsync(() =>
     {
+        // Under the shipped theme every color the code palette reads is the one Tokens.axaml writes, for every field
+        // (ThemeApplierTests keeps the list complete and proves a theme reaches each one).
         var tokens = (ResourceDictionary)Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(new Uri("avares://Bluestone.Desktop/Theme/Tokens.axaml"));
         Color Token(string key) => Assert.IsType<Color>(tokens[key]);
-        var pairs = new (Color Code, string Token)[]
-        {
-            (Palette.Base, "Surface.BaseColor"),
-            (Palette.Panel, "Surface.PanelColor"),
-            (Palette.Sunken, "Surface.SunkenColor"),
-            (Palette.Raised, "Surface.RaisedColor"),
-            (Palette.Divider, "Line.DividerColor"),
-            (Palette.Border, "Line.BorderColor"),
-            (Palette.Field, "Surface.FieldColor"),
-            (Palette.Text, "Text.PrimaryColor"),
-            (Palette.TextSecondary, "Text.SecondaryColor"),
-            (Palette.TextMuted, "Text.MutedColor"),
-            (Palette.Accent, "Accent.Color"),
-            (Palette.Focus, "State.FocusColor"),
-            (Palette.Record, "State.ErrorColor"),
-            (Palette.Cycle, "Transport.CycleColor"),
-            (Palette.Lane, "Lane.BackgroundColor"),
-            (Palette.AutomationLane, "Lane.AutomationColor"),
-            (Palette.Ruler, "Lane.RulerColor"),
-            (Palette.SignalNote, "Signal.NoteColor"),
-            (Palette.SignalInstrument, "Signal.InstrumentColor"),
-            (Palette.SignalAudio, "Signal.AudioColor"),
-            (Palette.SignalOther, "Signal.OtherColor"),
-            (Palette.MeterLow, "Meter.LowColor"),
-            (Palette.MeterMid, "Meter.MidColor"),
-            (Palette.MeterHot, "Meter.HotColor"),
-            (Palette.MeterClip, "Meter.ClipColor"),
-            (Palette.MeterTrack, "Meter.TrackColor"),
-            (Palette.MixerMeterPeakHold, "MixerMeter.PeakHoldColor"),
-            (Palette.JunctionLamp, "Junction.LampColor"),
-        };
-
-        Assert.All(pairs, p => Assert.Equal(Token(p.Token), p.Code));
+        Assert.All(ThemeApplierTests.PaletteTokens, p => Assert.Equal(Token(p.Token), (Color)typeof(Palette).GetField(p.Field)!.GetValue(null)!));
+        Assert.Equal(ThemeApplierTests.TrackTokens.Select(Token), Palette.Tracks);
+        Assert.Equal(Token("Junction.LampColor"), Palette.JunctionLamp);
         return Task.CompletedTask;
     });
 }
