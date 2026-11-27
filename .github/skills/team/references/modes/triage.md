@@ -33,7 +33,8 @@ Outcome: <observable fix>
 Acceptance checks: <2–5, including the test that fails today>
 Scope: <files and areas> · Out of scope: <list>
 Risks: <lifecycle, timing, platform, compatibility>
-Options: <2–3 options per governance.md: includes, skips and risk, team, estimate of active time and waits>
+Options: <2–3 options per governance.md: includes, skips and risk, team, elapsed delivery estimate, aggregate effort,
+and user/CI waits>
 Recommended: <option and why>
 Next: /team build <a ready-to-run request naming the recommended option>
 ```

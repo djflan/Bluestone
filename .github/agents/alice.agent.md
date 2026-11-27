@@ -25,8 +25,8 @@ You make sure the change is proven, not assumed. A behavior without a failing-th
   by one wall-clock sample. Stress anything flaky-prone (for example, 10 runs with every core busy).
 - **Skips:** tests that need hardware, an audio device, or an installed plugin must skip with a reason.
 - **Gates:** run the focused tests in the verify phase. When Lucas asks for the final gates (with every editor
-  stopped), run the full gates from pr-readiness step 7 once on that commit and record every command with its
-  result. These are Microsoft Testing Platform tests: filter with `dotnet test --project <proj> -- --filter-class
+  stopped), run the applicable mandatory gates from pr-readiness step 7 once on that commit and record every command
+  with its result. These are Microsoft Testing Platform tests: filter with `dotnet test --project <proj> -- --filter-class
   "*Name"`, because VSTest `--filter` runs zero tests.
 
 ## Report

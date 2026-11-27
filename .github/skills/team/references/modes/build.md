@@ -1,7 +1,8 @@
 # Mode: build
 
-Deliver a feature or fix end to end, ending at an open pull request. Lucas scopes it, offers options with estimates,
-and the user picks one; then the run proceeds autonomously within that option, between the hard stops in `SKILL.md`.
+Deliver a feature or fix end to end, ending at an open pull request. Lucas executes eligible Direct work himself or
+scopes options with estimates and accepts the user's choice; then the run proceeds autonomously within that option,
+between the hard stops in `SKILL.md`.
 It follows `.github/skills/focused-feature-delivery/SKILL.md` and ends with `.github/skills/pr-readiness/SKILL.md`,
 applied at the depth the option sets. Canonical policy: `.github/skills/team/references/governance.md`.
 
@@ -13,16 +14,19 @@ applied at the depth the option sets. Canonical policy: `.github/skills/team/ref
    work, quote the user's reference and hint language as acceptance checks and classify the work as directional,
    material, or routine (`governance.md`).
 2. Read only enough to find the owning code: the nearest owner, its caller, and its test. A few reads, a few minutes.
-3. Present 2–3 options (`governance.md`, "Delivery options and the budget"): includes, skips and risk, team with a
-   one-line reason per member, estimate of active time, and expected user or CI waits. Recommend one. Name any floor
-   item in play; no option may skip it.
-4. Stop for the user's pick. Trivial work skips this: state the estimate and plan in one line and proceed.
+3. If Direct fits, state the outcome and elapsed estimate in one line and proceed alone with focused validation. Do
+   not write a formal plan, dispatch specialists, generate alternatives, or investigate unrelated work.
+4. Otherwise present 2–3 options (`governance.md`, "Delivery options and the budget"): includes, skips and risk, team
+   with a one-line reason per member, elapsed delivery time, aggregate agent effort, and expected user or CI waits.
+   Recommend one and name any floor item in play. Stop for the user's pick unless the request already named a safe
+   fitting option; accept that choice without redundant confirmation.
 5. Choose the branch. If the working tree has uncommitted changes you didn't make, stop and report; never stash or
    discard them.
    - The request names an existing PR or branch: work on that branch (`gh pr checkout <n>`, or `git switch <branch>`
      and `git pull --ff-only`) and update that PR at ship. Never open a second PR for the same work.
    - Otherwise: `git fetch origin`, then `git switch -c team/<slug> origin/main`.
-6. Write the run log with the picked option, estimate, start time, prioritized subtasks, and cut list.
+6. For non-Direct work, write the run log with the picked option, elapsed and aggregate estimates, real start
+   timestamp, prioritized subtasks, and cut list. Direct uses only the one-line scope/estimate and final report.
 
 ## 2. Design (only when the picked option includes it)
 
@@ -53,7 +57,8 @@ substantive edit and returns a build report. Lucas commits when the editors in t
 checks pass, staging reported paths explicitly (`git add <paths>`, never `git add -A`) with the Copilot co-author
 trailer.
 
-Check the budget at each commit. At about 1.5× the estimate, stop and report (`governance.md`, "Overrun stop").
+Check the wall-clock budget before every substantial dispatch or investigation and after each batch or commit. At
+about 1.5× the elapsed estimate, stop and report (`governance.md`, "Overrun stop").
 
 ## 4. Check and review (one pass)
 
@@ -88,10 +93,13 @@ before the PR is opened or updated. Routine UI has no automatic user stop.
    CI changes, experiment switches, TODOs, files that should be ignored.
 2. Apply the `pr-readiness` steps that fit the option; reuse results already recorded.
 3. Update docs only where the change makes them wrong. Sabrina joins only for substantial docs or release material.
-4. **Final gates** once, on the final commit, with every editor stopped (`pr-readiness` step 7). Record each command
-   and result. If anything changes afterwards, rerun only the gates that change affects.
+4. Run the **applicable mandatory gates** once, on the final commit, with every editor stopped
+   (`pr-readiness` step 7). For cosmetic changes, check the desktop build and affected UI, format-check changed C#
+   files if present, and run any applicable focused UI test. Record each command and result. If anything changes
+   afterwards, rerun the affected gates.
 5. Write the PR body from `.github/pull_request_template.md`, keeping its headings and checklist: the option picked,
-   estimate against actual, each command with its result, what was verified versus simulated or skipped, deferred
+   elapsed and aggregate estimates against actuals, itemized waits, each command with its result, what was verified
+   versus simulated or skipped, deferred
    items, and the UI evidence and approvals the tier requires.
 6. Push and open the PR with `gh pr create`, or update the existing PR with `gh pr edit`. Add a version token to the
    title only if the user asked.
@@ -100,8 +108,10 @@ before the PR is opened or updated. Routine UI has no automatic user stop.
 
 ## Done
 
-The picked option's outcome and acceptance checks are met, the floor holds, the final gates pass on the shipped commit
-or failures are reported, every validated finding is fixed, backlogged, or dropped with a reason, and UI approvals
-match the recorded tier. The PR is open (or updated) and the summary gives the option, estimate against actual, team
+The picked option's outcome and acceptance checks are met, the floor holds, the applicable mandatory gates pass on
+the shipped commit or meet the [pre-existing local test exception](../governance.md#pre-existing-local-test-failure), every validated
+finding is fixed, backlogged, or dropped with a reason, and UI approvals
+match the recorded tier. The PR is open (or updated) and the summary gives the option, elapsed and aggregate estimates
+against actuals, itemized waits, team
 and models, findings and outcomes, what was not verified, and what was deferred. When the user has authorized a
-merge, merge then.
+merge, proceed after the applicable gates pass. If CI is run, it must pass on the current PR head before merge.

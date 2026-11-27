@@ -13,33 +13,48 @@ than the bug it might find is waste.
 
 ## Delivery options and the budget
 
-Before any build work, Lucas scopes the request quickly (a few targeted reads, a few minutes; never a council) and
-presents 2–3 options. Each option states:
+Before any build work beyond Direct, Lucas scopes the request quickly (a few targeted reads, a few minutes; never a
+council) and presents 2–3 options. Each option states:
 
 - **Includes:** the outcome and the acceptance checks it delivers.
 - **Skips:** what it does not do or verify, and what that risks.
 - **Team:** who works on it and why (often Lucas alone).
-- **Estimate:** active working time across everyone, plus expected waits on the user or CI, stated separately.
+- **Estimate:** elapsed delivery time (wall-clock from the recorded start), aggregate agent effort (the sum of active
+  time across members), and expected user or CI waits, each stated separately. Three members working in parallel for
+  ten minutes are about ten minutes elapsed and thirty minutes of aggregate effort.
 
-Lucas recommends one, then waits for the user's pick. The picked option is the contract for the run: its scope, its
+Lucas recommends one, then waits for the user's pick unless Direct applies or the request already contains a safe,
+fitting explicit choice. The picked option is the contract for the run: its scope, its
 verification, and its time budget. A typical set:
 
 | Option | Shape |
 |---|---|
+| **Direct** | A localized, low-risk, easily reversible change. Lucas works alone, reads only the owning files, makes the smallest change, and runs focused validation. No formal plan, specialist dispatch, alternative proposals, or unrelated investigation. |
 | **Fast** | The outcome, focused tests and build, one look at it. Known gaps listed. |
 | **Right** | Fast, plus the edge cases and review that a miss would make expensive. |
 | **Thorough** | Right, plus broader specialist review, platform coverage, or probes. Offer only when the risk warrants it. |
 
-Trivial work (an estimate under about 15 minutes, with no item from "The floor" in play) skips the menu: Lucas states
-the estimate and the plan in one line and proceeds unless the user objects.
+Direct fits copy and spacing corrections or adjusting an existing font size or weight in one view. Bundling a new
+font requires dependency and license checks outside Direct. Direct excludes changes to behavior, public contracts,
+dependencies, migrations, security/privacy boundaries, or anything else expensive to reverse. The floor still
+applies wherever relevant. Lucas states the outcome and elapsed estimate in one line, then proceeds. If the user names
+Direct, Fast, Right, or Thorough in the initial request and it fits the work, that is the accepted contract: do not
+present the choice back or ask for redundant confirmation. If an explicitly selected option cannot safely cover the
+request, explain the concrete conflict and offer the smallest safe alternative. Direct never dispatches a specialist;
+if new evidence shows one is needed, Direct no longer fits and Lucas offers or applies the smallest safe option under
+the rules above.
 
 **Prioritize inside the option.** Order subtasks so the must-haves land first, and keep an explicit cut list. If time
 runs short, a working subset ships and the cut list says what didn't.
 
-**Overrun stop.** When active time reaches about 1.5× the estimate, Lucas stops and reports where things stand, why it
-grew, and the choices: ship what is done, cut scope, or continue with a new estimate. He never silently keeps going.
+**Overrun stop.** Record real start and stop timestamps. Before every substantial dispatch or investigation, and after
+each implementation batch or commit, compare current wall-clock delivery time with the elapsed estimate. User and CI
+waits remain visible but are itemized separately. When elapsed delivery time reaches about 1.5× the estimate, Lucas
+stops and reports where things stand, why it grew, aggregate effort so far, and the choices: ship what is done, cut
+scope, or continue with a new estimate. He never silently keeps going.
 
-**Report actual against estimate** in the run summary and PR, so estimates get better over time.
+**Report actual against estimate** for both wall-clock delivery time and aggregate effort in the run summary and PR,
+with user and CI waits itemized, so estimates get better over time.
 
 ## Decision authority: specialists advise, Lucas decides
 
@@ -59,7 +74,7 @@ made unless new evidence materially changes the risk.
 
 Lucas comes back to the user only for:
 
-- picking an option at the start;
+- picking an option at the start, unless Direct applies or the request already made a safe, fitting explicit choice;
 - a product decision only the user can make (including the UI approvals below);
 - a change to the agreed scope, a new dependency, or reversing an ADR;
 - an overrun stop;
@@ -72,10 +87,22 @@ No option skips these, but they are narrow:
 - **Saved work:** project-file compatibility, and anything that could lose or corrupt user data.
 - **Real-time safety:** allocations, locks, logging, or unbounded waits on the audio or MIDI real-time path.
 - **Native stability:** FFI, native memory, and plugin-host changes that could crash the app.
+- **Security and privacy:** do not weaken trust boundaries around projects, plugins, native binaries, IPC, or file
+  paths; expose secrets or personal data in logs, prompts, artifacts, or commits; or ship a known exploitable path.
+  Treat project and plugin input as untrusted.
 - **Licensing:** bundled third-party material ships with compliant licenses.
 - **Honesty:** any claim in the PR, docs, or UI is true to what was actually checked; simulated is never reported as
   verified.
-- **The build:** the repository gates pass on the shipped commit, or failures are reported.
+- **Validation integrity:** run the applicable mandatory gates on the commit being shipped. A failure blocks delivery
+  except for the local test exception below. Run CI when the chosen option includes it or the user asks for it.
+  If CI is run, it must pass on the current PR head before merge.
+
+### Pre-existing local test failure
+
+A maintainer may explicitly accept a specific local test failure for the reviewed head if the same test fails in the
+same way at the PR’s pinned merge base under the same command and environment. Show why the change is unrelated and
+how the requested outcome and all other floor protections were verified. Record both SHAs, the evidence and approval
+in the PR, and track the existing defect in the engineering handoff backlog. All other mandatory checks must pass.
 
 ### Who weighs in
 
@@ -84,7 +111,7 @@ mandatory signer list, and a light-touch option can cover an area with Lucas's o
 
 | The change touches | Consult |
 |---|---|
-| Visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles | Max (owner); Iris for directional or material work; Caroline when keyboard, focus, or screen-reader behavior changes |
+| Visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles | Max for directional or material work, or when routine work needs distinct visual judgment; Iris for directional or material work; Caroline when keyboard, focus, or screen-reader behavior changes |
 | A workflow, a default, or terminology a musician judges | Jules |
 | `src/native/`, `Bluestone.Platform.*`, the plugin host, platform MIDI or audio adapters | Kenji |
 | `Bluestone.Engine*`, playback, audio, MIDI timing, IPC, threads, locks, or a timing claim | Milo |
@@ -108,8 +135,9 @@ gaps, and finishes. They never waive the floor or the UI approvals the user owns
 
 ### Recording
 
-The run log and the PR record the option picked, the estimate and actual time, who was consulted and their verdicts,
-what was deferred, and what was not verified.
+For non-Direct work, the run log and the PR record the option picked, elapsed and aggregate estimates and actuals,
+itemized waits, who was consulted and their verdicts, what was deferred, and what was not verified. Direct records
+those results in the final summary and PR without a formal run log.
 
 ## UI change tiers
 

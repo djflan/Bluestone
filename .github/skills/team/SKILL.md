@@ -1,6 +1,6 @@
 ---
 name: team
-description: 'Run a named, multi-agent team on a request. Use when the user types /team or asks for "the team", a council, a multi-perspective review, or end-to-end delivery by specialists. Modes: build (feature or fix to an open PR), council (independent views on a design question, no code), review (multi-persona review of a branch or PR), triage (bug or issue to a scoped, estimated plan). Lucas, the product and delivery lead, offers options with estimates, gets the user''s pick, then staffs and decides within it.'
+description: 'Run Bluestone delivery on a request. Use when the user types /team or asks for the team, a council, a multi-perspective review, or end-to-end delivery. Modes: build (feature or fix to an open PR), council (independent views on a design question, no code), review (multi-persona review of a branch or PR), triage (bug or issue to a scoped, estimated plan). Lucas executes Direct work alone or offers options with estimates, accepts the user''s choice, then staffs only as needed.'
 argument-hint: '[build|council|review|triage] <request, issue number, PR number, or question>'
 ---
 
@@ -33,9 +33,9 @@ Then read the mode's playbook and follow it exactly:
 
 ## 2. Shared rules
 
-- **Options first:** in build mode, scope quickly and present options with estimates
-  (`references/governance.md`, "Delivery options and the budget"); start building only after the user picks one,
-  except for trivial work.
+- **Direct or options first:** in build mode, execute eligible Direct work with a one-line scope and elapsed estimate.
+  Otherwise present options with elapsed and aggregate estimates (`references/governance.md`, "Delivery options and
+  the budget") and start after the user picks one. An explicit safe choice in the request needs no reconfirmation.
 - **Roster and staffing:** `references/roster.md`. Staff the smallest team the picked option needs; often Lucas alone.
 - **Models:** `references/model-selection.md`. You pick a model for every dispatch; agent files never pin one.
 - **Dispatch prompts and output formats:** `references/handoff.md`. Each dispatch must stand on its own.
@@ -55,7 +55,8 @@ Then read the mode's playbook and follow it exactly:
 - **Dispatching a member:** use the member's custom agent type when the client exposes it; otherwise use a
   `general-purpose` agent with the handoff prompt (which points it at its charter). Never use the built-in
   `code-review` agent type for reviewers.
-- **Run log:** keep one at `<session folder>/files/team/<YYYYMMDD-HHMM>-<slug>.md`. Never write it in the repository.
+- **Run log:** keep one at `<session folder>/files/team/<YYYYMMDD-HHMM>-<slug>.md` for non-Direct work. Direct needs
+  only the one-line scope/estimate and final results. Never write a run log in the repository.
 - **Progress updates:** one short line per phase: who is working, on which model, and on what. Don't narrate
   individual tool calls.
 
@@ -65,8 +66,9 @@ Then read the mode's playbook and follow it exactly:
 is open). Make reasonable technical assumptions, record them in the run log, and keep going; UI approvals required
 by the recorded tier are not assumptions. Stop and report when:
 
-- the options and estimates are ready for the user's pick (build mode, unless the work is trivial);
-- active time reaches about 1.5× the estimate (the overrun stop in `governance.md`);
+- the options and estimates are ready for the user's pick (build mode, unless Direct applies or the user already made
+  a safe explicit choice);
+- wall-clock delivery time reaches about 1.5× the elapsed estimate (the overrun stop in `governance.md`);
 - directional UI is ready for the user's pick among 2-4 rendered directions, before production implementation;
 - directional or material UI has final screenshots ready for the user approval required before opening or updating
   its PR;
@@ -97,7 +99,8 @@ Never, in any mode:
 
 ## 4. Finish
 
-Close with a short summary: mode, the option picked, estimate against actual active time, team and models, what was
+Close with a short summary: mode, the option picked, elapsed and aggregate estimates against actuals, itemized waits,
+team and models, what was
 decided or delivered (with links), findings by severity with their outcomes (fixed, backlogged, or dropped and why),
 what was not verified, and anything deferred. For build mode, include the PR
 link.

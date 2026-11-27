@@ -5,7 +5,7 @@ required reading, quality bar, output contract, and limits. Lucas reads a member
 
 | File | Member | Role | Writes |
 |---|---|---|---|
-| `lucas` | Lucas | Product and delivery lead: scopes, estimates options, staffs, picks models, decides, synthesizes | the run log |
+| `lucas` | Lucas | Product and delivery lead: executes Direct work; otherwise scopes, estimates options, staffs, picks models, decides, synthesizes | files Lucas edits himself and the session run log when required |
 | `mike` | Mike | Builder | production code and tests |
 | `alice` | Alice | QA | the test files Lucas assigns her |
 | `grace` | Grace | Skeptic reviewer | nothing |
@@ -28,11 +28,11 @@ Staff the smallest team the picked option needs (`governance.md`, "Delivery opti
 Lucas alone. A member joins for a concrete expertise gap or a floor risk the option touches. A member with nothing to
 look at is noise.
 
-| The change touches | Add |
+| The option needs | Consider |
 |---|---|
 | Directional or material `.axaml`, `Theme/`, `Controls/`, `Views/`, or visible behavior | Max; Caroline when keyboard, focus, or a new flow is involved |
-| Routine visual correction | Max, or Lucas alone for a small fix |
-| A new workflow, a default, terminology, or anything a musician sees | Jules |
+| Routine visual correction | Lucas alone by default; Max only when a distinct visual judgment is needed |
+| A new workflow, a default, or terminology a musician judges | Jules |
 | Visual identity, a new control family, theme presets, or a look-and-feel direction | Iris (with Max) |
 | More than one project layer, a new abstraction, a protocol, or a format | Theo |
 | `Bluestone.Engine*`, `Playback`, `Audio`, `Signal`, `Midi` timing, IPC, threads, locks | Milo |
@@ -45,7 +45,8 @@ look at is noise.
   release material.
 - **council:** 3–5 members whose views actually differ on the question. Always include Jules for product questions
   and Theo for structural ones.
-- **review:** use one Grace for ordinary localized work. Use independent Grace reviews from two model families for
+- **review:** the review-mode request itself authorizes independent review. Use one Grace for ordinary localized work.
+  Use independent Grace reviews from two model families for
   high-risk or broad changes: concurrency, real-time paths, protocols or formats, security, data-loss risk, major
   cross-layer work, or a large diff where a miss is expensive. Add specialists for touched risks. Alice joins when
   tests changed, are missing, or need lifecycle/flakiness scrutiny.

@@ -8,7 +8,7 @@ argument-hint: 'Describe the outcome, constraints, and any hard deadline'
 
 Deliver the requested outcome with the smallest safe change set. Optimize for short feedback loops and a clear finish, not for exhaustive exploration or repeated reassurance.
 
-Bluestone has one user today. Spend verification where a miss would be expensive or hard to undo (the floor in `.github/skills/team/references/governance.md`: saved work, real-time safety, native stability, licensing, honest claims, the build). Fix everything else forward. Before any investigation, ask: could the answer change what we ship, and would a miss be expensive or hard to undo? If not, note it and move on.
+Bluestone has one user today. Spend verification where a miss would be expensive or hard to undo (the floor in `.github/skills/team/references/governance.md`: saved work, real-time safety, native stability, security/privacy, licensing, honest claims, validation integrity). Fix everything else forward. Before any investigation, ask: could the answer change what we ship, and would a miss be expensive or hard to undo? If not, note it and move on.
 
 ## When to Use
 
@@ -18,11 +18,15 @@ Bluestone has one user today. Spend verification where a miss would be expensive
 
 ## 1. Lock the Scope
 
-1. Restate the observable outcome, hard constraints, and acceptance checks in a few bullets, with an estimate of active time. Under `/team`, this is part of the options the user picks from.
+1. Restate the observable outcome, hard constraints, and acceptance checks in a few bullets, with separate elapsed
+   delivery and aggregate-effort estimates. Under `/team`, this is part of the options the user picks from. Direct
+   work needs only a one-line outcome and elapsed estimate.
 2. Separate required work from adjacent ideas. Put deferred ideas in a short list; do not implement them without authorization.
 3. Resolve only decisions that block safe implementation. For decisions that can be reversed cheaply, choose the repository convention and proceed.
 4. If new information changes a constraint, revise the scope once and continue from the new constraint. Do not reopen settled decisions, or gaps the user accepted, without new evidence that materially changes the risk.
-5. Check elapsed active time at each commit. At about 1.5× the estimate, stop and report where things stand, why, and the choices (ship what's done, cut scope, or continue with a new estimate).
+5. Record real timestamps. Check wall-clock delivery time before substantial dispatch or investigation and after each
+   batch or commit. At about 1.5× the elapsed estimate, stop and report where things stand, why, aggregate effort,
+   itemized waits, and the choices (ship what's done, cut scope, or continue with a new estimate).
 
 ## 2. Route to the Owner
 
@@ -45,14 +49,15 @@ After the first substantive edit, run its narrowest useful check before reading 
 
 1. Focused test or behavior check for the touched code.
 2. Focused build/typecheck for the owning project.
-3. Full required format, build, and test gates once after implementation stabilizes.
+3. Run the applicable gates from `pr-readiness` step 7 once after implementation stabilizes. For cosmetic work,
+   include the scoped format check when C# files changed.
 4. Runtime, hardware, allocation, or performance probes only where the change makes those claims or changes those paths.
 
 Do not rerun the full suite after every small edit. When a focused check fails, repair that slice and rerun that check; widen only after it passes. Report skipped hardware/platform tests and unverified physical behavior explicitly.
 
 ## 5. Bound Review Work
 
-- Run the repository's pre-PR readiness workflow once after local gates pass, at the depth the change warrants.
+- Run the repository's pre-PR readiness workflow once local gate results are available, at the depth the change warrants.
 - Fix findings this change caused, missed acceptance checks, and floor items. Put other real defects in the backlog; drop speculative ones.
 - Group review findings by root cause. Fix the complete related set in one batch, then run the narrow checks they affect and the required gates once.
 - For each review thread, verify the comment, make or explain the change, post one specific reply, and confirm the reply exists before resolving the thread. Do not bulk-resolve unverified comments.
@@ -64,7 +69,7 @@ Do not rerun the full suite after every small edit. When a focused check fails, 
 - After starting it, inspect the workflow run once and identify its run ID and required jobs.
 - Poll only after a meaningful interval or a notification. Do not repeatedly query an unchanged pending state.
 - Act immediately on a failed job: read its log, identify the failing command, fix the cause, push one follow-up commit, and run CI once more.
-- When a run was started, never merge with it failing unless the user explicitly authorizes it. Distinguish queued, running, failed, canceled, and skipped jobs accurately.
+- If CI is run, it must pass on the current PR head before merge. Distinguish queued, running, failed, canceled, and skipped jobs accurately.
 - Stop once the agreed checks are green, review threads are handled, and the requested merge/release action is complete.
 
 ## Progress Updates
@@ -74,7 +79,7 @@ Keep updates short and state only: current work, the next check, and any real bl
 ## Done Means
 
 - The requested behavior and explicit constraints are satisfied.
-- Focused validation and required repository gates pass, or remaining failures are clearly reported.
+- Applicable mandatory gates pass or meet the [pre-existing local test exception](../team/references/governance.md#pre-existing-local-test-failure).
 - Review comments are replied to and resolved only after verification.
 - The branch/PR/merge state matches the user's request.
-- Deferred ideas remain deferred, and actual time is reported against the estimate.
+- Deferred ideas remain deferred, and elapsed and aggregate actuals are reported against their estimates.
