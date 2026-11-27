@@ -16,10 +16,17 @@ public sealed class DisplaySettingsTests : IDisposable
     {
         var store = new DisplaySettingsStore(File());
         Assert.Equal(new DisplaySettings(), store.Load());
-
-        store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.Peak });
         Assert.Equal(JunctionLevelStyle.Peak, store.Load().LevelStyle);
-        Assert.Contains("\"peak\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
+        Assert.Equal(JunctionLevelStyle.Peak, new DisplayViewModel().LevelStyle);
+
+        store.Save(new DisplaySettings { LevelStyle = JunctionLevelStyle.RmsAndPeak });
+        Assert.Equal(JunctionLevelStyle.RmsAndPeak, store.Load().LevelStyle);
+        Assert.Contains("\"rmsAndPeak\"", System.IO.File.ReadAllText(File()), StringComparison.Ordinal);
+        var display = new DisplayViewModel();
+        display.Use(store);
+        Assert.Equal(JunctionLevelStyle.RmsAndPeak, display.LevelStyle);
+        display.LedFade = false;
+        Assert.Equal(JunctionLevelStyle.RmsAndPeak, store.Load().LevelStyle);
 
         System.IO.File.WriteAllText(File(), "{ not json");
         Assert.Equal(new DisplaySettings(), store.Load());
@@ -42,7 +49,7 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(written, System.IO.File.GetLastWriteTimeUtc(File()));
 
         display.LevelStyleChoice = DisplayViewModel.LevelStyles.Single(l => l.Style == JunctionLevelStyle.RmsAndPeak);
-        Assert.Equal(new DisplaySettings(), new DisplaySettingsStore(File()).Load());
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.RmsAndPeak }, new DisplaySettingsStore(File()).Load());
     }
 
     [Fact]
@@ -56,10 +63,10 @@ public sealed class DisplaySettingsTests : IDisposable
         var reports = new List<string>();
         display.SaveFailed += (_, reason) => reports.Add(reason);
 
-        display.LevelStyle = JunctionLevelStyle.Peak;
+        display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
         display.LedFade = false;
         Assert.Single(reports);
-        Assert.Equal(JunctionLevelStyle.Peak, display.LevelStyle);
+        Assert.Equal(JunctionLevelStyle.RmsAndPeak, display.LevelStyle);
 
         System.IO.File.Delete(blocker);
         display.LedWarmup = false;
@@ -88,7 +95,7 @@ public sealed class DisplaySettingsTests : IDisposable
         var saved = System.IO.File.ReadAllText(File());
         Assert.DoesNotContain("indicatorSize", saved, StringComparison.Ordinal);
         Assert.DoesNotContain("ledShape", saved, StringComparison.Ordinal);
-        Assert.Equal(new DisplaySettings(), store.Load());
+        Assert.Equal(new DisplaySettings { LevelStyle = JunctionLevelStyle.RmsAndPeak }, store.Load());
     }
 
     [Fact]
@@ -256,7 +263,7 @@ public sealed class DisplaySettingsTests : IDisposable
         var store = new DisplaySettingsStore(path);
         var display = new DisplayViewModel();
         display.Use(store);
-        display.LevelStyle = JunctionLevelStyle.Peak;
+        display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
         var before = System.IO.File.ReadAllText(path);
         var notified = 0;
         display.Mixer.PropertyChanged += (_, e) => notified += e.PropertyName == nameof(GradientEditorViewModel.Gradient) ? 1 : 0;

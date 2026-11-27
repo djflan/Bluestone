@@ -565,19 +565,22 @@ public sealed class DeviceViewTests
         }
 
         app.Settle();
-        Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.RmsAndPeak, view.Display.LevelStyle);
-        foreach (var ladder in new[] { seam.Ladder, outLadder })
-        {
-            Assert.Equal(-20, ladder.Shown.Left, 1);
-            Assert.Equal(-6, ladder.Shown.LeftHold, 1);
-        }
-
-        view.Display.LevelStyle = Bluestone.Presentation.JunctionLevelStyle.Peak;
-        app.Settle();
+        Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.Peak, new ChainJunction().LevelStyle);
+        Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.Peak, new ChainOutMeter().LevelStyle);
+        Assert.Equal(Bluestone.Presentation.JunctionLevelStyle.Peak, view.Display.LevelStyle);
         foreach (var ladder in new[] { seam.Ladder, outLadder })
         {
             Assert.Equal(-6, ladder.Shown.Left, 1);
             Assert.True(double.IsNaN(ladder.Shown.LeftHold), "Peak alone has no held cell.");
+        }
+
+        // A saved or explicitly chosen RMS + held preference still works.
+        view.Display.LevelStyle = Bluestone.Presentation.JunctionLevelStyle.RmsAndPeak;
+        app.Settle();
+        foreach (var ladder in new[] { seam.Ladder, outLadder })
+        {
+            Assert.Equal(-20, ladder.Shown.Left, 1);
+            Assert.Equal(-6, ladder.Shown.LeftHold, 1);
         }
     });
 

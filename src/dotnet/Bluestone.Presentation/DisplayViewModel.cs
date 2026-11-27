@@ -8,10 +8,10 @@ namespace Bluestone.Presentation;
 /// <summary>What a junction's level shows.</summary>
 public enum JunctionLevelStyle
 {
-    /// <summary>Lit to the average (RMS) level, with the peak held as one line above it (the default).</summary>
+    /// <summary>Lit to the average (RMS) level, with the peak held as one line above it.</summary>
     RmsAndPeak,
 
-    /// <summary>A single bar lit to the peak level.</summary>
+    /// <summary>A single bar lit to the peak level (the default).</summary>
     Peak,
 }
 
@@ -21,7 +21,7 @@ public sealed record DisplaySettings
     /// <summary>The colour of a lit MIDI LED by default: the accent (Palette.Accent).</summary>
     public const string DefaultMidiColour = "#3CCBF4";
 
-    public JunctionLevelStyle LevelStyle { get; init; } = JunctionLevelStyle.RmsAndPeak;
+    public JunctionLevelStyle LevelStyle { get; init; } = JunctionLevelStyle.Peak;
 
     /// <summary>The colours the mixer's meters run through. The clip lamp is not part of it.</summary>
     public SignalGradient MixerGradient { get; init; } = SignalGradient.Default;
@@ -210,13 +210,13 @@ public sealed partial class DisplayViewModel : ObservableObject
     /// <summary>What every Device View's junction levels show.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LevelStyleChoice))]
-    public partial JunctionLevelStyle LevelStyle { get; set; } = JunctionLevelStyle.RmsAndPeak;
+    public partial JunctionLevelStyle LevelStyle { get; set; } = JunctionLevelStyle.Peak;
 
     /// <summary><see cref="LevelStyle"/> as a list choice, for the Settings page.</summary>
     public LevelStyleOption LevelStyleChoice
     {
         get => LevelStyles.First(s => s.Style == LevelStyle);
-        set => LevelStyle = value?.Style ?? JunctionLevelStyle.RmsAndPeak;
+        set => LevelStyle = value?.Style ?? JunctionLevelStyle.Peak;
     }
 
     /// <summary>

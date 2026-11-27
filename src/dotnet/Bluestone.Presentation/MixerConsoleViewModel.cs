@@ -316,6 +316,12 @@ public abstract partial class MixerMeterStripViewModel : ObservableObject
     public partial double MeterRightValue { get; private set; } = double.NaN;
 
     [ObservableProperty]
+    public partial double MeterLeftRmsValue { get; private set; } = double.NaN;
+
+    [ObservableProperty]
+    public partial double MeterRightRmsValue { get; private set; } = double.NaN;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MeterPeakHold))]
     public partial double MeterLeftPeakHold { get; private set; } = MeterLevels.FloorDecibels;
 
@@ -470,6 +476,9 @@ public abstract partial class MixerMeterStripViewModel : ObservableObject
         MeterMode = reading?.Mode ?? fallbackMode;
         MeterLeftValue = reading?.LeftValue ?? double.NaN;
         MeterRightValue = reading?.RightValue ?? double.NaN;
+        var showRms = reading is { Mode: MixerMeterMode.PeakRms };
+        MeterLeftRmsValue = showRms ? Meter.RmsLeft : double.NaN;
+        MeterRightRmsValue = showRms ? Meter.RmsRight : double.NaN;
         IsMeterReady = reading?.IsReady ?? false;
         HasMeterReading = reading is not null;
         MeterValue = reading is null

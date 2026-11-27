@@ -43,7 +43,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     public static readonly StyledProperty<TimeSpan> LampReleaseProperty = AvaloniaProperty.Register<ChainJunction, TimeSpan>(nameof(LampRelease), TimeSpan.FromMilliseconds(140));
 
     /// <summary>What the ladder shows (Settings ▸ Display): the average level with the peak held, or the peak alone.</summary>
-    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainJunction, JunctionLevelStyle>(nameof(LevelStyle));
+    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainJunction, JunctionLevelStyle>(nameof(LevelStyle), JunctionLevelStyle.Peak);
 
     internal const double IconY = 14;
     internal const double IconSize = 15;

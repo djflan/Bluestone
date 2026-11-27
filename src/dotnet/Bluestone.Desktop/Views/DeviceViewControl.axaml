@@ -78,7 +78,7 @@
                   <!-- The junction arriving at the device (ADR 0037): its MIDI port, lit while notes pass, and its level ladder. -->
                   <Border Classes="chainLink" Classes.bypassed="{Binding IsBypassed}">
                     <controls:ChainJunction Signal="{Binding Arriving}" IsQuiet="{Binding IsBypassed}"
-                                            LevelStyle="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.LevelStyle, FallbackValue=RmsAndPeak}"
+                                            LevelStyle="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).Display.LevelStyle, FallbackValue=Peak}"
                                             InsertCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).InsertAtJunctionCommand, FallbackValue={x:Null}}"
                                             RouteCommand="{Binding $parent[ItemsControl].((vm:DeviceViewViewModel)DataContext).RouteFromJunctionCommand, FallbackValue={x:Null}}" />
                   </Border>

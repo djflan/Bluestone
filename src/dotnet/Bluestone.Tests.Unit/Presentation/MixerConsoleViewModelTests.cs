@@ -208,7 +208,40 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
             Assert.Equal(expectedRightHold, strip.MeterRightPeakHold, 5);
             Assert.Equal(MeterReading.ToDecibels(0.35f), strip.MeterLeftValue, 5);
             Assert.Equal(MeterReading.ToDecibels(0.25f), strip.MeterRightValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.2f), strip.MeterLeftRmsValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.15f), strip.MeterRightRmsValue, 5);
         }
+
+        // Different fall rates can leave the RMS above the falling peak.
+        _vm.MixerConsole.MeterSource = _ => new MeterReading(0.05f, 0.2f, 0.1f, 0.05f);
+        _vm.MixerConsole.RefreshMeters(timestamp + 2);
+        Assert.True(row.MeterLeftRmsValue > row.MeterLeftValue);
+
+        _vm.MixerConsole.MeterSource = _ => null;
+        _vm.MixerConsole.RefreshMeters(timestamp + 3);
+        Assert.True(double.IsNaN(row.MeterLeftRmsValue));
+        Assert.True(double.IsNaN(_vm.MixerConsole.Master.MeterRightRmsValue));
+    }
+
+    [Fact]
+    public async Task StereoRmsValues_ClearInOtherModes_AndReturnInPeakRms()
+    {
+        await SeedAsync(Track.Create("Audio", TrackRole.Audio));
+        var row = Assert.Single(_vm.MixerConsole.Tracks);
+        var levels = new MeterReading(0.5f, 0.4f, 0.1f, 0.2f);
+        var timestamp = Stopwatch.GetTimestamp();
+
+        row.UpdateMeter(new MixerMeterReading(levels, MixerMeterMode.PeakRms, -6, -8, true), MixerMeterMode.PeakRms, timestamp);
+        Assert.Equal(MeterReading.ToDecibels(0.1f), row.MeterLeftRmsValue, 5);
+        Assert.Equal(MeterReading.ToDecibels(0.2f), row.MeterRightRmsValue, 5);
+
+        row.UpdateMeter(new MixerMeterReading(levels, MixerMeterMode.Vu, -6, -8, true), MixerMeterMode.Vu, timestamp + 1);
+        Assert.True(double.IsNaN(row.MeterLeftRmsValue));
+        Assert.True(double.IsNaN(row.MeterRightRmsValue));
+
+        row.UpdateMeter(new MixerMeterReading(levels, MixerMeterMode.PeakRms, -6, -8, true), MixerMeterMode.PeakRms, timestamp + 2);
+        Assert.Equal(MeterReading.ToDecibels(0.1f), row.MeterLeftRmsValue, 5);
+        Assert.Equal(MeterReading.ToDecibels(0.2f), row.MeterRightRmsValue, 5);
     }
 
     [Fact]
@@ -476,6 +509,8 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
             strip.PropertyChanged += (_, e) => clips += e.PropertyName == nameof(MixerMeterStripViewModel.IsClipped) ? 1 : 0;
 
             strip.UpdateMeter(new MixerMeterReading(new MeterReading(1.2f, 0.5f, 0.5f, 0.3f), mode, -6, -9, true), mode, timestamp);
+            Assert.Equal(mode != MixerMeterMode.PeakRms, double.IsNaN(strip.MeterLeftRmsValue));
+            Assert.Equal(mode != MixerMeterMode.PeakRms, double.IsNaN(strip.MeterRightRmsValue));
             strip.UpdateMeter(new MixerMeterReading(new MeterReading(0.1f, 0.1f, 0.05f, 0.05f), mode, -30, -30, true), mode, timestamp + 1);
             strip.UpdateMeter(null, mode, timestamp + 2);
 
@@ -599,6 +634,8 @@ public sealed class MixerConsoleViewModelTests : IAsyncLifetime
         Assert.True(row.MeterPeakHold > row.MeterValue);
         Assert.Equal("-3.6", row.PeakText);
         Assert.Contains(nameof(row.MeterValue), changed);
+        Assert.Contains(nameof(row.MeterLeftRmsValue), changed);
+        Assert.Contains(nameof(row.MeterRightRmsValue), changed);
         Assert.Contains(nameof(row.MeterPeakHold), changed);
         Assert.Contains(nameof(row.PeakText), changed);
 
