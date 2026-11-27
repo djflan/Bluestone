@@ -71,7 +71,7 @@ public sealed class BrightnessFader : MixerValueControl
     }
 
     private (Color Colour, IImmutableBrush? Brush) _track;
-    private (Color Colour, IPen[]? Glow, IPen? Pen) _mark;
+    private (Color Colour, IPen[]? Glow, IPen? Pen, int GlowVersion) _mark;
 
     public override void Render(DrawingContext context)
     {
@@ -101,9 +101,10 @@ public sealed class BrightnessFader : MixerValueControl
         var mark = new ColourHsv(Hue, Saturation, Value / Math.Max(1e-9, Maximum)).ToColor();
         var from = new Point(cap.Left + 4, capY);
         var to = new Point(cap.Right - 4, capY);
-        if (_mark.Colour != mark || _mark.Glow is null || _mark.Pen is null)
+        // The glow pens hold the glow strength they were built at, so a glow change rebuilds them too.
+        if (_mark.Colour != mark || _mark.Glow is null || _mark.Pen is null || _mark.GlowVersion != Glow.Version)
         {
-            _mark = (mark, Glow.CreatePens(mark, 1.4, 2), new ImmutablePen(new ImmutableSolidColorBrush(mark), 2));
+            _mark = (mark, Glow.CreatePens(mark, 1.4, 2), new ImmutablePen(new ImmutableSolidColorBrush(mark), 2), Glow.Version);
         }
 
         Glow.Line(context, from, to, _mark.Glow);

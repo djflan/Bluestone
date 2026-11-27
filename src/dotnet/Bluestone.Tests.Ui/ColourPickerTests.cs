@@ -604,7 +604,9 @@ public sealed class ColourPickerTests : IDisposable
             app.Click(midiChip);
             app.Click(PickerSwatch(popup, "#E0A43A"));
             var unscrolled = popup.PickerBounds;
-            scroller.Offset = new Vector(0, scroller.Extent.Height - scroller.Viewport.Height);
+            // As far as the page goes while the chip stays in view (further, the chip is gone and the edit is cancelled).
+            var chipTop = midiChip.TranslatePoint(default, (Visual)scroller.Content!)!.Value.Y;
+            scroller.Offset = new Vector(0, Math.Min(scroller.Extent.Height - scroller.Viewport.Height, chipTop - 40));
             app.Settle();
             app.Settle();
             Assert.True(scroller.Offset.Y > 100, $"The page did not scroll ({scroller.Offset.Y}).");
