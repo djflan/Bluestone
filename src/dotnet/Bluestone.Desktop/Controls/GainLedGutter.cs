@@ -8,8 +8,9 @@ namespace Bluestone.Desktop.Controls;
 /// <summary>
 /// A column of round gain LEDs set into a recessed gutter beside a fader: a narrow dark band with rounded ends, an inner
 /// shadow from above and a faint lit lip, running the full fader travel. The LEDs light from the bottom up to the gain on
-/// the console taper, in the gain gradient (<see cref="MeterGradient.Gain"/>, violet to rose by default), each with a tight glow and a
-/// small specular dot; unlit LEDs stay dark at <see cref="Palette.UnlitAlpha"/>. An LED fades as it goes dark
+/// the console taper, in the gain gradient (<see cref="MeterGradient.Gain"/>, violet to rose by default). While the LED glow
+/// is on (<see cref="Glow"/>) a lit LED is a lens, a hot core going to its saturated edge with a specular, throwing baked
+/// light (<see cref="LedLight"/>) on the gutter; off, it is a flat lit dot with a small highlight; unlit LEDs stay dark at <see cref="Palette.UnlitAlpha"/>. An LED fades as it goes dark
 /// (<see cref="FadeMs"/>) and warms up as it lights (<see cref="WarmupMs"/>), on <see cref="LedMotion"/>. Purely a
 /// display: the fader beside it is the control.
 /// </summary>
@@ -32,18 +33,21 @@ public sealed class GainLedGutter : Control
     /// <summary>How long an LED takes to light, in milliseconds.</summary>
     internal const double WarmupMs = 20;
 
-    private const double LitTier = 0.8;
     private const int Stride = LedLevels.Steps + 1;
+    private const int LightStride = LedLight.Levels + 1;
+    private static readonly IBrush Specular = ConsolePaint.Brush(ConsolePaint.Alpha(ConsolePaint.White, 0.8));
 
     private Color[] _colors = [];
     private IBrush[] _lit = [];
     private IBrush[] _unlit = [];
-    private IImmutableSolidColorBrush[][] _glows = [];
+    private IBrush[] _lens = [];
+    private LedSprite?[] _lights = [];
     private IBrush[] _steps = [];
-    private IImmutableSolidColorBrush[][] _stepGlows = [];
     private readonly IPen[] _stepRims = new IPen[Stride];
     private readonly IBrush[] _stepHighlights = new IBrush[Stride];
     private int _version = -1;
+    private int _glowVersion = -1;
+    private double _litRadius = -1;
     private readonly LedLevels _leds;
 
     static GainLedGutter()
@@ -119,17 +123,34 @@ public sealed class GainLedGutter : Control
         var fraction = Value > MixerRail.GainFloor ? ConsoleRail.Position(Value) : -1;
         var highlight = _stepHighlights[LedLevels.Steps];
         var rim = _stepRims[0];
+        var glow = Glow.IsOn;
         using (context.PushOpacity(IsEnabled ? 1 : 0.5))
         {
+            // The light first, every LED's, so a neighbour's spill never lies over a lens.
             for (var k = 0; k < count; k++)
             {
                 var f = k / (double)(count - 1);
-                var centre = new Point(x, Math.Round(bottom - (f * (bottom - top))) + 0.5);
                 _leds.Set(k, f <= fraction + 1e-6, now, fresh);
-                var step = _leds.Step(k);
-                if (step == LedLevels.Steps)
+                var level = glow ? LedLight.Level(_leds.Step(k)) : 0;
+                if (level > 0 && _lights[(k * LightStride) + level] is { } light)
                 {
-                    Glow.Ellipse(context, centre, radius, _glows[k]);
+                    var centre = Centre(x, bottom, top, f);
+                    light.Draw(context, new Rect(centre.X - radius, centre.Y - radius, 2 * radius, 2 * radius));
+                }
+            }
+
+            for (var k = 0; k < count; k++)
+            {
+                var centre = Centre(x, bottom, top, k / (double)(count - 1));
+                var step = _leds.Step(k);
+                if (step == LedLevels.Steps && glow)
+                {
+                    // A physical LED: a hot core going to the saturated edge, and the lens's specular.
+                    context.DrawEllipse(_lens[k], null, centre, radius, radius);
+                    context.DrawEllipse(Specular, null, new Point(centre.X - (radius * 0.3), centre.Y - (radius * 0.36)), radius * 0.3, radius * 0.24);
+                }
+                else if (step == LedLevels.Steps)
+                {
                     context.DrawEllipse(_lit[k], null, centre, radius, radius);
                     context.DrawEllipse(highlight, null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
                 }
@@ -139,14 +160,15 @@ public sealed class GainLedGutter : Control
                 }
                 else
                 {
-                    // Between dark and lit: glow, fill, rim, and dot each part of the way, all prebuilt in EnsureColors.
-                    Glow.Ellipse(context, centre, radius, _stepGlows[(k * Stride) + step]);
+                    // Between dark and lit: fill, rim, and dot each part of the way, all prebuilt in EnsureColors.
                     context.DrawEllipse(_steps[(k * Stride) + step], _stepRims[step], centre, radius, radius);
                     context.DrawEllipse(_stepHighlights[step], null, new Point(centre.X - 0.5, centre.Y - 0.6), 0.8, 0.8);
                 }
             }
         }
     }
+
+    private static Point Centre(double x, double bottom, double top, double f) => new(x, Math.Round(bottom - (f * (bottom - top))) + 0.5);
 
     /// <summary>The recessed band: darker than the well, shadowed from above and on the left, with a faint lit lip.</summary>
     private static void Gutter(DrawingContext context, Rect rect)
@@ -183,32 +205,54 @@ public sealed class GainLedGutter : Control
             }
         }
 
-        if (_colors.Length == count && _version == gradient.Version)
+        var radius = LedRadius;
+        if (_colors.Length == count && _version == gradient.Version && _glowVersion == Glow.Version && _litRadius == radius)
         {
             return;
         }
 
         _version = gradient.Version;
+        _glowVersion = Glow.Version;
+        _litRadius = radius;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
-        _glows = new IImmutableSolidColorBrush[count][];
+        _lens = new IBrush[count];
+        _lights = new LedSprite?[count * LightStride];
         _steps = new IBrush[count * Stride];
-        _stepGlows = new IImmutableSolidColorBrush[count * Stride][];
+        var size = new Size(2 * radius, 2 * radius);
         for (var k = 0; k < count; k++)
         {
             var color = Swatch(k / (double)(count - 1));
             _colors[k] = color;
             _lit[k] = gradient.Brush(color);
             _unlit[k] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha));
-            _glows[k] = gradient.GlowBrushes(color, LitTier);
+            _lens[k] = Lens(color);
             for (var step = 0; step <= LedLevels.Steps; step++)
             {
                 _steps[(k * Stride) + step] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * step / LedLevels.Steps)));
-                _stepGlows[(k * Stride) + step] = gradient.GlowBrushes(color, LitTier * step / LedLevels.Steps);
+            }
+
+            // The light at each level a fade passes through, baked now so a first fade allocates nothing.
+            for (var level = 1; level <= LedLight.Levels; level++)
+            {
+                _lights[(k * LightStride) + level] = gradient.Light(color, size, radius, ellipse: true, level / (double)LedLight.Levels);
             }
         }
     }
+
+    /// <summary>A lit LED's face: near-white at the hot core, the saturated colour at the edge.</summary>
+    private static IBrush Lens(Color color) => new RadialGradientBrush
+    {
+        GradientOrigin = new RelativePoint(0.42, 0.4, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Palette.Lighten(color, 0.8), 0),
+            new GradientStop(Palette.Lighten(color, 0.4), 0.4),
+            new GradientStop(Palette.Lighten(color, 0.08), 0.78),
+            new GradientStop(color, 1),
+        },
+    }.ToImmutable();
 
     /// <summary>The gain gradient at <paramref name="fraction"/> of the travel, bottom to top.</summary>
     internal static Color Swatch(double fraction) => MeterGradient.Gain.At(fraction);
@@ -220,11 +264,13 @@ public sealed class GainLedGutter : Control
     {
         base.OnAttachedToVisualTree(e);
         MeterGradient.Gain.Changed += OnGradientChanged;
+        Glow.Changed += OnGradientChanged;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         MeterGradient.Gain.Changed -= OnGradientChanged;
+        Glow.Changed -= OnGradientChanged;
         base.OnDetachedFromVisualTree(e);
     }
 

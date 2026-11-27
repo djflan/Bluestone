@@ -61,7 +61,6 @@ public sealed class ChainJunction : Control, ICustomHitTest
     private JunctionSignal? _subscribed;
     private readonly LedLevels _midi;
     private (bool, double, double, double, double, double, double, bool, bool) _described;
-    private IImmutableBrush? _bloom;
     private FormattedText? _midiCaption;
     private FormattedText? _midiCaptionLit;
     private FormattedText? _caption;
@@ -226,6 +225,7 @@ public sealed class ChainJunction : Control, ICustomHitTest
     {
         base.OnAttachedToVisualTree(e);
         LedColours.Changed += OnLedColoursChanged;
+        Glow.Changed += OnLedColoursChanged;
         OnLedColoursChanged(this, EventArgs.Empty);
         Subscribe(Signal);
         UpdateName();
@@ -236,13 +236,13 @@ public sealed class ChainJunction : Control, ICustomHitTest
     {
         Subscribe(null);
         LedColours.Changed -= OnLedColoursChanged;
+        Glow.Changed -= OnLedColoursChanged;
         base.OnDetachedFromVisualTree(e);
     }
 
-    // The MIDI LED's bloom and lit caption are built from its colour once; a new colour rebuilds them on the next frame.
+    // The MIDI LED's lit caption is built from its colour once (its bloom comes from Glow); a new colour or glow redraws.
     private void OnLedColoursChanged(object? sender, EventArgs e)
     {
-        _bloom = null;
         _midiCaptionLit = null;
         InvalidateVisual();
     }
@@ -396,18 +396,12 @@ public sealed class ChainJunction : Control, ICustomHitTest
         var glow = step / (double)LedLevels.Steps;
         if (glow > 0.01)
         {
-            _bloom ??= new RadialGradientBrush
+            if (Glow.Bloom(LedColours.Midi, Palette.GlowAlpha * 1.1) is { } bloom)
             {
-                GradientStops =
+                using (context.PushOpacity(glow))
                 {
-                    new GradientStop(ConsolePaint.Alpha(LedColours.Midi, Palette.GlowAlpha * 1.1), 0),
-                    new GradientStop(ConsolePaint.Alpha(LedColours.Midi, Palette.GlowAlpha * 1.1 * 0.35), 0.45),
-                    new GradientStop(ConsolePaint.Alpha(LedColours.Midi, 0), 1),
-                },
-            }.ToImmutable();
-            using (context.PushOpacity(glow))
-            {
-                context.DrawEllipse(_bloom, null, icon, IconSize * 1.1, IconSize * 1.1);
+                    context.DrawEllipse(bloom, null, icon, IconSize * 1.1, IconSize * 1.1);
+                }
             }
         }
 

@@ -19,7 +19,6 @@ public sealed class PowerGlyph : ToggleButton
 
     private StreamGeometry? _ring;
     private (Point, double) _ringKey;
-    private IBrush? _bloom;
     private readonly LedLevels _lamp;
 
     public PowerGlyph() => _lamp = new LedLevels(this, FadeMs, count: 1);
@@ -45,6 +44,20 @@ public sealed class PowerGlyph : ToggleButton
     protected override Size MeasureOverride(Size availableSize) => new(GlyphSize + 2, GlyphSize + 2);
 
     protected override Size ArrangeOverride(Size finalSize) => finalSize;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Glow.Changed += OnGlowChanged;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        Glow.Changed -= OnGlowChanged;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnGlowChanged(object? sender, EventArgs e) => InvalidateVisual();
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -107,16 +120,10 @@ public sealed class PowerGlyph : ToggleButton
 
         if (on && Bloom)
         {
-            _bloom ??= new RadialGradientBrush
+            if (Glow.Bloom(Palette.Accent, Palette.GlowAlpha) is { } bloom)
             {
-                GradientStops =
-                {
-                    new GradientStop(ConsolePaint.Alpha(Palette.Accent, Palette.GlowAlpha), 0),
-                    new GradientStop(ConsolePaint.Alpha(Palette.Accent, Palette.GlowAlpha * 0.35), 0.45),
-                    new GradientStop(ConsolePaint.Alpha(Palette.Accent, 0), 1),
-                },
-            }.ToImmutable();
-            context.DrawEllipse(_bloom, null, centre, size * 0.92, size * 0.92);
+                context.DrawEllipse(bloom, null, centre, size * 0.92, size * 0.92);
+            }
         }
 
         ConsolePaint.Power(context, centre, size, color, _ring!);

@@ -27,7 +27,6 @@ public sealed class TextKey : ToggleButton
     private readonly FormattedText?[] _labels = new FormattedText?[2];
     private readonly string?[] _labelTexts = new string?[2];
     private readonly LedLevels _lamp;
-    private IImmutableBrush? _bloom;
 
     public TextKey() => _lamp = new LedLevels(this, FadeMs, count: 1);
 
@@ -70,6 +69,20 @@ public sealed class TextKey : ToggleButton
         }
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Glow.Changed += OnGlowChanged;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        Glow.Changed -= OnGlowChanged;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnGlowChanged(object? sender, EventArgs e) => InvalidateVisual();
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -88,17 +101,11 @@ public sealed class TextKey : ToggleButton
             context.DrawRectangle(ConsolePaint.Brush(IsPressed ? ConsolePaint.Darker(fill, 0.15) : fill), null, face);
             using (context.PushClip(face))
             {
-                _bloom ??= new RadialGradientBrush
+                if (Glow.Bloom(Palette.Accent, Palette.GlowAlpha * 0.5) is { } bloom)
                 {
-                    GradientStops =
-                    {
-                        new GradientStop(ConsolePaint.Alpha(Palette.Accent, Palette.GlowAlpha * 0.5), 0),
-                        new GradientStop(ConsolePaint.Alpha(Palette.Accent, Palette.GlowAlpha * 0.5 * 0.35), 0.45),
-                        new GradientStop(ConsolePaint.Alpha(Palette.Accent, 0), 1),
-                    },
-                }.ToImmutable();
-                var radius = r.Width * 0.5;
-                context.DrawEllipse(_bloom, null, r.Center, radius, radius);
+                    var radius = r.Width * 0.5;
+                    context.DrawEllipse(bloom, null, r.Center, radius, radius);
+                }
             }
         }
         else

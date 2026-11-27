@@ -40,6 +40,16 @@ public sealed record DisplaySettings
 
     /// <summary>Whether LEDs warm up (ease in) rather than light at once.</summary>
     public bool LedWarmup { get; init; } = true;
+
+    /// <summary>Whether lit LEDs throw a glow. Off skips the glow drawing altogether.</summary>
+    public bool LedGlow { get; init; } = true;
+
+    /// <summary>How strong the LED glow is, in percent of the default (<see cref="MinGlowStrength"/>–<see cref="MaxGlowStrength"/>).</summary>
+    public int GlowStrength { get; init; } = DefaultGlowStrength;
+
+    public const int MinGlowStrength = 0;
+    public const int DefaultGlowStrength = 100;
+    public const int MaxGlowStrength = 200;
 }
 
 /// <summary>
@@ -91,6 +101,10 @@ public sealed class DisplaySettingsStore(string path)
                     : defaults.MidiColour,
                 LedFade = Flag(root, "ledFade") ?? defaults.LedFade,
                 LedWarmup = Flag(root, "ledWarmup") ?? defaults.LedWarmup,
+                LedGlow = Flag(root, "ledGlow") ?? defaults.LedGlow,
+                GlowStrength = root.TryGetProperty("glowStrength", out var strength) && strength.ValueKind == JsonValueKind.Number && strength.TryGetInt32(out var percent)
+                    ? Math.Clamp(percent, DisplaySettings.MinGlowStrength, DisplaySettings.MaxGlowStrength)
+                    : defaults.GlowStrength,
             };
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
@@ -238,6 +252,14 @@ public sealed partial class DisplayViewModel : ObservableObject
     [ObservableProperty]
     public partial bool LedWarmup { get; set; } = true;
 
+    /// <summary>Whether lit LEDs throw a glow. Off skips the glow drawing altogether.</summary>
+    [ObservableProperty]
+    public partial bool LedGlow { get; set; } = true;
+
+    /// <summary>How strong the LED glow is, in percent of the default; clamped to <see cref="DisplaySettings.MinGlowStrength"/>–<see cref="DisplaySettings.MaxGlowStrength"/>.</summary>
+    [ObservableProperty]
+    public partial int GlowStrength { get; set; } = DisplaySettings.DefaultGlowStrength;
+
     /// <summary>
     /// Opens a MIDI colour preview: from now <see cref="MidiColour"/> changes apply at once but are not written until
     /// <see cref="EndMidiColourPreview"/>. To cancel, set <see cref="MidiColour"/> back to the value it had before, then end
@@ -267,6 +289,8 @@ public sealed partial class DisplayViewModel : ObservableObject
             MidiColour = settings.MidiColour;
             LedFade = settings.LedFade;
             LedWarmup = settings.LedWarmup;
+            LedGlow = settings.LedGlow;
+            GlowStrength = settings.GlowStrength;
         }
         finally
         {
@@ -284,6 +308,8 @@ public sealed partial class DisplayViewModel : ObservableObject
         MidiColour = MidiColour,
         LedFade = LedFade,
         LedWarmup = LedWarmup,
+        LedGlow = LedGlow,
+        GlowStrength = GlowStrength,
     };
 
     partial void OnLevelStyleChanged(JunctionLevelStyle value) => Save();
@@ -291,6 +317,21 @@ public sealed partial class DisplayViewModel : ObservableObject
     partial void OnLedFadeChanged(bool value) => Save();
 
     partial void OnLedWarmupChanged(bool value) => Save();
+
+    partial void OnLedGlowChanged(bool value) => Save();
+
+    partial void OnGlowStrengthChanged(int value)
+    {
+        var clamped = Math.Clamp(value, DisplaySettings.MinGlowStrength, DisplaySettings.MaxGlowStrength);
+        if (clamped != value)
+        {
+            // Setting it again saves (and notifies) the clamped value.
+            GlowStrength = clamped;
+            return;
+        }
+
+        Save();
+    }
 
     partial void OnIsMidiColourPreviewingChanged(bool value)
     {

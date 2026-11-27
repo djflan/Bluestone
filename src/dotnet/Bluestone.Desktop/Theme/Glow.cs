@@ -1,6 +1,8 @@
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.VisualTree;
 
 namespace Bluestone.Desktop.Theme;
 
@@ -10,6 +12,13 @@ namespace Bluestone.Desktop.Theme;
 /// (<see cref="Palette.GlowAlpha"/>) for brighter or quieter light. Layer opacities and the brushes and pens that paint
 /// them are cached per colour and tier, so drawing a halo allocates nothing after the first time. UI thread only.
 /// </summary>
+/// <remarks>
+/// The musician's LED glow setting (Settings ▸ Display ▸ LEDs) reaches every lamp through <see cref="Use"/>:
+/// <see cref="Strength"/> scales the tiers here, the blooms (<see cref="Bloom"/>), the physical-LED light
+/// (<see cref="LedLight"/>), and the transport's glow (<see cref="GlowEffects"/>). Off, or at strength 0, every one of them
+/// draws nothing at all: no layers, no blur, no bitmaps. A selected card's halo (<see cref="Halo(DrawingContext, Rect, double, Color, double, double)"/>)
+/// marks selection, not light, and is not affected.
+/// </remarks>
 internal static class Glow
 {
     private const double Tau = 1.0 / 3;
@@ -17,8 +26,97 @@ internal static class Glow
     private static readonly Dictionary<double, double[]> Layers = [];
     private static readonly Dictionary<(uint, double), IImmutableSolidColorBrush[]> Brushes = [];
     private static readonly Dictionary<(uint, double, double), IPen[]> Pens = [];
+    private static readonly Dictionary<(uint, double), IImmutableBrush> Blooms = [];
 
     public static double Reach => Palette.GlowReach;
+
+    /// <summary>Whether lamps glow at all: on, and at a strength above 0. Off, every glow draw returns at once.</summary>
+    public static bool IsOn { get; private set; } = true;
+
+    /// <summary>The musician's glow strength, a multiplier from 0 to 2 (1 is the default look).</summary>
+    public static double Strength { get; private set; } = 1;
+
+    /// <summary>Bumped on every change; controls holding glow they built compare it to know when to rebuild.</summary>
+    public static int Version { get; private set; }
+
+    /// <summary>Raised on the UI thread after <see cref="Use"/> changes the glow; every lamp redraws.</summary>
+    public static event EventHandler? Changed;
+
+    /// <summary>
+    /// Turns the glow on or off and sets its strength (0 to 2, 1 the default; values outside are clamped). Empties every
+    /// cache that depends on them and redraws every lamp. Nothing changes, and nothing is raised, when both are the same.
+    /// </summary>
+    public static void Use(bool on, double strength)
+    {
+        strength = double.IsFinite(strength) ? Math.Round(Math.Clamp(strength, 0, 2), 2) : 1;
+        var isOn = on && strength > 0;
+        if (isOn == IsOn && strength == Strength)
+        {
+            return;
+        }
+
+        IsOn = isOn;
+        Strength = strength;
+        Layers.Clear();
+        Brushes.Clear();
+        Pens.Clear();
+        Blooms.Clear();
+        LedLight.Clear();
+        MeterGradient.Mixer.ClearLight();
+        MeterGradient.Chain.ClearLight();
+        MeterGradient.Gain.ClearLight();
+        GlowEffects.Current.Refresh();
+        Version++;
+        Changed?.Invoke(null, EventArgs.Empty);
+        RedrawAll();
+    }
+
+    // Glow outside the LEDs (a knob's arc, a fader's index) has no subscription of its own: redraw every window once.
+    private static void RedrawAll()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime { Windows: var windows })
+        {
+            return;
+        }
+
+        foreach (var window in windows)
+        {
+            foreach (var visual in window.GetVisualDescendants())
+            {
+                visual.InvalidateVisual();
+            }
+        }
+    }
+
+    /// <summary>
+    /// A soft radial bloom (a lamp's light from behind a glyph or label) at <paramref name="alpha"/> times the strength,
+    /// cached per colour; null while the glow is off.
+    /// </summary>
+    public static IImmutableBrush? Bloom(Color color, double alpha)
+    {
+        if (!IsOn)
+        {
+            return null;
+        }
+
+        var key = (color.ToUInt32(), alpha);
+        if (!Blooms.TryGetValue(key, out var bloom))
+        {
+            var peak = Math.Min(0.95, alpha * Strength);
+            bloom = new RadialGradientBrush
+            {
+                GradientStops =
+                {
+                    new GradientStop(Palette.Alpha(color, peak), 0),
+                    new GradientStop(Palette.Alpha(color, peak * 0.35), 0.45),
+                    new GradientStop(Palette.Alpha(color, 0), 1),
+                },
+            }.ToImmutable();
+            Blooms[key] = bloom;
+        }
+
+        return bloom;
+    }
 
     /// <summary>Per-layer opacities, innermost first; layer i (1-based) grows by reach·i/n.</summary>
     public static double[] LayersFor(double tier)
@@ -29,7 +127,7 @@ internal static class Glow
         }
 
         var reach = Reach;
-        var alpha = Palette.GlowAlpha * tier;
+        var alpha = Palette.GlowAlpha * tier * (IsOn ? Strength : 0);
         if (reach <= 0.2 || alpha <= 0.005)
         {
             return Layers[tier] = [];
@@ -106,6 +204,11 @@ internal static class Glow
     /// <summary>A glow around <paramref name="rect"/> in layers the caller holds (from <see cref="CreateBrushes"/> or <see cref="MeterGradient.GlowBrushes"/>).</summary>
     public static void Rect(DrawingContext context, Rect rect, double radius, IImmutableSolidColorBrush[] brushes)
     {
+        if (!IsOn)
+        {
+            return;
+        }
+
         for (var i = brushes.Length; i >= 1; i--)
         {
             var grow = Reach * i / brushes.Length;
@@ -168,6 +271,11 @@ internal static class Glow
     /// <summary>A glow around a circle in layers the caller holds (from <see cref="CreateBrushes"/> or <see cref="MeterGradient.GlowBrushes"/>).</summary>
     public static void Ellipse(DrawingContext context, Point centre, double radius, IImmutableSolidColorBrush[] brushes)
     {
+        if (!IsOn)
+        {
+            return;
+        }
+
         for (var i = brushes.Length; i >= 1; i--)
         {
             var grow = Reach * i / brushes.Length;
@@ -177,6 +285,11 @@ internal static class Glow
 
     public static void Line(DrawingContext context, Point from, Point to, double width, Color color, double tier)
     {
+        if (!IsOn)
+        {
+            return;
+        }
+
         var pens = PensFor(color, tier, width);
         for (var i = pens.Length; i >= 1; i--)
         {
@@ -187,6 +300,11 @@ internal static class Glow
     /// <summary>A line glow in pens the caller holds (from <see cref="CreatePens(Color, double, double)"/>).</summary>
     public static void Line(DrawingContext context, Point from, Point to, IPen[] pens)
     {
+        if (!IsOn)
+        {
+            return;
+        }
+
         for (var i = pens.Length; i >= 1; i--)
         {
             context.DrawLine(pens[i - 1], from, to);
@@ -195,6 +313,11 @@ internal static class Glow
 
     public static void Geometry(DrawingContext context, Geometry geometry, double width, Color color, double tier)
     {
+        if (!IsOn)
+        {
+            return;
+        }
+
         var pens = PensFor(color, tier, width);
         for (var i = pens.Length; i >= 1; i--)
         {

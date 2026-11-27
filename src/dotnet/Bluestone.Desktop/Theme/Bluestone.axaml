@@ -1,6 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:controls="using:Bluestone.Desktop.Controls">
+        xmlns:controls="using:Bluestone.Desktop.Controls"
+        xmlns:theme="using:Bluestone.Desktop.Theme">
   <!--
     Bluestone design system, layered on Fluent: neutral charcoal surfaces divided by hairlines (no
     floating cards), compact controls, a monochrome 16-unit icon set, and colour reserved for
@@ -719,9 +720,8 @@
   </Style>
   <Style Selector="controls|GutterPanel.transport controls|LedFade > PathIcon.lit">
     <Setter Property="Foreground" Value="{StaticResource Accent}" />
-    <Setter Property="Effect">
-      <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
-    </Setter>
+    <!-- The glow follows Settings ▸ Display ▸ LEDs (strength, or none at all when off). -->
+    <Setter Property="Effect" Value="{Binding Accent, Source={x:Static theme:GlowEffects.Current}, DataType=theme:GlowEffects}" />
   </Style>
   <!-- The stock ToggleButton template paints its content white when checked; keep the lit glyph's colour. -->
   <Style Selector="controls|GutterPanel.transport ToggleButton:checked /template/ ContentPresenter">
@@ -741,9 +741,7 @@
   </Style>
   <Style Selector="controls|GutterPanel.transport ToggleButton.record controls|LedFade > PathIcon.lit">
     <Setter Property="Foreground" Value="{StaticResource Transport.RecordForeground}" />
-    <Setter Property="Effect">
-      <DropShadowEffect Color="{StaticResource Transport.RecordForegroundColor}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.6" />
-    </Setter>
+    <Setter Property="Effect" Value="{Binding Record, Source={x:Static theme:GlowEffects.Current}, DataType=theme:GlowEffects}" />
   </Style>
   <Style Selector="controls|GutterPanel.transport ToggleButton.text TextBlock">
     <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
@@ -751,9 +749,8 @@
   </Style>
   <Style Selector="controls|GutterPanel.transport ToggleButton.text controls|LedFade > TextBlock.lit">
     <Setter Property="Foreground" Value="{StaticResource Accent}" />
-    <Setter Property="Effect">
-      <DropShadowEffect Color="{StaticResource Accent.Color}" BlurRadius="8" OffsetX="0" OffsetY="0" Opacity="0.55" />
-    </Setter>
+    <!-- The glow follows Settings ▸ Display ▸ LEDs (strength, or none at all when off). -->
+    <Setter Property="Effect" Value="{Binding Accent, Source={x:Static theme:GlowEffects.Current}, DataType=theme:GlowEffects}" />
   </Style>
   <!-- Label-over-value wells: tempo, signature, loop. -->
   <Style Selector="controls|RecessedWell.field">

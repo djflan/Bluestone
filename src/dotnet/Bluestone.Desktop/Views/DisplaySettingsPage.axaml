@@ -22,6 +22,15 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="MinWidth" Value="40" />
     </Style>
+    <Style Selector="TextBlock.label:disabled">
+      <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    </Style>
+    <Style Selector="TextBlock.readout:disabled">
+      <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
+    </Style>
+    <Style Selector="Slider.glowStrength">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
     <Style Selector="Border.rule">
       <Setter Property="Height" Value="1" />
       <Setter Property="Background" Value="{StaticResource Line.Divider}" />
@@ -216,7 +225,20 @@
       </StackPanel>
 
       <StackPanel Classes="settingsGroup">
-        <TextBlock Classes="overline" Text="LED MOTION" />
+        <TextBlock Classes="overline" Text="LEDS" />
+        <CheckBox x:Name="LedGlowCheck" Classes="settingCheck" Content="LED glow: lit LEDs and keys cast a soft light around them" IsChecked="{Binding LedGlow}"
+                  AutomationProperties.Name="LED glow"
+                  AutomationProperties.HelpText="Lit LEDs and keys cast a soft light around them. Turn it off to save drawing work on a slower computer." />
+        <Grid Classes="settingRow" ColumnDefinitions="140,*,Auto" ColumnSpacing="{StaticResource Space.M}" IsEnabled="{Binding LedGlow}">
+          <TextBlock Classes="label" Text="Glow strength" />
+          <Slider x:Name="GlowStrengthSlider" Grid.Column="1" Classes="glowStrength" Minimum="0" Maximum="200" Value="{Binding GlowStrength}"
+                  SmallChange="5" LargeChange="25" TickFrequency="5" IsSnapToTickEnabled="True"
+                  AutomationProperties.Name="Glow strength" AutomationProperties.HelpText="How bright the light around lit LEDs is, in percent of the default." />
+          <TextBlock x:Name="GlowStrengthText" Grid.Column="2" Classes="readout" Text="{Binding GlowStrength, StringFormat={}{0}%}"
+                     TextAlignment="Right" AutomationProperties.Name="Glow strength percent" />
+        </Grid>
+        <TextBlock Classes="settingHint" TextWrapping="Wrap"
+                   Text="100% is the default. Turning LED glow off saves drawing work: LEDs still light, with no light around them." />
         <CheckBox x:Name="LedFadeCheck" Classes="settingCheck" Content="LED fade: lit LEDs fall away smoothly instead of switching off" IsChecked="{Binding LedFade}"
                   AutomationProperties.Name="LED fade" AutomationProperties.HelpText="Lit LEDs fall away smoothly instead of switching off." />
         <CheckBox x:Name="LedWarmupCheck" Classes="settingCheck" Content="LED warm-up: LEDs ease on as they light, like a lamp warming" IsChecked="{Binding LedWarmup}"
