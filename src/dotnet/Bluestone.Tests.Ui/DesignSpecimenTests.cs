@@ -192,10 +192,12 @@ public sealed class DesignSpecimenTests : IDisposable
             app.Settle();
             var page = app.Window.GetVisualDescendants().OfType<DisplaySettingsPage>().Single(p => p.IsEffectivelyVisible);
 
-            // The chain's indicator, so the MIDI light row and its reset show; its gradient edited, so the theme has changed.
+            // The chain's indicator, so the MIDI light row and its reset show. The gradients stay as shipped; the saved theme's
+            // changed base color (applied only at the next start) is what makes the theme "changed" and Reset theme available.
             app.Click(ColourPickerTests.StageTile(page, "Device chain"));
             display.Chain.SelectedGradientStopIndex = 2;
-            display.Chain.SetGradientStopColour(2, "#E070C8");
+            Assert.True(display.IsThemeChanged);
+            Assert.Equal(ThemeDefinition.DarkSodalite([]).ChainGradient, display.Chain.Gradient);
             app.Window.MouseMove(new Point(4, height - 4), RawInputModifiers.None);
             await app.SettleTransitionsAsync();
             Assert.True(File.Exists(Copy(app.SaveFrame($"settings-display-{size}"))));
