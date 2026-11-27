@@ -102,8 +102,54 @@ public sealed class LedGlowTests
         return Task.CompletedTask;
     });
 
+    // The crest: the top lit cell of a column is lighter than the cells below it, glow on or off (off, the ramp still shows).
+    [Fact]
+    public Task TheTopLitCell_IsBrighterThanTheFourthBelowIt_WithTheGlowOnOrOff() => HeadlessApp.RunAsync(() =>
+    {
+        var ladder = new LedLadderMeter { Mode = MixerMeterMode.PeakRms, IsReady = true, Width = 40, Height = 220, MeterWidth = 14 };
+        var window = new Window { Width = 80, Height = 240, Content = ladder };
+        window.Show();
+        try
+        {
+            ladder.Show(-6, -6, double.NaN, double.NaN);
+            var count = ladder.CellCount;
+            var (top, _) = ladder.Cells(-6, double.NaN, count);
+            Assert.True(top >= 4, $"The reading lights too few cells ({top + 1}).");
+            foreach (var on in (bool[])[true, false])
+            {
+                Glow.Use(on, 1);
+                var crest = CellBrightness(ladder, top);
+                var below = CellBrightness(ladder, top - 4);
+                Assert.True(crest > below + 40, $"Glow {(on ? "on" : "off")}: the top lit cell ({crest}) should be clearly brighter than the 4th below it ({below}).");
+            }
+        }
+        finally
+        {
+            Glow.Use(true, 1);
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    // The sum of the channels of a left-column cell's edge pixel (its fill, beside the hot core).
+    private static int CellBrightness(LedLadderMeter ladder, int i)
+    {
+        var inner = new Rect(Math.Round(ladder.WellRect.X), Math.Round(ladder.WellRect.Y), Math.Round(ladder.WellRect.Width), Math.Round(ladder.WellRect.Height)).Deflate(2);
+        var cell = LedLadderMeter.CellRect(new Rect(inner.X, inner.Y, Math.Min(ladder.ColumnWidth, inner.Width / 2), inner.Height), i);
+        var pixel = Pixel(ladder, (int)cell.X, (int)cell.Y + 1);
+        return pixel[0] + pixel[1] + pixel[2];
+    }
+
     // The brightest channel of the pixel just outside the well, beside its left column, half way up.
     private static int Brightness(LedLadderMeter ladder)
+    {
+        var well = ladder.WellRect;
+        var pixels = Pixel(ladder, (int)Math.Round(well.X) - 1, (int)(well.Y + (well.Height / 2)));
+        return Math.Max(pixels[0], Math.Max(pixels[1], pixels[2]));
+    }
+
+    private static byte[] Pixel(LedLadderMeter ladder, int x, int y)
     {
         var size = new PixelSize((int)ladder.Bounds.Width, (int)ladder.Bounds.Height);
         using var bitmap = new RenderTargetBitmap(size);
@@ -112,9 +158,6 @@ public sealed class LedGlowTests
             ladder.Render(context);
         }
 
-        var well = ladder.WellRect;
-        var x = (int)Math.Round(well.X) - 1;
-        var y = (int)(well.Y + (well.Height / 2));
         var pixels = new byte[4];
         var handle = System.Runtime.InteropServices.GCHandle.Alloc(pixels, System.Runtime.InteropServices.GCHandleType.Pinned);
         try
@@ -126,6 +169,6 @@ public sealed class LedGlowTests
             handle.Free();
         }
 
-        return Math.Max(pixels[0], Math.Max(pixels[1], pixels[2]));
+        return pixels;
     }
 }
