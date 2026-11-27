@@ -35,6 +35,9 @@ public sealed record DisplaySettings
     /// <summary>How strong the LED glow is, in percent of the default (<see cref="MinGlowStrength"/>–<see cref="MaxGlowStrength"/>).</summary>
     public int GlowStrength { get; init; } = DefaultGlowStrength;
 
+    /// <summary>Whether a Peak + RMS meter marks the current peak when it falls inside the lit RMS body.</summary>
+    public bool ShowPeakMarker { get; init; } = true;
+
     public const int MinGlowStrength = 0;
     public const int DefaultGlowStrength = 100;
     public const int MaxGlowStrength = 200;
@@ -85,6 +88,7 @@ public sealed class DisplaySettingsStore(string path)
                 GlowStrength = root.TryGetProperty("glowStrength", out var strength) && strength.ValueKind == JsonValueKind.Number && strength.TryGetInt32(out var percent)
                     ? Math.Clamp(percent, DisplaySettings.MinGlowStrength, DisplaySettings.MaxGlowStrength)
                     : defaults.GlowStrength,
+                ShowPeakMarker = Flag(root, "showPeakMarker") ?? defaults.ShowPeakMarker,
             };
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
@@ -175,6 +179,9 @@ public sealed partial class DisplayViewModel : ObservableObject
     /// <summary>Colours offered as one-click swatches, for a gradient stop or the MIDI LED.</summary>
     public static IReadOnlyList<string> GradientSwatches => GradientEditorViewModel.Swatches;
 
+    /// <summary>Swatches for the peak marker: its white default first, then the gradient swatches.</summary>
+    public static IReadOnlyList<string> PeakMarkerSwatches { get; } = [ThemeDefinition.DefaultPeakMarkerColor, .. GradientEditorViewModel.Swatches];
+
     /// <summary>
     /// Raised with the reason when a change could not be saved (it still applies until Bluestone closes). Raised once until a
     /// later save succeeds.
@@ -182,7 +189,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     public event EventHandler<string>? SaveFailed;
 
     /// <summary>
-    /// Raised with the reason when a gradient or MIDI color change could not be saved into the theme's file (it still applies
+    /// Raised with the reason when a gradient, MIDI color, or peak marker color change could not be saved into the theme's file (it still applies
     /// until Bluestone closes). Raised once until a later theme save succeeds.
     /// </summary>
     public event EventHandler<string>? ThemeSaveFailed;
@@ -229,6 +236,31 @@ public sealed partial class DisplayViewModel : ObservableObject
     } = ThemeDefinition.DefaultMidiColor;
 
     /// <summary>
+    /// The colour of the current-peak marker inside a Peak + RMS meter's lit RMS body, "#RRGGBB". Like
+    /// <see cref="MidiColour"/>, anything but six hex digits is ignored.
+    /// </summary>
+    public string PeakMarkerColour
+    {
+        get;
+        set
+        {
+            var colour = GradientEditorViewModel.NormalizeColour(value);
+            if (colour is not null && SetProperty(ref field, colour))
+            {
+                SaveTheme();
+            }
+        }
+    } = ThemeDefinition.DefaultPeakMarkerColor;
+
+    /// <summary>Whether a peak marker colour preview is open; as <see cref="IsMidiColourPreviewing"/>.</summary>
+    [ObservableProperty]
+    public partial bool IsPeakMarkerColourPreviewing { get; private set; }
+
+    /// <summary>Whether a Peak + RMS meter marks the current peak when it falls inside the lit RMS body.</summary>
+    [ObservableProperty]
+    public partial bool ShowPeakMarker { get; set; } = true;
+
+    /// <summary>
     /// Whether a MIDI colour preview (a picker open on it) is open: <see cref="MidiColour"/> changes apply at once, but are
     /// not saved until it ends. As a gradient's preview (<see cref="GradientEditorViewModel.IsPreviewing"/>), it also holds
     /// any other save until every preview has ended.
@@ -270,11 +302,25 @@ public sealed partial class DisplayViewModel : ObservableObject
     [RelayCommand]
     private void ResetMidiColour() => MidiColour = _themeStore?.Defaults.MidiColor ?? ThemeDefinition.DefaultMidiColor;
 
+    /// <summary>Opens a peak marker colour preview; as <see cref="BeginMidiColourPreview"/>.</summary>
+    public void BeginPeakMarkerColourPreview() => IsPeakMarkerColourPreviewing = true;
+
+    /// <summary>Ends a peak marker colour preview; as <see cref="EndMidiColourPreview"/>.</summary>
+    public void EndPeakMarkerColourPreview() => IsPeakMarkerColourPreviewing = false;
+
+    /// <summary>Sets the peak marker's colour from a swatch ("#RRGGBB").</summary>
+    [RelayCommand]
+    private void ChoosePeakMarkerColour(string? colour) => PeakMarkerColour = colour ?? string.Empty;
+
+    /// <summary>Puts the peak marker's color back to the theme's shipped one.</summary>
+    [RelayCommand]
+    private void ResetPeakMarkerColour() => PeakMarkerColour = _themeStore?.Defaults.PeakMarkerColor ?? ThemeDefinition.DefaultPeakMarkerColor;
+
     /// <summary>The active theme's name, for example "Dark Sodalite".</summary>
     [ObservableProperty]
     public partial string ThemeName { get; private set; } = ThemeDefinition.DarkSodaliteName;
 
-    /// <summary>Whether any member of the theme (a color, a gradient, or the MIDI color) differs from what it shipped with.</summary>
+    /// <summary>Whether any member of the theme (a color, a gradient, or the MIDI or peak marker color) differs from what it shipped with.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ResetThemeCommand))]
     public partial bool IsThemeChanged { get; private set; }
@@ -287,7 +333,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     public partial bool IsRestartNeeded { get; private set; }
 
     /// <summary>
-    /// Puts every member of the theme back to what it shipped with: its colors, the gradients, and the MIDI color. The view
+    /// Puts every member of the theme back to what it shipped with: its colors, the gradients, and the MIDI and peak marker colors. The view
     /// asks the musician to confirm first. Any open preview ends first (keeping what it shows), so the reset is the last word.
     /// </summary>
     [RelayCommand(CanExecute = nameof(IsThemeChanged))]
@@ -304,6 +350,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         }
 
         EndMidiColourPreview();
+        EndPeakMarkerColourPreview();
         _loading = true;
         try
         {
@@ -312,6 +359,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             Chain.Gradient = store.Defaults.ChainGradient;
             Gain.Gradient = store.Defaults.GainGradient;
             MidiColour = store.Defaults.MidiColor;
+            PeakMarkerColour = store.Defaults.PeakMarkerColor;
         }
         finally
         {
@@ -322,7 +370,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Takes the gradients and the MIDI color from <paramref name="theme"/> (as loaded and applied when Bluestone started) and
+    /// Takes the gradients and the MIDI and peak marker colors from <paramref name="theme"/> (as loaded and applied when Bluestone started) and
     /// saves every later change to them, and <see cref="ResetThemeCommand"/>, into <paramref name="store"/>'s file. Each
     /// gradient's reset puts back <paramref name="store"/>'s shipped gradient.
     /// </summary>
@@ -341,6 +389,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             Chain.Gradient = theme.ChainGradient;
             Gain.Gradient = theme.GainGradient;
             MidiColour = theme.MidiColor;
+            PeakMarkerColour = theme.PeakMarkerColor;
         }
         finally
         {
@@ -350,9 +399,9 @@ public sealed partial class DisplayViewModel : ObservableObject
         RefreshThemeState();
     }
 
-    /// <summary>The theme as it is now: its colors as saved, with the gradients and the MIDI color as edited.</summary>
+    /// <summary>The theme as it is now: its colors as saved, with the gradients and the MIDI and peak marker colors as edited.</summary>
     public ThemeDefinition? Theme => _theme is { } theme
-        ? theme with { MixerGradient = Mixer.Gradient, ChainGradient = Chain.Gradient, GainGradient = Gain.Gradient, MidiColor = MidiColour }
+        ? theme with { MixerGradient = Mixer.Gradient, ChainGradient = Chain.Gradient, GainGradient = Gain.Gradient, MidiColor = MidiColour, PeakMarkerColor = PeakMarkerColour }
         : null;
 
     /// <summary>Reads the saved settings from <paramref name="store"/> and saves every later change there.</summary>
@@ -368,6 +417,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             LedWarmup = settings.LedWarmup;
             LedGlow = settings.LedGlow;
             GlowStrength = settings.GlowStrength;
+            ShowPeakMarker = settings.ShowPeakMarker;
         }
         finally
         {
@@ -383,6 +433,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         LedWarmup = LedWarmup,
         LedGlow = LedGlow,
         GlowStrength = GlowStrength,
+        ShowPeakMarker = ShowPeakMarker,
     };
 
     partial void OnLevelStyleChanged(JunctionLevelStyle value) => SaveDisplay();
@@ -392,6 +443,8 @@ public sealed partial class DisplayViewModel : ObservableObject
     partial void OnLedWarmupChanged(bool value) => SaveDisplay();
 
     partial void OnLedGlowChanged(bool value) => SaveDisplay();
+
+    partial void OnShowPeakMarkerChanged(bool value) => SaveDisplay();
 
     partial void OnGlowStrengthChanged(int value)
     {
@@ -414,8 +467,16 @@ public sealed partial class DisplayViewModel : ObservableObject
         }
     }
 
-    // Whether any preview, of a gradient or of the MIDI colour, holds saves.
-    private bool Previewing => IsMidiColourPreviewing || Editors.Any(e => e.IsPreviewing);
+    partial void OnIsPeakMarkerColourPreviewingChanged(bool value)
+    {
+        if (!value && _unsaved && !Previewing)
+        {
+            Flush();
+        }
+    }
+
+    // Whether any preview, of a gradient or of a single LED colour, holds saves.
+    private bool Previewing => IsMidiColourPreviewing || IsPeakMarkerColourPreviewing || Editors.Any(e => e.IsPreviewing);
 
     // An edit in any gradient saves; one made during a preview is saved once, when the last preview ends.
     private void OnEditorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

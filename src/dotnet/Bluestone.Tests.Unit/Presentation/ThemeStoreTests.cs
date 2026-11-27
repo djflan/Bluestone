@@ -99,6 +99,7 @@ public sealed class ThemeStoreTests : IDisposable
               "version": 99,
               "gradients": { "mixer": "rainbow", "chain": [{ "color": "#000000", "position": 0 }, { "color": "#ff0000", "position": 1 }], "gain": [{ "colour": "#000000", "position": 0 }] },
               "midiColor": "red",
+              "peakMarkerColor": 7,
               "colors": { "Surface.BaseColor": "#010203", "Accent.Color": "aqua", "Made.UpColor": "#FFFFFF", "Overlay.ScrimColor": "#80ffffff", },
               // A comment, and the trailing comma above, don't stop the file being read.
             }
@@ -106,7 +107,7 @@ public sealed class ThemeStoreTests : IDisposable
 
         var loaded = Store().Load();
 
-        Assert.Equal("6 values in dark-sodalite.json couldn't be used, so they use their shipped color and are removed from the file the next time a theme change is saved: Accent.Color, Made.UpColor, variant, midiColor, gradients.mixer, gradients.gain.", loaded.Problem);
+        Assert.Equal("7 values in dark-sodalite.json couldn't be used, so they use their shipped color and are removed from the file the next time a theme change is saved: Accent.Color, Made.UpColor, variant, midiColor, peakMarkerColor, gradients.mixer, gradients.gain.", loaded.Problem);
         Assert.Equal(Shipped with
         {
             Colors = Shipped.Colors.SetItem("Surface.BaseColor", "#010203").SetItem("Overlay.ScrimColor", "#80FFFFFF"),
@@ -324,13 +325,17 @@ public sealed class ThemeStoreTests : IDisposable
 
         display.Chain.Gradient = Red;
         display.MidiColour = "#FF2E93";
+        display.PeakMarkerColour = "#e3c345";
 
-        Assert.Equal(Shipped with { ChainGradient = Red, MidiColor = "#FF2E93" }, Store().Load().Theme);
+        Assert.Equal(Shipped with { ChainGradient = Red, MidiColor = "#FF2E93", PeakMarkerColor = "#E3C345" }, Store().Load().Theme);
         Assert.True(display.IsThemeChanged);
-        Assert.False(display.IsRestartNeeded, "Gradients and the MIDI color apply at once.");
+        Assert.False(display.IsRestartNeeded, "Gradients and the MIDI and peak marker colors apply at once.");
 
         display.Chain.ResetGradientCommand.Execute(null);
         display.ResetMidiColourCommand.Execute(null);
+        Assert.True(display.IsThemeChanged, "The peak marker color is part of the theme.");
+        display.ResetPeakMarkerColourCommand.Execute(null);
+        Assert.Equal(ThemeDefinition.DefaultPeakMarkerColor, display.PeakMarkerColour);
         Assert.Equal(Shipped, Store().Load().Theme);
         Assert.False(display.IsThemeChanged);
     }

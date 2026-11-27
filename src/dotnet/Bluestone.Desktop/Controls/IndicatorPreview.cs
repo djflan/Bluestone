@@ -71,6 +71,10 @@ public sealed class IndicatorPreview : Panel
                     RightValue = right,
                     LeftPeakHold = hold,
                     RightPeakHold = hold - 1.5,
+
+                    // The second meter's RMS sits above its falling peak, so the stage shows the peak marker.
+                    LeftRmsValue = i == 1 ? left + 6 : left - 8,
+                    RightRmsValue = i == 1 ? right + 6 : right - 8,
                     IsReady = true,
                     IsClipped = clip,
                     Width = 16,

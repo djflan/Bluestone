@@ -17,7 +17,7 @@ public enum ThemeVariant
 
 /// <summary>
 /// A theme (ADR 0053): every UI color, keyed by its color token (the exact Color resource key in Theme/Tokens.axaml, or
-/// "Fluent.*" for the stock controls' palette), the three meter gradients, and the MIDI LED color. A theme changes values
+/// "Fluent.*" for the stock controls' palette), the three meter gradients, the MIDI LED color, and the peak marker color. A theme changes values
 /// only; roles, geometry, type, and rules belong to the design language (docs/design-language.md).
 /// </summary>
 public sealed record ThemeDefinition
@@ -27,6 +27,9 @@ public sealed record ThemeDefinition
 
     /// <summary>The MIDI LED color Dark Sodalite ships with: the accent.</summary>
     public const string DefaultMidiColor = "#3CCBF4";
+
+    /// <summary>The peak marker color Dark Sodalite ships with: white, brighter than any lit cell.</summary>
+    public const string DefaultPeakMarkerColor = "#FFFFFF";
 
     /// <summary>The theme's name, for example "Dark Sodalite".</summary>
     public required string Name { get; init; }
@@ -48,6 +51,9 @@ public sealed record ThemeDefinition
 
     /// <summary>The color of a lit MIDI LED, "#RRGGBB".</summary>
     public string MidiColor { get; init; } = DefaultMidiColor;
+
+    /// <summary>The color of the current-peak marker inside a Peak + RMS meter's lit RMS body, "#RRGGBB".</summary>
+    public string PeakMarkerColor { get; init; } = DefaultPeakMarkerColor;
 
     /// <summary>Dark Sodalite with <paramref name="colors"/> (the values in Theme/Tokens.axaml) and the shipped gradients.</summary>
     public static ThemeDefinition DarkSodalite(IEnumerable<KeyValuePair<string, string>> colors) => new()
@@ -71,7 +77,7 @@ public sealed record ThemeDefinition
     public static bool IsColor(string? color) =>
         color is { Length: 7 or 9 } && color[0] == '#' && color.AsSpan(1).ContainsAnyExcept(HexDigits) is false;
 
-    /// <summary>Whether <see cref="Colors"/> holds the same keys and values as <paramref name="other"/>'s (gradients and the MIDI color aside).</summary>
+    /// <summary>Whether <see cref="Colors"/> holds the same keys and values as <paramref name="other"/>'s (gradients and the single LED colors aside).</summary>
     public bool SameColorsAs(ThemeDefinition other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -86,9 +92,10 @@ public sealed record ThemeDefinition
         && MixerGradient == other.MixerGradient
         && ChainGradient == other.ChainGradient
         && GainGradient == other.GainGradient
-        && MidiColor == other.MidiColor;
+        && MidiColor == other.MidiColor
+        && PeakMarkerColor == other.PeakMarkerColor;
 
-    public override int GetHashCode() => HashCode.Combine(Name, Variant, Colors.Count, MixerGradient, ChainGradient, GainGradient, MidiColor);
+    public override int GetHashCode() => HashCode.Combine(Name, Variant, Colors.Count, MixerGradient, ChainGradient, GainGradient, MidiColor, PeakMarkerColor);
 
     internal static ImmutableSortedDictionary<string, string> NormalizeColors(IEnumerable<KeyValuePair<string, string>> colors)
     {

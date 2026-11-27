@@ -321,7 +321,7 @@ public sealed partial class ThemeApplierTests : IDisposable
             app.Click(reset);
             Assert.True(confirm.IsEffectivelyVisible);
             Assert.True(page.IsConfirmingThemeReset);
-            Assert.Equal("Reset Dark Sodalite to its shipped colors, gradients, and MIDI color?", AppUnderTest.Within<TextBlock>(page, t => t.Name == "ResetThemeQuestion").Text);
+            Assert.Equal("Reset Dark Sodalite to its shipped colors, gradients, MIDI color, and peak marker color?", AppUnderTest.Within<TextBlock>(page, t => t.Name == "ResetThemeQuestion").Text);
             var cancel = AppUnderTest.Within<Button>(page, b => b.Name == "CancelResetThemeButton");
             Assert.True(cancel.IsFocused, "Cancel is focused, so Enter keeps the theme.");
             app.Click(cancel);
@@ -346,6 +346,7 @@ public sealed partial class ThemeApplierTests : IDisposable
             // A gradient and the MIDI color changed as well; confirming puts back every member, in the file and on screen.
             display.Mixer.SetGradientStopColour(0, "#4CB873");
             display.MidiColour = "#E0A43A";
+            display.PeakMarkerColour = "#E3C345";
             app.Click(reset);
             app.Click(AppUnderTest.Within<Button>(page, b => b.Name == "ConfirmResetThemeButton"));
             Assert.False(confirm.IsVisible);
@@ -353,6 +354,8 @@ public sealed partial class ThemeApplierTests : IDisposable
             Assert.Equal(SignalGradient.Default, display.Mixer.Gradient);
             Assert.Equal(ThemeDefinition.DefaultMidiColor, display.MidiColour);
             Assert.Equal(Color.Parse(ThemeDefinition.DefaultMidiColor), LedColours.Midi);
+            Assert.Equal(ThemeDefinition.DefaultPeakMarkerColor, display.PeakMarkerColour);
+            Assert.Equal(Color.Parse(ThemeDefinition.DefaultPeakMarkerColor), LedColours.PeakMarker);
             Assert.False(display.IsThemeChanged);
             Assert.False(reset.IsEffectivelyEnabled, "A theme as shipped has nothing to reset.");
 
@@ -369,6 +372,7 @@ public sealed partial class ThemeApplierTests : IDisposable
             }
 
             display.MidiColour = ThemeDefinition.DefaultMidiColor;
+            display.PeakMarkerColour = ThemeDefinition.DefaultPeakMarkerColor;
         }
     });
 

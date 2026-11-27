@@ -39,6 +39,7 @@ public partial class DisplaySettingsPage : UserControl
         GainTarget.IsCheckedChanged += (_, _) => FromTargets(GainTarget, 2);
         StopColourBox.TextChanged += (_, _) => MarkHex(StopColourBox);
         MidiColourBox.TextChanged += (_, _) => MarkHex(MidiColourBox);
+        PeakMarkerColourBox.TextChanged += (_, _) => MarkHex(PeakMarkerColourBox);
     }
 
     /// <summary>Whether the theme reset is asking to be confirmed.</summary>
@@ -169,7 +170,7 @@ public partial class DisplaySettingsPage : UserControl
         }
 
         Picker.Dismiss();
-        ResetThemeQuestion.Text = $"Reset {display.ThemeName} to its shipped colors, gradients, and MIDI color?";
+        ResetThemeQuestion.Text = $"Reset {display.ThemeName} to its shipped colors, gradients, MIDI color, and peak marker color?";
         ResetThemeConfirm.IsVisible = true;
         CancelResetThemeButton.Focus(NavigationMethod.Tab);
     }
@@ -215,6 +216,7 @@ public partial class DisplaySettingsPage : UserControl
         EditorTitle.Text = item.Title;
         EditorDescription.Text = item.Description;
         MidiPanel.IsVisible = item.Family == MeterGradientTarget.Chain;
+        PeakMarkerPanel.IsVisible = item.Family == MeterGradientTarget.Mixer;
         _syncing = true;
         try
         {
@@ -300,6 +302,34 @@ public partial class DisplaySettingsPage : UserControl
             {
                 display.MidiColour = was;
                 display.EndMidiColourPreview();
+            }));
+    }
+
+    private void OnPeakMarkerChip(object? sender, RoutedEventArgs e)
+    {
+        // As for the MIDI light: any open edit is settled before this one reads its original or begins its preview.
+        Picker.Dismiss();
+        if (_display is not { } display || sender is not Control chip || ColourHsv.ParseHex(display.PeakMarkerColour) is not { } original)
+        {
+            return;
+        }
+
+        var was = display.PeakMarkerColour;
+        display.BeginPeakMarkerColourPreview();
+        Picker.Show(chip, new ColourEdit(
+            original,
+            "PEAK + RMS METERS  ·  PEAK MARKER",
+            DisplayViewModel.PeakMarkerSwatches,
+            Preview: colour => display.PeakMarkerColour = ColourHsv.Hex(colour),
+            Apply: colour =>
+            {
+                display.PeakMarkerColour = ColourHsv.Hex(colour);
+                display.EndPeakMarkerColourPreview();
+            },
+            Cancel: () =>
+            {
+                display.PeakMarkerColour = was;
+                display.EndPeakMarkerColourPreview();
             }));
     }
 }
