@@ -110,6 +110,8 @@ Lit things behave like real light, restrained and purposeful.
 
 - **Lit versus unlit.** An LED, lamp, or cell that is off keeps `Console.UnlitAlpha` of its color, so the musician can
   see what *could* light.
+- **Workspace toolbar toggles** use the transport's accent-lit glyphs and LED fade, without selected faces or rims.
+  Their existing targets and glyph centers stay fixed; the unpainted faces leave quiet space between icons.
 - **Glow only through `Theme/Glow.cs` and `Theme/LedLight.cs`**, at `Console.GlowAlpha` and `Console.GlowReach`, and
   always honoring the musician's **LED glow** setting and **Glow strength**. Glow strength includes off.
 - **LED ladders** (`LedLadderMeter`, `GainLedGutter`) light cell by cell; they never draw a smooth bar.

@@ -13,7 +13,7 @@ using SkiaSharp;
 
 namespace Bluestone.Tests.Ui;
 
-/// <summary>The main workspace tools use the selected outlined treatment without changing what the controls do.</summary>
+/// <summary>The workspace tools use transport-style lit glyphs without changing their geometry or behavior.</summary>
 public sealed class WorkspaceToolbarTests
 {
     private static readonly string[] CommandTools = ["Browser", "Mixer", "Editors"];
@@ -21,7 +21,7 @@ public sealed class WorkspaceToolbarTests
     [Theory]
     [InlineData(1040, 700, "compact")]
     [InlineData(1440, 900, "normal")]
-    public Task WorkspaceTools_HaveGapsAndIndividualOutlinedFaces_AtBothSizes(double width, double height, string size) =>
+    public Task WorkspaceTools_HaveSpacedLitGlyphs_AtBothSizes(double width, double height, string size) =>
         HeadlessApp.RunAsync(async () =>
         {
             await using var app = await AppUnderTest.OpenAsync(nativeMenuBar: true);
@@ -59,8 +59,8 @@ public sealed class WorkspaceToolbarTests
 
             foreach (var tool in tools.Skip(1))
             {
-                AssertCheckedFace(app, tool);
-                AssertRenderedFace(app, workspaceImage, tool);
+                AssertLitGlyph(app, tool);
+                AssertRenderedGlyph(app, workspaceImage, tool);
             }
 
             Assert.NotEqual(ResourceColor(app, "State.SelectedSubtle"), ColorOf(Face(tools[0]).Background));
@@ -79,12 +79,33 @@ public sealed class WorkspaceToolbarTests
         });
 
     [Fact]
-    public Task CheckedWorkspaceTool_UsesTheSubduedFaceOutlineAndLightIcon() => HeadlessApp.RunAsync(async () =>
+    public Task WorkspaceTool_ChangesOnlyItsLightWhenToggled() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync(nativeMenuBar: true);
         ShowReferenceState(app);
         MoveAway(app);
-        AssertCheckedFace(app, Tool(app, "Browser"));
+        var browser = Tool(app, "Browser");
+        var bounds = browser.Bounds;
+        var origin = app.InWindow(browser, default);
+        var icons = browser.GetVisualDescendants().OfType<PathIcon>().ToArray();
+        var iconOrigin = app.InWindow(icons[1], default);
+        AssertLitGlyph(app, browser);
+        app.Click(browser);
+        MoveAway(app);
+        await app.SettleTransitionsAsync();
+        Assert.False(browser.IsChecked is true);
+        Assert.False(icons[1].IsVisible);
+        Assert.True(icons[0].IsVisible);
+        Assert.Equal(ResourceColor(app, "Text.Secondary"), ColorOf(icons[0].Foreground));
+        Assert.Equal(bounds, browser.Bounds);
+        Assert.Equal(origin, app.InWindow(browser, default));
+        Assert.Equal(iconOrigin, app.InWindow(icons[0], default));
+        app.Click(browser);
+        MoveAway(app);
+        await app.SettleTransitionsAsync();
+        AssertLitGlyph(app, browser);
+        Assert.Equal(bounds, browser.Bounds);
+        Assert.Equal(origin, app.InWindow(browser, default));
     });
 
     [Fact]
@@ -100,24 +121,24 @@ public sealed class WorkspaceToolbarTests
         var at = app.InWindow(inspector, new Point(inspector.Bounds.Width / 2, inspector.Bounds.Height / 2));
         app.Window.MouseMove(at);
         app.Settle();
-        Assert.Equal(ResourceColor(app, "State.Hover"), ColorOf(Face(inspector).Background));
+        Assert.Equal(Colors.Transparent, ColorOf(Face(inspector).Background));
         Assert.True(File.Exists(app.SaveFrame("toolbar-A-hover-unchecked")));
 
         app.Window.MouseDown(at, MouseButton.Left);
         app.Settle();
-        Assert.Equal(ResourceColor(app, "State.Pressed"), ColorOf(Face(inspector).Background));
+        Assert.Equal(ResourceColor(app, "State.Hover"), ColorOf(Face(inspector).Background));
         Assert.True(File.Exists(app.SaveFrame("toolbar-A-pressed-unchecked")));
         app.Window.MouseUp(at, MouseButton.Left);
         app.Settle();
         Assert.True(app.ViewModel.IsInspectorVisible);
         Assert.True(inspector.IsChecked is true);
-        Assert.Equal(ResourceColor(app, "State.Selected"), ColorOf(Face(inspector).Background));
+        Assert.Equal(Colors.Transparent, ColorOf(Face(inspector).Background));
         Assert.True(File.Exists(app.SaveFrame("toolbar-A-hover-checked")));
 
         app.Window.MouseDown(at, MouseButton.Left);
         app.Settle();
-        Assert.Equal(ResourceColor(app, "State.Pressed"), ColorOf(Face(inspector).Background));
-        Assert.Equal(ResourceColor(app, "Accent"), ColorOf(Face(inspector).BorderBrush));
+        Assert.Equal(ResourceColor(app, "State.Hover"), ColorOf(Face(inspector).Background));
+        Assert.Equal(new Thickness(0), Face(inspector).BorderThickness);
         app.Window.MouseUp(at, MouseButton.Left);
         app.Settle();
         Assert.False(inspector.IsChecked is true);
@@ -151,8 +172,11 @@ public sealed class WorkspaceToolbarTests
         app.Settle();
         Assert.False(inspector.IsEffectivelyEnabled);
         Assert.Equal(ResourceColor(app, "Text.Disabled"), ColorOf(inspector.Foreground));
-        Assert.Equal(ResourceColor(app, "Text.Disabled"), ColorOf(Assert.Single(inspector.GetVisualDescendants().OfType<PathIcon>()).Foreground));
-        Assert.Equal(ResourceColor(app, "Line.BorderStrong"), ColorOf(Face(inspector).BorderBrush));
+        Assert.All(inspector.GetVisualDescendants().OfType<PathIcon>(), icon =>
+        {
+            Assert.Equal(ResourceColor(app, "Text.Disabled"), ColorOf(icon.Foreground));
+            Assert.Null(icon.Effect);
+        });
         Assert.True(File.Exists(app.SaveFrame("toolbar-A-disabled-checked")));
         app.Click(inspector);
         Assert.True(app.ViewModel.IsInspectorVisible);
@@ -322,6 +346,40 @@ public sealed class WorkspaceToolbarTests
         Assert.Equal(new Thickness(1), face.BorderThickness);
         var icon = Assert.Single(tool.GetVisualDescendants().OfType<PathIcon>());
         Assert.Equal(ResourceColor(app, "Text.Primary"), ColorOf(icon.Foreground));
+    }
+
+    private static void AssertLitGlyph(AppUnderTest app, ToggleButton tool)
+    {
+        Assert.Equal(Colors.Transparent, ColorOf(Face(tool).Background));
+        Assert.Equal(new Thickness(0), Face(tool).BorderThickness);
+        var light = Assert.Single(tool.GetVisualDescendants().OfType<LedFade>());
+        Assert.True(light.IsLit);
+        var icon = Assert.IsType<PathIcon>(light.Children[1]);
+        Assert.True(icon.IsVisible);
+        Assert.Equal(ResourceColor(app, "Accent"), ColorOf(icon.Foreground));
+        Assert.Same(Desktop.Theme.GlowEffects.Current.Accent, icon.Effect);
+    }
+
+    private static void AssertRenderedGlyph(AppUnderTest app, SKBitmap image, ToggleButton tool)
+    {
+        var face = Face(tool);
+        var origin = app.InWindow(face, default);
+        var accent = ResourceColor(app, "Accent");
+        var litPixels = 0;
+        for (var y = 2; y < face.Bounds.Height - 2; y++)
+        {
+            for (var x = 2; x < face.Bounds.Width - 2; x++)
+            {
+                if (Near(PixelAt(app, image, new Point(origin.X + x, origin.Y + y)), accent))
+                {
+                    litPixels++;
+                }
+            }
+        }
+
+        Assert.True(litPixels >= 4, "The selected glyph needs visible accent light.");
+        Assert.False(Near(PixelAt(app, image, new Point(origin.X + face.Bounds.Width / 2, origin.Y + 0.5)), accent),
+            "Selection must not paint an accent rim.");
     }
 
     private static void AssertRenderedFace(AppUnderTest app, SKBitmap image, ToggleButton tool)
