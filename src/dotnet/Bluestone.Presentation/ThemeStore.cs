@@ -50,6 +50,7 @@ public sealed class ThemeStore
     /// <summary>Reads the theme. Never throws.</summary>
     public ThemeLoadResult Load()
     {
+        CanSave = true;
         WriteReference();
         string text;
         try
@@ -76,7 +77,7 @@ public sealed class ThemeStore
                 var theme = Read(document.RootElement, rejected);
                 return new ThemeLoadResult(theme, rejected.Count == 0
                     ? null
-                    : $"{rejected.Count} value{(rejected.Count == 1 ? string.Empty : "s")} in {System.IO.Path.GetFileName(Path)} couldn't be used, so {(rejected.Count == 1 ? "it uses its" : "they use their")} shipped color: {string.Join(", ", rejected)}.");
+                    : $"{rejected.Count} value{(rejected.Count == 1 ? string.Empty : "s")} in {System.IO.Path.GetFileName(Path)} couldn't be used, so {(rejected.Count == 1 ? "it uses its" : "they use their")} shipped color and {(rejected.Count == 1 ? "is" : "are")} removed from the file the next time a theme change is saved: {string.Join(", ", rejected)}.");
             }
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or ArgumentException)

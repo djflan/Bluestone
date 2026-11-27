@@ -435,7 +435,7 @@ public sealed partial class DisplayViewModel : ObservableObject
         if (!_loading)
         {
             _displayDirty = true;
-            Flush();
+            Flush(includeTheme: false);
         }
     }
 
@@ -452,8 +452,9 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     // Writes whatever changed, unless a preview holds saves until it ends. Each file reports its own failure once per run of
     // failures, so dragging a control on a read-only disk does not flood the messages; the change still applies for this
-    // session, and stays pending so the next save tries again.
-    private void Flush()
+    // session, and stays pending so the next save of that kind tries again. A display preference never retries the theme,
+    // so it can't write over a hand edit made after a theme save failed.
+    private void Flush(bool includeTheme = true)
     {
         if (Previewing)
         {
@@ -481,7 +482,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             }
         }
 
-        if (_themeDirty && _themeStore is { } themeStore && Theme is { } theme)
+        if (includeTheme && _themeDirty && _themeStore is { } themeStore && Theme is { } theme)
         {
             try
             {

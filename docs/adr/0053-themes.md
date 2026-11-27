@@ -45,8 +45,8 @@ shipped default: each gradient's reset and the MIDI color's reset revert one mem
 confirmation) reverts them all, leaving a file with no changes.
 
 Reading is forgiving. Comments and trailing commas are allowed. A missing value takes its default. A value that
-can't be used (an unknown key, an invalid color, gradient, or variant) takes its default and is reported in
-Messages. A missing file gives the defaults. A file that can't be parsed is kept aside under a new name and the
+can't be used (an unknown key, an invalid color, gradient, or variant) takes its default, is reported in
+Messages, and is dropped from the file at the next theme save. A missing file gives the defaults. A file that can't be parsed is kept aside under a new name and the
 defaults are used. A file that can't be read or kept aside is never written over: theme edits then apply until
 Bluestone closes and a warning says they weren't saved.
 

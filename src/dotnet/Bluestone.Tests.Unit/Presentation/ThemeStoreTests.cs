@@ -111,7 +111,7 @@ public sealed class ThemeStoreTests : IDisposable
 
         var loaded = Store().Load();
 
-        Assert.Equal("6 values in dark-sodalite.json couldn't be used, so they use their shipped color: Accent.Color, Made.UpColor, variant, midiColor, gradients.mixer, gradients.gain.", loaded.Problem);
+        Assert.Equal("6 values in dark-sodalite.json couldn't be used, so they use their shipped color and are removed from the file the next time a theme change is saved: Accent.Color, Made.UpColor, variant, midiColor, gradients.mixer, gradients.gain.", loaded.Problem);
         Assert.Equal(Shipped with
         {
             Colors = Shipped.Colors.SetItem("Surface.BaseColor", "#010203").SetItem("Overlay.ScrimColor", "#80FFFFFF"),
@@ -140,17 +140,15 @@ public sealed class ThemeStoreTests : IDisposable
     }
 
     [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
     public void AFileThatCantBeRead_IsNeverWrittenOver()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Uses Unix file modes to make the file unreadable.");
         File.WriteAllText(ThemeFile, """{ "colors": { "Accent.Color": "#FF8800" } }""");
         File.SetUnixFileMode(ThemeFile, UnixFileMode.None);
         try
         {
+            Assert.SkipWhen(CanRead(ThemeFile), "This user can read a file with no permissions (root).");
             var store = Store();
             var loaded = store.Load();
 
@@ -172,6 +170,19 @@ public sealed class ThemeStoreTests : IDisposable
         }
 
         Assert.Equal("""{ "colors": { "Accent.Color": "#FF8800" } }""", File.ReadAllText(ThemeFile));
+    }
+
+    private static bool CanRead(string path)
+    {
+        try
+        {
+            File.ReadAllText(path);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     [Fact]
