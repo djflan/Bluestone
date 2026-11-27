@@ -12,7 +12,11 @@ Run log: <absolute path of the run log>  Mode: <mode>  Phase: <phase>  Model: <m
 Goal: <one sentence, observable outcome>
 Context: <what has been decided so far; links to files, ADRs, issues; the pinned SHA for reviews>
 Risk/UI tier: <routine, elevated, or high risk; and directional, material, routine, or not applicable>
+Option picked: <Fast | Right | Thorough, and what it includes and skips>
 Scope: <what to look at or change>
+Don't investigate: <adjacent, pre-existing, or out-of-option areas; note them in one line if seen, don't chase them>
+Budget: <aggregate-effort budget for this dispatch>; before starting, Lucas also checks the run's wall-clock budget;
+if you reach the dispatch budget, stop and report what you have
 You own: <files or globs you may edit, or "read-only">
 Do not touch: <files other members own right now>
 Stop when: <concrete stop condition>
@@ -28,9 +32,9 @@ test output in ignored folders is fine."
 ## Constructive disagreement
 
 Use the canonical policy in `governance.md`. A material objection is not a vague preference or a refusal. Report it
-as: Concern, Evidence, Impact, Alternative, Confidence, and What would change my mind. Lucas validates and records
-material dissent, decides ordinary delivery questions, and escalates only under the governance criteria. Once a
-decision is made, proceed unless new evidence appears.
+as: Concern, Evidence, Impact, Alternative, Confidence, and What would change my mind. Lucas validates it, decides,
+and records material dissent; he escalates only under `governance.md` ("Decision authority"). Once a decision is
+made, proceed unless new evidence appears.
 
 ## Finding format (reviews)
 
@@ -50,7 +54,9 @@ Severity:
 - **medium:** an edge case, a missing test for changed behavior, or a UI or UX issue a musician will notice.
 - **low:** clarity, naming, or minor polish.
 
-Report "no findings in my area" when that is the result. Never pad.
+Also tag each finding **caused by this change**, **pre-existing**, or **speculative**; Lucas fixes the first kind and
+backlogs or drops the others (`governance.md`, "Decision authority"). Report "no findings in my area" when that is
+the result. Never pad.
 
 ## Build report (editing members)
 
@@ -62,26 +68,21 @@ Not verified: <hardware, platforms, or paths you could not exercise, and why>
 Open: <anything deferred or unresolved>
 ```
 
-A build report is not a sign-off. Lucas never treats "done" from a builder as the team's verdict.
+## Verdict (consulted members)
 
-## Sign-off (definition of done)
-
-Every required signer in `governance.md` ("Definition of done") returns this against the pinned commit:
+A consulted member returns this against the pinned commit. It is advice to Lucas, not a veto:
 
 ```text
-Signer: <member>  Area: <what you signed for>  Commit: <SHA>
-Acceptance checks:
+Member: <member>  Area: <what you checked>  Commit: <SHA>
+Acceptance checks in my area:
   - <check, quoted> → met | not met. Evidence: <command+result, screenshot path, probe, or file:line>
-Compared against: <approved direction / references, with paths>  (UI: plain state AND active state, compact AND normal)
-Verified claims: <any "unchanged" or "already satisfies" claim from the builder, and what you checked>
-Verdict: done | not done | not done (unverifiable: <what is missing>) | done (user-accepted gap: <what>)
-Blocking findings: <finding format above, or "none">
+Recommendation: ship | ship with noted gaps | fix first
+Fix first because: <a defect caused by this change, a missed acceptance check, or a floor item; else "n/a">
+Findings: <finding format above, or "none">
+Not verified: <what you could not see (app, device, platform) and why>
 ```
 
-A signer who could not inspect what their area requires (for example the running app, a probe, or a platform)
-returns "not done (unverifiable)" with what is missing, which triggers the missing-device stop; they never sign off on
-a description. Jules signs from the capture set the independent visual signer has checked, after that signer, or from the diff, docs,
-and CLI or log output when there is no visible UI (`governance.md`, "Evidence for signers").
+Never report something as checked from a description alone; say it was not verified instead.
 
 ## Council position
 
@@ -95,8 +96,10 @@ What would change my mind: <one line>
 
 ## Run log
 
-Lucas keeps one run log per `/team` invocation at `<session folder>/files/team/<YYYYMMDD-HHMM>-<slug>.md`. It is
-never written inside the repository. Sections: Request, Mode, Scope (outcome, acceptance checks, states to
-capture, out of scope), Risk
-and UI tier, Team and models with staffing reasons, Decisions and material dissent, Findings and outcomes, Sign-offs
-(signer, area, commit, verdict, evidence), Deferred, and Result.
+Lucas keeps one run log per non-Direct `/team` invocation at
+`<session folder>/files/team/<YYYYMMDD-HHMM>-<slug>.md`. Direct uses only its one-line scope/elapsed estimate and final
+report. A run log is never written inside the repository. Sections: Request, Mode, Scope (outcome, acceptance checks,
+out of scope), Options offered and the pick, Elapsed and aggregate estimates and real start time, Prioritized
+subtasks and cut list, UI tier,
+Team and models with staffing reasons, Decisions and material dissent, Findings and outcomes (fixed, backlogged, or
+dropped and why), Verdicts, Deferred, and Result with elapsed and aggregate actuals plus itemized waits.

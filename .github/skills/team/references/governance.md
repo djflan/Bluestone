@@ -1,121 +1,143 @@
 # Team governance
 
-This file is the canonical policy for the definition of done, UI evidence, constructive disagreement, and contract
-members. Agent charters and mode playbooks summarize these rules and point here; they do not create competing
-versions.
+This file is the canonical policy for delivery options, decision authority, UI evidence, constructive disagreement,
+and contract members. Agent charters and mode playbooks summarize these rules and point here; they do not create
+competing versions.
 
-## Definition of done: team sign-off
+## Context: who Bluestone serves today
 
-"Done" is a team decision, made the way a real development team makes it. Lucas does not decide it alone. Work is
-done only when every required signer for the areas the change touches has signed off, in writing, on the current
-commit. Lucas defines the acceptance checks, staffs the signers, collects the sign-offs, and records them. He cannot
-sign off for a specialist, skip a required signer, or overrule a "not done".
+Bluestone is a new application with one user, the maintainer. Treat every request like a client who needs it as soon
+as possible: deliver the agreed outcome quickly and correctly, and spend verification where a miss would be expensive
+or hard to undo. Most other misses are found in use and fixed forward in the next change. Checking that costs more
+than the bug it might find is waste.
 
-### Change size: light, normal, full
+## Delivery options and the budget
 
-Lucas records a size at intake, next to the UI tier. The user may name one ("light", "normal", "full"); otherwise
-Lucas picks it from the change. Effort must stay proportional: a look-and-feel change does not get the process of an
-engine change.
+Before any build work beyond Direct, Lucas scopes the request quickly (a few targeted reads, a few minutes; never a
+council) and presents 2–3 options. Each option states:
 
-| Size | Use it for |
+- **Includes:** the outcome and the acceptance checks it delivers.
+- **Skips:** what it does not do or verify, and what that risks.
+- **Team:** who works on it and why (often Lucas alone).
+- **Estimate:** elapsed delivery time (wall-clock from the recorded start), aggregate agent effort (the sum of active
+  time across members), and expected user or CI waits, each stated separately. Three members working in parallel for
+  ten minutes are about ten minutes elapsed and thirty minutes of aggregate effort.
+
+Lucas recommends one, then waits for the user's pick unless Direct applies or the request already contains a safe,
+fitting explicit choice. The picked option is the contract for the run: its scope, its
+verification, and its time budget. A typical set:
+
+| Option | Shape |
 |---|---|
-| **Light** | Look and feel, visual polish, copy, docs, and settings that only change appearance. No change to the engine, playback, native code, IPC, timing, file formats, project state, or concurrency. |
-| **Normal** | The default for features and fixes that are not light and not full. |
-| **Full** | Engine, playback, native, IPC, timing or latency claims, file formats, concurrency, or data-loss risk. |
+| **Direct** | A localized, low-risk, easily reversible change. Lucas works alone, reads only the owning files, makes the smallest change, and runs focused validation. No formal plan, specialist dispatch, alternative proposals, or unrelated investigation. |
+| **Fast** | The outcome, focused tests and build, one look at it. Known gaps listed. |
+| **Right** | Fast, plus the edge cases and review that a miss would make expensive. |
+| **Thorough** | Right, plus broader specialist review, platform coverage, or probes. Offer only when the risk warrants it. |
 
-Light changes follow these rules. They override the rest of this section where they conflict.
+Direct fits copy and spacing corrections or adjusting an existing font size or weight in one view. Bundling a new
+font requires dependency and license checks outside Direct. Direct excludes changes to behavior, public contracts,
+dependencies, migrations, security/privacy boundaries, or anything else expensive to reverse. The floor still
+applies wherever relevant. Lucas states the outcome and elapsed estimate in one line, then proceeds. If the user names
+Direct, Fast, Right, or Thorough in the initial request and it fits the work, that is the accepted contract: do not
+present the choice back or ask for redundant confirmation. If an explicitly selected option cannot safely cover the
+request, explain the concrete conflict and offer the smallest safe alternative. Direct never dispatches a specialist;
+if new evidence shows one is needed, Direct no longer fits and Lucas offers or applies the smallest safe option under
+the rules above.
 
-- **Signers:** Max (owner, with captures), one Grace code review on a single model, and Sabrina only when user docs or
-  ADRs changed. Caroline signs only when keyboard, focus, or screen-reader behavior changes. Other signers from the
-  table below join only if the diff actually reaches their area.
-- **One review round.** Fix critical and high findings. Fix a medium only when it is cheap and user-visible. Every
-  other finding goes into the PR's limitations and `docs/engineering-handoff.md` section 7, not into another round.
-- **Validation:** focused tests while building, then the full repository gates once on the final tree. Run them
-  again only if code changes after that. No local stress, load, or performance runs. A flaky timing or allocation
-  test is loosened or skipped with a reason and noted; it is not investigated in this change.
-- **Unverifiable evidence:** a "not done (unverifiable)" that only means the signer could not see the running app or
-  a device is recorded as a gap in the PR and the sign-off table. It does not stop the run, and the user's merge
-  instruction counts as accepting it.
+**Prioritize inside the option.** Order subtasks so the must-haves land first, and keep an explicit cut list. If time
+runs short, a working subset ships and the cut list says what didn't.
 
-In every size, a fix makes only the sign-off of the signer whose area it changes stale. That signer re-checks it.
-Signers whose area the fix does not change keep their sign-off.
+**Overrun stop.** Record real start and stop timestamps. Before every substantial dispatch or investigation, and after
+each implementation batch or commit, compare current wall-clock delivery time with the elapsed estimate. User and CI
+waits remain visible but are itemized separately. When elapsed delivery time reaches about 1.5× the estimate, Lucas
+stops and reports where things stand, why it grew, aggregate effort so far, and the choices: ship what is done, cut
+scope, or continue with a new estimate. He never silently keeps going.
 
-### Required signers
+**Report actual against estimate** for both wall-clock delivery time and aggregate effort in the run summary and PR,
+with user and CI waits itemized, so estimates get better over time.
 
-| The change touches | Required signers |
+## Decision authority: specialists advise, Lucas decides
+
+Within the picked option, Lucas makes the delivery decisions: what to investigate, which findings to fix, what goes
+to the backlog, and when the work is done. Specialists bring expertise and evidence; their verdicts are advice, not
+vetoes. Lucas validates every finding against the code and records why he acted on it or not.
+
+Before investigating anything, Lucas asks two questions:
+
+1. Could the answer change what we ship in this option?
+2. Would a miss be expensive or hard to undo (see "The floor")?
+
+If both answers are no, it is not investigated. It goes in the PR's limitations and `docs/engineering-handoff.md`
+section 7 when it is a real defect, and is dropped when it is speculative. Pre-existing problems, hypothetical edge
+cases, and polish beyond the request are backlog, not blockers. A decision, once made or accepted by the user, stays
+made unless new evidence materially changes the risk.
+
+Lucas comes back to the user only for:
+
+- picking an option at the start, unless Direct applies or the request already made a safe, fitting explicit choice;
+- a product decision only the user can make (including the UI approvals below);
+- a change to the agreed scope, a new dependency, or reversing an ADR;
+- an overrun stop;
+- a floor item that cannot be verified or fixed within the option.
+
+### The floor
+
+No option skips these, but they are narrow:
+
+- **Saved work:** project-file compatibility, and anything that could lose or corrupt user data.
+- **Real-time safety:** allocations, locks, logging, or unbounded waits on the audio or MIDI real-time path.
+- **Native stability:** FFI, native memory, and plugin-host changes that could crash the app.
+- **Security and privacy:** do not weaken trust boundaries around projects, plugins, native binaries, IPC, or file
+  paths; expose secrets or personal data in logs, prompts, artifacts, or commits; or ship a known exploitable path.
+  Treat project and plugin input as untrusted.
+- **Licensing:** bundled third-party material ships with compliant licenses.
+- **Honesty:** any claim in the PR, docs, or UI is true to what was actually checked; simulated is never reported as
+  verified.
+- **Validation integrity:** run the applicable mandatory gates on the commit being shipped. A failure blocks delivery
+  except for the local test exception below. Run CI when the chosen option includes it or the user asks for it.
+  If CI is run, it must pass on the current PR head before merge.
+
+### Pre-existing local test failure
+
+A maintainer may explicitly accept a specific local test failure for the reviewed head if the same test fails in the
+same way at the PR’s pinned merge base under the same command and environment. Show why the change is unrelated and
+how the requested outcome and all other floor protections were verified. Record both SHAs, the evidence and approval
+in the PR, and track the existing defect in the engineering handoff backlog. All other mandatory checks must pass.
+
+### Who weighs in
+
+Lucas consults the specialist whose area the chosen option actually touches. This table guides staffing; it is not a
+mandatory signer list, and a light-touch option can cover an area with Lucas's own check.
+
+| The change touches | Consult |
 |---|---|
-| Any visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles, visual-only controls | Max (owner); an independent visual signer (Iris for directional or material work, otherwise Caroline); Caroline for keyboard, focus, and accessibility |
-| Any other change visible in the running app (a label or default set in a view-model, resource, or setting) | An independent visual signer (Caroline unless Iris is staffed) |
-| A workflow, a default, terminology, or anything a musician sees and judges | Jules (see "Evidence for signers" below) |
+| Visible UI: `.axaml`, `Theme/`, `Controls/`, `Views/`, styles | Max for directional or material work, or when routine work needs distinct visual judgment; Iris for directional or material work; Caroline when keyboard, focus, or screen-reader behavior changes |
+| A workflow, a default, or terminology a musician judges | Jules |
 | `src/native/`, `Bluestone.Platform.*`, the plugin host, platform MIDI or audio adapters | Kenji |
-| `Bluestone.Engine*`, playback, audio, signal, MIDI timing, IPC, threads, locks, or any timing or latency claim | Milo |
+| `Bluestone.Engine*`, playback, audio, MIDI timing, IPC, threads, locks, or a timing claim | Milo |
 | More than one project layer, a new abstraction, a protocol, a file format, or an ADR | Theo |
-| Lifecycle, concurrency, or changed behavior that needs new tests | Alice |
-| Any code change | Grace (the code review; two model families when risk requires it) |
-| User-visible docs, ADRs, release notes, the deferred backlog | Sabrina |
+| Lifecycle, concurrency, or tests that need real design | Alice |
+| Non-trivial code | Grace (two model families only when a miss is expensive: concurrency, real-time, formats, data loss) |
+| User-visible docs, ADRs, release notes | Sabrina |
 
-The builder of a slice signs off their own slice, but the builder's own sign-off is never the only one for a visible
-or risky area: the independent signer in the table above must also sign. Lucas may add signers; he may not remove a
-required one. When a touched area has no staffed signer, staff one before calling the work done. Roster staffing
-heuristics and "smallest team" guidance never remove a required signer; they only decide who else joins.
+### Verdicts
 
-### Evidence for signers
+A consulted member returns the verdict format in `handoff.md`: a recommendation (ship, ship with noted gaps, or fix
+first) and findings with severity, evidence, and confidence. "Fix first" must name a concrete defect caused by this
+change, a missed acceptance check, or a floor item; otherwise Lucas treats it as backlog. A member who could not see
+what their area needs (the running app, a device, a platform) says so; Lucas records it as an unverified gap in the
+PR unless it is a floor item. A fix re-checks only the area it changed, and only when the change is substantive.
 
-For a change visible in the running app, Lucas lists the required states at intake: always a plain, realistic state (a fresh or small project, stopped,
-nothing selected, default layout) plus the populated and active states the change affects. Max captures exactly those
-states from the running app at compact and normal sizes. The independent visual signer, who has a shell, launches the
-app and checks those states and any others they choose; missing or mismatched captures are "not met". Jules, who does
-not run the app, signs after the visual signer, from that checked capture set. Whenever a change Jules signs is visible in the
-running app, whatever files it touches (a label or default set in a view-model, resource, or setting), Max captures
-it and an independent visual signer checks the captures before Jules signs. For a default or terminology change with
-no visible UI, Jules signs from the diff, the docs, and the CLI or log output that shows the behavior. Backend-only
-and docs-only work needs no captures; its signers use the diff, tests, and probes.
+### Speed instructions
 
-A sign-off is current when no later commit changed that signer's area. Any commit that changes a signed area,
-including review fixes, gate fixes, docs edits, and CI fixes after the PR is open, makes that sign-off stale; the same
-signer re-checks before the commit is pushed. A commit that only changes other areas leaves it current.
-
-### What a sign-off must contain
-
-Each signer returns the sign-off format in `handoff.md` against the pinned commit:
-
-- every acceptance check in their area marked **met** or **not met**, each with evidence (a command and its result,
-  a screenshot, a probe, or a code reference);
-- for UI: the running app inspected the way a user reaches it, not only a harness or gallery, in BOTH a plain,
-  realistic state (a fresh or small project, stopped, nothing selected) AND populated, active states (playing,
-  selected, armed, signal present), at compact and normal sizes. Each screenshot is placed side by side with the
-  approved direction or supplied references and critiqued per element. A visible difference that the approved
-  direction requires but that is missing is "not met";
-- any claim that something is "unchanged", "already satisfies the direction", or "out of scope" for an acceptance
-  check is verified by the signer against the reference, not taken from the builder's report;
-- a verdict: **done**, **not done** with blocking findings in the `handoff.md` finding format, **not done
-  (unverifiable)**, or **done (user-accepted gap: <what>)**, as defined in `handoff.md`.
-
-### When a signer says "not done"
-
-A "not done" blocks commit-for-review, opening or updating a PR, and merging. The owner fixes the findings and the
-same signer re-checks. Findings attached to a "not done" are outside Lucas's validate-and-drop and known-limitation
-paths: only the signer who raised them, or the user, can clear them, whatever their severity. A signer's "not done" is
-never an "ordinary delivery question" or "subjective polish" for Lucas to decide.
-
-When a signer cannot obtain the evidence their area requires (hardware, a platform, a quiet machine for probes), they
-return "not done (unverifiable)" with what is missing. Outside light changes (see "Change size"), that triggers the
-missing-device stop in `SKILL.md`: the user decides whether to accept the gap. An accepted gap turns the verdict into "done (user-accepted gap: <what>)", which
-counts as done and is listed as not verified in the PR and the sign-off table. Only the user can accept a gap. If the signer and the owner still disagree after two fix rounds, or Lucas thinks the objection
-is out of scope, Lucas stops and escalates to the user with both positions in the constructive-disagreement format.
-He never resolves it by dropping the signer.
-
-### Sign-offs are not waivable by speed
-
-User instructions such as "autopilot", "merge when done", or "don't spend all night" set pace and authority to
-proceed; they never waive sign-offs or the UI approvals required by the tier. When time is short, cut scope and say
-so, or report that the work is not done. "Merge when done" means merge after every required sign-off and user
-approval is in place.
+"Autopilot", "merge when done", and "don't spend all night" are instructions to keep moving: Lucas cuts scope, records
+gaps, and finishes. They never waive the floor or the UI approvals the user owns.
 
 ### Recording
 
-The run log and the PR body carry a sign-off table: signer, area, commit, verdict, and the evidence link. A PR with a
-missing or stale sign-off (the signed commit is older than a change to that area) is not ready.
+For non-Direct work, the run log and the PR record the option picked, elapsed and aggregate estimates and actuals,
+itemized waits, who was consulted and their verdicts, what was deferred, and what was not verified. Direct records
+those results in the final summary and PR without a formal run log.
 
 ## UI change tiers
 
@@ -136,9 +158,8 @@ Required evidence and stops:
 4. Stop for the user's direction pick. Lucas and the team may recommend but never choose for the user.
 5. Implement the chosen direction, then inspect the running app at compact and normal sizes in a plain, realistic
    state and in populated, active states.
-6. After the required team sign-offs (see "Definition of done"), show final screenshots beside the references and
-   stop for the user's approval before opening or updating the PR. Internal sign-off comes first, so the user never
-   has to find what the team missed.
+6. After internal review, show final screenshots beside the references and stop for the user's approval before
+   opening or updating the PR.
 7. Preserve the direction pick, final approval, screenshots, and comparisons in the PR. Material visual changes
    after approval require refreshed screenshots and approval.
 
@@ -154,7 +175,7 @@ Required evidence and stops:
    only when there is a meaningful product or visual choice; do not manufacture variants for ceremony.
 3. Implement after the proposal is agreed, inspect the running app at compact and normal sizes, and exercise the
    affected workflow and states, including a plain, realistic state.
-4. After the required team sign-offs, stop for final user approval before opening or updating the PR. Preserve the
+4. After internal review, stop for final user approval before opening or updating the PR. Preserve the
    evidence and approval in the PR.
 
 ### Routine UI
@@ -200,9 +221,8 @@ When disagreeing, state:
 - **What would change my mind:** the evidence or constraint that would resolve the disagreement.
 
 Lucas records material dissent and makes ordinary delivery decisions using the product vision and ADRs. After a
-decision, the team proceeds unless new evidence appears. Escalate to the user only when the choice changes the
-requested outcome, is hard to reverse, crosses an explicit user preference, requires a UI approval above, or leaves
-a material specialist objection unresolved.
+decision, the team proceeds unless new evidence appears. Escalate to the user only under "Decision authority" above;
+an unresolved specialist objection is Lucas's call, recorded with the dissent in the summary.
 
 ## Contract members
 

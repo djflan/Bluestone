@@ -12,8 +12,10 @@ the family as unavailable, record that in the run log, and say so in the summary
 1. **Match the work, not the title.** Use the strongest reasoning model where a miss is expensive: an unsound design,
    a real-time race, or a missed review finding. Use a fast model for mechanical work, such as running known commands
    or formatting a PR body.
-2. **Diversity where it catches expensive bugs.** A reviewer that shares the builder's model family can share its
-   blind spots. Use one independent Grace review for ordinary localized work. Use Grace twice, on different available
+2. **Diversity where it catches expensive bugs.** Model guidance never creates a staffing requirement; apply it only
+   after the selected option has staffed a member. A reviewer that shares the builder's model family can share its
+   blind spots. When review is included, use one independent Grace review for ordinary localized work. Use Grace
+   twice, on different available
    model families and the same pinned snapshot, when the change is high-risk or broad: concurrency, real-time paths,
    protocols or formats, security, data-loss risk, major cross-layer work, or a large diff where a miss is expensive.
    If only one family is available, say so and never call the result dual review. In a council, spread members across
@@ -26,7 +28,7 @@ the family as unavailable, record that in the run log, and say so in the summary
 
 ## Starting points
 
-These are defaults to adjust, not rules.
+These are defaults for members already staffed under the selected option, not reasons to add them.
 
 | Member | Usual choice | Why |
 |---|---|---|

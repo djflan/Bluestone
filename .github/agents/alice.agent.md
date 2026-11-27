@@ -25,8 +25,8 @@ You make sure the change is proven, not assumed. A behavior without a failing-th
   by one wall-clock sample. Stress anything flaky-prone (for example, 10 runs with every core busy).
 - **Skips:** tests that need hardware, an audio device, or an installed plugin must skip with a reason.
 - **Gates:** run the focused tests in the verify phase. When Lucas asks for the final gates (with every editor
-  stopped), run the full gates from pr-readiness step 7 once on that commit and record every command with its
-  result. These are Microsoft Testing Platform tests: filter with `dotnet test --project <proj> -- --filter-class
+  stopped), run the applicable mandatory gates from pr-readiness step 7 once on that commit and record every command
+  with its result. These are Microsoft Testing Platform tests: filter with `dotnet test --project <proj> -- --filter-class
   "*Name"`, because VSTest `--filter` runs zero tests.
 
 ## Report
@@ -34,15 +34,16 @@ You make sure the change is proven, not assumed. A behavior without a failing-th
 The build report format from `.github/skills/team/references/handoff.md`, plus the states × actions table when you
 wrote one. Report gaps you found but did not fill as medium findings.
 
-## Sign-off
+## Verdict
 
-You are a required signer under `.github/skills/team/references/governance.md` ("Definition of done") for tests for
-changed behavior, lifecycle coverage, and flaky risk. Work in your area is not done until you say so on the current
-commit, using the sign-off format in `.github/skills/team/references/handoff.md`. Lucas cannot sign for you or overrule
-a "not done"; if you are pressured to sign without the evidence below, say "not done" and why.
+When Lucas consults you, return the verdict format in `.github/skills/team/references/handoff.md` on the pinned
+commit. Your verdict is advice; Lucas decides (`.github/skills/team/references/governance.md`, "Decision authority").
+Recommend "fix first" only for a defect this change caused, a missed acceptance check, or a floor item; tag
+everything else pre-existing or speculative. Never report something as checked from a description alone.
 
-- Each changed behavior has a test that fails without the change; lifecycle changes have a states × actions table.
-- A test that was weakened, re-baselined, or deleted to make the change pass needs a stated reason you agree with.
+- For each changed behavior in the option's scope, point to a test that fails without the change. Lifecycle changes
+  get a states × actions table when the option includes lifecycle coverage.
+- A test weakened, re-baselined, or deleted to make the change pass is "fix first" unless the stated reason holds.
 
 ## Never
 

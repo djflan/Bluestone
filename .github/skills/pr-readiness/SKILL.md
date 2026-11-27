@@ -9,7 +9,7 @@ Run this before opening or updating a non-trivial pull request, and again before
 For EVERY user-facing UI change, the proportional UI evidence gate in step 8 is mandatory even when other readiness
 steps may be skipped. Directional and material work require user decisions; routine corrections require visual
 evidence and internal review without an automatic user stop. Its job is to find in one pass what review would
-otherwise find over several rounds. Do not request extra reviews to compensate: fix what this finds, then open the PR.
+otherwise find over several rounds. Apply the finding criteria below before opening the PR.
 
 **Non-trivial** means any of: new or changed behavior, a changed default, threads/locks/async, process or device
 lifecycle, IPC, timing or performance claims, or more than a few files. Non-UI typos, comment fixes, and dependency
@@ -18,13 +18,15 @@ gate.
 
 ## Procedure
 
-Work through every step. Write the findings down (in the session, not the repository) and fix them before opening the
-PR. Report the outcome in the PR's Verification section.
+Apply the steps the change actually touches: a step about lifecycle, concurrency, or timing is skipped when the change
+has none. Write the findings down (in the session, not the repository). Fix what this change caused, missed acceptance
+checks, and floor items (`.github/skills/team/references/governance.md`, "The floor"); record other real defects as
+known limitations and drop speculative ones. Report the outcome in the PR's Verification section.
 
 ### 1. Diff review
 
 1. Read the whole diff against the merge base (`git --no-pager diff origin/main...HEAD`), not just the last commit.
-2. Run the `code-review` agent on the branch diff and fix every real finding. (Under `/team`, Grace's risk-proportional
+2. Run the `code-review` agent on the branch diff and fix the findings this change caused. (Under `/team`, Grace's risk-proportional
    review is this review; see `.github/skills/team/references/modes/build.md`.) If it raises a class of problem (a
    race, an unhandled state), go to step 3 for the whole class.
 3. Look for leftovers: temporary CI changes, debug output, environment switches added for experiments, TODOs, files
@@ -80,13 +82,24 @@ For every number or guarantee in the README, docs, ADRs, PR body, and user-facin
 - Every changed behavior has a test that fails without the change.
 - Timing-sensitive tests must survive a busy 2–3 core CI runner. Judge by the best case or a bounded median, never by
   one wall-clock sample. Allocation tests must tolerate one-time runtime work. Make them robust by design; don't run
-  local stress or load loops unless the change touches a timing or real-time path. A flaky test in a light change
-  (`.github/skills/team/references/governance.md`, "Change size") is loosened or skipped with a reason, not chased.
+  local stress or load loops unless the change touches a timing or real-time path. Preserve unrelated flaky tests
+  and their assertions. If one fails a required local gate, apply step 7.
 - Tests that need hardware, devices, or installed plugins skip with a reason.
 
-### 7. Repository gates
+### 7. Risk-appropriate repository gates
 
-Run them all and record each command with its result:
+Choose the smallest gate set that proves the changed surface and record each command with its result. Once selected by
+these rules, a gate is mandatory. A failure blocks shipping unless it qualifies for the maintainer-approved
+[pre-existing local test exception](../team/references/governance.md#pre-existing-local-test-failure).
+
+- **Docs-only:** no build or test gate.
+- **Appearance-only, localized UI** (no behavior, binding, build graph, native, dependency, or generated-code change):
+  run `dotnet build src/dotnet/Bluestone.Desktop/Bluestone.Desktop.csproj -c Release` and inspect the affected element
+  in the running app at the relevant size and state. Run a focused UI test only when one covers the changed rendering
+  contract. If the diff includes added, modified or renamed `.cs` files still present at the head, also run
+  `dotnet format Bluestone.slnx --verify-no-changes --include <paths>` from `src/dotnet/`. Pass each changed C#
+  path relative to that directory as a separate argument. Skip this command when the list is empty.
+- **Behavioral .NET or broad code change:** run the full .NET gates:
 
 ```sh
 dotnet build src/dotnet/Bluestone.slnx -c Release          # warnings are errors
@@ -102,7 +115,9 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
   and `--check-allocations` reports 0 bytes.
 - **Timing or real-time path changed:** run the relevant probes from `docs/hardware-test-plan.md` with nothing else
   running on the machine.
-- **User-facing change:** launch the app and try the workflow.
+- **User-facing behavioral change:** launch the app and try the workflow. Directional and material UI use compact and
+  normal sizes; a routine cosmetic change may inspect only the affected state and size unless its acceptance criteria
+  require more.
 
 ### 8. Docs and PR body
 
@@ -122,8 +137,7 @@ dotnet test -c Release --project src/dotnet/Bluestone.Tests.Ui
 
 ## Ready means
 
-Every step is done, every finding is fixed or written into the PR as a known limitation, and nothing in the diff
-surprises you on a final read. If step 3 or 5 turned up more than a couple of problems, run steps 1–6 once more after
-fixing them. Problems cluster. Under `/team`, ready also requires a current sign-off from every required signer for
-the touched areas (`.github/skills/team/references/governance.md`, "Definition of done"). Missing UI evidence or user approval required by the recorded tier is a blocker, never
-a known limitation. An incorrectly low tier is also a blocker.
+The applicable steps are done, the floor holds, every validated finding is fixed or written into the PR as a known
+limitation, and nothing in the diff surprises you on a final read. If step 3 or 5 turned up more than a couple of
+problems caused by this change, run steps 1–6 once more after fixing them. Problems cluster. Missing UI evidence or
+user approval required by the recorded tier is a blocker, never a known limitation.
