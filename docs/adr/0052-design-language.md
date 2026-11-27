@@ -46,8 +46,9 @@ for those tokens and controls. Token ownership, `Palette`, and the control libra
   fixed in the same pull request or recorded as one.
 - The guide is a maintained document: every token, theme member, or public control change carries a small doc
   change, and a stale guide is a review finding.
-- UI tests guard the guide: every token key and control it references must exist, and new raw color literals in
-  views are caught.
+- Tests guard the guide: every token key and control it references must exist, and new hex color literals (and
+  `Color.FromRgb`/`FromArgb` with number literals) in views and controls are caught. Named colors such as
+  `Colors.White` are not.
 - Known contrast and focus-visibility gaps are listed in the guide's Known gaps and in
   `docs/engineering-handoff.md` §7, for a follow-up material UI change. The guide records them; it does not fix
   them.

@@ -143,6 +143,29 @@ public sealed partial class ThemeApplierTests : IDisposable
             }
         }
 
+        // The applier finds each brush's color by naming rule (and gradients by their list): in the file as written, every
+        // brush must already be that color, so a brush that refers to a differently named color fails here instead of being
+        // silently pointed at another color when a theme is applied.
+        foreach (var key in file.Keys.OfType<string>())
+        {
+            switch (file[key])
+            {
+                case SolidColorBrush solid:
+                    var source = ThemeApplier.SolidSource(key);
+                    Assert.True(file.ContainsKey(source) && solid.Color == (Color)file[source]!, $"The brush {key} is not {source}; name it after its color or map it in ThemeApplier.");
+                    break;
+                case LinearGradientBrush gradient:
+                    var stops = Assert.Contains(key, ThemeApplier.GradientSources);
+                    Assert.Equal(stops.Length, gradient.GradientStops.Count);
+                    for (var i = 0; i < stops.Length; i++)
+                    {
+                        Assert.True(gradient.GradientStops[i].Color == (Color)file[stops[i]]!, $"{key} stop {i + 1} is not {stops[i]}.");
+                    }
+
+                    break;
+            }
+        }
+
         return Task.CompletedTask;
     });
 
@@ -389,10 +412,8 @@ public sealed partial class ThemeApplierTests : IDisposable
             Assert.Equal(ThemeDefinition.DefaultMidiColor, store.Load().Theme.MidiColor);
             Assert.False(resetMidi.IsChecked == true, "An action key never stays checked.");
 
-            // The display settings keep only what is not a color.
-            var json = File.ReadAllText(settings);
-            Assert.DoesNotContain("radient", json, StringComparison.Ordinal);
-            Assert.DoesNotContain("idi", json, StringComparison.Ordinal);
+            // Theme edits never touch the display settings, which keep only what is not a color.
+            Assert.False(File.Exists(settings), "A gradient or MIDI color edit wrote the display settings.");
         }
         finally
         {

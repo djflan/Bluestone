@@ -19,7 +19,8 @@ A theme holds:
 
 - `name` and `version` (the theme format version);
 - `variant`: `light`, `midtoned`, or `dark`. It describes the overall scheme and maps to Avalonia's
-  `RequestedThemeVariant`: `light` to Light, `midtoned` and `dark` to Dark;
+  `RequestedThemeVariant`: `light` to Light, `midtoned` and `dark` to Dark. A hand edit can change it, but only
+  Dark Sodalite's `dark` has been designed and tested;
 - `colors`: every color token, keyed by its exact `Color` resource key in `Tokens.axaml` (for example
   `Surface.BaseColor`), plus the Fluent palette colors in `App.axaml` under `Fluent.*` keys;
 - the three meter gradients (mixer, chain, and gain) and the MIDI color.
@@ -32,21 +33,30 @@ Bluestone ships one theme, **Dark Sodalite** (variant `dark`), and it is the def
 
 ### The user's copy
 
-The user's copy is `<settings folder>/themes/dark-sodalite.json`, written on first run. Editing a gradient or the
-MIDI color in Settings ▸ Display writes into the active theme file; there is no separate override layer. Every
-theme member has its shipped default: each gradient's reset and the MIDI color's reset revert one member, and
-**Reset theme** (after confirmation) reverts them all.
+The user's copy is `<settings folder>/themes/dark-sodalite.json`, written on first run. It holds only the members
+that differ from the shipped theme (with the name, variant, and version), so a later release's improved colors, such
+as a contrast fix, reach every member the user never changed. Beside it, `dark-sodalite.shipped.json` lists every
+member's shipped value as a reference to copy from; Bluestone rewrites it when the shipped theme changes and never
+reads it.
 
-Reading is forgiving. Unknown keys are ignored. A missing or invalid value takes its default. A missing file gives
-the defaults. An unreadable file is kept aside under a new name, never silently overwritten, and the defaults are
-used.
+Editing a gradient or the MIDI color in Settings ▸ Display writes into the active theme file; there is no separate
+override layer. Changing a non-color display preference never writes the theme file. Every theme member has its
+shipped default: each gradient's reset and the MIDI color's reset revert one member, and **Reset theme** (after
+confirmation) reverts them all, leaving a file with no changes.
+
+Reading is forgiving. Comments and trailing commas are allowed. A missing value takes its default. A value that
+can't be used (an unknown key, an invalid color, gradient, or variant) takes its default and is reported in
+Messages. A missing file gives the defaults. A file that can't be parsed is kept aside under a new name and the
+defaults are used. A file that can't be read or kept aside is never written over: theme edits then apply until
+Bluestone closes and a warning says they weren't saved.
 
 ### Applying a theme
 
 Colors apply at startup, before any window opens. The token `Color` resources are replaced and the token brushes
 are updated in place, because styles hold those brush instances; `Palette`, for custom-drawn controls, reads the
-resources. Hand edits to colors therefore apply on the next launch. Gradients and the MIDI color apply live, as
-before.
+resources. Hand edits to colors therefore apply on the next launch, and should be made while Bluestone is closed:
+a gradient or MIDI color edit in the app rewrites the file from the colors it loaded. Gradients and the MIDI color
+apply live, as before.
 
 Live theme switching (`DynamicResource`), a theme picker, import and export, and Light or Midtoned themes are
 deferred.

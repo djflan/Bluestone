@@ -37,8 +37,10 @@ public sealed class ThemeStoreTests : IDisposable
         Assert.Throws<ArgumentException>(() => ThemeDefinition.DarkSodalite([new("Surface.BaseColor", "slate")]));
     }
 
+    private string ReferenceFile => Path.Combine(_directory, "dark-sodalite.shipped.json");
+
     [Fact]
-    public void AMissingFile_GivesTheDefaults_AndIsWrittenSoItCanBeEditedByHand()
+    public void AMissingFile_GivesTheDefaults_AndIsWrittenEmpty_BesideAReferenceOfEveryShippedValue()
     {
         var loaded = Store().Load();
 
@@ -47,9 +49,30 @@ public sealed class ThemeStoreTests : IDisposable
         var text = File.ReadAllText(ThemeFile);
         Assert.Contains("\"name\": \"Dark Sodalite\"", text, StringComparison.Ordinal);
         Assert.Contains("\"variant\": \"dark\"", text, StringComparison.Ordinal);
-        Assert.Contains("\"Surface.BaseColor\": \"#12151A\"", text, StringComparison.Ordinal);
-        Assert.Contains("\"color\": \"#B2E0F4\"", text, StringComparison.Ordinal);
+        Assert.Contains("\"colors\": {}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("#12151A", text, StringComparison.Ordinal);
+        var reference = File.ReadAllText(ReferenceFile);
+        Assert.Contains("\"Surface.BaseColor\": \"#12151A\"", reference, StringComparison.Ordinal);
+        Assert.Contains("\"color\": \"#B2E0F4\"", reference, StringComparison.Ordinal);
+        Assert.Contains("\"midiColor\": \"#3CCBF4\"", reference, StringComparison.Ordinal);
         Assert.Equal(Shipped, Store().Load().Theme);
+    }
+
+    [Fact]
+    public void OnlyChangesAreSaved_SoALaterShippedImprovementReachesEveryMemberNobodyChanged()
+    {
+        Store().Save(Shipped with { Colors = Shipped.Colors.SetItem("Accent.Color", "#FF8800"), ChainGradient = Red });
+        var text = File.ReadAllText(ThemeFile);
+        Assert.Contains("\"Accent.Color\": \"#FF8800\"", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Surface.BaseColor", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"mixer\"", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("midiColor", text, StringComparison.Ordinal);
+
+        // A later Bluestone ships a lighter base and a new mixer gradient: they arrive; the musician's changes stay.
+        var improved = Shipped with { Colors = Shipped.Colors.SetItem("Surface.BaseColor", "#202020"), MixerGradient = Red };
+        var loaded = new ThemeStore(_directory, improved).Load();
+
+        Assert.Equal(improved with { Colors = improved.Colors.SetItem("Accent.Color", "#FF8800"), ChainGradient = Red }, loaded.Theme);
     }
 
     [Fact]
@@ -81,13 +104,14 @@ public sealed class ThemeStoreTests : IDisposable
               "version": 99,
               "gradients": { "mixer": "rainbow", "chain": [{ "color": "#000000", "position": 0 }, { "color": "#ff0000", "position": 1 }], "gain": [{ "colour": "#000000", "position": 0 }] },
               "midiColor": "red",
-              "colors": { "Surface.BaseColor": "#010203", "Accent.Color": "aqua", "Made.UpColor": "#FFFFFF", "Overlay.ScrimColor": "#80ffffff" }
+              "colors": { "Surface.BaseColor": "#010203", "Accent.Color": "aqua", "Made.UpColor": "#FFFFFF", "Overlay.ScrimColor": "#80ffffff", },
+              // A comment, and the trailing comma above, are fine in a hand-edited file.
             }
             """);
 
         var loaded = Store().Load();
 
-        Assert.Null(loaded.Problem);
+        Assert.Equal("6 values in dark-sodalite.json couldn't be used, so they use their shipped color: Accent.Color, Made.UpColor, variant, midiColor, gradients.mixer, gradients.gain.", loaded.Problem);
         Assert.Equal(Shipped with
         {
             Colors = Shipped.Colors.SetItem("Surface.BaseColor", "#010203").SetItem("Overlay.ScrimColor", "#80FFFFFF"),
@@ -100,6 +124,7 @@ public sealed class ThemeStoreTests : IDisposable
     [InlineData("{ not json")]
     [InlineData("[1, 2]")]
     [InlineData("")]
+    [InlineData("{ \"colors\": { \"Accent.Color\": \"\\uD800\" } }")]
     public void AnUnreadableFile_IsKeptAside_NeverOverwritten_AndTheDefaultsAreUsed(string text)
     {
         File.WriteAllText(ThemeFile, text);
@@ -112,6 +137,76 @@ public sealed class ThemeStoreTests : IDisposable
         Assert.Equal(text, File.ReadAllText(aside));
         Assert.Contains(Path.GetFileName(aside), loaded.Problem, StringComparison.Ordinal);
         Assert.Equal(Shipped, Store().Load().Theme);
+    }
+
+    [Fact]
+    public void AFileThatCantBeRead_IsNeverWrittenOver()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.WriteAllText(ThemeFile, """{ "colors": { "Accent.Color": "#FF8800" } }""");
+        File.SetUnixFileMode(ThemeFile, UnixFileMode.None);
+        try
+        {
+            var store = Store();
+            var loaded = store.Load();
+
+            Assert.Equal(Shipped, loaded.Theme);
+            Assert.Contains("won't be saved over it", loaded.Problem, StringComparison.Ordinal);
+            Assert.False(store.CanSave);
+            var display = new DisplayViewModel();
+            var reports = new List<string>();
+            display.ThemeSaveFailed += (_, reason) => reports.Add(reason);
+            display.UseTheme(store, loaded.Theme);
+            display.Gain.Gradient = Red;
+
+            Assert.Single(reports);
+            Assert.Equal(Red, display.Gain.Gradient);
+        }
+        finally
+        {
+            File.SetUnixFileMode(ThemeFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        Assert.Equal("""{ "colors": { "Accent.Color": "#FF8800" } }""", File.ReadAllText(ThemeFile));
+    }
+
+    [Fact]
+    public void ChangingADisplayPreference_NeverRewritesTheTheme_SoAHandEditSurvives()
+    {
+        var store = Store();
+        var display = new DisplayViewModel();
+        display.Use(new DisplaySettingsStore(Path.Combine(_directory, "display-settings.json")));
+        display.UseTheme(store, store.Load().Theme);
+        File.WriteAllText(ThemeFile, """{ "colors": { "Accent.Color": "#FF8800" } }""");
+
+        display.LedFade = false;
+        display.GlowStrength = 150;
+        display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
+
+        Assert.Equal("""{ "colors": { "Accent.Color": "#FF8800" } }""", File.ReadAllText(ThemeFile));
+    }
+
+    [Fact]
+    public void ResetTheme_EndsAnOpenPreview_SoTheResetIsTheLastWord()
+    {
+        var store = Store();
+        var display = new DisplayViewModel();
+        display.UseTheme(store, store.Load().Theme);
+        display.Mixer.BeginGradientPreview();
+        display.Mixer.Gradient = Red;
+        display.BeginMidiColourPreview();
+        display.MidiColour = "#FF2E93";
+
+        display.ResetThemeCommand.Execute(null);
+
+        Assert.False(display.Mixer.IsPreviewing);
+        Assert.False(display.IsMidiColourPreviewing);
+        Assert.Equal(Shipped, Store().Load().Theme);
+        Assert.Equal(Shipped.MixerGradient, display.Mixer.Gradient);
     }
 
     [Fact]

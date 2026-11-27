@@ -243,9 +243,9 @@ public sealed class DisplaySettingsTests : IDisposable
     [Fact]
     public void APreview_AppliesEachEditAtOnce_ButSavesOnlyOnceItEnds()
     {
-        var path = File();
-        var store = new DisplaySettingsStore(path);
-        var display = Display(store);
+        // Gradients and the MIDI color are saved in the theme's file, so that is the file a preview holds.
+        var path = ThemeFile;
+        var display = Display(new DisplaySettingsStore(File()));
         display.LevelStyle = JunctionLevelStyle.RmsAndPeak;
         var before = System.IO.File.ReadAllText(path);
         var notified = 0;
@@ -341,9 +341,10 @@ public sealed class DisplaySettingsTests : IDisposable
     [Fact]
     public void ADragInAnyGradient_SavesExactlyOnce_WhenTheLastPreviewEnds()
     {
-        var path = File();
-        var store = new DisplaySettingsStore(path);
-        var display = Display(store);
+        // Gradients and the MIDI color are saved in the theme's file, so that is the file a preview holds.
+        var path = ThemeFile;
+        var display = Display(new DisplaySettingsStore(File()));
+        System.IO.File.Delete(path);
         Assert.False(System.IO.File.Exists(path), "Loading never saves.");
 
         display.Chain.BeginGradientPreview();
@@ -397,9 +398,10 @@ public sealed class DisplaySettingsTests : IDisposable
     [Fact]
     public void AMidiColourPreview_AppliesEachChangeAtOnce_AppliesWithOneSave_AndCancelLeavesTheOriginal()
     {
-        var path = File();
-        var store = new DisplaySettingsStore(path);
-        var display = Display(store);
+        // Gradients and the MIDI color are saved in the theme's file, so that is the file a preview holds.
+        var path = ThemeFile;
+        var display = Display(new DisplaySettingsStore(File()));
+        System.IO.File.Delete(path);
         display.MidiColour = "#7C6BFF";
         var notified = new List<string?>();
         display.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
@@ -444,9 +446,10 @@ public sealed class DisplaySettingsTests : IDisposable
     [Fact]
     public void MidiAndGradientPreviews_HoldEachOthersSaves_AndTheLastToEndWritesBoth()
     {
-        var path = File();
-        var store = new DisplaySettingsStore(path);
-        var display = Display(store);
+        // Gradients and the MIDI color are saved in the theme's file, so that is the file a preview holds.
+        var path = ThemeFile;
+        var display = Display(new DisplaySettingsStore(File()));
+        System.IO.File.Delete(path);
 
         // A gradient drag pending while the MIDI picker is open is kept, and written once the picker closes.
         display.Mixer.BeginGradientPreview();

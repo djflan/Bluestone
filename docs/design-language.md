@@ -302,9 +302,11 @@ geometry, type, or any rule in this guide.
 - **Dark Sodalite** is the default and the only theme Bluestone ships, variant Dark: cool slate surfaces divided by
   hairlines, with a few points of light, like the stone. Its shipped values are the colors in `Tokens.axaml` and the
   gradient and MIDI defaults.
-- A theme is a JSON file in the settings folder (`themes/dark-sodalite.json`). Editing a gradient or the MIDI light in
-  Settings ▸ Display writes into it; **Reset theme** puts every member back. Colors edited by hand apply the next time
-  Bluestone starts.
+- A theme is a JSON file in the settings folder (`themes/dark-sodalite.json`) holding only what differs from the
+  shipped theme, so improvements to the shipped colors reach everything nobody changed. `dark-sodalite.shipped.json`
+  beside it lists every shipped value to copy from. Editing a gradient or the MIDI light in Settings ▸ Display writes
+  into the theme; **Reset theme** puts every member back. Colors edited by hand (with Bluestone closed) apply the next
+  time it starts.
 - **Adding a color:** add a Color token (and its brush) to `Tokens.axaml` with a semantic name and a role in
   [section 3](#3-color-roles); read it in custom-drawn controls through `Theme/Palette.cs`. The theme picks it up
   automatically, and a UI test checks that every token brush follows its theme color. A gradient or shadow token must
@@ -328,7 +330,7 @@ change, and new work must not copy them:
 
 - **Contrast below the floor:** `Text.Muted` on every surface (3.1–3.9:1; 2.6:1 on `Surface.Overlay`), including the
   console's smallest captions; `Key.LitInk` on the record face's top stop (4.1:1); `State.Error` on `State.ErrorSurface`
-  (3.8:1). `Track.Offline` (3.4–4.1:1) passes as an icon but must not be used for text.
+  (3.8:1). `Track.Offline` (2.8–4.1:1) passes as an icon on panels but must not be used for text or on overlays.
 - **Focus:** the default focus ring is 1 px, and on aqua-rimmed controls it is hard to see; `Shadow.Focus` is a
   different blue from `State.Focus`.
 - **Colors outside the theme:** some custom-drawn surfaces still use fixed colors (the knob cap and face, the fader
@@ -344,6 +346,10 @@ change, and new work must not copy them:
   numbers rather than tokens.
 - **Naming:** `Key.Accent.Face` is blue rather than the accent; the transport's loop toggle and the loop key use
   different colors; component tokens repeat values instead of referring to a base token.
+- **Named colors:** code still uses `Colors.White`, `Colors.Black`, and similar named colors for shading; the raw-color
+  test doesn't catch them.
+- **Escape:** while the Reset theme confirmation is open, Escape closes Settings rather than the question (nothing is
+  reset).
 - **Spelling:** code identifiers still say "Colour" (`ColourPicker`, `LedColours`); new code says "Color".
 - **Themes:** no theme picker, no live theme switching, and no Light or Midtoned theme yet.
 

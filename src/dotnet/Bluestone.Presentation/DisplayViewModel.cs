@@ -149,6 +149,9 @@ public sealed partial class DisplayViewModel : ObservableObject
     private bool _loading;
     private bool _unsaved;
     private bool _saveFailing;
+    private bool _themeSaveFailing;
+    private bool _displayDirty;
+    private bool _themeDirty;
 
     public DisplayViewModel()
     {
@@ -176,6 +179,12 @@ public sealed partial class DisplayViewModel : ObservableObject
     /// later save succeeds.
     /// </summary>
     public event EventHandler<string>? SaveFailed;
+
+    /// <summary>
+    /// Raised with the reason when a gradient or MIDI color change could not be saved into the theme's file (it still applies
+    /// until Bluestone closes). Raised once until a later theme save succeeds.
+    /// </summary>
+    public event EventHandler<string>? ThemeSaveFailed;
 
     /// <summary>The mixer meters' gradient.</summary>
     public GradientEditorViewModel Mixer { get; }
@@ -213,7 +222,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             var colour = GradientEditorViewModel.NormalizeColour(value);
             if (colour is not null && SetProperty(ref field, colour))
             {
-                Save();
+                SaveTheme();
             }
         }
     } = ThemeDefinition.DefaultMidiColor;
@@ -278,7 +287,7 @@ public sealed partial class DisplayViewModel : ObservableObject
 
     /// <summary>
     /// Puts every member of the theme back to what it shipped with: its colors, the gradients, and the MIDI color. The view
-    /// asks the musician to confirm first.
+    /// asks the musician to confirm first. Any open preview ends first (keeping what it shows), so the reset is the last word.
     /// </summary>
     [RelayCommand(CanExecute = nameof(IsThemeChanged))]
     private void ResetTheme()
@@ -288,6 +297,12 @@ public sealed partial class DisplayViewModel : ObservableObject
             return;
         }
 
+        foreach (var editor in Editors.Where(e => e.IsPreviewing))
+        {
+            editor.EndGradientPreview();
+        }
+
+        EndMidiColourPreview();
         _loading = true;
         try
         {
@@ -302,7 +317,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             _loading = false;
         }
 
-        Save();
+        SaveTheme();
     }
 
     /// <summary>
@@ -369,13 +384,13 @@ public sealed partial class DisplayViewModel : ObservableObject
         GlowStrength = GlowStrength,
     };
 
-    partial void OnLevelStyleChanged(JunctionLevelStyle value) => Save();
+    partial void OnLevelStyleChanged(JunctionLevelStyle value) => SaveDisplay();
 
-    partial void OnLedFadeChanged(bool value) => Save();
+    partial void OnLedFadeChanged(bool value) => SaveDisplay();
 
-    partial void OnLedWarmupChanged(bool value) => Save();
+    partial void OnLedWarmupChanged(bool value) => SaveDisplay();
 
-    partial void OnLedGlowChanged(bool value) => Save();
+    partial void OnLedGlowChanged(bool value) => SaveDisplay();
 
     partial void OnGlowStrengthChanged(int value)
     {
@@ -387,14 +402,14 @@ public sealed partial class DisplayViewModel : ObservableObject
             return;
         }
 
-        Save();
+        SaveDisplay();
     }
 
     partial void OnIsMidiColourPreviewingChanged(bool value)
     {
         if (!value && _unsaved && !Previewing)
         {
-            Save();
+            Flush();
         }
     }
 
@@ -406,21 +421,40 @@ public sealed partial class DisplayViewModel : ObservableObject
     {
         if (e.PropertyName == nameof(GradientEditorViewModel.Gradient))
         {
-            Save();
+            SaveTheme();
         }
         else if (e.PropertyName == nameof(GradientEditorViewModel.IsPreviewing) && _unsaved && !Previewing)
         {
-            Save();
+            Flush();
         }
     }
 
-    private void Save()
+    // A display preference changed: it is written to the display settings file only.
+    private void SaveDisplay()
     {
-        if (_loading)
+        if (!_loading)
         {
-            return;
+            _displayDirty = true;
+            Flush();
         }
+    }
 
+    // A theme member changed: it is written to the theme's file only, so changing a display preference never rewrites the
+    // theme (and never replaces a hand edit made to it while Bluestone runs).
+    private void SaveTheme()
+    {
+        if (!_loading)
+        {
+            _themeDirty = true;
+            Flush();
+        }
+    }
+
+    // Writes whatever changed, unless a preview holds saves until it ends. Each file reports its own failure once per run of
+    // failures, so dragging a control on a read-only disk does not flood the messages; the change still applies for this
+    // session, and stays pending so the next save tries again.
+    private void Flush()
+    {
         if (Previewing)
         {
             _unsaved = true;
@@ -429,26 +463,38 @@ public sealed partial class DisplayViewModel : ObservableObject
 
         _unsaved = false;
         RefreshThemeState();
-        if (_store is not null || _themeStore is not null)
+        if (_displayDirty && _store is { } store)
         {
             try
             {
-                _store?.Save(Current);
-                if (_themeStore is { } themeStore && Theme is { } theme)
-                {
-                    themeStore.Save(theme);
-                }
-
+                store.Save(Current);
+                _displayDirty = false;
                 _saveFailing = false;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A preference that could not be saved still applies for this session. Report it once per run of
-                // failures, so dragging a control on a read-only disk does not flood the messages.
                 if (!_saveFailing)
                 {
                     _saveFailing = true;
                     SaveFailed?.Invoke(this, ex.Message);
+                }
+            }
+        }
+
+        if (_themeDirty && _themeStore is { } themeStore && Theme is { } theme)
+        {
+            try
+            {
+                themeStore.Save(theme);
+                _themeDirty = false;
+                _themeSaveFailing = false;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (!_themeSaveFailing)
+                {
+                    _themeSaveFailing = true;
+                    ThemeSaveFailed?.Invoke(this, ex.Message);
                 }
             }
         }

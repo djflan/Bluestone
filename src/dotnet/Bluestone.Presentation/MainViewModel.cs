@@ -114,6 +114,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ZoomToSelectionCommand.NotifyCanExecuteChanged();
         };
         Display.SaveFailed += (_, reason) => AddMessage(MessageSeverity.Warning, "Settings", $"Display settings could not be saved, so they apply only until Bluestone closes: {reason}");
+        Display.ThemeSaveFailed += (_, reason) => AddMessage(MessageSeverity.Warning, "Settings", $"The theme could not be saved, so its color changes apply only until Bluestone closes: {reason}");
         AudioClip = new AudioClipViewModel(this);
         Arrangement.Changed += (_, _) => AudioClip.Sync(Project.Sequence, Arrangement.SelectedClips);
         ClipLoop = new ClipLoopViewModel(this);

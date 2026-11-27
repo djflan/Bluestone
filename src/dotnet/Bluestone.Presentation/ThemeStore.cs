@@ -6,36 +6,51 @@ namespace Bluestone.Presentation;
 
 /// <summary>What <see cref="ThemeStore.Load"/> found: the theme to use, and what went wrong reading it, if anything.</summary>
 /// <param name="Theme">The theme: the file's values over the shipped defaults.</param>
-/// <param name="Problem">Why the file could not be used, for the musician, or null.</param>
+/// <param name="Problem">What the musician should know about the file (values it couldn't use, or why it wasn't read), or null.</param>
 public sealed record ThemeLoadResult(ThemeDefinition Theme, string? Problem);
 
 /// <summary>
-/// Reads and writes one theme as a JSON file (ADR 0053), over its shipped <see cref="Defaults"/>. Every member is read on its
-/// own: an unknown key is ignored and a missing or invalid value takes its default, so a hand edit gone wrong loses only that
-/// value. A missing file is written with the defaults, so it can be edited by hand. A file that cannot be read at all is kept
-/// aside (renamed, never overwritten) and the defaults are used.
+/// Reads and writes one theme as a JSON file (ADR 0053), over its shipped <see cref="Defaults"/>. The file holds only what
+/// differs from the shipped theme, so a later Bluestone's improved colors reach every member nobody changed; the shipped
+/// values are written beside it (<see cref="ReferencePath"/>) as a reference to copy from. Every member is read on its own:
+/// a missing value takes its default, and a value that can't be used takes its default and is reported. Comments and
+/// trailing commas are allowed. A file that can't be parsed is kept aside (renamed) and the defaults are used; a file that
+/// can't be read, or kept aside, is never written over (<see cref="CanSave"/>).
 /// </summary>
 public sealed class ThemeStore
 {
     /// <summary>The file format's version.</summary>
     public const int Version = 1;
 
+    private static readonly JsonDocumentOptions Lenient = new() { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip };
+
     public ThemeStore(string directory, ThemeDefinition defaults)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         Defaults = defaults ?? throw new ArgumentNullException(nameof(defaults));
         Path = System.IO.Path.Combine(directory, ThemeDefinition.FileName(defaults.Name));
+        ReferencePath = System.IO.Path.ChangeExtension(Path, ".shipped.json");
     }
 
     /// <summary>The theme as it ships: what reverting a member, or resetting the theme, puts back.</summary>
     public ThemeDefinition Defaults { get; }
 
-    /// <summary>The theme's file.</summary>
+    /// <summary>The theme's file: the musician's changes.</summary>
     public string Path { get; }
 
-    /// <summary>Reads the theme. Never throws for a missing, unreadable, or invalid file.</summary>
+    /// <summary>Every member's shipped value, rewritten when it changes; Bluestone never reads it.</summary>
+    public string ReferencePath { get; }
+
+    /// <summary>
+    /// False once <see cref="Load"/> found a file it could neither read nor move aside: <see cref="Save"/> then refuses, so the
+    /// musician's file is never replaced by the defaults.
+    /// </summary>
+    public bool CanSave { get; private set; } = true;
+
+    /// <summary>Reads the theme. Never throws.</summary>
     public ThemeLoadResult Load()
     {
+        WriteReference();
         string text;
         try
         {
@@ -48,92 +63,153 @@ public sealed class ThemeStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            return new ThemeLoadResult(Defaults, $"The {Defaults.Name} theme file couldn't be read ({ex.Message}), so its shipped colors are used.");
+            CanSave = false;
+            return new ThemeLoadResult(Defaults, $"The {Defaults.Name} theme file couldn't be read ({ex.Message}), so its shipped colors are used until Bluestone starts again. Color changes won't be saved over it.");
         }
 
         try
         {
-            using var document = JsonDocument.Parse(text);
+            using var document = JsonDocument.Parse(text, Lenient);
             if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                return new ThemeLoadResult(Read(document.RootElement), null);
+                var rejected = new List<string>();
+                var theme = Read(document.RootElement, rejected);
+                return new ThemeLoadResult(theme, rejected.Count == 0
+                    ? null
+                    : $"{rejected.Count} value{(rejected.Count == 1 ? string.Empty : "s")} in {System.IO.Path.GetFileName(Path)} couldn't be used, so {(rejected.Count == 1 ? "it uses its" : "they use their")} shipped color: {string.Join(", ", rejected)}.");
             }
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or ArgumentException)
         {
+            // Not JSON, or JSON that can't be decoded (an unpaired surrogate escape, for example).
         }
 
         return new ThemeLoadResult(Defaults, KeepAside());
     }
 
-    /// <summary>Writes <paramref name="theme"/> atomically (a temporary file, then a rename).</summary>
+    /// <summary>Writes what <paramref name="theme"/> changes from <see cref="Defaults"/>, atomically (a temporary file, then a rename).</summary>
+    /// <exception cref="IOException">The file couldn't be written, or <see cref="CanSave"/> is false.</exception>
     public void Save(ThemeDefinition theme)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(Path))!);
-        var temporary = Path + ".tmp";
-        File.WriteAllBytes(temporary, Write(theme));
-        File.Move(temporary, Path, overwrite: true);
+        if (!CanSave)
+        {
+            throw new IOException($"{System.IO.Path.GetFileName(Path)} couldn't be read when Bluestone started, so it is left as it is.");
+        }
+
+        WriteFile(Path, Write(theme, Defaults));
     }
 
-    private ThemeDefinition Read(JsonElement root)
+    private static void WriteFile(string path, byte[] bytes)
+    {
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!);
+        var temporary = path + ".tmp";
+        File.WriteAllBytes(temporary, bytes);
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    private ThemeDefinition Read(JsonElement root, List<string> rejected)
     {
         var colors = Defaults.Colors;
-        if (root.TryGetProperty("colors", out var saved) && saved.ValueKind == JsonValueKind.Object)
+        if (root.TryGetProperty("colors", out var saved))
         {
-            foreach (var property in saved.EnumerateObject())
+            if (saved.ValueKind != JsonValueKind.Object)
             {
-                if (Defaults.Colors.ContainsKey(property.Name)
-                    && property.Value.ValueKind == JsonValueKind.String
-                    && ThemeDefinition.IsColor(property.Value.GetString()))
+                rejected.Add("colors");
+            }
+            else
+            {
+                foreach (var property in saved.EnumerateObject())
                 {
-                    colors = colors.SetItem(property.Name, property.Value.GetString()!.ToUpperInvariant());
+                    if (Defaults.Colors.ContainsKey(property.Name)
+                        && property.Value.ValueKind == JsonValueKind.String
+                        && ThemeDefinition.IsColor(property.Value.GetString()))
+                    {
+                        colors = colors.SetItem(property.Name, property.Value.GetString()!.ToUpperInvariant());
+                    }
+                    else
+                    {
+                        rejected.Add(property.Name);
+                    }
                 }
             }
         }
 
         var gradients = root.TryGetProperty("gradients", out var g) && g.ValueKind == JsonValueKind.Object ? g : default;
+        var variant = Defaults.Variant;
+        if (root.TryGetProperty("variant", out var v))
+        {
+            var text = v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            if (text is { Length: > 0 } && char.IsLetter(text[0]) && Enum.TryParse<ThemeVariant>(text, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+            {
+                variant = parsed;
+            }
+            else
+            {
+                rejected.Add("variant");
+            }
+        }
+
+        var midi = Defaults.MidiColor;
+        if (root.TryGetProperty("midiColor", out var m))
+        {
+            if (m.ValueKind == JsonValueKind.String && SignalGradient.IsColour(m.GetString()))
+            {
+                midi = m.GetString()!.ToUpperInvariant();
+            }
+            else
+            {
+                rejected.Add("midiColor");
+            }
+        }
+
         return Defaults with
         {
-            Variant = root.TryGetProperty("variant", out var variant) && variant.ValueKind == JsonValueKind.String
-                && Enum.TryParse<ThemeVariant>(variant.GetString(), ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)
-                && char.IsLetter(variant.GetString()![0])
-                    ? parsed
-                    : Defaults.Variant,
+            Variant = variant,
             Colors = colors,
-            MixerGradient = Gradient(gradients, "mixer") ?? Defaults.MixerGradient,
-            ChainGradient = Gradient(gradients, "chain") ?? Defaults.ChainGradient,
-            GainGradient = Gradient(gradients, "gain") ?? Defaults.GainGradient,
-            MidiColor = root.TryGetProperty("midiColor", out var midi) && midi.ValueKind == JsonValueKind.String && SignalGradient.IsColour(midi.GetString())
-                ? midi.GetString()!.ToUpperInvariant()
-                : Defaults.MidiColor,
+            MixerGradient = Gradient(gradients, "mixer", rejected) ?? Defaults.MixerGradient,
+            ChainGradient = Gradient(gradients, "chain", rejected) ?? Defaults.ChainGradient,
+            GainGradient = Gradient(gradients, "gain", rejected) ?? Defaults.GainGradient,
+            MidiColor = midi,
         };
     }
 
-    private static SignalGradient? Gradient(JsonElement gradients, string name)
+    private static SignalGradient? Gradient(JsonElement gradients, string name, List<string> rejected)
     {
-        if (gradients.ValueKind != JsonValueKind.Object || !gradients.TryGetProperty(name, out var array) || array.ValueKind != JsonValueKind.Array)
+        if (gradients.ValueKind != JsonValueKind.Object || !gradients.TryGetProperty(name, out var array))
         {
             return null;
         }
 
         var stops = new List<SignalGradientStop>();
-        foreach (var element in array.EnumerateArray())
+        if (array.ValueKind == JsonValueKind.Array)
         {
-            if (element.ValueKind != JsonValueKind.Object
-                || !element.TryGetProperty("color", out var color) || color.ValueKind != JsonValueKind.String
-                || !element.TryGetProperty("position", out var position) || !position.TryGetDouble(out var value))
+            foreach (var element in array.EnumerateArray())
             {
-                return null;
+                if (element.ValueKind != JsonValueKind.Object
+                    || !element.TryGetProperty("color", out var color) || color.ValueKind != JsonValueKind.String
+                    || !element.TryGetProperty("position", out var position) || position.ValueKind != JsonValueKind.Number || !position.TryGetDouble(out var value))
+                {
+                    stops = null;
+                    break;
+                }
+
+                stops.Add(new SignalGradientStop(color.GetString()!, value));
             }
 
-            stops.Add(new SignalGradientStop(color.GetString()!, value));
+            if (stops is not null && SignalGradient.TryCreate(stops, out var gradient))
+            {
+                return gradient;
+            }
         }
 
-        return SignalGradient.TryCreate(stops, out var gradient) ? gradient : null;
+        rejected.Add($"gradients.{name}");
+        return null;
     }
 
-    private static byte[] Write(ThemeDefinition theme)
+    // Only what differs from the shipped theme is written (with the name, variant, and version), so members the musician
+    // never changed follow the shipped theme when a later Bluestone improves it.
+    private static byte[] Write(ThemeDefinition theme, ThemeDefinition? shipped)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
@@ -142,16 +218,26 @@ public sealed class ThemeStore
             writer.WriteString("name", theme.Name);
             writer.WriteString("variant", theme.Variant.ToString().ToLowerInvariant());
             writer.WriteNumber("version", Version);
+            writer.WriteString("about", shipped is null
+                ? $"{theme.Name} as it ships. Bluestone rewrites this file and never reads it: copy a value into {ThemeDefinition.FileName(theme.Name)} to change it."
+                : $"Your changes to {theme.Name}. A color or gradient that isn't listed uses its shipped value ({System.IO.Path.ChangeExtension(ThemeDefinition.FileName(theme.Name), ".shipped.json")} lists every one). Colors apply when Bluestone starts.");
             writer.WriteStartObject("gradients");
-            WriteGradient(writer, "mixer", theme.MixerGradient);
-            WriteGradient(writer, "chain", theme.ChainGradient);
-            WriteGradient(writer, "gain", theme.GainGradient);
+            WriteGradient(writer, "mixer", theme.MixerGradient, shipped?.MixerGradient);
+            WriteGradient(writer, "chain", theme.ChainGradient, shipped?.ChainGradient);
+            WriteGradient(writer, "gain", theme.GainGradient, shipped?.GainGradient);
             writer.WriteEndObject();
-            writer.WriteString("midiColor", theme.MidiColor);
+            if (shipped is null || theme.MidiColor != shipped.MidiColor)
+            {
+                writer.WriteString("midiColor", theme.MidiColor);
+            }
+
             writer.WriteStartObject("colors");
             foreach (var (key, value) in theme.Colors)
             {
-                writer.WriteString(key, value);
+                if (shipped is null || !shipped.Colors.TryGetValue(key, out var original) || original != value)
+                {
+                    writer.WriteString(key, value);
+                }
             }
 
             writer.WriteEndObject();
@@ -162,8 +248,13 @@ public sealed class ThemeStore
         return stream.ToArray();
     }
 
-    private static void WriteGradient(Utf8JsonWriter writer, string name, SignalGradient gradient)
+    private static void WriteGradient(Utf8JsonWriter writer, string name, SignalGradient gradient, SignalGradient? shipped)
     {
+        if (gradient == shipped)
+        {
+            return;
+        }
+
         writer.WriteStartArray(name);
         foreach (var stop in gradient.Stops)
         {
@@ -174,6 +265,22 @@ public sealed class ThemeStore
         }
 
         writer.WriteEndArray();
+    }
+
+    // The reference copy is best effort: it helps hand editing and is never read, so failing to write it isn't reported.
+    private void WriteReference()
+    {
+        try
+        {
+            var bytes = Write(Defaults, shipped: null);
+            if (!File.Exists(ReferencePath) || !File.ReadAllBytes(ReferencePath).AsSpan().SequenceEqual(bytes))
+            {
+                WriteFile(ReferencePath, bytes);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+        }
     }
 
     // First run: the file is written so it can be edited by hand. Failing to write it is reported, not fatal.
@@ -190,7 +297,8 @@ public sealed class ThemeStore
         }
     }
 
-    // An unreadable file is renamed out of the way, so a later save never overwrites what the musician wrote.
+    // A file that can't be parsed is renamed out of the way, so a later save never overwrites what the musician wrote. If it
+    // can't be moved, nothing is ever saved over it.
     private string KeepAside()
     {
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
@@ -208,6 +316,7 @@ public sealed class ThemeStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
+            CanSave = false;
             message.Append(CultureInfo.InvariantCulture, $" It couldn't be moved aside ({ex.Message}), so color changes won't be saved over it.");
         }
 

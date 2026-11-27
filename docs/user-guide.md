@@ -32,7 +32,7 @@ Bluestone's lights always mean something is actually happening, so a glance tell
 - **MIDI lights** show notes: the transport's **IN** flashes when MIDI arrives from a device, and a chain's junctions stay lit while notes are held.
 - **Lit keys** are latched: **M** (mute), **S** (solo), and record-arm light their whole face while on; the transport's Play, Record, Loop, and other toggles light their symbol.
 - **The selected device** in Device View is lit from the top; the others stay calm.
-- **Aqua** marks what you've selected, where the keyboard focus is, and transport toggles that are on.
+- **Aqua** marks what you've selected, where the keyboard focus is, and transport toggles that are on (Record lights red).
 
 Nothing glows for decoration, and color is never the only sign: keys carry letters or glyphs, and problems are written out in words. **Settings ▸ Display** sets how strongly lights glow (or turns glow off) and whether they fade.
 
@@ -177,7 +177,7 @@ Plugins run with the user's full permissions. Worker processes isolate crashes, 
 
 ## Display settings
 
-Bluestone's colors come from its theme, **Dark Sodalite**, shown at the top of **Settings ▸ Display**. The indicator gradients and the MIDI light below are part of the theme: changing one saves it into the theme. **Reset theme** (after you confirm) puts every color, gradient, and the MIDI light back to how Dark Sodalite ships. The theme is saved as `themes/dark-sodalite.json` in Bluestone's settings folder; colors you edit in that file by hand apply the next time you start Bluestone, and a value Bluestone can't read keeps its shipped color.
+Bluestone's colors come from its theme, **Dark Sodalite**, shown at the top of **Settings ▸ Display**. The indicator gradients and the MIDI light below are part of the theme: changing one saves it into the theme. **Reset theme** (after you confirm) puts every color, gradient, and the MIDI light back to how Dark Sodalite ships. The theme is saved as `themes/dark-sodalite.json` in Bluestone's settings folder. It holds only what you've changed; `dark-sodalite.shipped.json` beside it lists every color as Dark Sodalite ships it, to copy from. To change colors by hand, quit Bluestone, edit the theme file, and start Bluestone again. A value Bluestone can't use keeps its shipped color, and Messages lists it.
 
 Under **Settings ▸ Display ▸ INDICATOR COLORS**, choose one of three independent color gradients: **Mixer meters**, **Device chain** (the meters between devices and on the Out card), and **Gain LEDs** beside the faders. Select an indicator tile or use the **Mixer / Chain / Gain** selector to edit that family's gradient, from the bottom of its scale to the top. Select a stop by its handle, then open its color chip to open the **Color picker**. It has a continuous hue/saturation wheel, a brightness fader, **NEW / WAS** color previews, a **Color (hex)** field, and solid preset color tiles. Hue runs around the wheel and saturation runs from the center to the rim; the brightness fader darkens the wheel.
 
