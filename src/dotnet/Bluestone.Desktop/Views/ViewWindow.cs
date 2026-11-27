@@ -51,7 +51,14 @@ public sealed class ViewWindow : Window
         var desktopUnitsPerDip = OperatingSystem.IsMacOS() ? 1 : screen.Scaling;
         // Keep the window's own minimum: a short chain leaves room rather than shrinking below the floor.
         contentSize = new Size(Math.Max(contentSize.Width, MinWidth), Math.Max(contentSize.Height, MinHeight));
-        if (!TryCalculateFitGeometry(contentSize, screen.WorkingArea, Position, desktopUnitsPerDip, out var size, out var position))
+        if (!TryCalculateFitGeometry(
+                contentSize,
+                screen.WorkingArea,
+                Position,
+                desktopUnitsPerDip,
+                new Size(MinWidth, MinHeight),
+                out var size,
+                out var position))
         {
             return;
         }
@@ -67,6 +74,7 @@ public sealed class ViewWindow : Window
         PixelRect workArea,
         PixelPoint currentPosition,
         double desktopUnitsPerDip,
+        Size minimumSize,
         out Size size,
         out PixelPoint position)
     {
@@ -74,14 +82,16 @@ public sealed class ViewWindow : Window
         position = default;
         if (workArea.Width <= 0 || workArea.Height <= 0
             || !double.IsFinite(desktopUnitsPerDip) || desktopUnitsPerDip <= 0
-            || !double.IsFinite(contentSize.Width) || !double.IsFinite(contentSize.Height))
+            || !double.IsFinite(contentSize.Width) || !double.IsFinite(contentSize.Height)
+            || !double.IsFinite(minimumSize.Width) || !double.IsFinite(minimumSize.Height)
+            || minimumSize.Width < 0 || minimumSize.Height < 0)
         {
             return false;
         }
 
         var width = Math.Min(contentSize.Width, workArea.Width * 0.9 / desktopUnitsPerDip);
         var height = Math.Min(contentSize.Height, workArea.Height * 0.5 / desktopUnitsPerDip);
-        if (width <= 0 || height <= 0)
+        if (width < minimumSize.Width || height < minimumSize.Height)
         {
             return false;
         }

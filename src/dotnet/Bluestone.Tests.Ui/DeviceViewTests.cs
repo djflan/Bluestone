@@ -431,6 +431,7 @@ public sealed class DeviceViewTests
             workArea,
             new PixelPoint(4000, 4000),
             1.5,
+            new Size(200, 200),
             out var size,
             out var position));
 
@@ -440,6 +441,22 @@ public sealed class DeviceViewTests
         Assert.True(size.Height * 1.5 <= workArea.Height * 0.5);
         Assert.True(position.X + size.Width * 1.5 <= workArea.Right);
         Assert.True(position.Y + size.Height * 1.5 <= workArea.Bottom);
+    }
+
+    [Fact]
+    public void FitGeometry_DeclinesWhenScreenCapIsBelowWindowMinimum()
+    {
+        Assert.False(ViewWindow.TryCalculateFitGeometry(
+            new Size(400, 500),
+            new PixelRect(0, 0, 1600, 720),
+            new PixelPoint(0, 0),
+            2,
+            new Size(200, 200),
+            out var size,
+            out var position));
+
+        Assert.Equal(default, size);
+        Assert.Equal(default, position);
     }
 
     [Fact]
