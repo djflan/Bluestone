@@ -44,6 +44,8 @@
                 <MenuItem Header="New Device View" Command="{Binding NewDeviceViewCommand}" />
                 <Separator />
                 <MenuItem Header="Detach to Window" Command="{Binding Host.DetachCommand, FallbackValue={x:Null}}" IsVisible="{Binding !Host.IsDetached, FallbackValue=False}" />
+                <MenuItem x:Name="FitDeviceViewMenuItem" Header="Fit window to device chain" Click="OnFitWindowClicked"
+                          IsVisible="{Binding Host.IsDetached, FallbackValue=False}" IsEnabled="{Binding HasChain}" />
                 <MenuItem Header="Dock" Command="{Binding Host.DockCommand, FallbackValue={x:Null}}" IsVisible="{Binding Host.IsDetached, FallbackValue=False}" />
                 <MenuItem Header="Collapse to Rail" Command="{Binding Host.CollapseCommand, FallbackValue={x:Null}}" />
                 <MenuItem Header="Close" Command="{Binding Host.CloseCommand, FallbackValue={x:Null}}" />
