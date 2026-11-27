@@ -108,6 +108,7 @@
   <Color x:Key="Console.GainLed3Color">#FFA3C4</Color>
   <x:Double x:Key="Console.GlowAlpha">0.28</x:Double>
   <x:Double x:Key="Console.GlowReach">4</x:Double>
+  <x:Double x:Key="Console.GainLedPitch">20</x:Double>
   <x:Double x:Key="Console.GutterDepth">0.22</x:Double>
   <x:Double x:Key="Console.SheenAlpha">0.035</x:Double>
   <x:Double x:Key="Console.UnlitAlpha">0.13</x:Double>

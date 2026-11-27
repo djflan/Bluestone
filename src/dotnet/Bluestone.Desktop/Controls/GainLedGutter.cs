@@ -25,7 +25,9 @@ public sealed class GainLedGutter : Control
     public static readonly StyledProperty<double> LedRadiusProperty = AvaloniaProperty.Register<GainLedGutter, double>(nameof(LedRadius), 3);
 
     /// <summary>The fixed centre-to-centre distance between LEDs, in DIPs.</summary>
-    public const double MinimumPitch = 20;
+    public static readonly double MinimumPitch = ThemeResources.Find("Console.GainLedPitch") is double pitch
+        ? pitch
+        : throw new InvalidOperationException("Missing required token 'Console.GainLedPitch'.");
 
     /// <summary>How long an LED takes to go dark, in milliseconds.</summary>
     internal const double FadeMs = 140;
