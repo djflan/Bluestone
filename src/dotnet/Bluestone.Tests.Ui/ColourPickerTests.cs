@@ -278,8 +278,9 @@ public sealed class ColourPickerTests : IDisposable
 
             if (close == "Outside")
             {
+                // A field at the transport's far left: the open picker can reach down over the transport's middle.
                 Control target = midi
-                    ? app.Find<TextBox>("TempoBox")
+                    ? app.Find<TextBox>("LoopStartBox")
                     : AppUnderTest.Within<Button>(app.Window, b => AutomationProperties.GetName(b) == "New track");
                 var point = app.InWindow(target, new Point(target.Bounds.Width / 2, target.Bounds.Height / 2));
                 app.Window.MouseDown(point, MouseButton.Left);

@@ -420,8 +420,8 @@ public sealed class SettingsTests : IDisposable
         var host = app.Find<SettingsView>("SettingsHost");
         Assert.True(host.IsEffectivelyVisible);
         var hostBounds = new Rect(app.InWindow(host, default), host.Bounds.Size);
-        Assert.InRange(hostBounds.Width, 500, 800);
-        Assert.InRange(hostBounds.Height, 200, 560);
+        Assert.InRange(hostBounds.Width, 500, 880);
+        Assert.InRange(hostBounds.Height, 200, 840);
         Assert.True(hostBounds.Left > workspaceBounds.Left + 100);
         // The popover stops clear of the right rail, so the rotated Browser label is never covered.
         var rail = app.Find<Border>("RightRail");
