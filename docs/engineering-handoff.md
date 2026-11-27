@@ -323,6 +323,9 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       gradient or glow change (estimated tens of MB after many resizes; not measured). Quantize the color key or let
       each control own its sprites.
     - The shared bloom cache grows by one small brush per MIDI color tried until the next glow change.
+    - Retired light sprites are dropped, not disposed: a frame on the render thread may still draw them, so their native
+      image memory is released by the finalizer, not deterministically. Reference-counted retirement (or fewer bakes,
+      above) would fix it.
     - With glow off, the gradient editor's selected-stop glow goes too (its accent rim remains). The selected device
       card's halo and the color wheel's thumb halo ignore the setting by design.
     - Tests: no allocation test with glow off or at a strength other than 100%, and no UI test that the strength

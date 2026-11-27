@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Bluestone.Presentation"
              xmlns:theme="using:Bluestone.Desktop.Theme"
+             xmlns:controls="using:Bluestone.Desktop.Controls"
              x:Class="Bluestone.Desktop.Views.InspectorView"
              x:DataType="vm:MainViewModel"
              AutomationProperties.Name="Inspector">
@@ -195,10 +196,10 @@
             <Grid Classes="field" ColumnDefinitions="68,*">
               <TextBlock Text="Strip" Classes="label" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource Space.S}">
-                <ToggleButton Classes="trackButton mute" Content="M" IsChecked="{Binding MixerConsole.Master.IsMuted}"
-                              AutomationProperties.Name="Mute master audio" />
-                <ToggleButton Classes="trackButton solo" Content="S" IsChecked="{Binding MixerConsole.Master.IsSoloed}"
-                              AutomationProperties.Name="Solo master audio" />
+                <controls:SquareKey Glyph="M" Size="16" OnColor="{x:Static theme:Palette.Mute}" IsChecked="{Binding MixerConsole.Master.IsMuted}"
+                                    VerticalAlignment="Center" AutomationProperties.Name="Mute master audio" />
+                <controls:SquareKey Glyph="S" Size="16" OnColor="{x:Static theme:Palette.Solo}" IsChecked="{Binding MixerConsole.Master.IsSoloed}"
+                                    VerticalAlignment="Center" AutomationProperties.Name="Solo master audio" />
               </StackPanel>
             </Grid>
             <Grid Classes="field" ColumnDefinitions="68,*">

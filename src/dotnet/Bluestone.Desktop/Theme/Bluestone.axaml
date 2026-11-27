@@ -952,24 +952,6 @@
   <Style Selector="ToggleButton.trackButton:pointerover /template/ ContentPresenter, Button.trackButton:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource Control.Hover}" />
   </Style>
-  <Style Selector="ToggleButton.trackButton.mute:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Key.Accent.Face}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Key.Accent.Rim}" />
-    <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="BoxShadow" Value="0 0 5 0 #734C8DDB" />
-  </Style>
-  <Style Selector="ToggleButton.trackButton.mute:checked">
-    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
-  </Style>
-  <Style Selector="ToggleButton.trackButton.solo:checked /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource Key.Solo.Face}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Key.Solo.Rim}" />
-    <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="BoxShadow" Value="0 0 5 0 #73E3C345" />
-  </Style>
-  <Style Selector="ToggleButton.trackButton.solo:checked">
-    <Setter Property="Foreground" Value="{StaticResource Key.LitInk}" />
-  </Style>
   <Style Selector="ToggleButton.trackButton.arm">
     <Setter Property="Foreground" Value="{StaticResource Track.ArmIdle}" />
   </Style>
