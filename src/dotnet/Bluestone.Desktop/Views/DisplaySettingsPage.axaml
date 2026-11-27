@@ -135,7 +135,7 @@
         <TextBlock x:Name="RestartNote" Classes="settingHint" TextWrapping="Wrap" IsVisible="{Binding IsRestartNeeded}"
                    Text="Restart Bluestone to see the theme's colors." />
         <TextBlock Classes="settingHint" TextWrapping="Wrap"
-                   Text="The theme holds every color in Bluestone, including the indicator colors below." />
+                   Text="Bluestone's default dark UI theme." />
         <Border x:Name="ResetThemeConfirm" Classes="confirmReset" IsVisible="False" AutomationProperties.Name="Confirm theme reset">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space.L}">
             <TextBlock x:Name="ResetThemeQuestion" Classes="question" />
