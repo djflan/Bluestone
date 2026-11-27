@@ -8,8 +8,9 @@ namespace Bluestone.Desktop.Controls;
 
 /// <summary>
 /// The Machined signal meter: a stereo pair of LED columns in a recessed dark well. Each column is 3 DIP cells on a
-/// 4 DIP pitch, coloured from the floor up by the <see cref="MeterGradient"/> its <see cref="GradientTarget"/> names; lit cells throw a tight glow (the top cell
-/// and every third cell), unlit cells stay dark at <see cref="Palette.UnlitAlpha"/> of their colour, and the held peak
+/// 4 DIP pitch, coloured from the floor up by the <see cref="MeterGradient"/> its <see cref="GradientTarget"/> names; while the LED glow is on
+/// (<see cref="Glow"/>) every lit cell shows a hot core and throws a little baked light (<see cref="LedLight"/>) drawn under all the
+/// cells, so the column stays crisp and saturated and its light pools on the well (the held peak and clip lamp brighter). The top three lit cells, the crest, are lighter toward the top, the top one with a hotter core and its own wider light; the ramp shows with the glow off too; unlit cells stay dark at <see cref="Palette.UnlitAlpha"/> of their colour, and the held peak
 /// is the first unlit cell lightened. Above each column sits a separate clip lamp, always <see cref="Palette.Clip"/>,
 /// dim until a peak passes 0 dBFS and lit until reset. Peak + RMS readings follow the console taper
 /// (<see cref="ConsoleRail.Position"/>) so the meter, scale and fader agree; VU, K and LUFS are linear over their range.
@@ -52,8 +53,20 @@ public sealed class LedLadderMeter : Control
     private const double Cell = 3;
     private const double Pitch = 4;
     private const double ClipHeight = 4;
-    private const double TopCellTier = 1.2;
-    private const double CellTier = 0.55;
+    private const double CellLight = 0.5;
+
+    /// <summary>The crest: how many of the top lit cells of a column are brighter, the top one most.</summary>
+    internal const int CrestCells = 3;
+
+    // Per crest position (0 the top lit cell): how much lighter the fill and the hot core are than the cell's colour, and
+    // how many times the cell's own light it throws (the top cell its crest light as well, once fully lit).
+    private static readonly double[] CrestFill = [0.32, 0.18, 0.08];
+    private static readonly double[] CrestCore = [0.82, 0.68, 0.5];
+    private static readonly int[] CrestLights = [2, 3, 2];
+    private const double CellSpread = 0.8;
+    private const double ClipLight = 1.2;
+    private const int LightStride = LedLight.Levels + 1;
+    private static readonly IBrush ClipCore = ConsolePaint.Brush(Palette.Lighten(Palette.Clip, 0.5));
 
     /// <summary>How long a cell and the held peak take to go dark, in milliseconds.</summary>
     internal const double CellFadeMs = 90;
@@ -72,7 +85,16 @@ public sealed class LedLadderMeter : Control
     private IBrush[] _held = [];
     private IBrush[] _cellSteps = [];
     private IBrush[] _heldSteps = [];
+    private IBrush[] _cores = [];
+    private IBrush[] _topCores = [];
+    private IBrush[] _crestFills = [];
+    private IBrush[] _crestCores = [];
+    private LedSprite?[] _crestLights = [];
+    private LedSprite?[] _lights = [];
+    private readonly LedSprite?[] _lampLights = new LedSprite?[LedLight.Levels + 1];
     private int _version = -1;
+    private int _glowVersion = -1;
+    private double _lightWidth = -1;
     private MeterGradient? _coloursFrom;
     private MeterGradient? _subscribed;
 
@@ -206,8 +228,14 @@ public sealed class LedLadderMeter : Control
         var column = Math.Min(ColumnWidth, inner.Width / 2);
         var (left, right, leftHold, rightHold) = Shown;
         var now = LedMotion.Now;
-        Column(context, new Rect(inner.X, inner.Y, column, inner.Height), left, leftHold, _leftCells, _leftHeld, 0, now);
-        Column(context, new Rect(inner.Right - column, inner.Y, column, inner.Height), right, rightHold, _rightCells, _rightHeld, 1, now);
+        var leftColumn = new Rect(inner.X, inner.Y, column, inner.Height);
+        var rightColumn = new Rect(inner.Right - column, inner.Y, column, inner.Height);
+
+        // The light first, both columns', so no cell's spill lies over another cell: the cells stay crisp and saturated.
+        Light(context, leftColumn, left, leftHold, _leftCells, _leftHeld, 0, now);
+        Light(context, rightColumn, right, rightHold, _rightCells, _rightHeld, 1, now);
+        Column(context, leftColumn, left, leftHold, _leftCells, _leftHeld, 0);
+        Column(context, rightColumn, right, rightHold, _rightCells, _rightHeld, 1);
     }
 
     private static int CellsFor(double wellHeight)
@@ -216,15 +244,83 @@ public sealed class LedLadderMeter : Control
         return Math.Max(0, (int)Math.Floor((body + 1) / Pitch));
     }
 
-    private void Column(DrawingContext context, Rect column, double value, double peakHold, LedLevels cells, LedLevels heldCells, int side, double now)
+    private static int CountFor(Rect column) => (int)Math.Floor((column.Height - ClipHeight - 2 + 1) / Pitch);
+
+    internal static Rect CellRect(Rect column, int i) => new(column.X, Math.Round(column.Bottom - ((i + 1) * Pitch) + 1), column.Width, Cell);
+
+    /// <summary>
+    /// Moves every lamp of a column to its target for <paramref name="now"/> and, while the glow is on, draws each lit one's
+    /// baked light (<see cref="LedLight"/>): ordinary cells quietly, so a full column pools to its colour instead of
+    /// white; the top cell, the held peak, and the clip lamp brighter.
+    /// </summary>
+    private void Light(DrawingContext context, Rect column, double value, double peakHold, LedLevels cells, LedLevels heldCells, int side, double now)
     {
-        var lamp = new Rect(column.X, column.Y, column.Width, ClipHeight);
+        var glow = Glow.IsOn;
         _lamps.Set(side, IsClipped, now);
+        var lampLevel = glow ? LedLight.Level(_lamps.Step(side)) : 0;
+        var count = CountFor(column);
+        if (count <= 0)
+        {
+            return;
+        }
+
+        EnsureColors(count, column.Width);
+        if (lampLevel > 0 && _lampLights[lampLevel] is { } lampLight)
+        {
+            lampLight.Draw(context, new Rect(column.X, column.Y, column.Width, ClipHeight));
+        }
+
+        var fresh = cells.Resize(count) | heldCells.Resize(count);
+        var (topLit, held) = Cells(value, peakHold, count);
+        for (var i = 0; i < count; i++)
+        {
+            var lit = i <= topLit;
+            cells.Set(i, lit, now, fresh);
+            heldCells.Set(i, !lit && i == held, now, fresh);
+            if (!glow)
+            {
+                continue;
+            }
+
+            var level = Math.Max(LedLight.Level(cells.Step(i)), LedLight.Level(heldCells.Step(i)));
+            if (level > 0 && _lights[(i * LightStride) + level] is { } light)
+            {
+                var cell = CellRect(column, i);
+                var crest = Crest(i, topLit);
+                var times = crest >= 0 ? CrestLights[crest] : i == held ? 2 : 1;
+                for (var n = 0; n < times; n++)
+                {
+                    light.Draw(context, cell);
+                }
+
+                // The top lit cell's crest light, brighter and wider, once it is fully lit (its own light once more while it warms up).
+                if (crest == 0)
+                {
+                    if (level == LedLight.Levels && _crestLights[i] is { } crestLight)
+                    {
+                        crestLight.Draw(context, cell);
+                    }
+                    else
+                    {
+                        light.Draw(context, cell);
+                    }
+                }
+            }
+        }
+    }
+
+    private void Column(DrawingContext context, Rect column, double value, double peakHold, LedLevels cells, LedLevels heldCells, int side)
+    {
+        var glow = Glow.IsOn;
+        var lamp = new Rect(column.X, column.Y, column.Width, ClipHeight);
         var lampStep = _lamps.Step(side);
         if (lampStep == LedLevels.Steps)
         {
-            Glow.Rect(context, lamp, 0.5, Palette.Clip, TopCellTier);
             context.FillRectangle(ConsolePaint.Brush(Palette.Clip), lamp);
+            if (glow)
+            {
+                context.FillRectangle(ClipCore, Core(lamp));
+            }
         }
         else if (lampStep == 0)
         {
@@ -232,43 +328,51 @@ public sealed class LedLadderMeter : Control
         }
         else
         {
-            // Fading: the glow and the fill between lit and dim, one of a few cached steps.
+            // Fading: the fill between lit and dim, one of a few cached steps.
             var lit = lampStep / (double)LedLevels.Steps;
-            Glow.Rect(context, lamp, 0.5, Palette.Clip, TopCellTier * lit);
             context.FillRectangle(ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14 + (0.86 * lit))), lamp);
         }
 
-        var bottom = column.Bottom;
-        var count = (int)Math.Floor((column.Height - ClipHeight - 2 + 1) / Pitch);
+        var count = CountFor(column);
         if (count <= 0)
         {
             return;
         }
 
-        EnsureColors(count);
-        var fresh = cells.Resize(count) | heldCells.Resize(count);
-        var (topLit, held) = Cells(value, peakHold, count);
+        var (topLit, _) = Cells(value, peakHold, count);
         for (var i = 0; i < count; i++)
         {
-            var cell = new Rect(column.X, Math.Round(bottom - ((i + 1) * Pitch) + 1), column.Width, Cell);
-            var lit = i <= topLit;
-            cells.Set(i, lit, now, fresh);
-            heldCells.Set(i, !lit && i == held, now, fresh);
+            var cell = CellRect(column, i);
             var step = cells.Step(i);
             var heldStep = heldCells.Step(i);
-            if (step > 0 && (i == topLit || i % 3 == 0))
+            var crest = Crest(i, topLit);
+            if (crest >= 0 && step > 0)
             {
-                var tier = i == topLit ? TopCellTier : CellTier;
-                Glow.Rect(context, cell, 0.5, _coloursFrom!.GlowBrushes(_colors[i], step == LedLevels.Steps ? tier : tier * step / LedLevels.Steps));
+                // The crest: the top lit cells a little lighter, the top one most, at the cell's own step of its warm-up so
+                // a rising column stays smooth. The ramp shows with the glow off too; only the hot core is the glow's.
+                var slot = (i * CrestCells) + crest;
+                context.FillRectangle(_crestFills[(slot * Stride) + step], cell);
+                if (glow && step == LedLevels.Steps)
+                {
+                    context.FillRectangle(_crestCores[slot], Core(cell));
+                }
             }
-
-            if (step == LedLevels.Steps)
+            else if (step == LedLevels.Steps)
             {
                 context.FillRectangle(_lit[i], cell);
+                if (glow)
+                {
+                    // The die's hot core, a little lighter than the cell.
+                    context.FillRectangle(_cores[i], Core(cell));
+                }
             }
             else if (step == 0 && heldStep == LedLevels.Steps)
             {
                 context.FillRectangle(_held[i], cell);
+                if (glow)
+                {
+                    context.FillRectangle(_topCores[i], Core(cell));
+                }
             }
             else
             {
@@ -282,26 +386,41 @@ public sealed class LedLadderMeter : Control
         }
     }
 
+    /// <summary>Where lit cell <paramref name="i"/> sits in its column's crest (0 the top lit cell), or −1 below it or unlit.</summary>
+    internal static int Crest(int i, int topLit) => i <= topLit && topLit - i < CrestCells ? topLit - i : -1;
+
+    /// <summary>A lamp's hot core: its middle, inset a DIP from each side, one DIP tall.</summary>
+    private static Rect Core(Rect lamp) => new(lamp.X + 1, lamp.Y + Math.Floor((lamp.Height - 1) / 2), Math.Max(1, lamp.Width - 2), 1);
+
     /// <summary>
     /// One brush per cell for each state, rebuilt only when the cell count or the gradient changes. They come from
     /// <see cref="MeterGradient"/>'s caches, which empty on each change, not the app-lifetime ones in <see cref="ConsolePaint"/>.
     /// </summary>
-    private void EnsureColors(int count)
+    private void EnsureColors(int count, double width)
     {
         var gradient = Gradient;
-        if (_colors.Length == count && ReferenceEquals(_coloursFrom, gradient) && _version == gradient.Version)
+        if (_colors.Length == count && ReferenceEquals(_coloursFrom, gradient) && _version == gradient.Version && _glowVersion == Glow.Version && _lightWidth == width)
         {
             return;
         }
 
         _coloursFrom = gradient;
         _version = gradient.Version;
+        _glowVersion = Glow.Version;
+        _lightWidth = width;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
         _held = new IBrush[count];
+        _cores = new IBrush[count];
+        _topCores = new IBrush[count];
+        _crestFills = new IBrush[count * CrestCells * Stride];
+        _crestCores = new IBrush[count * CrestCells];
+        _crestLights = new LedSprite?[count];
+        _lights = new LedSprite?[count * LightStride];
         _cellSteps = new IBrush[count * Stride];
         _heldSteps = new IBrush[count * Stride];
+        var cellSize = new Size(width, Cell);
         for (var i = 0; i < count; i++)
         {
             var color = gradient.At((i + 0.5) / count);
@@ -310,6 +429,31 @@ public sealed class LedLadderMeter : Control
             _lit[i] = gradient.Brush(color);
             _unlit[i] = gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
             _held[i] = gradient.Brush(heldColor);
+            _cores[i] = gradient.Brush(Palette.Lighten(color, 0.3));
+            _topCores[i] = gradient.Brush(Palette.Lighten(color, 0.55));
+
+            // Each level of the cell's light, baked now so a first fade allocates nothing. Cells sit 1 DIP apart and their
+            // light adds up, so each throws a little and not far.
+            for (var level = 1; level <= LedLight.Levels; level++)
+            {
+                _lights[(i * LightStride) + level] = gradient.Light(color, cellSize, 0.5, ellipse: false, CellLight * level / LedLight.Levels, CellSpread);
+            }
+
+            // Any cell can be the top of the column: its crest fills at every step of a warm-up, its cores, and the top
+            // cell's crest light (lit only, so one level), all built now so the crest moving up and down allocates nothing.
+            _crestLights[i] = gradient.Light(Palette.Lighten(color, 0.1), cellSize, 0.5, ellipse: false, 1.0);
+            for (var crest = 0; crest < CrestCells; crest++)
+            {
+                var slot = (i * CrestCells) + crest;
+                var crestColor = Palette.Lighten(color, CrestFill[crest]);
+                _crestCores[slot] = gradient.Brush(Palette.Lighten(color, CrestCore[crest]));
+                for (var step = 1; step <= LedLevels.Steps; step++)
+                {
+                    var lit = step / (double)LedLevels.Steps;
+                    _crestFills[(slot * Stride) + step] = gradient.Brush(step == LedLevels.Steps ? crestColor
+                        : Palette.Alpha(crestColor, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * lit)));
+                }
+            }
 
             // Between dark and lit: the cell's colour from its unlit alpha up to opaque, and the held colour over it.
             for (var step = 0; step <= LedLevels.Steps; step++)
@@ -319,25 +463,20 @@ public sealed class LedLadderMeter : Control
                     : gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * lit)));
                 _heldSteps[(i * Stride) + step] = step == LedLevels.Steps ? _held[i] : gradient.Brush(Palette.Alpha(heldColor, lit));
 
-                // The glow at each step, for a top cell and for an ordinary cell that glows (every third): built now so a
-                // first fade allocates nothing.
-                if (step > 0)
-                {
-                    _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? TopCellTier : TopCellTier * step / LedLevels.Steps);
-                    if (i % 3 == 0)
-                    {
-                        _ = gradient.GlowBrushes(color, step == LedLevels.Steps ? CellTier : CellTier * step / LedLevels.Steps);
-                    }
-                }
             }
         }
 
         WarmClipLamp();
+        var lampSize = new Size(width, ClipHeight);
+        for (var level = 1; level <= LedLight.Levels; level++)
+        {
+            _lampLights[level] = LedLight.For(Palette.Clip, lampSize, 0.5, ellipse: false, ClipLight * level / LedLight.Levels);
+        }
     }
 
     private static bool _clipLampWarm;
 
-    // The clip lamp's fixed colour has one brush and glow per step, in the app-lifetime caches: build them all once.
+    // The clip lamp's fixed colour has one brush per step, in the app-lifetime caches: build them all once.
     private static void WarmClipLamp()
     {
         if (_clipLampWarm)
@@ -350,7 +489,6 @@ public sealed class LedLadderMeter : Control
         {
             var lit = step / (double)LedLevels.Steps;
             _ = ConsolePaint.Brush(Palette.Alpha(Palette.Clip, 0.14 + (0.86 * lit)));
-            _ = Glow.BrushesFor(Palette.Clip, step == LedLevels.Steps ? TopCellTier : TopCellTier * lit);
         }
 
         _ = ConsolePaint.Brush(Palette.Clip);
@@ -361,10 +499,12 @@ public sealed class LedLadderMeter : Control
     {
         base.OnAttachedToVisualTree(e);
         Subscribe(Gradient);
+        Glow.Changed += OnGradientChanged;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        Glow.Changed -= OnGradientChanged;
         Subscribe(null);
         base.OnDetachedFromVisualTree(e);
     }

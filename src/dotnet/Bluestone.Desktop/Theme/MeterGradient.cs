@@ -34,6 +34,7 @@ public sealed class MeterGradient
 {
     private readonly Dictionary<uint, IImmutableSolidColorBrush> _solidBrushes = [];
     private readonly Dictionary<(uint, double), IImmutableSolidColorBrush[]> _glows = [];
+    private readonly Dictionary<(uint, double, double, double, bool, double, double), LedSprite?> _lights = [];
     private readonly SignalGradient _default;
     private SignalGradient _gradient;
     private (double Position, Color Color)[] _stops;
@@ -93,6 +94,7 @@ public sealed class MeterGradient
         _stops = StopsOf(gradient);
         _solidBrushes.Clear();
         _glows.Clear();
+        _lights.Clear();
         Version++;
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -146,10 +148,33 @@ public sealed class MeterGradient
         return brushes;
     }
 
+    /// <summary>
+    /// The baked light (<see cref="LedLight.Bake"/>) of a lamp in a colour drawn from this gradient, cached until it or the
+    /// glow setting changes; null while the glow is off.
+    /// </summary>
+    internal LedSprite? Light(Color color, Avalonia.Size size, double radius, bool ellipse, double intensity, double spread = 1)
+    {
+        var key = (color.ToUInt32(), size.Width, size.Height, radius, ellipse, intensity, spread);
+        if (!_lights.TryGetValue(key, out var sprite))
+        {
+            sprite = LedLight.Bake(color, size, radius, ellipse, intensity, spread);
+            _lights[key] = sprite;
+        }
+
+        return sprite;
+    }
+
+    /// <summary>Empties the caches that depend on the glow setting (<see cref="Glow.Use"/>); controls rebuild on <see cref="Glow.Version"/>.</summary>
+    internal void ClearLight()
+    {
+        _glows.Clear();
+        _lights.Clear();
+    }
+
     public override string ToString() => Name;
 
-    /// <summary>How many brushes this gradient's caches hold now (for tests).</summary>
-    internal int CachedBrushCount => _solidBrushes.Count + _glows.Count;
+    /// <summary>How many brushes and lights this gradient's caches hold now (for tests).</summary>
+    internal int CachedBrushCount => _solidBrushes.Count + _glows.Count + _lights.Count;
 
     private static (double Position, Color Color)[] StopsOf(SignalGradient gradient) =>
         [.. gradient.Stops.Select(stop => (stop.Position, Color.Parse(stop.Colour)))];

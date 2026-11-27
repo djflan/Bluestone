@@ -542,4 +542,40 @@ public sealed class DisplaySettingsTests : IDisposable
         reloaded.LedFade = true;
         Assert.Equal(new DisplaySettings { LedWarmup = false }, store.Load());
     }
+
+    [Fact]
+    public void LedGlowAndStrength_RoundTrip_AndStrengthIsClamped()
+    {
+        var store = new DisplaySettingsStore(File());
+        var display = new DisplayViewModel();
+        display.Use(store);
+
+        display.LedGlow = false;
+        display.GlowStrength = 150;
+        Assert.Equal(new DisplaySettings { LedGlow = false, GlowStrength = 150 }, store.Load());
+
+        display.GlowStrength = 500;
+        Assert.Equal(DisplaySettings.MaxGlowStrength, display.GlowStrength);
+        Assert.Equal(DisplaySettings.MaxGlowStrength, store.Load().GlowStrength);
+        display.GlowStrength = -5;
+        Assert.Equal(DisplaySettings.MinGlowStrength, display.GlowStrength);
+
+        var reloaded = new DisplayViewModel();
+        reloaded.Use(store);
+        Assert.False(reloaded.LedGlow);
+        Assert.Equal(DisplaySettings.MinGlowStrength, reloaded.GlowStrength);
+    }
+
+    [Theory]
+    [InlineData("""{ "glowStrength": 900 }""", DisplaySettings.MaxGlowStrength)]
+    [InlineData("""{ "glowStrength": "loud" }""", DisplaySettings.DefaultGlowStrength)]
+    [InlineData("""{ "glowStrength": 1.5 }""", DisplaySettings.DefaultGlowStrength)]
+    public void GlowStrength_LoadsClampedOrDefault(string json, int expected)
+    {
+        var path = File();
+        System.IO.File.WriteAllText(path, json);
+        var settings = new DisplaySettingsStore(path).Load();
+        Assert.Equal(expected, settings.GlowStrength);
+        Assert.True(settings.LedGlow);
+    }
 }

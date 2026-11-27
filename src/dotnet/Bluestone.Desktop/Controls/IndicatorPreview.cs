@@ -122,11 +122,13 @@ internal sealed class ChainSeamPreview : Control
     {
         base.OnAttachedToVisualTree(e);
         LedColours.Changed += OnMidiChanged;
+        Glow.Changed += OnMidiChanged;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         LedColours.Changed -= OnMidiChanged;
+        Glow.Changed -= OnMidiChanged;
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -150,16 +152,10 @@ internal sealed class ChainSeamPreview : Control
         var midi = LedColours.Midi;
         if (_notesHeld)
         {
-            var bloom = new RadialGradientBrush
+            if (Glow.Bloom(midi, Palette.GlowAlpha * 1.1) is { } bloom)
             {
-                GradientStops =
-                {
-                    new GradientStop(ConsolePaint.Alpha(midi, Palette.GlowAlpha * 1.1), 0),
-                    new GradientStop(ConsolePaint.Alpha(midi, Palette.GlowAlpha * 1.1 * 0.35), 0.45),
-                    new GradientStop(ConsolePaint.Alpha(midi, 0), 1),
-                },
-            }.ToImmutable();
-            context.DrawEllipse(bloom, null, icon, IconSize * 1.1, IconSize * 1.1);
+                context.DrawEllipse(bloom, null, icon, IconSize * 1.1, IconSize * 1.1);
+            }
         }
 
         var pen = _notesHeld

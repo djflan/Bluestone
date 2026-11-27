@@ -253,6 +253,7 @@ public partial class App : Avalonia.Application
         Theme.LedColours.UseMidi(display.MidiColour);
         Controls.LedMotion.Fade = display.LedFade;
         Controls.LedMotion.Warmup = display.LedWarmup;
+        Theme.Glow.Use(display.LedGlow, display.GlowStrength / 100.0);
         display.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(DisplayViewModel.MidiColour))
@@ -266,6 +267,10 @@ public partial class App : Avalonia.Application
             else if (e.PropertyName == nameof(DisplayViewModel.LedWarmup))
             {
                 Controls.LedMotion.Warmup = display.LedWarmup;
+            }
+            else if (e.PropertyName is nameof(DisplayViewModel.LedGlow) or nameof(DisplayViewModel.GlowStrength))
+            {
+                Theme.Glow.Use(display.LedGlow, display.GlowStrength / 100.0);
             }
         };
 

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -21,7 +22,7 @@ public enum SquareKeyKind
 
 /// <summary>
 /// A compact square track key (mute, solo, record, monitor), as on a console's channel strip: off is a dark grey face
-/// with a light letter and a faint top lip; on is a solid fill in the key's colour with a tight glow. Solo's yellow takes
+/// with a light letter and a faint top lip; on is a solid fill in the key's colour throwing its light past the face (<see cref="LedLight"/>) while the LED glow is on. Solo's yellow takes
 /// dark ink; every other lit key takes white. Turned off, the lit face fades out over <see cref="FadeMs"/>
 /// (<see cref="LedMotion"/>). A toggle button, so it keeps its accessible name and checked state.
 /// </summary>
@@ -42,7 +43,7 @@ public sealed class SquareKey : ToggleButton
     /// <summary>How long the lit face takes to fade out, in milliseconds.</summary>
     internal const double FadeMs = 60;
 
-    private const double LitTier = 0.55;
+    private const double LitLight = 0.9;
     private readonly FormattedText?[] _letters = new FormattedText?[2];
     private readonly (string, uint, double)[] _letterKeys = new (string, uint, double)[2];
     private readonly LedLevels _lamp;
@@ -54,7 +55,13 @@ public sealed class SquareKey : ToggleButton
         CursorProperty.OverrideDefaultValue<SquareKey>(new Cursor(StandardCursorType.Hand));
     }
 
-    public SquareKey() => _lamp = new LedLevels(this, FadeMs, count: 1);
+    public SquareKey()
+    {
+        _lamp = new LedLevels(this, FadeMs, count: 1);
+
+        // A lit key's light reaches past its face onto the strip; clipped to the key, it would never show.
+        ClipToBounds = false;
+    }
 
     /// <summary>How lit the face is (for tests).</summary>
     internal LedLevels Lamp => _lamp;
@@ -81,6 +88,20 @@ public sealed class SquareKey : ToggleButton
             _lamp.Set(0, IsChecked == true, LedMotion.Now);
         }
     }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Glow.Changed += OnGlowChanged;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        Glow.Changed -= OnGlowChanged;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnGlowChanged(object? sender, EventArgs e) => InvalidateVisual();
 
     protected override void OnGotFocus(FocusChangedEventArgs e)
     {
@@ -126,8 +147,7 @@ public sealed class SquareKey : ToggleButton
         if (on)
         {
             var fill = ConsolePaint.Vertical(ConsolePaint.Lighter(OnColor, IsPointerOver ? 0.16 : 0.08), ConsolePaint.Darker(OnColor, IsPressed ? 0.2 : 0.08));
-            context.DrawRectangle(fill, null, face);
-            Glow.Rect(context, r, Radius, OnColor, LitTier);
+            LedLight.For(OnColor, r.Size, Radius, ellipse: false, LitLight)?.Draw(context, r);
             context.DrawRectangle(fill, null, face);
         }
         else
