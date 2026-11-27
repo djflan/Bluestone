@@ -20,15 +20,15 @@ Bluestone combines deep, flexible signal flow with clear, approachable workflows
 
 New builds on the [Releases](https://github.com/djflan/Bluestone/releases) page include categorized notes and the complete pull-request and commit history since the previous published release.
 
-![Bluestone's workspace with the mixer docked below the arrangement](docs/images/identity-r6/workspace-mixer.png)
+![Bluestone's workspace with an arranged MIDI performance and a selected four-device chain](docs/images/readme/workspace.png)
 
-![The device chain: machined device cards joined by LED-ladder signal junctions with MIDI indicators](docs/images/identity-r6/device-chain.png)
+![A playing device chain with built-in and reference devices, MIDI indicators, and active audio levels](docs/images/readme/device-chain.png)
 
 The mixer at normal and compact sizes:
 
 | Normal | Compact |
 |---|---|
-| ![Mixer, normal layout](docs/images/identity-r6/mixer-normal.png) | ![Mixer, compact layout](docs/images/identity-r6/mixer-compact.png) |
+| ![Mixer, normal layout](docs/images/readme/mixer-normal.png) | ![Mixer, compact layout](docs/images/readme/mixer-compact.png) |
 
 ## The idea
 
