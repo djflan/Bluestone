@@ -303,6 +303,7 @@
                                                ToolTip.Tip="Gain. Drag or use the arrow keys; Home for the minimum, End for +6 dB; double-click or Delete for 0 dB." />
                         <controls:LedLadderMeter Grid.Column="3" Mode="{Binding MeterMode}" Value="{Binding MeterValue}" PeakHold="{Binding MeterPeakHold}"
                                                  LeftValue="{Binding MeterLeftValue}" RightValue="{Binding MeterRightValue}"
+                                                 LeftRmsValue="{Binding MeterLeftRmsValue, Mode=OneWay}" RightRmsValue="{Binding MeterRightRmsValue, Mode=OneWay}"
                                                  LeftPeakHold="{Binding MeterLeftPeakHold}" RightPeakHold="{Binding MeterRightPeakHold}"
                                                  IsReady="{Binding IsMeterReady}" IsClipped="{Binding IsClipped}"
                                                  AutomationProperties.Name="Track level meter"
@@ -468,6 +469,7 @@
               <controls:LedLadderMeter Grid.Column="3" MeterWidth="{StaticResource Mixer.MasterMeterWidth}" ColumnWidth="{StaticResource Mixer.MasterMeterColumnWidth}"
                                        Mode="{Binding Master.MeterMode}" Value="{Binding Master.MeterValue}" PeakHold="{Binding Master.MeterPeakHold}"
                                        LeftValue="{Binding Master.MeterLeftValue}" RightValue="{Binding Master.MeterRightValue}"
+                                       LeftRmsValue="{Binding Master.MeterLeftRmsValue, Mode=OneWay}" RightRmsValue="{Binding Master.MeterRightRmsValue, Mode=OneWay}"
                                        LeftPeakHold="{Binding Master.MeterLeftPeakHold}" RightPeakHold="{Binding Master.MeterRightPeakHold}"
                                        IsReady="{Binding Master.IsMeterReady}" IsClipped="{Binding Master.IsClipped}"
                                        AutomationProperties.Name="Master level meter"

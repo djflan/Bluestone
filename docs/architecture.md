@@ -454,7 +454,9 @@ are digital scales, not room calibration; VU reference is not acoustic SPL calib
 a warming-up/not-ready state until three seconds of valid samples have accumulated and after a
 discontinuity. Each strip draws one stereo `LedLadderMeter`, beside a `ConsoleFader` and `ConsoleScale` on the
 same console taper (`ConsoleRail`, −60 to +6 dB) and a display-only `GainLedGutter`; the mode changes its scale and
-ballistics, not the meter count. Meter mode and VU reference are saved in
+ballistics, not the meter count. In Peak + RMS, each column fills brightly to RMS and extends more dimly to the
+falling peak, with a separate held-peak marker. If RMS is above the falling peak, a dark notch marks the peak within
+the bright fill. Meter mode and VU reference are saved in
 application-local settings, not the project; they do not change Device View junction meters. The
 former Bar/Round presentation setting was removed; older settings files still load. A focused BenchmarkDotNet
 ShortRun covered warmed 128-frame Peak+RMS/VU/LUFS-S processing and build/preparation/reused-snapshot
@@ -576,7 +578,7 @@ project changes); Return inserts into the most recently active Device View that 
 
 Between panels, each junction is a `ChainJunction` drawn from a `JunctionSignal` (ADR 0037): a MIDI port glyph lit
 while notes are held, and a stereo `LedLadderMeter` with its clip lamp that follows Settings ▸ Display's **Levels
-show** (`LadderLevels`): the average with the held peak above it (the default) or the peak alone. They update each
+show** (`LadderLevels`): the peak alone (the default) or the average with the held peak above it. They update each
 frame and redraw only when what they show changes. The update does not allocate, except that while a junction is
 hovered its tooltip text is rebuilt when its signal changes. The Out card's `ChainOutMeter` shows the chain's last junction
 with a dB scale and peak readout. Only junctions a visible Device View shows are metered

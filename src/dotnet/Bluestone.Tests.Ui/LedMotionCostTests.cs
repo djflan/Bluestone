@@ -128,6 +128,60 @@ public sealed class LedMotionCostTests
         return Task.CompletedTask;
     });
 
+    [Fact]
+    public Task TheCombinedMeter_AnimatingRmsBoundary_AllocatesNothingPerFrame() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var ladder = new LedLadderMeter
+        {
+            Mode = MixerMeterMode.PeakRms,
+            IsReady = true,
+            Width = 14,
+            Height = 220,
+            LeftValue = -3,
+            RightValue = -6,
+            LeftRmsValue = -12,
+            RightRmsValue = -15,
+        };
+        var window = Show(ladder);
+        try
+        {
+            using var bitmap = Bitmap(ladder);
+            using var context = bitmap.CreateDrawingContext();
+            void Quiet()
+            {
+                ladder.LeftRmsValue = -36;
+                ladder.RightRmsValue = -40;
+            }
+
+            void Loud()
+            {
+                ladder.LeftRmsValue = -12;
+                ladder.RightRmsValue = -15;
+            }
+
+            ladder.Render(context);
+            var updates = ChainMeterCostTests.InSteadyState(() => ladder.LeftRmsValue = ladder.LeftRmsValue == -12 ? -13 : -12, 1000);
+            ChainMeterCostTests.Report($"Combined meter, 1000 RMS property updates: {updates} bytes");
+            Assert.Equal(0, updates);
+            var boundUpdates = ChainMeterCostTests.InSteadyState(() => ladder.SetValue(LedLadderMeter.LeftRmsValueProperty, ladder.LeftRmsValue == -12 ? -13 : -12), 1000);
+            ChainMeterCostTests.Report($"Combined meter, 1000 direct-property SetValue updates: {boundUpdates} bytes");
+            Assert.Equal(0, boundUpdates);
+            var rightUpdates = ChainMeterCostTests.InSteadyState(() => ladder.SetValue(LedLadderMeter.RightRmsValueProperty, ladder.RightRmsValue == -15 ? -16 : -15), 1000);
+            Assert.Equal(0, rightUpdates);
+            var pass = InSteadyState(() => Pass(clock, () => ladder.Render(context), Quiet, Loud, warms: true));
+            ChainMeterCostTests.Report($"Combined meter, {pass.Draws} draws: {pass.DrawBytes} draw bytes, {pass.TickBytes} tick bytes");
+            Assert.Equal(0, pass.TickBytes);
+            Assert.Equal(0, pass.DrawBytes);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
     [Theory]
     [MemberData(nameof(Keys))]
     public Task Keys_FadeOnTicksThatAllocateNothing(string kind) => HeadlessApp.RunAsync(() =>

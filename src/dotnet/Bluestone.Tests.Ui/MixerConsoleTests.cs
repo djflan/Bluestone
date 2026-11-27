@@ -1416,30 +1416,53 @@ public sealed class MixerConsoleTests
     });
 
     [Fact]
-    public Task PeakRmsRail_FillsToTheLouderRms_AndHoldsThePeakMarker() => HeadlessApp.RunAsync(async () =>
+    public Task PeakRmsRails_BindBothChannelsOfPeakAndRms_OnTrackAndMaster() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();
         var (audio, _, _) = await SeedAsync(app);
         var mixer = ShowDockedMixer(app);
         Assert.Equal(MixerMeterMode.PeakRms, app.ViewModel.MixerConsole.MeterMode);
-        var rail = Visible<LedLadderMeter>(StripOf(mixer, audio.Name), "Track level meter");
-        var reading = new MeterReading(0.9f, 0.6f, 0.2f, 0.5f);
+        var rails = new[]
+        {
+            Visible<LedLadderMeter>(StripOf(mixer, audio.Name), "Track level meter"),
+            Visible<LedLadderMeter>(mixer, "Master level meter"),
+        };
+        MeterReading? reading = new MeterReading(0.9f, 0.6f, 0.2f, 0.5f);
         app.ViewModel.MixerConsole.MeterSource = _ => reading;
         var timestamp = System.Diagnostics.Stopwatch.GetTimestamp();
         app.ViewModel.MixerConsole.RefreshMeters(timestamp);
         app.Settle();
 
-        // The fill is the louder side's RMS (the right here), not either peak; the marker is the louder held peak.
-        Assert.Equal(MeterReading.ToDecibels(0.5f), rail.Value, 5);
-        Assert.Equal(MeterReading.ToDecibels(0.9f), rail.PeakHold, 5);
-        Assert.True(rail.PeakHold - rail.Value > 4, $"Peak {rail.PeakHold} should sit well above the RMS fill {rail.Value}.");
+        foreach (var rail in rails)
+        {
+            Assert.Equal(MeterReading.ToDecibels(0.9f), rail.LeftValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.6f), rail.RightValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.2f), rail.LeftRmsValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.5f), rail.RightRmsValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.9f), rail.LeftPeakHold, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.6f), rail.RightPeakHold, 5);
+        }
 
-        // Quieter: the fill falls with the RMS while the marker holds.
+        // Quieter: each input updates independently while the marker holds.
         reading = new MeterReading(0.3f, 0.3f, 0.1f, 0.05f);
         app.ViewModel.MixerConsole.RefreshMeters(timestamp + 1);
         app.Settle();
-        Assert.Equal(MeterReading.ToDecibels(0.1f), rail.Value, 5);
-        Assert.Equal(MeterReading.ToDecibels(0.9f), rail.PeakHold, 5);
+        foreach (var rail in rails)
+        {
+            Assert.Equal(MeterReading.ToDecibels(0.1f), rail.LeftRmsValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.05f), rail.RightRmsValue, 5);
+            Assert.Equal(MeterReading.ToDecibels(0.9f), rail.LeftPeakHold, 5);
+        }
+
+        reading = null;
+        app.ViewModel.MixerConsole.RefreshMeters(timestamp + 2);
+        app.Settle();
+        Assert.All(rails, rail =>
+        {
+            Assert.False(rail.IsReady);
+            Assert.True(double.IsNaN(rail.LeftRmsValue));
+            Assert.True(double.IsNaN(rail.RightRmsValue));
+        });
     });
 
     private static void AssertStripBody(Window window, Control view, params string[] audioTracks)

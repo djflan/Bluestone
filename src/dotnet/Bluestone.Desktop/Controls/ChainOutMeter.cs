@@ -18,7 +18,7 @@ public sealed class ChainOutMeter : Control
     public static readonly StyledProperty<JunctionSignal?> SignalProperty = AvaloniaProperty.Register<ChainOutMeter, JunctionSignal?>(nameof(Signal));
 
     /// <summary>What the ladder shows (Settings ▸ Display): the average level with the peak held, or the peak alone.</summary>
-    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainOutMeter, JunctionLevelStyle>(nameof(LevelStyle));
+    public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainOutMeter, JunctionLevelStyle>(nameof(LevelStyle), JunctionLevelStyle.Peak);
 
     private const double LadderWidth = 22;
     private const double WellHeight = 22;

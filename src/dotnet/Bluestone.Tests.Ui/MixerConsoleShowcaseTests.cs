@@ -360,14 +360,14 @@ public sealed class MixerConsoleShowcaseTests
             var ready = !(warming && index is >= 0 and < 5);
             var value = mode switch
             {
-                MixerMeterMode.PeakRms => rms,
+                MixerMeterMode.PeakRms => peak,
                 MixerMeterMode.Vu => rms + 18,
                 MixerMeterMode.K20 => rms + 20,
                 MixerMeterMode.K14 => rms + 14,
                 MixerMeterMode.K12 => rms + 12,
                 _ => ready ? rms - 2 : double.NaN,
             };
-            return new MixerMeterReading(reading, mode, value, value - RightOffset, ready);
+            return new MixerMeterReading(reading, mode, value, mode == MixerMeterMode.PeakRms ? peak - 0.6 : value - RightOffset, ready);
         }
 
         public void SetMixerMeterSettings(MixerMeterSettings settings)

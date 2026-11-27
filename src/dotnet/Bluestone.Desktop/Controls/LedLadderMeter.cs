@@ -11,7 +11,10 @@ namespace Bluestone.Desktop.Controls;
 /// 4 DIP pitch, coloured from the floor up by the <see cref="MeterGradient"/> its <see cref="GradientTarget"/> names; while the LED glow is on
 /// (<see cref="Glow"/>) every lit cell shows a hot core and throws a little baked light (<see cref="LedLight"/>) drawn under all the
 /// cells, so the column stays crisp and saturated and its light pools on the well (the held peak and clip lamp brighter). The top three lit cells, the crest, are lighter toward the top, the top one with a hotter core and its own wider light; the ramp shows with the glow off too; unlit cells stay dark at <see cref="Palette.UnlitAlpha"/> of their colour, and the held peak
-/// is the first unlit cell lightened. Above each column sits a separate clip lamp, always <see cref="Palette.Clip"/>,
+/// is a lightened cell. In Peak + RMS mode, when per-channel RMS is supplied, the bright body reaches RMS and a dimmer
+/// extension reaches the peak; when RMS is higher, a small dark notch marks the current peak and the held peak remains
+/// at its actual position.
+/// Above each column sits a separate clip lamp, always <see cref="Palette.Clip"/>,
 /// dim until a peak passes 0 dBFS and lit until reset. Peak + RMS readings follow the console taper
 /// (<see cref="ConsoleRail.Position"/>) so the meter, scale and fader agree; VU, K and LUFS are linear over their range.
 /// Each cell fades as it goes dark (<see cref="CellFadeMs"/>) and warms up as it lights (<see cref="CellWarmupMs"/>); the
@@ -28,6 +31,13 @@ public sealed class LedLadderMeter : Control
     public static readonly StyledProperty<double> LeftValueProperty = AvaloniaProperty.Register<LedLadderMeter, double>(nameof(LeftValue), double.NaN);
 
     public static readonly StyledProperty<double> RightValueProperty = AvaloniaProperty.Register<LedLadderMeter, double>(nameof(RightValue), double.NaN);
+
+    /// <summary>One-way RMS input in dBFS; NaN leaves that column's existing single-level presentation unchanged.</summary>
+    public static readonly DirectProperty<LedLadderMeter, double> LeftRmsValueProperty =
+        AvaloniaProperty.RegisterDirect<LedLadderMeter, double>(nameof(LeftRmsValue), o => o.LeftRmsValue, (o, value) => o.LeftRmsValue = value, double.NaN);
+
+    public static readonly DirectProperty<LedLadderMeter, double> RightRmsValueProperty =
+        AvaloniaProperty.RegisterDirect<LedLadderMeter, double>(nameof(RightRmsValue), o => o.RightRmsValue, (o, value) => o.RightRmsValue = value, double.NaN);
 
     /// <summary>The higher held peak, in dBFS; used for a column whose own held peak is NaN.</summary>
     public static readonly StyledProperty<double> PeakHoldProperty = AvaloniaProperty.Register<LedLadderMeter, double>(nameof(PeakHold), double.NaN);
@@ -67,6 +77,7 @@ public sealed class LedLadderMeter : Control
     private const double ClipLight = 1.2;
     private const int LightStride = LedLight.Levels + 1;
     private static readonly IBrush ClipCore = ConsolePaint.Brush(Palette.Lighten(Palette.Clip, 0.5));
+    private static readonly IBrush PeakNotch = ConsolePaint.Brush(Palette.Well);
 
     /// <summary>How long a cell and the held peak take to go dark, in milliseconds.</summary>
     internal const double CellFadeMs = 90;
@@ -79,12 +90,16 @@ public sealed class LedLadderMeter : Control
 
     private const int Stride = LedLevels.Steps + 1;
 
+    // The peak-only extension uses an existing cached LED step, well above the unlit cell but visibly below the RMS body.
+    private const int PeakExtensionStep = 3;
+
     private Color[] _colors = [];
     private IBrush[] _lit = [];
     private IBrush[] _unlit = [];
     private IBrush[] _held = [];
     private IBrush[] _cellSteps = [];
     private IBrush[] _heldSteps = [];
+    private IBrush[] _crestHeldSteps = [];
     private IBrush[] _cores = [];
     private IBrush[] _topCores = [];
     private IBrush[] _crestFills = [];
@@ -105,9 +120,13 @@ public sealed class LedLadderMeter : Control
     private double _fedRight = double.NaN;
     private double _fedLeftHold = double.NaN;
     private double _fedRightHold = double.NaN;
+    private double _leftRmsValue = double.NaN;
+    private double _rightRmsValue = double.NaN;
 
     private readonly LedLevels _leftCells;
     private readonly LedLevels _rightCells;
+    private readonly LedLevels _leftRmsCells;
+    private readonly LedLevels _rightRmsCells;
     private readonly LedLevels _leftHeld;
     private readonly LedLevels _rightHeld;
     private readonly LedLevels _lamps;
@@ -123,6 +142,8 @@ public sealed class LedLadderMeter : Control
     {
         _leftCells = new LedLevels(this, CellFadeMs, CellWarmupMs);
         _rightCells = new LedLevels(this, CellFadeMs, CellWarmupMs);
+        _leftRmsCells = new LedLevels(this, CellFadeMs, CellWarmupMs);
+        _rightRmsCells = new LedLevels(this, CellFadeMs, CellWarmupMs);
         _leftHeld = new LedLevels(this, CellFadeMs);
         _rightHeld = new LedLevels(this, CellFadeMs);
         _lamps = new LedLevels(this, LampFadeMs, count: 2);
@@ -140,6 +161,34 @@ public sealed class LedLadderMeter : Control
     public double LeftValue { get => GetValue(LeftValueProperty); set => SetValue(LeftValueProperty, value); }
 
     public double RightValue { get => GetValue(RightValueProperty); set => SetValue(RightValueProperty, value); }
+
+    // These are one-way binding targets, not observable sources. Raising an Avalonia property change allocates on every
+    // meter update; storing the input and invalidating directly keeps both SetValue and the draw allocation-free.
+    public double LeftRmsValue
+    {
+        get => _leftRmsValue;
+        set
+        {
+            if (!_leftRmsValue.Equals(value))
+            {
+                _leftRmsValue = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
+    public double RightRmsValue
+    {
+        get => _rightRmsValue;
+        set
+        {
+            if (!_rightRmsValue.Equals(value))
+            {
+                _rightRmsValue = value;
+                InvalidateVisual();
+            }
+        }
+    }
 
     public double PeakHold { get => GetValue(PeakHoldProperty); set => SetValue(PeakHoldProperty, value); }
 
@@ -227,15 +276,18 @@ public sealed class LedLadderMeter : Control
         var inner = ConsolePaint.Snap(well).Deflate(2);
         var column = Math.Min(ColumnWidth, inner.Width / 2);
         var (left, right, leftHold, rightHold) = Shown;
+        // Show() is the device-chain's allocation-free single-level feed; it never opts in to the mixer presentation.
+        var leftRms = _fed ? double.NaN : LeftRmsValue;
+        var rightRms = _fed ? double.NaN : RightRmsValue;
         var now = LedMotion.Now;
         var leftColumn = new Rect(inner.X, inner.Y, column, inner.Height);
         var rightColumn = new Rect(inner.Right - column, inner.Y, column, inner.Height);
 
         // The light first, both columns', so no cell's spill lies over another cell: the cells stay crisp and saturated.
-        Light(context, leftColumn, left, leftHold, _leftCells, _leftHeld, 0, now);
-        Light(context, rightColumn, right, rightHold, _rightCells, _rightHeld, 1, now);
-        Column(context, leftColumn, left, leftHold, _leftCells, _leftHeld, 0);
-        Column(context, rightColumn, right, rightHold, _rightCells, _rightHeld, 1);
+        Light(context, leftColumn, left, leftRms, leftHold, _leftCells, _leftRmsCells, _leftHeld, 0, now);
+        Light(context, rightColumn, right, rightRms, rightHold, _rightCells, _rightRmsCells, _rightHeld, 1, now);
+        Column(context, leftColumn, left, leftRms, leftHold, _leftCells, _leftRmsCells, _leftHeld, 0);
+        Column(context, rightColumn, right, rightRms, rightHold, _rightCells, _rightRmsCells, _rightHeld, 1);
     }
 
     private static int CellsFor(double wellHeight)
@@ -248,12 +300,33 @@ public sealed class LedLadderMeter : Control
 
     internal static Rect CellRect(Rect column, int i) => new(column.X, Math.Round(column.Bottom - ((i + 1) * Pitch) + 1), column.Width, Cell);
 
+    // RMS may exceed the falling peak: do not clamp it. The body reaches the higher reading, while the peak hold
+    // stays at its own position, including inside the bright body. Negative infinity is a valid silent RMS reading.
+    private (int Top, int Rms, int Held, bool Dual, int Peak) Bands(double value, double rms, double peakHold, int count)
+    {
+        var dual = Mode == MixerMeterMode.PeakRms && !double.IsNaN(rms) && !double.IsPositiveInfinity(rms);
+        var (top, held) = Cells(value, peakHold, count);
+        if (!dual)
+        {
+            return (top, -1, held, false, top);
+        }
+
+        var (rmsTop, rmsHeld) = Cells(rms, peakHold, count);
+        return (Math.Max(top, rmsTop), rmsTop, double.IsNaN(value) ? rmsHeld : held, true, top);
+    }
+
+    // Fade and warm-up stay per cell. The existing quantized brushes and lights interpolate the peak extension without
+    // allocating on a frame; RMS has its own motion so a moving boundary fades between the two intensities.
+    private static int DisplayStep(LedLevels cells, LedLevels rmsCells, int index, bool dual) => dual
+        ? Math.Max(((cells.Step(index) * PeakExtensionStep) + (LedLevels.Steps / 2)) / LedLevels.Steps, rmsCells.Step(index))
+        : cells.Step(index);
+
     /// <summary>
     /// Moves every lamp of a column to its target for <paramref name="now"/> and, while the glow is on, draws each lit one's
     /// baked light (<see cref="LedLight"/>): ordinary cells quietly, so a full column pools to its colour instead of
     /// white; the top cell, the held peak, and the clip lamp brighter.
     /// </summary>
-    private void Light(DrawingContext context, Rect column, double value, double peakHold, LedLevels cells, LedLevels heldCells, int side, double now)
+    private void Light(DrawingContext context, Rect column, double value, double rms, double peakHold, LedLevels cells, LedLevels rmsCells, LedLevels heldCells, int side, double now)
     {
         var glow = Glow.IsOn;
         _lamps.Set(side, IsClipped, now);
@@ -271,22 +344,33 @@ public sealed class LedLadderMeter : Control
         }
 
         var fresh = cells.Resize(count) | heldCells.Resize(count);
-        var (topLit, held) = Cells(value, peakHold, count);
+        var (topLit, rmsTop, held, dual, _) = Bands(value, rms, peakHold, count);
+        var rmsFresh = (dual || rmsCells.Count > 0) && rmsCells.Resize(count);
         for (var i = 0; i < count; i++)
         {
             var lit = i <= topLit;
             cells.Set(i, lit, now, fresh);
-            heldCells.Set(i, !lit && i == held, now, fresh);
+            if (rmsCells.Count == count)
+            {
+                rmsCells.Set(i, dual && i <= rmsTop, now, rmsFresh);
+            }
+
+            heldCells.Set(i, i == held && (dual || !lit), now, fresh);
             if (!glow)
             {
                 continue;
             }
 
-            var level = Math.Max(LedLight.Level(cells.Step(i)), LedLight.Level(heldCells.Step(i)));
+            var level = Math.Max(LedLight.Level(DisplayStep(cells, rmsCells, i, dual)), LedLight.Level(heldCells.Step(i)));
             if (level > 0 && _lights[(i * LightStride) + level] is { } light)
             {
                 var cell = CellRect(column, i);
-                var crest = Crest(i, topLit);
+                var crest = Crest(i, dual ? rmsTop : topLit);
+                if (dual && rmsCells.Step(i) == 0)
+                {
+                    crest = -1;
+                }
+
                 var times = crest >= 0 ? CrestLights[crest] : i == held ? 2 : 1;
                 for (var n = 0; n < times; n++)
                 {
@@ -309,7 +393,7 @@ public sealed class LedLadderMeter : Control
         }
     }
 
-    private void Column(DrawingContext context, Rect column, double value, double peakHold, LedLevels cells, LedLevels heldCells, int side)
+    private void Column(DrawingContext context, Rect column, double value, double rms, double peakHold, LedLevels cells, LedLevels rmsCells, LedLevels heldCells, int side)
     {
         var glow = Glow.IsOn;
         var lamp = new Rect(column.X, column.Y, column.Width, ClipHeight);
@@ -339,13 +423,19 @@ public sealed class LedLadderMeter : Control
             return;
         }
 
-        var (topLit, _) = Cells(value, peakHold, count);
+        var (topLit, rmsTop, _, dual, peak) = Bands(value, rms, peakHold, count);
+        var peakNotch = dual && value < rms ? peak : -1;
         for (var i = 0; i < count; i++)
         {
             var cell = CellRect(column, i);
-            var step = cells.Step(i);
+            var step = DisplayStep(cells, rmsCells, i, dual);
             var heldStep = heldCells.Step(i);
-            var crest = Crest(i, topLit);
+            var crest = Crest(i, dual ? rmsTop : topLit);
+            if (dual && rmsCells.Step(i) == 0)
+            {
+                crest = -1;
+            }
+
             if (crest >= 0 && step > 0)
             {
                 // The crest: the top lit cells a little lighter, the top one most, at the cell's own step of its warm-up so
@@ -366,7 +456,7 @@ public sealed class LedLadderMeter : Control
                     context.FillRectangle(_cores[i], Core(cell));
                 }
             }
-            else if (step == 0 && heldStep == LedLevels.Steps)
+            else if (!dual && step == 0 && heldStep == LedLevels.Steps)
             {
                 context.FillRectangle(_held[i], cell);
                 if (glow)
@@ -378,10 +468,35 @@ public sealed class LedLadderMeter : Control
             {
                 // Dark, or between dark and lit; a fading held peak shows over it.
                 context.FillRectangle(_cellSteps[(i * Stride) + step], cell);
-                if (heldStep > 0)
+                if (!dual && heldStep > 0)
                 {
                     context.FillRectangle(_heldSteps[(i * Stride) + heldStep], cell);
                 }
+            }
+
+            // In the combined display the hold can sit over either intensity, or inside RMS after a crossover. Do not
+            // move or hide it just because the underlying cell is lit.
+            if (dual && heldStep > 0)
+            {
+                // The ordinary held fill is slightly darker than the RMS crest; use a brighter cached fill there.
+                var atCrest = crest == 0;
+                var slot = (i * Stride) + heldStep;
+                context.FillRectangle(atCrest ? _crestHeldSteps[slot] : _heldSteps[slot], cell);
+                if (glow && atCrest && step == LedLevels.Steps)
+                {
+                    context.FillRectangle(_crestCores[i * CrestCells], Core(cell));
+                }
+                else if (glow && heldStep == LedLevels.Steps)
+                {
+                    context.FillRectangle(_topCores[i], Core(cell));
+                }
+            }
+
+            // Inside the brighter RMS body, the current peak needs its own mark. A dark core contrasts with the held
+            // peak's bright full cell, including when both occupy this cell, and disappears below the meter floor.
+            if (i == peakNotch)
+            {
+                context.FillRectangle(PeakNotch, Core(cell));
             }
         }
     }
@@ -420,17 +535,19 @@ public sealed class LedLadderMeter : Control
         _lights = new LedSprite?[count * LightStride];
         _cellSteps = new IBrush[count * Stride];
         _heldSteps = new IBrush[count * Stride];
+        _crestHeldSteps = new IBrush[count * Stride];
         var cellSize = new Size(width, Cell);
         for (var i = 0; i < count; i++)
         {
             var color = gradient.At((i + 0.5) / count);
             var heldColor = ConsolePaint.Lighter(color, 0.3);
+            var crestHeldColor = Palette.Lighten(color, 0.55);
             _colors[i] = color;
             _lit[i] = gradient.Brush(color);
             _unlit[i] = gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha));
             _held[i] = gradient.Brush(heldColor);
             _cores[i] = gradient.Brush(Palette.Lighten(color, 0.3));
-            _topCores[i] = gradient.Brush(Palette.Lighten(color, 0.55));
+            _topCores[i] = gradient.Brush(crestHeldColor);
 
             // Each level of the cell's light, baked now so a first fade allocates nothing. Cells sit 1 DIP apart and their
             // light adds up, so each throws a little and not far.
@@ -462,7 +579,7 @@ public sealed class LedLadderMeter : Control
                 _cellSteps[(i * Stride) + step] = step == 0 ? _unlit[i] : step == LedLevels.Steps ? _lit[i]
                     : gradient.Brush(Palette.Alpha(color, Palette.UnlitAlpha + ((1 - Palette.UnlitAlpha) * lit)));
                 _heldSteps[(i * Stride) + step] = step == LedLevels.Steps ? _held[i] : gradient.Brush(Palette.Alpha(heldColor, lit));
-
+                _crestHeldSteps[(i * Stride) + step] = step == LedLevels.Steps ? _topCores[i] : gradient.Brush(Palette.Alpha(crestHeldColor, lit));
             }
         }
 

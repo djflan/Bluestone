@@ -64,9 +64,12 @@ with its output, and a note effect leaves audio alone. Only the event side was e
   ends. The Device View keeps the
   indicators in `JunctionSignal`s, which the UI draws as Bitwig-style indicators between devices, not as meters.
 
+**Update:** The default junction level style is now peak alone, for a quick signal check. The original average-and-held-peak
+style remains available, and previously saved choices are preserved.
+
 The Device View draws each junction as a **seam** in the gap between panels (`JunctionSeam`): the hairline the chain
 reads along; a slim stereo level of thin LED segments (sky blue through indigo and magenta to red at full scale,
-`Meter.*` tokens) that by default follows the average level with the peak held as one segment, or the peak alone; and
+`Meter.*` tokens) that originally defaulted to the average level with the peak held as one segment, or the peak alone; and
 under it a small MIDI connector icon that glows (`Junction.LampColor`, derived from `Meter.Low`) while notes are held,
 fading over `Motion.LampRelease`. Only what can be at a junction is drawn, and an idle seam is quiet. Settings ▸ Display
 chooses, for every view, where the indicators sit (top, upper half, lower half, bottom) and what the levels show; the
@@ -114,7 +117,7 @@ conversion point.
 ## Amendment: Identity R6 junctions
 
 The seam is now a `ChainJunction`: a MIDI port glyph at the top, lit while notes are held, and a stereo LED ladder
-with a clip lamp that shows the average with the peak held above it (the default) or the peak alone. The Out card
+with a clip lamp that shows the average with the peak held above it (the then-default) or the peak alone. The Out card
 shows the chain's output on a wider meter. Insertion, routing taps, and the context menu are unchanged. Settings ▸
 Display no longer chooses an indicator size, LED shape, or position; it keeps the level style and adds a signal
 gradient (split into independent families by the amendment below). Meter colors come from user gradients, not the `Meter.*` tokens; the clip
