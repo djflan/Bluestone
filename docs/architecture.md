@@ -455,8 +455,8 @@ a warming-up/not-ready state until three seconds of valid samples have accumulat
 discontinuity. Each strip draws one stereo `LedLadderMeter`, beside a `ConsoleFader` and `ConsoleScale` on the
 same console taper (`ConsoleRail`, −60 to +6 dB) and a display-only `GainLedGutter`; the mode changes its scale and
 ballistics, not the meter count. In Peak + RMS, each column fills brightly to RMS and extends more dimly to the
-falling peak, with a separate held-peak marker. If RMS is above the falling peak, a dark notch marks the peak within
-the bright fill. Meter mode and VU reference are saved in
+falling peak, with a separate held-peak marker. If RMS is above the falling peak, a thin marker line in the theme's peak marker color
+(white by default; it can be turned off in Settings ▸ Display) marks the peak within the bright fill. Meter mode and VU reference are saved in
 application-local settings, not the project; they do not change Device View junction meters. The
 former Bar/Round presentation setting was removed; older settings files still load. A focused BenchmarkDotNet
 ShortRun covered warmed 128-frame Peak+RMS/VU/LUFS-S processing and build/preparation/reused-snapshot
@@ -614,7 +614,7 @@ versioned JSON in the settings folder, with window bounds per display configurat
 restores a window off-screen and shows a detached view whose monitor is missing as a rail icon while keeping its
 saved window. Colors, type, spacing, and device-panel geometry are design tokens in `Theme/Tokens.axaml`, following
 the "Machined & Precision Milled" design language ([guide](design-language.md), ADR 0052). Colors, the meter
-gradients, and the MIDI color form a theme (ADR 0053): Dark Sodalite, the default, ships with the token values; the
+gradients, and the MIDI and peak marker colors form a theme (ADR 0053): Dark Sodalite, the default, ships with the token values; the
 user's copy is `themes/dark-sodalite.json` in the settings folder, applied at startup by `Theme/ThemeApplier`. Shared custom controls (`SquareKey`, `TextKey`, `PowerGlyph`,
 `Knob` arc rings, `RecessedWell`, `GutterPanel`, `DeviceCardPanel`) draw its keys, wells, and gutters; custom-drawn glows
 use `Theme/Glow`'s exponential falloff.

@@ -130,7 +130,7 @@
           <controls:TextKey x:Name="ResetThemeKey" Grid.Column="1" Classes="action" IsAction="True" Text="Reset theme"
                             IsEnabled="{Binding IsThemeChanged}" Click="OnResetTheme"
                             AutomationProperties.Name="Reset theme"
-                            AutomationProperties.HelpText="Puts back the theme's shipped colors, gradients, and MIDI color, after you confirm." />
+                            AutomationProperties.HelpText="Puts back the theme's shipped colors, gradients, MIDI color, and peak marker color, after you confirm." />
         </Grid>
         <TextBlock x:Name="RestartNote" Classes="settingHint" TextWrapping="Wrap" IsVisible="{Binding IsRestartNeeded}"
                    Text="Restart Bluestone to see the theme's colors." />
@@ -231,6 +231,48 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+        </StackPanel>
+
+        <!-- The peak marker shows only on the mixer's Peak + RMS meters (chain meters show no RMS), so it is offered with the mixer. -->
+        <StackPanel x:Name="PeakMarkerPanel" Spacing="{StaticResource Space.M}">
+          <Border Classes="rule" />
+          <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto" RowSpacing="{StaticResource Space.S}" Classes="settingRow">
+            <TextBlock Classes="label" Text="Peak marker" VerticalAlignment="Center" />
+            <CheckBox x:Name="PeakMarkerCheck" Grid.Column="1" Classes="settingCheck" Content="Mark the current peak when it falls inside the RMS level"
+                      IsChecked="{Binding ShowPeakMarker}" AutomationProperties.Name="Show peak marker"
+                      AutomationProperties.HelpText="In Peak + RMS meters, a thin line marks the current peak when it falls inside the lit RMS level." />
+            <WrapPanel Grid.Row="1" Grid.Column="1" ItemSpacing="{StaticResource Space.L}" LineSpacing="{StaticResource Space.S}"
+                       ItemsAlignment="Center" IsEnabled="{Binding ShowPeakMarker}">
+              <StackPanel Classes="gradientTools">
+                <Button x:Name="PeakMarkerChip" Classes="colorChip" Click="OnPeakMarkerChip" AutomationProperties.Name="Edit peak marker color" ToolTip.Tip="Pick a color">
+                  <Border Classes="chipRing">
+                    <controls:RecessedWell Width="24" Height="24" Padding="4">
+                      <Border CornerRadius="{StaticResource Radius.Small}" Background="{Binding PeakMarkerColour, Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+                    </controls:RecessedWell>
+                  </Border>
+                </Button>
+                <TextBox x:Name="PeakMarkerColourBox" Classes="hex" Text="{Binding PeakMarkerColour}" MaxLength="7" AutomationProperties.Name="Peak marker color (hex)" />
+                <controls:TextKey x:Name="ResetPeakMarkerKey" Classes="action" IsAction="True" Text="Reset to default" Command="{Binding ResetPeakMarkerColourCommand}"
+                                  AutomationProperties.Name="Reset peak marker color to default" />
+              </StackPanel>
+              <ItemsControl x:Name="PeakMarkerSwatches" ItemsSource="{x:Static vm:DisplayViewModel.PeakMarkerSwatches}" VerticalAlignment="Center"
+                            AutomationProperties.Name="Peak marker color swatches">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Button Classes="swatch" Command="{Binding $parent[UserControl].((vm:DisplayViewModel)DataContext).ChoosePeakMarkerColourCommand}"
+                            CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='Peak marker color {0}'}" ToolTip.Tip="{Binding}">
+                      <Border Background="{Binding Converter={x:Static views:DisplaySettingsPage.HexToBrush}}" />
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </WrapPanel>
+          </Grid>
         </StackPanel>
 
         <!-- The MIDI light lives on the device chain's seams, so it is offered with the chain. -->

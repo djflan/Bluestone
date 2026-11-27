@@ -6,8 +6,8 @@ using Bluestone.Presentation;
 namespace Bluestone.Desktop.Theme;
 
 /// <summary>
-/// Single LED colours the musician can choose (Settings ▸ Display): for now the MIDI LED, lit while notes are held at a
-/// chain junction. Controls cache what they build from it and rebuild on <see cref="Changed"/>. UI thread only.
+/// Single LED colours the musician can choose (Settings ▸ Display): the MIDI LED, lit while notes are held at a chain
+/// junction, and the peak marker a mixer Peak + RMS meter draws for a current peak inside its lit RMS body. Controls cache what they build from it and rebuild on <see cref="Changed"/>. UI thread only.
 /// </summary>
 public static class LedColours
 {
@@ -20,7 +20,19 @@ public static class LedColours
     /// <summary>The colour of a lit MIDI LED and its caption.</summary>
     public static Color Midi { get; private set; } = DefaultMidi;
 
-    /// <summary>Raised on the UI thread after <see cref="UseMidi"/> changes <see cref="Midi"/>.</summary>
+    /// <summary>The peak marker's default: Dark Sodalite's <see cref="ThemeDefinition.DefaultPeakMarkerColor"/>.</summary>
+    public static Color DefaultPeakMarker { get; } = Color.Parse(ThemeDefinition.DefaultPeakMarkerColor);
+
+    /// <summary>The colour of the current-peak marker inside a Peak + RMS meter's lit RMS body.</summary>
+    public static Color PeakMarker { get; private set; } = DefaultPeakMarker;
+
+    /// <summary>Whether Peak + RMS meters draw the peak marker at all.</summary>
+    public static bool ShowPeakMarker { get; private set; } = true;
+
+    // One brush for the current marker color, so previewing colors never grows a shared cache.
+    internal static IImmutableSolidColorBrush PeakMarkerBrush { get; private set; } = new ImmutableSolidColorBrush(DefaultPeakMarker);
+
+    /// <summary>Raised on the UI thread after <see cref="UseMidi"/> or <see cref="UsePeakMarker"/> changes anything.</summary>
     public static event EventHandler? Changed;
 
     // The port's ink has only the quantized fade steps, shared by every junction and preview for the current MIDI color.
@@ -53,6 +65,28 @@ public static class LedColours
         Midi = next;
         Array.Clear(MidiPens);
         _midiCaptionBrush = null;
+        Changed?.Invoke(null, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Shows the peak marker or not, in <paramref name="colour"/> ("#RRGGBB"; null or anything else restores the default).
+    /// Raises nothing when neither changes.
+    /// </summary>
+    public static void UsePeakMarker(bool show, string? colour)
+    {
+        var next = SignalGradient.IsColour(colour) ? Color.Parse(colour!) : DefaultPeakMarker;
+        if (next == PeakMarker && show == ShowPeakMarker)
+        {
+            return;
+        }
+
+        if (next != PeakMarker)
+        {
+            PeakMarker = next;
+            PeakMarkerBrush = new ImmutableSolidColorBrush(next);
+        }
+
+        ShowPeakMarker = show;
         Changed?.Invoke(null, EventArgs.Empty);
     }
 }

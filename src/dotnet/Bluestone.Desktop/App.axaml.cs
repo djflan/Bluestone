@@ -285,7 +285,7 @@ public partial class App : Avalonia.Application
 
     /// <summary>
     /// Every indicator draws <paramref name="display"/>'s colours and motion: the mixer, chain, and gain gradients, the MIDI
-    /// LED's colour, and the LED fade and warm-up switches, the saved ones now and each edit as it is made (indicators
+    /// LED's and peak marker's colours, and the LED fade and warm-up switches, the saved ones now and each edit as it is made (indicators
     /// redraw on their <see cref="Theme.MeterGradient"/>'s or <see cref="Theme.LedColours"/>' Changed; motion applies from
     /// the next change of an LED).
     /// </summary>
@@ -295,6 +295,7 @@ public partial class App : Avalonia.Application
         Follow(display.Chain, Theme.MeterGradient.Chain);
         Follow(display.Gain, Theme.MeterGradient.Gain);
         Theme.LedColours.UseMidi(display.MidiColour);
+        Theme.LedColours.UsePeakMarker(display.ShowPeakMarker, display.PeakMarkerColour);
         Controls.LedMotion.Fade = display.LedFade;
         Controls.LedMotion.Warmup = display.LedWarmup;
         Theme.Glow.Use(display.LedGlow, display.GlowStrength / 100.0);
@@ -303,6 +304,10 @@ public partial class App : Avalonia.Application
             if (e.PropertyName == nameof(DisplayViewModel.MidiColour))
             {
                 Theme.LedColours.UseMidi(display.MidiColour);
+            }
+            else if (e.PropertyName is nameof(DisplayViewModel.PeakMarkerColour) or nameof(DisplayViewModel.ShowPeakMarker))
+            {
+                Theme.LedColours.UsePeakMarker(display.ShowPeakMarker, display.PeakMarkerColour);
             }
             else if (e.PropertyName == nameof(DisplayViewModel.LedFade))
             {

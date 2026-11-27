@@ -529,4 +529,19 @@ public sealed class DisplaySettingsTests : IDisposable
         Assert.Equal(expected, settings.GlowStrength);
         Assert.True(settings.LedGlow);
     }
+
+    [Fact]
+    public void ShowPeakMarker_DefaultsOn_AndRoundTrips()
+    {
+        var store = new DisplaySettingsStore(File());
+        var display = Display(store);
+        Assert.True(display.ShowPeakMarker);
+
+        display.ShowPeakMarker = false;
+        Assert.Equal(new DisplaySettings { ShowPeakMarker = false }, store.Load());
+
+        var reloaded = new DisplayViewModel();
+        reloaded.Use(store);
+        Assert.False(reloaded.ShowPeakMarker);
+    }
 }

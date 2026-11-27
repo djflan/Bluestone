@@ -6,6 +6,7 @@ using Avalonia.Media.Imaging;
 using Bluestone.Audio;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
+using Bluestone.Presentation;
 
 namespace Bluestone.Tests.Ui;
 
@@ -349,10 +350,10 @@ public sealed class LedLadderMeterTests
             ladder.LeftValue = -40;
             var after = Frame(ladder);
 
-            Assert.True(Brightness(ladder, before, 0, oldPeak, 1) + 60 < Brightness(ladder, after, 0, oldPeak, 1),
-                "The old peak's notch disappears when the current peak falls.");
-            Assert.True(Brightness(ladder, after, 0, newPeak, 1) + 60 < Brightness(ladder, before, 0, newPeak, 1),
-                "The new peak's notch appears at its actual cell.");
+            Assert.True(Brightness(ladder, before, 0, oldPeak, 1) > Brightness(ladder, after, 0, oldPeak, 1) + 20,
+                "The old peak's marker disappears when the current peak falls.");
+            Assert.True(Brightness(ladder, after, 0, newPeak, 1) > Brightness(ladder, before, 0, newPeak, 1) + 20,
+                "The new peak's marker appears at its actual cell.");
             Assert.Equal(Brightness(ladder, before, 0, oldPeak), Brightness(ladder, after, 0, oldPeak));
             Assert.Equal(Brightness(ladder, before, 0, newPeak), Brightness(ladder, after, 0, newPeak));
             Assert.Equal(Brightness(ladder, before, 0, held), Brightness(ladder, after, 0, held));
@@ -372,7 +373,7 @@ public sealed class LedLadderMeterTests
     });
 
     [Fact]
-    public Task PeakNotch_IsDistinctFromHold_AndOnlyAppearsForARealCrossedPeak() => HeadlessApp.RunAsync(() =>
+    public Task PeakMarker_IsDistinctFromHold_OnlyAppearsForARealCrossedPeak_AndFollowsItsSetting() => HeadlessApp.RunAsync(() =>
     {
         var gradient = MeterGradient.Mixer.Gradient;
         var glow = Glow.IsOn;
@@ -401,8 +402,16 @@ public sealed class LedLadderMeterTests
             Assert.Equal(peak, ladder.Cells(-28, -29, ladder.CellCount).Held);
             var coincident = Frame(ladder);
             Assert.Equal(Brightness(ladder, coincident, 0, peak), Brightness(ladder, coincident, 1, peak));
-            Assert.True(Brightness(ladder, coincident, 0, peak, 1) + 60 < Brightness(ladder, coincident, 1, peak, 1),
-                "A current peak over the held cell is a dark notch; the held cell stays bright.");
+            Assert.True(Brightness(ladder, coincident, 0, peak, 1) > Brightness(ladder, coincident, 1, peak, 1) + 60,
+                "A current peak over the held cell is a bright (white) marker line, never a dark hole.");
+
+            LedColours.UsePeakMarker(false, ThemeDefinition.DefaultPeakMarkerColor);
+            var hidden = Frame(ladder);
+            Assert.Equal(Brightness(ladder, hidden, 0, peak, 1), Brightness(ladder, hidden, 1, peak, 1));
+            LedColours.UsePeakMarker(true, "#000000");
+            var black = Frame(ladder);
+            Assert.True(Brightness(ladder, black, 0, peak, 1) + 60 < Brightness(ladder, black, 1, peak, 1), "The marker draws in the chosen color.");
+            LedColours.UsePeakMarker(true, ThemeDefinition.DefaultPeakMarkerColor);
 
             ladder.LeftValue = -10;
             var equal = Frame(ladder);
@@ -429,6 +438,7 @@ public sealed class LedLadderMeterTests
             MeterGradient.Mixer.Use(gradient);
             Glow.Use(glow, strength);
             LedMotion.ReduceMotion = reduce;
+            LedColours.UsePeakMarker(true, ThemeDefinition.DefaultPeakMarkerColor);
         }
 
         return Task.CompletedTask;
@@ -437,7 +447,7 @@ public sealed class LedLadderMeterTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public Task PeakNotch_DrawsWithoutAllocatingAsThePeakMoves(bool reduceMotion) => HeadlessApp.RunAsync(() =>
+    public Task PeakMarker_DrawsWithoutAllocatingAsThePeakMoves(bool reduceMotion) => HeadlessApp.RunAsync(() =>
     {
         var glow = Glow.IsOn;
         var strength = Glow.Strength;
@@ -471,7 +481,7 @@ public sealed class LedLadderMeterTests
             }
 
             // The existing styled peak property allocates when it changes; measure the draw after each update, not the
-            // setter, while alternating the notch's cell. As with the other cost tests, allow runtime warm-up rounds.
+            // setter, while alternating the marker's cell. As with the other cost tests, allow runtime warm-up rounds.
             long movingBytes = 0;
             for (var round = 0; round < 10; round++)
             {
@@ -527,8 +537,8 @@ public sealed class LedLadderMeterTests
             var fadingCell = ladder.Cells(-20, double.NaN, ladder.CellCount).TopLit;
             var initial = Frame(ladder);
             var bright = Brightness(ladder, initial, 0, fadingCell);
-            var notch = Brightness(ladder, initial, 0, peak, 1);
-            Assert.True(notch + 60 < Brightness(ladder, initial, 0, peak));
+            var marker = Brightness(ladder, initial, 0, peak, 1);
+            Assert.True(marker > Brightness(ladder, initial, 0, peak) + 20);
 
             clock.Time = 1000;
             ladder.LeftRmsValue = -30;
@@ -539,8 +549,8 @@ public sealed class LedLadderMeterTests
             var settled = Frame(ladder);
             Assert.True(Brightness(ladder, settled, 0, fadingCell) < Brightness(ladder, during, 0, fadingCell));
             Assert.True(Brightness(ladder, during, 0, fadingCell) < bright);
-            Assert.Equal(notch, Brightness(ladder, during, 0, peak, 1));
-            Assert.Equal(notch, Brightness(ladder, settled, 0, peak, 1));
+            Assert.Equal(marker, Brightness(ladder, during, 0, peak, 1));
+            Assert.Equal(marker, Brightness(ladder, settled, 0, peak, 1));
         }
         finally
         {

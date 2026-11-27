@@ -170,6 +170,19 @@ public sealed class ThemeStore
             }
         }
 
+        var peakMarker = Defaults.PeakMarkerColor;
+        if (root.TryGetProperty("peakMarkerColor", out var pm))
+        {
+            if (pm.ValueKind == JsonValueKind.String && SignalGradient.IsColour(pm.GetString()))
+            {
+                peakMarker = pm.GetString()!.ToUpperInvariant();
+            }
+            else
+            {
+                rejected.Add("peakMarkerColor");
+            }
+        }
+
         return Defaults with
         {
             Variant = variant,
@@ -178,6 +191,7 @@ public sealed class ThemeStore
             ChainGradient = Gradient(gradients, "chain", rejected) ?? Defaults.ChainGradient,
             GainGradient = Gradient(gradients, "gain", rejected) ?? Defaults.GainGradient,
             MidiColor = midi,
+            PeakMarkerColor = peakMarker,
         };
     }
 
@@ -234,6 +248,11 @@ public sealed class ThemeStore
             if (theme.MidiColor != shipped.MidiColor)
             {
                 writer.WriteString("midiColor", theme.MidiColor);
+            }
+
+            if (theme.PeakMarkerColor != shipped.PeakMarkerColor)
+            {
+                writer.WriteString("peakMarkerColor", theme.PeakMarkerColor);
             }
 
             writer.WriteStartObject("colors");

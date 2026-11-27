@@ -23,7 +23,8 @@ A theme holds:
   designed and tested;
 - `colors`: every color token, keyed by its exact `Color` resource key in `Tokens.axaml` (for example
   `Surface.BaseColor`), plus the Fluent palette colors in `App.axaml` under `Fluent.*` keys;
-- the three meter gradients (mixer, chain, and gain) and the MIDI color.
+- the three meter gradients (mixer, chain, and gain), the MIDI color, and the peak marker color (`peakMarkerColor`,
+  the current-peak line inside a Peak + RMS meter's RMS fill; whether it shows is a display preference).
 
 ### One shipped theme, one source of defaults
 
@@ -38,9 +39,9 @@ that differ from the shipped theme (with the name, variant, and version), so a l
 as a contrast fix, reach every member the user never changed. The file is Bluestone's: Settings writes it, and
 editing it by hand is unsupported and at the user's own risk.
 
-Editing a gradient or the MIDI color in Settings ▸ Display writes into the active theme file; there is no separate
+Editing a gradient, the MIDI color, or the peak marker color in Settings ▸ Display writes into the active theme file; there is no separate
 override layer. Changing a non-color display preference never writes the theme file. Every theme member has its
-shipped default: each gradient's reset and the MIDI color's reset revert one member, and **Reset theme** (after
+shipped default: each gradient's reset and the MIDI and peak marker colors' resets revert one member, and **Reset theme** (after
 confirmation) reverts them all, leaving a file with no changes.
 
 Reading is defensive rather than an invitation to edit. Comments and trailing commas are tolerated. A missing value takes its default. A value that
@@ -53,7 +54,7 @@ Bluestone closes and a warning says they weren't saved.
 
 Colors apply at startup, before any window opens. The token `Color` resources are replaced and the token brushes
 are updated in place, because styles hold those brush instances; `Palette`, for custom-drawn controls, reads the
-resources, so a color in the file takes effect at the next launch. Gradients and the MIDI color apply live, as
+resources, so a color in the file takes effect at the next launch. Gradients and the MIDI and peak marker colors apply live, as
 before.
 
 Live theme switching (`DynamicResource`), a theme picker, import and export, and Light or Midtoned themes are

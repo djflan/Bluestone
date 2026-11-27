@@ -12,7 +12,7 @@ namespace Bluestone.Desktop.Controls;
 /// (<see cref="Glow"/>) every lit cell shows a hot core and throws a little baked light (<see cref="LedLight"/>) drawn under all the
 /// cells, so the column stays crisp and saturated and its light pools on the well (the held peak and clip lamp brighter). The top three lit cells, the crest, are lighter toward the top, the top one with a hotter core and its own wider light; the ramp shows with the glow off too; unlit cells stay dark at <see cref="Palette.UnlitAlpha"/> of their colour, and the held peak
 /// is a lightened cell. In Peak + RMS mode, when per-channel RMS is supplied, the bright body reaches RMS and a dimmer
-/// extension reaches the peak; when RMS is higher, a small dark notch marks the current peak and the held peak remains
+/// extension reaches the peak; when RMS is higher, a thin marker line (LedColours.PeakMarker, white by default) marks the current peak and the held peak remains
 /// at its actual position.
 /// Above each column sits a separate clip lamp, always <see cref="Palette.Clip"/>,
 /// dim until a peak passes 0 dBFS and lit until reset. Peak + RMS readings follow the console taper
@@ -77,7 +77,6 @@ public sealed class LedLadderMeter : Control
     private const double ClipLight = 1.2;
     private const int LightStride = LedLight.Levels + 1;
     private static readonly IBrush ClipCore = ConsolePaint.Brush(Palette.Lighten(Palette.Clip, 0.5));
-    private static readonly IBrush PeakNotch = ConsolePaint.Brush(Palette.Well);
 
     /// <summary>How long a cell and the held peak take to go dark, in milliseconds.</summary>
     internal const double CellFadeMs = 90;
@@ -424,7 +423,7 @@ public sealed class LedLadderMeter : Control
         }
 
         var (topLit, rmsTop, _, dual, peak) = Bands(value, rms, peakHold, count);
-        var peakNotch = dual && value < rms ? peak : -1;
+        var peakMarker = LedColours.ShowPeakMarker && dual && value < rms ? peak : -1;
         for (var i = 0; i < count; i++)
         {
             var cell = CellRect(column, i);
@@ -492,11 +491,11 @@ public sealed class LedLadderMeter : Control
                 }
             }
 
-            // Inside the brighter RMS body, the current peak needs its own mark. A dark core contrasts with the held
-            // peak's bright full cell, including when both occupy this cell, and disappears below the meter floor.
-            if (i == peakNotch)
+            // Inside the brighter RMS body, the current peak needs its own mark: a bright core line in the chosen color
+            // (white by default), distinct from the held peak's full cell, and gone below the meter floor.
+            if (i == peakMarker)
             {
-                context.FillRectangle(PeakNotch, Core(cell));
+                context.FillRectangle(LedColours.PeakMarkerBrush, Core(cell));
             }
         }
     }
@@ -617,14 +616,18 @@ public sealed class LedLadderMeter : Control
         base.OnAttachedToVisualTree(e);
         Subscribe(Gradient);
         Glow.Changed += OnGradientChanged;
+        LedColours.Changed += OnLedColoursChanged;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        LedColours.Changed -= OnLedColoursChanged;
         Glow.Changed -= OnGradientChanged;
         Subscribe(null);
         base.OnDetachedFromVisualTree(e);
     }
+
+    private void OnLedColoursChanged(object? sender, EventArgs e) => InvalidateVisual();
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
