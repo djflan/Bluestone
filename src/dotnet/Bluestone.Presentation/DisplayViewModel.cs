@@ -146,6 +146,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     private ThemeStore? _themeStore;
     private ThemeDefinition? _theme;
     private ThemeDefinition? _applied;
+    private ThemeDefinition? _saved;
     private bool _loading;
     private bool _unsaved;
     private bool _saveFailing;
@@ -328,7 +329,7 @@ public sealed partial class DisplayViewModel : ObservableObject
     public void UseTheme(ThemeStore store, ThemeDefinition theme)
     {
         _themeStore = store ?? throw new ArgumentNullException(nameof(store));
-        _theme = _applied = theme ?? throw new ArgumentNullException(nameof(theme));
+        _theme = _applied = _saved = theme ?? throw new ArgumentNullException(nameof(theme));
         ThemeName = theme.Name;
         Mixer.UseDefault(store.Defaults.MixerGradient);
         Chain.UseDefault(store.Defaults.ChainGradient);
@@ -487,6 +488,7 @@ public sealed partial class DisplayViewModel : ObservableObject
             try
             {
                 themeStore.Save(theme);
+                _saved = theme;
                 _themeDirty = false;
                 _themeSaveFailing = false;
             }
@@ -498,6 +500,8 @@ public sealed partial class DisplayViewModel : ObservableObject
                     ThemeSaveFailed?.Invoke(this, ex.Message);
                 }
             }
+
+            RefreshThemeState();
         }
     }
 
@@ -508,7 +512,9 @@ public sealed partial class DisplayViewModel : ObservableObject
             return;
         }
 
-        IsThemeChanged = theme != store.Defaults;
-        IsRestartNeeded = _applied is { } applied && !applied.SameColorsAs(theme);
+        // A change that couldn't be saved keeps Reset theme available, so it can be tried again; the restart note speaks
+        // only of what the file holds, since that is what the next start applies.
+        IsThemeChanged = theme != store.Defaults || _themeDirty;
+        IsRestartNeeded = _applied is { } applied && _saved is { } saved && (applied.Variant != saved.Variant || !applied.SameColorsAs(saved));
     }
 }

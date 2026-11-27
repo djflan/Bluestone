@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.VisualTree;
 using Bluestone.Desktop.Controls;
 using Bluestone.Desktop.Theme;
 using Bluestone.Presentation;
@@ -89,16 +90,9 @@ public partial class DisplaySettingsPage : UserControl
 
         Picker.Dismiss();
         CloseThemeConfirm();
-        if (_display is not null)
-        {
-            _display.PropertyChanged -= OnDisplayChanged;
-        }
-
+        Watch(false);
         _display = DataContext as DisplayViewModel;
-        if (_display is not null)
-        {
-            _display.PropertyChanged += OnDisplayChanged;
-        }
+        Watch(this.IsAttachedToVisualTree());
 
         if (_display is null)
         {
@@ -117,12 +111,42 @@ public partial class DisplaySettingsPage : UserControl
         Select(items[0]);
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Watch(true);
+    }
+
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         // Leaving the page (or Settings) cancels an open picker, so no preview outlives it, and an unanswered reset.
         Picker.Dismiss();
         CloseThemeConfirm();
+
+        // Off screen, the page follows nothing, so the application-long view model never keeps a discarded page alive.
+        Watch(false);
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private bool _watching;
+
+    private void Watch(bool watch)
+    {
+        watch &= _display is not null;
+        if (watch == _watching)
+        {
+            return;
+        }
+
+        _watching = watch;
+        if (watch)
+        {
+            _display!.PropertyChanged += OnDisplayChanged;
+        }
+        else if (_display is not null)
+        {
+            _display.PropertyChanged -= OnDisplayChanged;
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

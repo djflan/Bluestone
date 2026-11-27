@@ -221,6 +221,81 @@ public sealed class ThemeStoreTests : IDisposable
     }
 
     [Fact]
+    public void ANonObjectGradients_IsReported()
+    {
+        File.WriteAllText(ThemeFile, """{ "gradients": [] }""");
+
+        var loaded = Store().Load();
+
+        Assert.Equal(Shipped, loaded.Theme);
+        Assert.EndsWith(": gradients.", loaded.Problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AResetThatChangesOnlyTheVariant_StillNeedsARestart()
+    {
+        Store().Save(Shipped with { Variant = ThemeVariant.Light });
+        var store = Store();
+        var display = new DisplayViewModel();
+        display.UseTheme(store, store.Load().Theme);
+        Assert.True(display.IsThemeChanged);
+
+        display.ResetThemeCommand.Execute(null);
+
+        Assert.Equal(Shipped, Store().Load().Theme);
+        Assert.True(display.IsRestartNeeded, "The stock controls run under the Light variant until Bluestone starts again.");
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void AResetThatCantBeSaved_StaysAvailable_AndPromisesNoRestart()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Uses Unix file modes to make the folder read-only.");
+        var changed = Shipped with { Colors = Shipped.Colors.SetItem("Accent.Color", "#FF8800") };
+        Store().Save(changed);
+        var store = Store();
+        var display = new DisplayViewModel();
+        var reports = new List<string>();
+        display.ThemeSaveFailed += (_, reason) => reports.Add(reason);
+        display.UseTheme(store, store.Load().Theme);
+        var writable = File.GetUnixFileMode(_directory);
+        File.SetUnixFileMode(_directory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            Assert.SkipWhen(CanWrite(_directory), "This user can write into a read-only folder (root).");
+            display.ResetThemeCommand.Execute(null);
+
+            Assert.Single(reports);
+            Assert.True(display.IsThemeChanged, "The failed reset can be tried again.");
+            Assert.True(display.ResetThemeCommand.CanExecute(null));
+            Assert.False(display.IsRestartNeeded, "The file still holds the changed colors.");
+        }
+        finally
+        {
+            File.SetUnixFileMode(_directory, writable);
+        }
+
+        display.ResetThemeCommand.Execute(null);
+        Assert.Equal(Shipped, Store().Load().Theme);
+        Assert.False(display.IsThemeChanged);
+        Assert.True(display.IsRestartNeeded);
+    }
+
+    private static bool CanWrite(string directory)
+    {
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "probe"), string.Empty);
+            File.Delete(Path.Combine(directory, "probe"));
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    [Fact]
     public void ResetTheme_PutsEveryMemberBack_AndColorsNeedARestart()
     {
         var changed = Shipped with { Colors = Shipped.Colors.SetItem("Accent.Color", "#FF8800"), GainGradient = Red, MidiColor = "#7C6BFF" };

@@ -136,7 +136,18 @@ public sealed class ThemeStore
             }
         }
 
-        var gradients = root.TryGetProperty("gradients", out var g) && g.ValueKind == JsonValueKind.Object ? g : default;
+        var gradients = default(JsonElement);
+        if (root.TryGetProperty("gradients", out var g))
+        {
+            if (g.ValueKind == JsonValueKind.Object)
+            {
+                gradients = g;
+            }
+            else
+            {
+                rejected.Add("gradients");
+            }
+        }
         var variant = Defaults.Variant;
         if (root.TryGetProperty("variant", out var v))
         {
