@@ -19,13 +19,13 @@ public sealed class GainLedGutter : Control
     /// <summary>The gain in dB that the LEDs light up to.</summary>
     public static readonly StyledProperty<double> ValueProperty = AvaloniaProperty.Register<GainLedGutter, double>(nameof(Value), double.NegativeInfinity);
 
-    /// <summary>The number of LEDs on a full-height travel; fewer are drawn when they would sit closer than <see cref="MinimumPitch"/>.</summary>
+    /// <summary>The maximum number of LEDs; the visible count follows the available travel at <see cref="MinimumPitch"/>.</summary>
     public static readonly StyledProperty<int> LedCountProperty = AvaloniaProperty.Register<GainLedGutter, int>(nameof(LedCount), 20);
 
     public static readonly StyledProperty<double> LedRadiusProperty = AvaloniaProperty.Register<GainLedGutter, double>(nameof(LedRadius), 3);
 
-    /// <summary>The closest the LED centres may sit, so a short travel shows fewer LEDs rather than a solid bar.</summary>
-    public const double MinimumPitch = 8;
+    /// <summary>The fixed centre-to-centre distance between LEDs, in DIPs.</summary>
+    public const double MinimumPitch = 20;
 
     /// <summary>How long an LED takes to go dark, in milliseconds.</summary>
     internal const double FadeMs = 140;
@@ -48,6 +48,7 @@ public sealed class GainLedGutter : Control
     private int _version = -1;
     private int _glowVersion = -1;
     private double _litRadius = -1;
+    private double _litTravel = -1;
     private readonly LedLevels _leds;
 
     static GainLedGutter()
@@ -76,7 +77,14 @@ public sealed class GainLedGutter : Control
         get
         {
             var travel = Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
-            return Math.Clamp(Math.Min(LedCount, (int)Math.Floor(travel / MinimumPitch) + 1), 2, Math.Max(2, LedCount));
+            var maximum = Math.Max(1, LedCount);
+            if (!double.IsFinite(travel) || travel <= 0)
+            {
+                return 1;
+            }
+
+            var fitting = Math.Floor(travel / MinimumPitch) + 1;
+            return Math.Clamp((int)Math.Min(fitting, maximum), 1, maximum);
         }
     }
 
@@ -86,11 +94,12 @@ public sealed class GainLedGutter : Control
         get
         {
             var count = VisibleCount;
-            var fraction = ConsoleRail.Position(Value);
+            var fraction = GainPosition(Value);
+            var travel = Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
             var lit = 0;
             for (var k = 0; k < count; k++)
             {
-                if (k / (double)(count - 1) <= fraction + 1e-6 && fraction > 0)
+                if (LedTarget(k, fraction, travel) > 0)
                 {
                     lit++;
                 }
@@ -120,7 +129,8 @@ public sealed class GainLedGutter : Control
         var fresh = _leds.Resize(count);
         var now = LedMotion.Now;
         var radius = LedRadius;
-        var fraction = Value > MixerRail.GainFloor ? ConsoleRail.Position(Value) : -1;
+        var fraction = GainPosition(Value);
+        var travel = bottom - top;
         var highlight = _stepHighlights[LedLevels.Steps];
         var rim = _stepRims[0];
         var glow = Glow.IsOn;
@@ -129,8 +139,8 @@ public sealed class GainLedGutter : Control
             // The light first, every LED's, so a neighbour's spill never lies over a lens.
             for (var k = 0; k < count; k++)
             {
-                var f = k / (double)(count - 1);
-                _leds.Set(k, f <= fraction + 1e-6, now, fresh);
+                var f = Math.Clamp((k * MinimumPitch) / travel, 0, 1);
+                _leds.Set(k, LedTarget(k, fraction, travel), now, fresh);
                 var level = glow ? LedLight.Level(_leds.Step(k)) : 0;
                 if (level > 0 && _lights[(k * LightStride) + level] is { } light)
                 {
@@ -141,7 +151,8 @@ public sealed class GainLedGutter : Control
 
             for (var k = 0; k < count; k++)
             {
-                var centre = Centre(x, bottom, top, k / (double)(count - 1));
+                var f = Math.Clamp((k * MinimumPitch) / travel, 0, 1);
+                var centre = Centre(x, bottom, top, f);
                 var step = _leds.Step(k);
                 if (step == LedLevels.Steps && glow)
                 {
@@ -169,6 +180,25 @@ public sealed class GainLedGutter : Control
     }
 
     private static Point Centre(double x, double bottom, double top, double f) => new(x, Math.Round(bottom - (f * (bottom - top))) + 0.5);
+
+    /// <summary>The finite fader position on the console taper, or a negative sentinel when no LEDs should be lit.</summary>
+    private static double GainPosition(double value) => double.IsFinite(value) && value > MixerRail.GainFloor ? ConsoleRail.Position(value) : -1;
+
+    /// <summary>The target brightness for fixed-pitch LEDs, keeping the lowest lit and progressively lighting the next.</summary>
+    private static double LedTarget(int index, double fraction, double travel)
+    {
+        if (fraction < 0 || !double.IsFinite(travel) || travel <= 0)
+        {
+            return 0;
+        }
+
+        if (index == 0)
+        {
+            return 1;
+        }
+
+        return Math.Clamp(((fraction * travel) - ((index - 1) * MinimumPitch)) / MinimumPitch, 0, 1);
+    }
 
     /// <summary>The recessed band: darker than the well, shadowed from above and on the left, with a faint lit lip.</summary>
     private static void Gutter(DrawingContext context, Rect rect)
@@ -206,7 +236,13 @@ public sealed class GainLedGutter : Control
         }
 
         var radius = LedRadius;
-        if (_colors.Length == count && _version == gradient.Version && _glowVersion == Glow.Version && _litRadius == radius)
+        var travel = Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
+        if (!double.IsFinite(travel) || travel < 0)
+        {
+            travel = 0;
+        }
+
+        if (_colors.Length == count && _version == gradient.Version && _glowVersion == Glow.Version && _litRadius == radius && _litTravel == travel)
         {
             return;
         }
@@ -214,6 +250,7 @@ public sealed class GainLedGutter : Control
         _version = gradient.Version;
         _glowVersion = Glow.Version;
         _litRadius = radius;
+        _litTravel = travel;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
@@ -223,7 +260,8 @@ public sealed class GainLedGutter : Control
         var size = new Size(2 * radius, 2 * radius);
         for (var k = 0; k < count; k++)
         {
-            var color = Swatch(k / (double)(count - 1));
+            var fraction = travel > 0 ? Math.Clamp((k * MinimumPitch) / travel, 0, 1) : 0;
+            var color = Swatch(fraction);
             _colors[k] = color;
             _lit[k] = gradient.Brush(color);
             _unlit[k] = gradient.Brush(ConsolePaint.Alpha(color, Palette.UnlitAlpha));

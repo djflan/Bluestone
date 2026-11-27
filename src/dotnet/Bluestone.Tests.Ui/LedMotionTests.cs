@@ -151,6 +151,104 @@ public sealed class LedMotionTests
     });
 
     [Fact]
+    public Task GainLedCountAndColors_FollowTravelAtFixedPitch() => HeadlessApp.RunAsync(() =>
+    {
+        var gutter = new GainLedGutter { Value = double.NegativeInfinity, Width = 14, Height = 220 };
+        var window = Show(gutter);
+        try
+        {
+            Render(window);
+            var tallTravel = gutter.Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
+            var tallColors = gutter.Colors.ToArray();
+            Assert.Equal(11, gutter.VisibleCount);
+            Assert.Equal(11, gutter.Leds.Count);
+            Assert.Equal(GainLedGutter.Swatch(GainLedGutter.MinimumPitch / tallTravel), tallColors[1]);
+
+            gutter.Height = 138;
+            Render(window);
+            var shorterTravel = gutter.Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
+            var shorterColors = gutter.Colors.ToArray();
+            Assert.Equal(7, gutter.VisibleCount);
+            Assert.Equal(7, gutter.Leds.Count);
+            Assert.Equal(GainLedGutter.Swatch(GainLedGutter.MinimumPitch / shorterTravel), shorterColors[1]);
+
+            // This height changes the LED position within the same count; its colour must follow the travel.
+            gutter.Height = 148;
+            Render(window);
+            var sameCountTravel = gutter.Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
+            Assert.Equal(7, gutter.VisibleCount);
+            Assert.Equal(7, gutter.Leds.Count);
+            Assert.NotEqual(shorterColors[1], gutter.Colors[1]);
+            Assert.Equal(GainLedGutter.Swatch(GainLedGutter.MinimumPitch / sameCountTravel), gutter.Colors[1]);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task GainLeds_FillTheNextLedAsTheFaderReachesItsCenter() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var gutter = new GainLedGutter { Width = 14, Height = 220 };
+        var window = Show(gutter);
+        try
+        {
+            var travel = gutter.Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
+            clock.Time = 1000;
+            gutter.Value = ConsoleRail.Db((GainLedGutter.MinimumPitch / 2) / travel);
+            Render(window);
+
+            var leds = gutter.Leds;
+            Assert.Equal(1, leds.Level(0));
+            Assert.Equal(0.5, leds.Level(1), 6);
+
+            // At the next LED's centre, the lower one stays full and the next finishes warming up.
+            clock.Time = 2000;
+            gutter.Value = ConsoleRail.Db(GainLedGutter.MinimumPitch / travel);
+            Render(window);
+            clock.Frame(2010);
+            Assert.Equal(1, leds.Level(0));
+            Assert.Equal(1, leds.Level(1));
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task GainLeds_BelowFloorAndNonFiniteValuesStayDark() => HeadlessApp.RunAsync(() =>
+    {
+        var gutter = new GainLedGutter { Value = MixerRail.GainFloor - 1, Width = 14, Height = 220 };
+        var window = Show(gutter);
+        try
+        {
+            foreach (var value in new[] { gutter.Value, double.NegativeInfinity, double.NaN, double.PositiveInfinity })
+            {
+                gutter.Value = value;
+                Render(window);
+                Assert.All(Enumerable.Range(0, gutter.Leds.Count), i =>
+                {
+                    Assert.Equal(0, gutter.Leds.Level(i));
+                    Assert.Equal(0, gutter.Leds.Step(i));
+                });
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
     public Task TheMidiLed_LightsAtOnce_AndFadesOverItsRelease() => HeadlessApp.RunAsync(() =>
     {
         using var clock = new ManualLedClock();
@@ -440,6 +538,44 @@ public sealed class LedMotionTests
             Assert.Equal(0.5, leds.Level(0), 6);
             clock.Frame(2060);
             Assert.Equal(1, leds.Level(0));
+            Assert.Equal((0, false), LedMotion.StateOf(window));
+            Assert.Equal(0, clock.Pending);
+        }
+        finally
+        {
+            window.Close();
+        }
+
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task AFractionalTarget_WarmsAndFadesToItsExactLevel() => HeadlessApp.RunAsync(() =>
+    {
+        using var clock = new ManualLedClock();
+        var owner = new Border();
+        var window = Show(owner);
+        try
+        {
+            var leds = new LedLevels(owner, 90, 20, 1);
+            clock.Time = 1000;
+            leds.Set(0, 0.5, clock.Time);
+
+            clock.Frame(1005);
+            Assert.Equal(0.25, leds.Level(0), 6);
+            Assert.Equal(2, leds.Step(0));
+            clock.Frame(1010);
+            Assert.Equal(0.5, leds.Level(0), 6);
+            Assert.Equal(4, leds.Step(0));
+            Assert.Equal((0, false), LedMotion.StateOf(window));
+
+            clock.Time = 2000;
+            leds.Set(0, 0.25, clock.Time);
+            clock.Frame(2045);
+            Assert.Equal(0.3125, leds.Level(0), 6);
+            clock.Frame(2090);
+            Assert.Equal(0.25, leds.Level(0), 6);
+            Assert.Equal(2, leds.Step(0));
             Assert.Equal((0, false), LedMotion.StateOf(window));
             Assert.Equal(0, clock.Pending);
         }
