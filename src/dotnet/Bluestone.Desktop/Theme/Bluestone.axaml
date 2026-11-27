@@ -1606,18 +1606,18 @@
   <Style Selector="Panel.chainCanvas">
     <Setter Property="Background" Value="{StaticResource Surface.Sunken}" />
   </Style>
-  <!-- The chain row fills the pane: cards stand as tall as the room allows (never under DevicePanel.Height). -->
+  <!-- The chain scrolls horizontally; its row and every instrument surface keep the same fixed height. -->
   <Style Selector="StackPanel.chainRow">
     <Setter Property="Margin" Value="14,14,24,16" />
-    <Setter Property="VerticalAlignment" Value="Stretch" />
-    <Setter Property="MinHeight" Value="{StaticResource DevicePanel.Height}" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
   <Style Selector="StackPanel.chainRow > ItemsControl, StackPanel.chainRow > ItemsControl > ItemsPresenter > StackPanel, StackPanel.chainRow ContentPresenter > StackPanel">
-    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
   <Style Selector="Border.chainNode">
     <Setter Property="Width" Value="{StaticResource DevicePanel.NodeWidth}" />
-    <Setter Property="MinHeight" Value="{StaticResource DevicePanel.Height}" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
   </Style>
   <!-- In: no card, only its label and source under the first junction's ladder. -->
   <Style Selector="Border.chainNode.input">
@@ -1717,8 +1717,8 @@
        chain reads along, the note lamp at header height, and the level in the lower body. -->
   <Style Selector="Border.chainLink">
     <Setter Property="Width" Value="{StaticResource DevicePanel.Gap}" />
-    <Setter Property="MinHeight" Value="{StaticResource DevicePanel.Height}" />
-    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="Border.chainLink.trail">
@@ -1733,7 +1733,6 @@
   </Style>
   <Style Selector="Border.insertionMarker">
     <Setter Property="Width" Value="3" />
-    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="CornerRadius" Value="1.5" />
     <Setter Property="Background" Value="{StaticResource State.Focus}" />
     <Setter Property="BoxShadow" Value="{StaticResource Shadow.Focus}" />
@@ -1741,7 +1740,6 @@
 
   <!-- A device dropped over a panel replaces it: the whole panel is outlined and says so, plainly. -->
   <Style Selector="Border.replaceOverlay">
-    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
     <Setter Property="CornerRadius" Value="4" />
     <Setter Property="BorderThickness" Value="2" />
     <Setter Property="BorderBrush" Value="{StaticResource State.Focus}" />
@@ -1764,8 +1762,8 @@
   <!-- The card itself is a DeviceCardPanel (panel, header, selection halo and pool); the Border only sizes it and
        must not clip, so the selected card's halo can spill into the gap. -->
   <Style Selector="Border.devicePanel">
-    <Setter Property="MinHeight" Value="{StaticResource DevicePanel.Height}" />
-    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="Height" Value="{StaticResource DevicePanel.Height}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="ClipToBounds" Value="False" />
   </Style>

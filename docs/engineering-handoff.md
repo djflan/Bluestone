@@ -310,6 +310,13 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     - BenchmarkDotNet is `0.16.0-preview.1`; move to a stable release with .NET 11 support when one ships.
     - Optional: assert that NativeAOT publish logs contain "Generating native code", so a silent fallback to a JIT
       build fails CI.
+14. **Device View sizing (branch `team/device-view-fit`), deferred or not verified:** minimal Ableton/Bitwig-style
+    device headers and a continuous rack surface instead of separately boxed cards (next, needs a direction pick);
+    magnetic or release-snap resizing of detached Device View windows (only an explicit "Fit window to device chain"
+    action exists); compact/normal/expanded size modes (rejected for now in favor of one fixed height); a
+    selected-device detail shelf; resizing plugin vendor editors. Not verified: native macOS window chrome, live
+    drag in the running app, and Fit on a physically scaled (150%) Windows or Linux display. Final screenshots came
+    from the headless Avalonia renderer.
 14. **Typography and compact workspace verification:** review the fixed fonts and revised empty state in the running
     app at compact and normal sizes, including populated and active states, keyboard focus, and a screen reader.
     The user accepted proceeding without those live checks. Status text also has low contrast against its background.

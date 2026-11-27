@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -34,6 +35,77 @@ public sealed class ViewWindow : Window
     }
 
     public WorkspaceView View { get; }
+
+    /// <summary>Fits only a detached Device View to its arranged chain content, within the current display's work area.</summary>
+    internal void FitDeviceChain(DeviceViewControl deviceView)
+    {
+        ArgumentNullException.ThrowIfNull(deviceView);
+        if (View.Kind != WorkspaceViewKind.DeviceView || !View.IsDetached
+            || !ReferenceEquals(TopLevel.GetTopLevel(deviceView), this)
+            || !deviceView.TryGetFitContentSize(out var contentSize)
+            || Screens?.ScreenFromWindow(this) is not { } screen)
+        {
+            return;
+        }
+
+        var desktopUnitsPerDip = OperatingSystem.IsMacOS() ? 1 : screen.Scaling;
+        // Keep the window's own minimum: a short chain leaves room rather than shrinking below the floor.
+        contentSize = new Size(Math.Max(contentSize.Width, MinWidth), Math.Max(contentSize.Height, MinHeight));
+        if (!TryCalculateFitGeometry(
+                contentSize,
+                screen.WorkingArea,
+                Position,
+                desktopUnitsPerDip,
+                new Size(MinWidth, MinHeight),
+                out var size,
+                out var position))
+        {
+            return;
+        }
+
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Width = size.Width;
+        Height = size.Height;
+        Position = position;
+    }
+
+    internal static bool TryCalculateFitGeometry(
+        Size contentSize,
+        PixelRect workArea,
+        PixelPoint currentPosition,
+        double desktopUnitsPerDip,
+        Size minimumSize,
+        out Size size,
+        out PixelPoint position)
+    {
+        size = default;
+        position = default;
+        if (workArea.Width <= 0 || workArea.Height <= 0
+            || !double.IsFinite(desktopUnitsPerDip) || desktopUnitsPerDip <= 0
+            || !double.IsFinite(contentSize.Width) || !double.IsFinite(contentSize.Height)
+            || !double.IsFinite(minimumSize.Width) || !double.IsFinite(minimumSize.Height)
+            || minimumSize.Width < 0 || minimumSize.Height < 0)
+        {
+            return false;
+        }
+
+        var width = Math.Min(contentSize.Width, workArea.Width * 0.9 / desktopUnitsPerDip);
+        var height = Math.Min(contentSize.Height, workArea.Height * 0.5 / desktopUnitsPerDip);
+        if (width < minimumSize.Width || height < minimumSize.Height)
+        {
+            return false;
+        }
+
+        var widthInDesktopUnits = (int)Math.Ceiling(width * desktopUnitsPerDip);
+        var heightInDesktopUnits = (int)Math.Ceiling(height * desktopUnitsPerDip);
+        var maxX = workArea.X + workArea.Width - widthInDesktopUnits;
+        var maxY = workArea.Y + workArea.Height - heightInDesktopUnits;
+        size = new Size(width, height);
+        position = new PixelPoint(
+            (int)Math.Clamp(currentPosition.X, workArea.X, maxX),
+            (int)Math.Clamp(currentPosition.Y, workArea.Y, maxY));
+        return true;
+    }
 
     /// <summary>Closes the window because the layout no longer has the view detached (it was docked or collapsed elsewhere).</summary>
     public void CloseFromLayout()

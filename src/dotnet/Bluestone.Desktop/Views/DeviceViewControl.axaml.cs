@@ -61,18 +61,30 @@ public partial class DeviceViewControl : UserControl
         var links = new double[count + 1];
         for (var i = 0; i < count; i++)
         {
-            if (Chain.ContainerFromIndex(i) is not Control container || container.TranslatePoint(default, ChainArea) is not { } origin)
+            if (Chain.ContainerFromIndex(i) is not Control container || !IsValidBounds(container.Bounds)
+                || container.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("chainLink")) is not { } link
+                || container.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("devicePanel")) is not { } panel
+                || !IsValidBounds(link.Bounds) || !IsValidBounds(panel.Bounds)
+                || link.TranslatePoint(new Point(link.Bounds.Width / 2, link.Bounds.Height / 2), ChainArea) is not { } linkCenter
+                || container.TranslatePoint(default, ChainArea) is not { } containerOrigin
+                || !IsValidPoint(linkCenter) || !IsValidPoint(containerOrigin))
             {
-                return (count, 0);
+                return (-1, 0);
             }
 
-            var link = container.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("chainLink"));
-            var linkWidth = link?.Bounds.Width ?? 0;
-            links[i] = origin.X + (linkWidth / 2);
-            centers[i] = origin.X + linkWidth + ((container.Bounds.Width - linkWidth) / 2);
+            links[i] = linkCenter.X;
+            centers[i] = containerOrigin.X + link.Bounds.Width + ((container.Bounds.Width - link.Bounds.Width) / 2);
         }
 
-        links[count] = TrailLink.TranslatePoint(new Point(TrailLink.Bounds.Width / 2, 0), ChainArea)?.X ?? 0;
+        if (!IsValidBounds(TrailLink.Bounds)
+            || TrailLink.TranslatePoint(new Point(TrailLink.Bounds.Width / 2, TrailLink.Bounds.Height / 2), ChainArea) is not { } trailCenter
+            || !IsValidPoint(trailCenter)
+            || !double.IsFinite(x))
+        {
+            return (-1, 0);
+        }
+
+        links[count] = trailCenter.X;
         var gap = DeviceViewViewModel.GapAt(centers, x);
         return (gap, links[gap]);
     }
@@ -153,6 +165,47 @@ public partial class DeviceViewControl : UserControl
         _pressed = null;
     }
 
+    private void OnFitWindowClicked(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is ViewWindow { View.Kind: WorkspaceViewKind.DeviceView, View.IsDetached: true } window)
+        {
+            window.FitDeviceChain(this);
+        }
+    }
+
+    internal bool TryGetFitContentSize(out Size size)
+    {
+        size = default;
+        if (Content is not Grid layout || !IsValidBounds(ChainArea.Bounds) || !IsValidBounds(ChainRow.Bounds))
+        {
+            return false;
+        }
+
+        var cardHeight = ChainRow.GetVisualDescendants().OfType<Control>()
+            .Where(control => control.Classes.Contains("devicePanel") || control.Classes.Contains("chainNode"))
+            .Select(control => control.Bounds.Height)
+            .Where(height => height > 0 && double.IsFinite(height))
+            .DefaultIfEmpty(0)
+            .Max();
+        if (cardHeight <= 0)
+        {
+            return false;
+        }
+
+        var headerHeight = layout.Children.FirstOrDefault(child => Grid.GetRow(child) == 0)?.Bounds.Height ?? 0;
+        var verticalMargins = ChainRow.Margin.Top + ChainRow.Margin.Bottom + ChainScroller.Margin.Top + ChainScroller.Margin.Bottom;
+        // DesiredSize, not Bounds: the row stretches to a wider viewport, which would stop Fit from shrinking the window.
+        var width = ChainRow.DesiredSize.Width + ChainScroller.Margin.Left + ChainScroller.Margin.Right;
+        var height = headerHeight + cardHeight + verticalMargins;
+        if (width <= 0 || height <= 0 || !double.IsFinite(width) || !double.IsFinite(height))
+        {
+            return false;
+        }
+
+        size = new Size(width, height);
+        return true;
+    }
+
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         if (ChainDrag.From(e) is not { } drag || ViewModel is not { HasChain: true } vm)
@@ -188,16 +241,24 @@ public partial class DeviceViewControl : UserControl
             return;
         }
 
-        var top = ChainRow.TranslatePoint(new Point(0, ChainRow.Margin.Top), ChainArea)?.Y ?? 0;
         var target = TargetAt(e.GetPosition(ChainArea).X, drag);
+        if (target.Gap < 0)
+        {
+            HideDropFeedback();
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
         if (target.Replace is { } replaced)
         {
             // Over the middle of a panel: the whole panel is the target, and says what will happen.
             InsertionMarker.IsVisible = false;
             ReplaceDetail.Text = $"{replaced.Name} with {drag.Definition!.Name}";
-            ReplaceOverlay.Width = Math.Max(40, target.Right - target.Left);
+            ReplaceOverlay.Width = target.Right - target.Left;
+            ReplaceOverlay.Height = target.Height;
             Canvas.SetLeft(ReplaceOverlay, target.Left);
-            Canvas.SetTop(ReplaceOverlay, Math.Max(0, target.Top));
+            Canvas.SetTop(ReplaceOverlay, target.Top);
             ReplaceOverlay.IsVisible = true;
             e.DragEffects = DragDropEffects.Copy;
             e.Handled = true;
@@ -206,7 +267,8 @@ public partial class DeviceViewControl : UserControl
 
         ReplaceOverlay.IsVisible = false;
         Canvas.SetLeft(InsertionMarker, target.MarkerX - (InsertionMarker.Width / 2));
-        Canvas.SetTop(InsertionMarker, Math.Max(0, top - ChainRow.Margin.Top));
+        InsertionMarker.Height = target.Height;
+        Canvas.SetTop(InsertionMarker, target.Top);
         InsertionMarker.IsVisible = true;
         e.DragEffects = effect;
         e.Handled = true;
@@ -216,32 +278,52 @@ public partial class DeviceViewControl : UserControl
     /// What a drop at <paramref name="x"/> does: replace a device (a Browser item over the middle half of a panel) or go
     /// into a gap (anything else, and every move of a chain device, which never replaces).
     /// </summary>
-    internal (DevicePanelViewModel? Replace, double Left, double Right, double Top, int Gap, double MarkerX) TargetAt(double x, ChainDrag drag)
+    internal (DevicePanelViewModel? Replace, double Left, double Right, double Top, double Height, int Gap, double MarkerX) TargetAt(double x, ChainDrag drag)
     {
         var (gap, markerX) = GapAt(x);
-        if (drag.Definition is null || ViewModel is not { } vm)
+        if (gap < 0 || ViewModel is not { } vm)
         {
-            return (null, 0, 0, 0, gap, markerX);
+            return (null, 0, 0, 0, 0, -1, 0);
         }
 
-        var panels = new List<(double Left, double Right)>();
-        var tops = new List<double>();
+        if (vm.IsEmpty)
+        {
+            return (null, 0, 0, 0, 0, gap, markerX);
+        }
+
+        var panels = new List<Rect>();
         for (var i = 0; i < vm.Devices.Count; i++)
         {
-            if (Chain.ContainerFromIndex(i) is not Control container || container.TranslatePoint(default, ChainArea) is not { } origin)
+            if (Chain.ContainerFromIndex(i) is not Control container
+                || container.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("devicePanel")) is not { } panel
+                || !IsValidBounds(panel.Bounds)
+                || panel.TranslatePoint(default, ChainArea) is not { } origin
+                || !IsValidPoint(origin))
             {
-                return (null, 0, 0, 0, gap, markerX);
+                return (null, 0, 0, 0, 0, -1, 0);
             }
 
-            var panel = container.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("devicePanel"));
-            var corner = panel?.TranslatePoint(default, ChainArea) ?? origin;
-            panels.Add((corner.X, corner.X + (panel?.Bounds.Width ?? container.Bounds.Width)));
-            tops.Add(corner.Y);
+            panels.Add(new Rect(origin, panel.Bounds.Size));
         }
 
-        var (replace, index) = DeviceViewViewModel.DropTargetAt(panels, x, canReplace: true);
-        return replace ? (vm.Devices[index], panels[index].Left, panels[index].Right, tops[index], gap, markerX) : (null, 0, 0, 0, gap, markerX);
+        if (!double.IsFinite(x) || panels.Count == 0)
+        {
+            return (null, 0, 0, 0, 0, -1, 0);
+        }
+
+        var (replace, index) = DeviceViewViewModel.DropTargetAt(panels.Select(panel => (panel.Left, panel.Right)).ToList(), x, canReplace: drag.Definition is not null);
+        var markerPanel = panels[Math.Min(gap, panels.Count - 1)];
+        return replace
+            ? (vm.Devices[index], panels[index].Left, panels[index].Right, panels[index].Top, panels[index].Height, gap, markerX)
+            : (null, 0, 0, markerPanel.Top, markerPanel.Height, gap, markerX);
     }
+
+    private static bool IsValidBounds(Rect bounds) =>
+        bounds.Width > 0 && bounds.Height > 0
+        && double.IsFinite(bounds.X) && double.IsFinite(bounds.Y)
+        && double.IsFinite(bounds.Width) && double.IsFinite(bounds.Height);
+
+    private static bool IsValidPoint(Point point) => double.IsFinite(point.X) && double.IsFinite(point.Y);
 
     private void HideDropFeedback()
     {
@@ -266,6 +348,11 @@ public partial class DeviceViewControl : UserControl
         }
 
         var target = TargetAt(e.GetPosition(ChainArea).X, drag);
+        if (target.Gap < 0)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
 
         // Change the chain after the platform's drop callback returns, not inside the native drag session: the change rebuilds
         // panels (and can start a plugin), which must not happen while the session still holds the drag source and target.

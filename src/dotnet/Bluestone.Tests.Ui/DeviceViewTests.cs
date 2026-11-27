@@ -224,6 +224,241 @@ public sealed class DeviceViewTests
         Assert.Equal(1, app.ViewModel.DeviceView!.SelectedDevice!.Index);
     });
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task TheInsertionMarker_MatchesTheMeasuredPanelHeightAndTop(bool move) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 1200);
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var chainArea = AppUnderTest.Within<Panel>(deviceView, p => p.Name == "ChainArea");
+        var chain = AppUnderTest.Within<ItemsControl>(deviceView, c => c.Name == "Chain");
+        var first = (Control)chain.ContainerFromIndex(0)!;
+        var second = (Control)chain.ContainerFromIndex(1)!;
+        var panel = AppUnderTest.Within<Border>(first, b => b.Classes.Contains("devicePanel"));
+        var marker = AppUnderTest.Within<Border>(deviceView, b => b.Name == "InsertionMarker");
+        var left = first.TranslatePoint(new Point(first.Bounds.Width * 0.9, panel.Bounds.Height / 2), app.Window)!.Value;
+        var right = second.TranslatePoint(new Point(second.Bounds.Width * 0.1, panel.Bounds.Height / 2), app.Window)!.Value;
+        var point = new Point((left.X + right.X) / 2, left.Y);
+        var vm = app.ViewModel.DeviceView!;
+        var transfer = (move ? ChainDrag.Move(vm.Devices[2].Id, vm) : ChainDrag.Insert(Definition("Transpose"))).ToTransfer();
+
+        app.Window.DragDrop(point, RawDragEventType.DragEnter, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+
+        Assert.True(marker.IsVisible);
+        var panelTop = panel.TranslatePoint(default, chainArea)!.Value.Y;
+        var markerTop = marker.TranslatePoint(default, chainArea)!.Value.Y;
+        Assert.InRange(Math.Abs(panel.Bounds.Height - marker.Bounds.Height), 0, 0.5);
+        Assert.InRange(Math.Abs(panelTop - markerTop), 0, 0.5);
+    });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task TheReplacementFeedback_MatchesItsMeasuredPanel(bool collapsed) => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 1200);
+        var view = app.ViewModel.DeviceView!;
+        if (collapsed)
+        {
+            view.Devices[0].IsCollapsed = true;
+            app.Settle();
+        }
+
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var chainArea = AppUnderTest.Within<Panel>(deviceView, p => p.Name == "ChainArea");
+        var chain = AppUnderTest.Within<ItemsControl>(deviceView, c => c.Name == "Chain");
+        var first = (Control)chain.ContainerFromIndex(0)!;
+        var panel = AppUnderTest.Within<Border>(first, b => b.Classes.Contains("devicePanel"));
+        var overlay = AppUnderTest.Within<Border>(deviceView, b => b.Name == "ReplaceOverlay");
+        var transfer = ChainDrag.Insert(Definition("Arpeggiator")).ToTransfer();
+        var point = panel.TranslatePoint(new Point(panel.Bounds.Width / 2, panel.Bounds.Height / 2), app.Window)!.Value;
+
+        app.Window.DragDrop(point, RawDragEventType.DragEnter, transfer, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+
+        Assert.True(overlay.IsVisible);
+        var panelOrigin = panel.TranslatePoint(default, chainArea)!.Value;
+        var overlayOrigin = overlay.TranslatePoint(default, chainArea)!.Value;
+        Assert.InRange(Math.Abs(panelOrigin.X - overlayOrigin.X), 0, 0.5);
+        Assert.InRange(Math.Abs(panelOrigin.Y - overlayOrigin.Y), 0, 0.5);
+        Assert.InRange(Math.Abs(panel.Bounds.Width - overlay.Bounds.Width), 0, 0.5);
+        Assert.InRange(Math.Abs(panel.Bounds.Height - overlay.Bounds.Height), 0, 0.5);
+        if (collapsed)
+        {
+            Assert.InRange(Math.Abs(30 - panel.Bounds.Width), 0, 0.5);
+        }
+    });
+
+    [Fact]
+    public Task ADeviceCard_DoesNotStretchWhenItsViewWindowHeightGrows() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.Workspace.DetailDeviceView!;
+        view.DetachCommand.Execute(null);
+        app.Settle();
+        var window = Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+        var deviceView = window.GetVisualDescendants().OfType<DeviceViewControl>().Single();
+        var chainArea = AppUnderTest.Within<Panel>(deviceView, p => p.Name == "ChainArea");
+        var chain = AppUnderTest.Within<ItemsControl>(deviceView, c => c.Name == "Chain");
+        var first = (Control)chain.ContainerFromIndex(0)!;
+        var panel = AppUnderTest.Within<Border>(first, b => b.Classes.Contains("devicePanel"));
+        var initialWindowHeight = window.Bounds.Height;
+        var initialAvailableHeight = chainArea.Bounds.Height;
+        var initialCardHeight = panel.Bounds.Height;
+
+        window.Height = initialWindowHeight + 300;
+        app.Settle();
+
+        Assert.True(window.Bounds.Height > initialWindowHeight);
+        Assert.True(chainArea.Bounds.Height > initialAvailableHeight, "The chain has more vertical space after the window grows.");
+        Assert.InRange(Math.Abs(panel.Bounds.Height - initialCardHeight), 0, 0.5);
+    });
+
+    [Fact]
+    public Task DropFeedback_ClearsOnLeaveAndOnAnInvalidMove() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.DeviceView!;
+        var deviceView = app.Find<ContentControl>("DockedDeviceView");
+        var marker = AppUnderTest.Within<Border>(deviceView, b => b.Name == "InsertionMarker");
+        var overlay = AppUnderTest.Within<Border>(deviceView, b => b.Name == "ReplaceOverlay");
+        var chain = AppUnderTest.Within<ItemsControl>(deviceView, c => c.Name == "Chain");
+        var first = (Control)chain.ContainerFromIndex(0)!;
+        var replacePoint = first.TranslatePoint(new Point(first.Bounds.Width / 2, first.Bounds.Height / 2), app.Window)!.Value;
+        var insertPoint = first.TranslatePoint(new Point(first.Bounds.Width * 0.9, first.Bounds.Height / 2), app.Window)!.Value;
+        var insert = ChainDrag.Insert(Definition("Transpose")).ToTransfer();
+
+        app.Window.DragDrop(replacePoint, RawDragEventType.DragEnter, insert, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+        Assert.True(overlay.IsVisible);
+
+        app.Window.DragDrop(replacePoint, RawDragEventType.DragLeave, insert, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+        Assert.False(marker.IsVisible);
+        Assert.False(overlay.IsVisible);
+
+        app.Window.DragDrop(insertPoint, RawDragEventType.DragOver, insert, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+        Assert.True(marker.IsVisible);
+
+        var invalidMove = ChainDrag.Move(new DeviceId(Guid.NewGuid()), view).ToTransfer();
+        app.Window.DragDrop(insertPoint, RawDragEventType.DragOver, invalidMove, DragDropEffects.Move, RawInputModifiers.None);
+        app.Settle();
+        Assert.False(marker.IsVisible);
+        Assert.False(overlay.IsVisible);
+    });
+
+    [Fact]
+    public Task FitDeviceViewMenuItem_IsDetachedOnly_AndFitsInsideItsWorkAreaWithoutDisablingChainScroll() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+
+        var dockedMenu = AppUnderTest.Within<Button>(app.Find<ContentControl>("DockedDeviceView"), b => b.Name == "ViewMenuButton");
+        dockedMenu.Flyout!.ShowAt(dockedMenu);
+        app.Settle();
+        var dockedItem = ((MenuFlyout)dockedMenu.Flyout).Items.OfType<MenuItem>().Single(i => i.Name == "FitDeviceViewMenuItem");
+        Assert.Equal("Fit window to device chain", dockedItem.Header);
+        Assert.False(dockedItem.IsVisible);
+        dockedMenu.Flyout.Hide();
+
+        var view = app.ViewModel.Workspace.NewDeviceView();
+        var deviceView = view.DeviceView!;
+        for (var index = deviceView.Devices.Count; index < 14; index++)
+        {
+            deviceView.InsertAt(index, Definition("Transpose"));
+        }
+
+        view.DetachCommand.Execute(null);
+        app.Settle();
+        var window = Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+        var detachedControl = window.GetVisualDescendants().OfType<DeviceViewControl>().Single();
+        var detachedMenu = AppUnderTest.Within<Button>(detachedControl, b => b.Name == "ViewMenuButton");
+        detachedMenu.Flyout!.ShowAt(detachedMenu);
+        app.Settle();
+        var fitItem = ((MenuFlyout)detachedMenu.Flyout).Items.OfType<MenuItem>().Single(i => i.Name == "FitDeviceViewMenuItem");
+        Assert.True(fitItem.IsVisible);
+        Assert.Equal("Fit window to device chain", fitItem.Header);
+
+        app.Click(fitItem);
+        app.Settle();
+
+        var screen = window.Screens?.ScreenFromWindow(window);
+        Assert.NotNull(screen);
+        var workArea = screen.WorkingArea;
+        var desktopUnitsPerDip = OperatingSystem.IsMacOS() ? 1 : screen.Scaling;
+        var width = window.Bounds.Width * desktopUnitsPerDip;
+        var height = window.Bounds.Height * desktopUnitsPerDip;
+        Assert.True(window.Position.X >= workArea.X);
+        Assert.True(window.Position.Y >= workArea.Y);
+        Assert.True(window.Position.X + width <= workArea.Right);
+        Assert.True(window.Position.Y + height <= workArea.Bottom);
+        Assert.True(window.Bounds.Width <= workArea.Width * 0.9 / desktopUnitsPerDip);
+        Assert.True(window.Bounds.Height <= workArea.Height * 0.5 / desktopUnitsPerDip);
+        var scroller = AppUnderTest.Within<ScrollViewer>(detachedControl, c => c.Name == "ChainScroller");
+        Assert.True(scroller.Extent.Width > scroller.Viewport.Width, "A long chain remains horizontally scrollable after fitting the window.");
+        Assert.Equal(Avalonia.Controls.Primitives.ScrollBarVisibility.Auto, scroller.HorizontalScrollBarVisibility);
+    });
+
+    [Fact]
+    public Task FitDeviceChain_ShrinksAWideWindowToAShortChain() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await OpenWithChainAsync(1440, 900);
+        var view = app.ViewModel.Workspace.NewDeviceView();
+        view.DetachCommand.Execute(null);
+        app.Settle();
+        var window = Assert.Single(app.Window.OwnedWindows.OfType<ViewWindow>());
+        var detachedControl = window.GetVisualDescendants().OfType<DeviceViewControl>().Single();
+        window.Width = 1300;
+        app.Settle();
+        Assert.True(detachedControl.TryGetFitContentSize(out var content));
+
+        window.FitDeviceChain(detachedControl);
+        app.Settle();
+
+        Assert.True(content.Width < 1300, $"A three-device chain measures narrower than the window ({content.Width}).");
+        Assert.InRange(window.Bounds.Width, window.MinWidth, content.Width + 0.5);
+    });
+
+    [Fact]
+    public void FitGeometry_ConvertsDipsToScaledDesktopUnits()
+    {
+        var workArea = new PixelRect(100, 50, 2880, 1800);
+
+        Assert.True(ViewWindow.TryCalculateFitGeometry(
+            new Size(2000, 1200),
+            workArea,
+            new PixelPoint(4000, 4000),
+            1.5,
+            new Size(200, 200),
+            out var size,
+            out var position));
+
+        Assert.Equal(new Size(1728, 600), size);
+        Assert.Equal(new PixelPoint(388, 950), position);
+        Assert.True(size.Width * 1.5 <= workArea.Width * 0.9);
+        Assert.True(size.Height * 1.5 <= workArea.Height * 0.5);
+        Assert.True(position.X + size.Width * 1.5 <= workArea.Right);
+        Assert.True(position.Y + size.Height * 1.5 <= workArea.Bottom);
+    }
+
+    [Fact]
+    public void FitGeometry_DeclinesWhenScreenCapIsBelowWindowMinimum()
+    {
+        Assert.False(ViewWindow.TryCalculateFitGeometry(
+            new Size(400, 500),
+            new PixelRect(0, 0, 1600, 720),
+            new PixelPoint(0, 0),
+            2,
+            new Size(200, 200),
+            out var size,
+            out var position));
+
+        Assert.Equal(default, size);
+        Assert.Equal(default, position);
+    }
+
     [Fact]
     public Task ADeviceDraggedAlongTheChain_MovesToTheGap() => HeadlessApp.RunAsync(async () =>
     {
