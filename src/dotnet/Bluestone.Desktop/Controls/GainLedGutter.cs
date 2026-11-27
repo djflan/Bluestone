@@ -48,7 +48,6 @@ public sealed class GainLedGutter : Control
     private int _version = -1;
     private int _glowVersion = -1;
     private double _litRadius = -1;
-    private double _litTravel = -1;
     private readonly LedLevels _leds;
 
     static GainLedGutter()
@@ -139,7 +138,7 @@ public sealed class GainLedGutter : Control
             // The light first, every LED's, so a neighbour's spill never lies over a lens.
             for (var k = 0; k < count; k++)
             {
-                var f = Math.Clamp((k * MinimumPitch) / travel, 0, 1);
+                var f = CentreFraction(k, travel);
                 _leds.Set(k, LedTarget(k, fraction, travel), now, fresh);
                 var level = glow ? LedLight.Level(_leds.Step(k)) : 0;
                 if (level > 0 && _lights[(k * LightStride) + level] is { } light)
@@ -151,7 +150,7 @@ public sealed class GainLedGutter : Control
 
             for (var k = 0; k < count; k++)
             {
-                var f = Math.Clamp((k * MinimumPitch) / travel, 0, 1);
+                var f = CentreFraction(k, travel);
                 var centre = Centre(x, bottom, top, f);
                 var step = _leds.Step(k);
                 if (step == LedLevels.Steps && glow)
@@ -180,6 +179,10 @@ public sealed class GainLedGutter : Control
     }
 
     private static Point Centre(double x, double bottom, double top, double f) => new(x, Math.Round(bottom - (f * (bottom - top))) + 0.5);
+
+    /// <summary>The position of a fixed-pitch LED as a fraction of the available travel.</summary>
+    internal static double CentreFraction(int index, double travel) =>
+        double.IsFinite(travel) && travel > 0 ? Math.Clamp((index * MinimumPitch) / travel, 0, 1) : 0;
 
     /// <summary>The finite fader position on the console taper, or a negative sentinel when no LEDs should be lit.</summary>
     private static double GainPosition(double value) => double.IsFinite(value) && value > MixerRail.GainFloor ? ConsoleRail.Position(value) : -1;
@@ -218,9 +221,9 @@ public sealed class GainLedGutter : Control
     }
 
     /// <summary>
-    /// The gain gradient sampled once per LED, at its fraction of the travel, with every brush, glow and pen a step of the
-    /// fade or warm-up draws, rebuilt only when the count or the gradient changes, so a draw part-way allocates nothing more than one at rest. The brushes
-    /// come from <see cref="MeterGradient.Gain"/>'s caches, which empty on each change.
+    /// The gain gradient sampled across the visible ladder, with every brush, glow and pen a step of the fade or warm-up
+    /// draws, rebuilt only when the count, radius, gradient or glow setting changes, so a draw part-way allocates nothing
+    /// more than one at rest. The brushes come from <see cref="MeterGradient.Gain"/>'s caches, which empty on each change.
     /// </summary>
     private void EnsureColors(int count)
     {
@@ -236,13 +239,7 @@ public sealed class GainLedGutter : Control
         }
 
         var radius = LedRadius;
-        var travel = Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
-        if (!double.IsFinite(travel) || travel < 0)
-        {
-            travel = 0;
-        }
-
-        if (_colors.Length == count && _version == gradient.Version && _glowVersion == Glow.Version && _litRadius == radius && _litTravel == travel)
+        if (_colors.Length == count && _version == gradient.Version && _glowVersion == Glow.Version && _litRadius == radius)
         {
             return;
         }
@@ -250,7 +247,6 @@ public sealed class GainLedGutter : Control
         _version = gradient.Version;
         _glowVersion = Glow.Version;
         _litRadius = radius;
-        _litTravel = travel;
         _colors = new Color[count];
         _lit = new IBrush[count];
         _unlit = new IBrush[count];
@@ -260,7 +256,7 @@ public sealed class GainLedGutter : Control
         var size = new Size(2 * radius, 2 * radius);
         for (var k = 0; k < count; k++)
         {
-            var fraction = travel > 0 ? Math.Clamp((k * MinimumPitch) / travel, 0, 1) : 0;
+            var fraction = count > 1 ? k / (double)(count - 1) : 0;
             var color = Swatch(fraction);
             _colors[k] = color;
             _lit[k] = gradient.Brush(color);

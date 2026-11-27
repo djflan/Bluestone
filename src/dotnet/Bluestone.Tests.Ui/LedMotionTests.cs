@@ -151,7 +151,7 @@ public sealed class LedMotionTests
     });
 
     [Fact]
-    public Task GainLedCountAndColors_FollowTravelAtFixedPitch() => HeadlessApp.RunAsync(() =>
+    public Task GainLedCountAndCenters_FollowAvailableTravelAtFixedPitch() => HeadlessApp.RunAsync(() =>
     {
         var gutter = new GainLedGutter { Value = double.NegativeInfinity, Width = 14, Height = 220 };
         var window = Show(gutter);
@@ -159,10 +159,9 @@ public sealed class LedMotionTests
         {
             Render(window);
             var tallTravel = gutter.Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
-            var tallColors = gutter.Colors.ToArray();
             Assert.Equal(11, gutter.VisibleCount);
             Assert.Equal(11, gutter.Leds.Count);
-            Assert.Equal(GainLedGutter.Swatch(GainLedGutter.MinimumPitch / tallTravel), tallColors[1]);
+            AssertFixedPitch(11, tallTravel);
 
             gutter.Height = 138;
             Render(window);
@@ -170,16 +169,17 @@ public sealed class LedMotionTests
             var shorterColors = gutter.Colors.ToArray();
             Assert.Equal(7, gutter.VisibleCount);
             Assert.Equal(7, gutter.Leds.Count);
-            Assert.Equal(GainLedGutter.Swatch(GainLedGutter.MinimumPitch / shorterTravel), shorterColors[1]);
+            AssertFixedPitch(7, shorterTravel);
+            Assert.Equal(GainLedGutter.Swatch(1d / 6), shorterColors[1]);
 
-            // This height changes the LED position within the same count; its colour must follow the travel.
+            // A resize within the same count preserves the visible gradient palette.
             gutter.Height = 148;
             Render(window);
             var sameCountTravel = gutter.Bounds.Height - ConsoleRail.TravelTop - ConsoleRail.TravelBottomInset;
             Assert.Equal(7, gutter.VisibleCount);
             Assert.Equal(7, gutter.Leds.Count);
-            Assert.NotEqual(shorterColors[1], gutter.Colors[1]);
-            Assert.Equal(GainLedGutter.Swatch(GainLedGutter.MinimumPitch / sameCountTravel), gutter.Colors[1]);
+            AssertFixedPitch(7, sameCountTravel);
+            Assert.Equal(shorterColors, gutter.Colors);
         }
         finally
         {
@@ -188,6 +188,14 @@ public sealed class LedMotionTests
 
         return Task.CompletedTask;
     });
+
+    private static void AssertFixedPitch(int count, double travel)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            Assert.Equal(index * GainLedGutter.MinimumPitch, GainLedGutter.CentreFraction(index, travel) * travel, 6);
+        }
+    }
 
     [Fact]
     public Task GainLeds_FillTheNextLedAsTheFaderReachesItsCenter() => HeadlessApp.RunAsync(() =>
