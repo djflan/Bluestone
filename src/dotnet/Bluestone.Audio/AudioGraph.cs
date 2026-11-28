@@ -128,7 +128,7 @@ public sealed class AudioGraph
     }
 
     /// <summary>Renders one block. Audio thread; all storage is allocated while building the graph.</summary>
-    internal void Render(in AudioRenderContext context, StereoBuffer output, IAudioClickSource? audioClick = null)
+    internal void Render(in AudioRenderContext context, StereoBuffer output, AudioClickRenderer? audioClick = null)
     {
         var frames = context.Frames;
         var stride = BlockFrames;
@@ -252,7 +252,7 @@ public sealed class AudioGraph
 
         if (audioClick is not null)
         {
-            AudioClick.Render(audioClick, context, output);
+            audioClick.Render(context, output);
         }
 
         Master.ApplyAutomated(output, context, MasterGainDecibels, MasterPan, MasterAudible, MasterGainAutomation, MasterPanAutomation);

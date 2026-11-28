@@ -196,7 +196,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             return found;
         }
 
-        var searchFrom = Max(from, snapshot.CountInEnd, snapshot.BeatsEnabledAt);
+        var searchFrom = Max(Max(from, snapshot.Anchor.Time), snapshot.CountInEnd, snapshot.BeatsEnabledAt);
         if (searchFrom >= until || !TransportAnchor.TryGetSongTimeAt(snapshot.Anchor, searchFrom, out var song))
         {
             return found;
@@ -473,6 +473,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
                 Locate(play.Tick, play.Chase, now, startAt);
                 _countIn = play.CountIn?.Clicks ?? [];
                 _countInStart = now;
+                Volatile.Write(ref _countInUntil, play.CountIn is null ? 0 : startAt.Ticks);
                 _countInIndex = 0;
                 _playing = true;
                 Volatile.Write(ref _state, (int)TransportState.Playing);
@@ -661,6 +662,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         }
 
         var snapshot = _audioMetronome;
+        Interlocked.MemoryBarrier();
         if (before != Volatile.Read(ref _audioMetronomeVersion))
         {
             return _audioMetronomeReaderCache;

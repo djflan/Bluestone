@@ -15,7 +15,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
 {
     private readonly float[] _master;
     private readonly float[] _tone;
-    private readonly IAudioClickSource? _audioClick;
+    private readonly AudioClickRenderer? _audioClick;
     private int _pending;
     private readonly DiskStreamer? _streamer;
     private readonly HashSet<IStreamedSource> _serviced = [];
@@ -35,7 +35,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         BlockFrames = blockFrames;
         _master = new float[2 * blockFrames];
         _tone = new float[2 * blockFrames];
-        _audioClick = audioClick;
+        _audioClick = audioClick is null ? null : new AudioClickRenderer(audioClick);
         _graph = AudioGraph.Silent(blockFrames);
         _graph.PrepareMeters(sampleRate);
         _streamer = streamFromDisk ? new DiskStreamer(this) : null;

@@ -162,6 +162,73 @@ public sealed class AudioMetronomeTests
     }
 
     [Fact]
+    public void AudioClick_FirstCountInClickPastBeforeTheFirstQueuedBlock_SoundsWholeAtBlockStart()
+    {
+        using var playback = new PlaybackFixture();
+        var tempo = TempoMap.Constant(Resolution, Tempo.FromBeatsPerMinute(60));
+        var meter = MeterMap.Constant(Resolution, TimeSignature.CommonTime);
+        playback.Engine.SetMetronome(null, enabled: true, audioClick: true);
+        playback.Engine.Load(PlanDump.Compile(PlanDump.Routed(new Sequence(tempo, meter, [Track.Create("Timing")], []))));
+        playback.Engine.Play(Tick.Zero, CountIn.Bars(tempo, meter, Tick.Zero, 1));
+        playback.PumpAt(0);
+
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false, audioClick: new PlaybackAudioClickSource(playback.Engine));
+        engine.Transport.Follow(new PlaybackTimeline(playback.Engine), 0);
+        var rendered = new OfflineAudioDriver(engine, serviceStreams: false) { StartTimestamp = Timestamp(Start + TimeSpan.FromMilliseconds(100)) }
+            .Render(Block, Block);
+
+        Assert.Contains(rendered[..64], sample => Math.Abs(sample) > 0.1f);
+    }
+
+    [Fact]
+    public void AudioClick_OverlappingClicksRenderTheSameAtAnyBlockSize()
+    {
+        using var playback = new PlaybackFixture();
+        var tempo = TempoMap.Constant(Resolution, new Tempo(1));
+        var meter = MeterMap.Constant(Resolution, TimeSignature.CommonTime);
+        playback.Engine.SetMetronome(null, enabled: true, audioClick: true);
+        playback.Engine.Load(PlanDump.Compile(PlanDump.Routed(new Sequence(tempo, meter, [Track.Create("Timing")], []))));
+        playback.Engine.Play(Tick.Zero);
+        playback.PumpAt(0);
+
+        float[] RenderWith(int block)
+        {
+            using var engine = new AudioEngine(8_000, block, streamFromDisk: false, audioClick: new PlaybackAudioClickSource(playback.Engine));
+            engine.Transport.Follow(new PlaybackTimeline(playback.Engine), 0);
+            return new OfflineAudioDriver(engine, serviceStreams: false) { StartTimestamp = Timestamp(Start) }.Render(4_096, block);
+        }
+
+        var small = RenderWith(64);
+        var large = RenderWith(256);
+
+        Assert.Equal(small.Length, large.Length);
+        for (var i = 0; i < small.Length; i++)
+        {
+            Assert.True(Math.Abs(small[i] - large[i]) < 1e-4f, $"sample {i}: {small[i]} vs {large[i]}");
+        }
+    }
+
+    [Fact]
+    public void CountIn_AppliedLate_EndsFromTheAppliedStartWithoutAnEarlyBeat()
+    {
+        using var playback = new PlaybackFixture();
+        var tempo = TempoMap.Constant(Resolution, Tempo.FromBeatsPerMinute(60));
+        var meter = MeterMap.Constant(Resolution, TimeSignature.CommonTime);
+        playback.Engine.SetMetronome(null, enabled: true, audioClick: true);
+        playback.Engine.Load(PlanDump.Compile(PlanDump.Routed(new Sequence(tempo, meter, [Track.Create("Timing")], []))));
+        var justAfterABeat = tempo.TickAt(TimeSpan.FromMilliseconds(1010));
+        playback.Engine.Play(justAfterABeat, CountIn.Bars(tempo, meter, justAfterABeat, 1));
+        playback.PumpAt(50);
+        playback.PumpAt(4020);
+
+        Assert.True(playback.Engine.IsCountingIn);
+        Assert.False(((IAudioMetronome)playback.Engine).TryGetAudioClick(
+            Start + TimeSpan.FromMilliseconds(3950),
+            Start + TimeSpan.FromMilliseconds(4050),
+            out _));
+    }
+
+    [Fact]
     public void AudioClick_SeekReschedulesAndStopSilences()
     {
         using var playback = new PlaybackFixture();

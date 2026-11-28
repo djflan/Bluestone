@@ -77,9 +77,13 @@ MIDI-output choice above. MIDI-click port, note, and channel options are deferre
   latency and render-ahead; do not silently lose the first count-in click.
 - Playback publishes an immutable timing/click snapshot using a version check. The audio reader
   makes one attempt and falls back to its last complete snapshot if publication overlaps; it does
-  not spin. Audio rendering coalesces overlapping 40 ms clicks and bounds candidate checks by the
-  finite block window, so dense valid tempos cannot exhaust a fixed per-block budget and starve later
-  clicks. A warmed callback test confirms zero managed allocations. The engine command and restart
+  not spin; a read barrier keeps the copied snapshot from being accepted torn. The count-in end is
+  set when Play is applied, not when it is requested, and beat clicks never fall before the
+  transport's start. The audio-side click renderer keeps state across blocks: a click already past
+  when playback starts (up to 200 ms, covering render-ahead and output latency) sounds whole at the
+  first block instead of being lost, and overlapping 40 ms clicks are coalesced the same way at any
+  block size. Candidate checks are bounded by the finite block window, so dense valid tempos cannot
+  starve later clicks. A warmed callback test confirms zero managed allocations. The engine command and restart
   contract are amended in [ADR 0044](0044-engine-process.md).
 
 The owner also chose app-wide recording preferences rather than project-owned settings. Their
