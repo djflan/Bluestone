@@ -155,11 +155,12 @@ says so.
     format 4 files migrate as enabled arranger loops. Clip-loop repeats are produced at plan time, never on the
     real-time thread, within a per-clip and per-sequence event bound; edits beyond it are refused, not truncated.
 35. **Usability-pass product decisions (owner, 2026-11-27).** Answers to the questions from a musician-advocate
-    usability pass of `main` at `bc50b70`. These set direction; none is built yet (see §7, item 17).
-    - **Metronome:** the default click is audio that Bluestone renders on the master output, so it sounds in a
-      plugin-only project. MIDI-click options (port, notes, channel) are deferred.
-    - **First launch:** Bluestone starts the system default audio output. A saved choice to keep audio off is still
-      respected.
+    usability pass of `main` at `bc50b70`. The first-session audio choices are implemented; the remaining work and
+    deferred decisions are recorded in §7, item 17.
+    - **Metronome:** the implemented default click is audio rendered through Master, so it sounds in a plugin-only
+      project when audio and Master are audible. MIDI-click options (port, notes, channel) are deferred.
+    - **First launch:** Bluestone starts the system default audio output on a clean install. Saved host/device choices
+      and a saved choice to keep audio off remain authoritative.
     - **MIDI import:** dropping a `.mid` file or choosing **File ▸ Import MIDI** adds its contents to the current
       project. Replacing the project is only the explicit **File ▸ Import MIDI ▸ Replace Project**.
     - **Hardware in the Browser:** not added ahead of the unified hardware device ([roadmap](roadmap.md#2-hardware-as-a-first-class-device));
@@ -388,18 +389,20 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     - The raw-color lint doesn't catch named colors (`Colors.White`, `Brushes.Black`) in code.
     - Gradients and the MIDI color saved in `display-settings.json` by earlier builds aren't carried into the theme
       (owner decision: the shipped defaults equal the maintainer's saved values).
-17. **Usability pass (2026-11-27, decision 35), not built or deferred:**
-    - Not built (decided): the audio click; starting the default output on first launch; MIDI import that adds to the
-      project, with **Replace Project** as the explicit command; plugin value text, exposed parameter pages, and
+17. **Usability pass (2026-11-27, decision 35):**
+    - **Implemented:** the audio metronome/count-in click is routed through Master; a clean first launch starts on the
+      system default output. Saved host/device choices and a saved audio-off setting remain authoritative.
+    - **Not built (decided):** MIDI import that adds to the project, with **Replace Project** as the explicit command;
+      plugin value text, exposed parameter pages, and
       per-plugin parameter choice; Arpeggiator value labels (Rate as note values, Pattern by name, Gate as 0–100%);
       Bitwig-style per-track input, multi-arm, and arm-following monitoring; recording preferences persisted as app-wide
       settings (per project only if a compelling case appears); a few basic built-in instruments.
-    - Deferred by decision: MIDI-click options; hardware in the Browser until the unified hardware device; Audio Units;
-      a real many-channel capture for the README mixer screenshot.
+    - **Deferred by decision:** MIDI-click options (output port, notes, and channel); hardware in the Browser until the
+      unified hardware device; Audio Units; a real many-channel capture for the README mixer screenshot.
     - Found but not yet decided or scheduled: plain-language Audio Settings (render-ahead hint, buffer in ms) and an
       output channel-pair picker; editable plugin folders; File ▸ Open Recent; all panel toggles under View; clearer
       status-bar wording ("MIDI outs: 1", timing statistics in a tooltip); limiting which tracks **Use for all tracks**
       rewrites (it also changes plugin tracks), or confirming first; test plugins labeled as tests and removed from
       Suggested; missing devices shown by name with a badge instead of brackets; the BARS label over elapsed time; a
-      neutral Panic glyph; the empty loop well's "– + –"; a rebindable computer-keyboard toggle; a notice when a MIDI
-      port disappears; and the user guide not saying that audio must be started first or that the click is MIDI-only.
+      neutral Panic glyph; the empty loop well's "– + –"; a rebindable computer-keyboard toggle; and a notice when a
+      MIDI port disappears.

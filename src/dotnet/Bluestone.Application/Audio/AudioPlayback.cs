@@ -441,7 +441,7 @@ public sealed class AudioPlayback : IAudioPlayback
         Close();
         var rate = output.SampleRate;
         var block = AudioBlockSize.For(output.Status.DeviceBufferFrames, settings.BufferFrames, _maxBlockFrames);
-        var engine = new AudioEngine(rate, block) { TestTone = _testTone ? new ToneNode(440, 0.125) : null };
+        var engine = new AudioEngine(rate, block, audioClick: new PlaybackAudioClickSource(_playback.Transport)) { TestTone = _testTone ? new ToneNode(440, 0.125) : null };
         var device = Math.Max(Math.Max(settings.BufferFrames, output.Status.MaxBufferFrames), block);
         engine.Transport.Follow(new PlaybackTimeline(_playback.Transport), toleranceFrames: Math.Max(rate / 100, 2 * (device + block)));
         lock (_gate)

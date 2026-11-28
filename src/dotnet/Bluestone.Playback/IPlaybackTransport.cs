@@ -57,7 +57,7 @@ public interface IPlaybackTransport
     [SuppressMessage("Naming", "CA1716", Justification = "PlaybackEngine's name; Bluestone is C# only.")]
     void SetLoop(LoopRegion? loop);
 
-    void SetMetronome(MetronomeClick? click, bool enabled);
+    void SetMetronome(MetronomeClick? click, bool enabled, bool audioClick = false);
 
     void Panic();
 

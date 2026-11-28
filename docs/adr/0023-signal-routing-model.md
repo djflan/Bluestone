@@ -68,9 +68,11 @@ are independent and resolved at run time, must be kept.
   channel, transpose, voice" as an instrument (reused per endpoint and profile), the track's first
   connection to an external instrument, and a Transpose device in its chain. Format 3 routes migrate
   through the same code (ADR 0027).
-- **Live notes** (audition, thru, on-screen keyboard, metronome) follow the track's *live route*: the
+- **Live notes** (audition, thru, on-screen keyboard) follow the track's *live route*: the
   nearest playable instrument through its connections, with the forced channel and the Transpose devices
   on the way. Other devices are applied when the plan is compiled, not to live notes.
+- The audio metronome is not a live-route MIDI note: playback supplies its timing and the audio renderer
+  mixes it on the Master (ADR 0017).
 
 ## Consequences
 

@@ -37,15 +37,16 @@ connection path, plugins, and results for each run.
 ## Recording and thru
 
 These need an instrument whose MIDI OUT is connected to the interface's MIDI IN. Set the inspector's
-**Recording ▸ Input** to the interface (or leave *All MIDI Inputs*).
+**Recording ▸ Input** to the interface (or leave *All MIDI Inputs*). For the click checks, run audio on the
+system default output and leave Master audible.
 
 | # | Step | Expected |
 | - | ---- | -------- |
 | 12 | Select a track routed to the instrument and play its keys, with **MIDI thru** on | You hear what you play through the track's output, on the track's channel; the LCD's **IN** light blinks |
 | 13 | Turn **MIDI thru** off and play | Nothing is echoed; the IN light still blinks |
-| 14 | Arm the track (red button), press R | One bar of count-in clicks (channel 10 wood blocks), then recording; the playhead turns red |
+| 14 | With the metronome enabled, arm the track (red button) and press R | The configured count-in clicks are heard as audio through Master, then recording begins; the playhead turns red |
 | 15 | Play a phrase, press Space | The take appears in the track and the piano roll; one **Undo** removes it all |
-| 16 | Play the take back | Notes sound where they were played (compare against the click); note the apparent latency in milliseconds |
+| 16 | Play the take back | Notes sound where they were played (compare against the audio click); note the apparent latency in milliseconds |
 | 17 | Set a two-bar cycle (drag in the ruler's top strip), record over several passes | Every pass is merged into the track; a note held across the wrap ends at the cycle's end |
 | 18 | Choose **Takes ▸ Replace**, record over part of the phrase | Only the notes that start inside the recorded range are replaced |
 | 19 | While playing, press R, play, press R again | Recording punches in and out; playback continues |
@@ -56,12 +57,13 @@ These need an instrument whose MIDI OUT is connected to the interface's MIDI IN.
 
 ## Audio output
 
-Run these on each operating system: macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). ASIO probes below are historical results from an explicitly enabled local build; standard Windows builds are WASAPI-only pending licensing. Windows output has been exercised by silent callback probes but not listened to. Audio settings are in
+Run these on each operating system: macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). On a clean profile, verify that audio starts on the system default output; saved host/device selections and a saved audio-off choice remain authoritative on later launches. ASIO probes below are historical results from an explicitly enabled local build; standard Windows builds are WASAPI-only pending licensing. Windows output has been exercised by silent callback probes but not listened to. Audio settings are in
 **Settings ▸ Audio** (⌘/Ctrl + ,; also **Window ▸ Audio Settings…** on macOS and **File ▸ Audio Settings…** on Windows and Linux).
 
 | # | Step | Expected |
 | - | ---- | -------- |
-| 24 | In Audio Settings choose the device, press **Start audio**, then **Test tone** | A clean tone; the status shows the device, rate, buffer, and the render thread priority granted |
+| 24 | On a clean profile, launch Bluestone; then open Audio Settings and use **Test tone** | Audio starts on the system default output; a clean tone is heard and the status shows the device, rate, buffer, and the render thread priority granted |
+| 24a | Choose a non-default output device (and host where available), restart; then save audio off and restart again | The saved device/host remains selected on restart; with audio saved off, it stays off |
 | 25 | Open a project with WAVE and AIFF audio clips (add them by hand as in [project-format.md](project-format.md); there is no audio import yet) with gain and fades, and play | Clips play in time with MIDI; fades and gain are audible; no clicks at clip edges or loop wraps |
 | 26 | Unplug the chosen audio device (USB or Bluetooth) while playing | Audio moves to the default output with a message; nothing crashes |
 | 27 | Plug it back in | Audio returns to the chosen device |

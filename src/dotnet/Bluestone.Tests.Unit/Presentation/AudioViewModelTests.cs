@@ -104,9 +104,8 @@ public sealed class AudioViewModelTests : IDisposable
     }
 
     [Fact]
-    public void FirstRun_PrefersASIOWhenAnASIODeviceIsAvailable()
+    public void FirstRun_EnablesTheSystemDefaultEvenWhenASIOIsAvailable()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "The first-run ASIO preference applies only on Windows.");
         var devices = new[]
         {
             new AudioDeviceInfo("asio-device", "Interface", "ASIO", false, 48_000, 2, [48_000], [2], 1024, 1024),
@@ -115,7 +114,21 @@ public sealed class AudioViewModelTests : IDisposable
 
         var vm = new AudioViewModel(_audio, Store, new Immediate(), () => devices, listHosts: () => ["ASIO", "WASAPI"]);
 
-        Assert.Equal("ASIO", vm.Host!.Name);
+        Assert.Equal("WASAPI", vm.Host!.Name);
+        Assert.Null(vm.Device!.Id);
+        Assert.True(Store.Load().Enabled);
+    }
+
+    [Fact]
+    public void SavedAudioOff_RemainsOff()
+    {
+        Store.Save(new AudioSettings(Enabled: false));
+
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => [Device("a", "Interface", 48_000)]);
+        vm.StartIfEnabled();
+
+        Assert.False(Store.Load().Enabled);
+        Assert.False(_audio.IsWaitingForDevice);
     }
 
     [Fact]

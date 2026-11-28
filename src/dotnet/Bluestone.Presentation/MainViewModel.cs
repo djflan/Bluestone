@@ -483,9 +483,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<InputOption> Inputs { get; } = [InputOption.All];
 
-    /// <summary>Choices for the metronome output: <see cref="OutputOption.None"/> means the record or selected track's output.</summary>
-    public ObservableCollection<OutputOption> MetronomeOutputs { get; } = [];
-
     /// <summary>The first selected track, or null.</summary>
     public TrackViewModel? SelectedTrack => SelectedTracks.Count > 0 ? SelectedTracks[0] : null;
 
@@ -562,9 +559,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public partial bool ClickWhilePlaying { get; set; }
 
     [ObservableProperty]
-    public partial OutputOption? MetronomeOutput { get; set; }
-
-    [ObservableProperty]
     public partial bool IsCountInEnabled { get; set; } = true;
 
     /// <summary>Bars of count-in when <see cref="IsCountInEnabled"/>: 1 or 2.</summary>
@@ -611,12 +605,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnIsMetronomeEnabledChanged(bool value) => ApplyMetronome();
 
     partial void OnClickWhilePlayingChanged(bool value) => ApplyMetronome();
-
-    partial void OnMetronomeOutputChanged(OutputOption? value)
-    {
-        ApplyMetronome();
-        _ = RefreshAsync();
-    }
 
     partial void OnIsThruEnabledChanged(bool value) => ApplyThru();
 
@@ -1269,7 +1257,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void ApplyMetronome()
     {
         var mode = !IsMetronomeEnabled ? MetronomeMode.Off : ClickWhilePlaying ? MetronomeMode.Always : MetronomeMode.WhileRecording;
-        _playback.SetMetronome(new MetronomeSettings(mode, MetronomeOutput?.Id));
+        _playback.SetMetronome(new MetronomeSettings(mode));
     }
 
     private void ApplyThru()
@@ -1712,20 +1700,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
 
             SelectedInput = Inputs.FirstOrDefault(o => o.Id == selected?.Id) ?? InputOption.All;
-        }
-
-        var outputs = new List<OutputOption> { OutputOption.None with { Name = "Track Output", Detail = "The record or selected track's output" } };
-        outputs.AddRange(Outputs);
-        if (!outputs.SequenceEqual(MetronomeOutputs))
-        {
-            var selected = MetronomeOutput;
-            MetronomeOutputs.Clear();
-            foreach (var option in outputs)
-            {
-                MetronomeOutputs.Add(option);
-            }
-
-            MetronomeOutput = MetronomeOutputs.FirstOrDefault(o => o.Id == selected?.Id) ?? MetronomeOutputs[0];
         }
 
         foreach (var problem in _playback.InputProblems)

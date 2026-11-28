@@ -30,7 +30,7 @@ namespace Bluestone.Playback;
 /// may allocate; commands are rare.
 /// </para>
 /// </remarks>
-public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
+public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDisposable
 {
     private const int ChannelsPerSlot = 16;
     private const int MaxLoopWrapsPerPump = 10_000;
@@ -68,6 +68,11 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     private ImmutableArray<CountInClick> _countIn = [];
     private TimeSpan _countInStart;
     private int _countInIndex;
+    private bool _audioClick;
+    private TimeSpan _audioBeatsEnabledAt;
+    private int _audioMetronomeVersion;
+    private AudioMetronomeSnapshot _audioMetronome;
+    private AudioMetronomeSnapshot _audioMetronomeReaderCache;
 
     // The immediate cursor's tick-to-time mapping, published for input timestamping (seqlock).
     private int _anchorVersion;
@@ -92,6 +97,8 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxActiveNotes, nameof(options));
         _active = new ActiveNote[_options.MaxActiveNotes];
         _plan = _latestPlan = PlaybackPlan.Empty(initialTempo);
+        _audioMetronome = new AudioMetronomeSnapshot(_plan, default, false, false, TimeSpan.Zero, [], TimeSpan.Zero, TimeSpan.Zero);
+        _audioMetronomeReaderCache = _audioMetronome;
         Statistics = new TimingStatistics(_options.LateThreshold);
     }
 
@@ -154,11 +161,83 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     public Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default) => Task.FromResult(true);
 
     /// <summary>
-    /// Sets the metronome's sound and output slot, or <see langword="null"/> for none. Clicks sound on
-    /// every beat while playing when <paramref name="enabled"/>; count-in clicks sound whenever a
-    /// metronome is set.
+    /// Configures the optional MIDI click and audio metronome. Beat clicks follow
+    /// <paramref name="enabled"/>; count-in clicks use each configured output.
     /// </summary>
-    public void SetMetronome(MetronomeClick? click, bool enabled) => Enqueue(new MetronomeCommand(click, enabled));
+    public void SetMetronome(MetronomeClick? click, bool enabled, bool audioClick = false) => Enqueue(new MetronomeCommand(click, enabled, audioClick));
+
+    public bool TryGetAudioClick(TimeSpan from, TimeSpan until, out AudioMetronomeClick click)
+    {
+        click = default;
+        if (until <= from)
+        {
+            return false;
+        }
+
+        var snapshot = ReadAudioMetronome();
+        if (!snapshot.Configured)
+        {
+            return false;
+        }
+
+        var found = false;
+        foreach (var countIn in snapshot.CountIn)
+        {
+            var timestamp = snapshot.CountInStart + countIn.Offset;
+            if (timestamp >= from && timestamp < until && (!found || timestamp < click.Timestamp))
+            {
+                click = new AudioMetronomeClick(timestamp, countIn.Downbeat);
+                found = true;
+            }
+        }
+
+        if (!snapshot.BeatsEnabled)
+        {
+            return found;
+        }
+
+        var searchFrom = Max(from, snapshot.CountInEnd, snapshot.BeatsEnabledAt);
+        if (searchFrom >= until || !TransportAnchor.TryGetSongTimeAt(snapshot.Anchor, searchFrom, out var song))
+        {
+            return found;
+        }
+
+        var tick = song.SongTime < TimeSpan.Zero ? 0 : snapshot.Plan.TempoMap.TickAt(song.SongTime).Value;
+        var (beatTick, downbeat) = snapshot.Plan.NextBeat(tick);
+        var beatTime = snapshot.Plan.TempoMap.TimeAt(new Tick(beatTick));
+        if (beatTime < song.SongTime)
+        {
+            (beatTick, downbeat) = snapshot.Plan.NextBeat(beatTick + 1);
+            beatTime = snapshot.Plan.TempoMap.TimeAt(new Tick(beatTick));
+        }
+
+        TimeSpan offset;
+        if (song.LoopEnd > song.LoopStart && beatTime >= song.LoopEnd)
+        {
+            var loopStartTick = snapshot.Plan.TempoMap.TickAt(song.LoopStart).Value;
+            (beatTick, downbeat) = snapshot.Plan.NextBeat(loopStartTick);
+            beatTime = snapshot.Plan.TempoMap.TimeAt(new Tick(beatTick));
+            if (beatTime >= song.LoopEnd)
+            {
+                return found;
+            }
+
+            offset = (song.LoopEnd - song.SongTime) + (beatTime - song.LoopStart);
+        }
+        else
+        {
+            offset = beatTime - song.SongTime;
+        }
+
+        var beatTimestamp = searchFrom + offset;
+        if (beatTimestamp >= searchFrom && beatTimestamp < until && (!found || beatTimestamp < click.Timestamp))
+        {
+            click = new AudioMetronomeClick(beatTimestamp, downbeat);
+            found = true;
+        }
+
+        return found;
+    }
 
     /// <summary>
     /// Sends a channel message to <paramref name="output"/> on the playback thread as soon as possible,
@@ -380,7 +459,13 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
                 break;
             case MetronomeCommand metronome:
                 _click = metronome.Click;
+                if (!_clickEnabled && metronome.Enabled)
+                {
+                    _audioBeatsEnabledAt = now;
+                }
+
                 _clickEnabled = metronome.Enabled;
+                _audioClick = metronome.AudioClick;
                 ResyncClicks();
                 break;
             case PlayCommand play:
@@ -447,6 +532,8 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
                 PublishAnchor(playing: true);
                 break;
         }
+
+        PublishAudioMetronome();
     }
 
     /// <summary>
@@ -549,6 +636,41 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
         _anchor = new TransportAnchor(playing, _immediate.AnchorTime, _immediate.AnchorSongTime, _plan.TempoMap, engaged?.Start.Value ?? 0, engaged?.End.Value ?? 0);
         Interlocked.Increment(ref _anchorVersion);
     }
+
+    private void PublishAudioMetronome()
+    {
+        Interlocked.Increment(ref _audioMetronomeVersion);
+        _audioMetronome = new AudioMetronomeSnapshot(
+            _plan,
+            _anchor,
+            _audioClick,
+            _clickEnabled,
+            _audioBeatsEnabledAt,
+            _countIn,
+            _countInStart,
+            _countIn.IsDefaultOrEmpty ? TimeSpan.Zero : TimeSpan.FromTicks(Volatile.Read(ref _countInUntil)));
+        Interlocked.Increment(ref _audioMetronomeVersion);
+    }
+
+    private AudioMetronomeSnapshot ReadAudioMetronome()
+    {
+        var before = Volatile.Read(ref _audioMetronomeVersion);
+        if ((before & 1) != 0)
+        {
+            return _audioMetronomeReaderCache;
+        }
+
+        var snapshot = _audioMetronome;
+        if (before != Volatile.Read(ref _audioMetronomeVersion))
+        {
+            return _audioMetronomeReaderCache;
+        }
+
+        _audioMetronomeReaderCache = snapshot;
+        return snapshot;
+    }
+
+    private static TimeSpan Max(TimeSpan a, TimeSpan b, TimeSpan c) => a > b ? (a > c ? a : c) : (b > c ? b : c);
 
     /// <summary>Points both cursors' next click at the first beat they have not yet passed.</summary>
     private void ResyncClicks()
@@ -946,7 +1068,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
 
     private sealed record PlayCommand(long Tick, ChaseMessage[] Chase, CountIn? CountIn) : Command;
 
-    private sealed record MetronomeCommand(MetronomeClick? Click, bool Enabled) : Command;
+    private sealed record MetronomeCommand(MetronomeClick? Click, bool Enabled, bool AudioClick) : Command;
 
     private sealed record SeekCommand(long Tick, ChaseMessage[] Chase, StoppedChaseState StoppedChase) : Command;
 
@@ -957,6 +1079,16 @@ public sealed class PlaybackEngine : IPlaybackTransport, IDisposable
     private sealed record PanicCommand : Command;
 
     private sealed record NudgeCommand(TimeSpan Amount) : Command;
+
+    private readonly record struct AudioMetronomeSnapshot(
+        PlaybackPlan Plan,
+        TransportAnchor Anchor,
+        bool Configured,
+        bool BeatsEnabled,
+        TimeSpan BeatsEnabledAt,
+        ImmutableArray<CountInClick> CountIn,
+        TimeSpan CountInStart,
+        TimeSpan CountInEnd);
 }
 
 /// <summary>A song position heard at some moment: song time, the engaged loop's bounds (equal when none), and the tempo there.</summary>

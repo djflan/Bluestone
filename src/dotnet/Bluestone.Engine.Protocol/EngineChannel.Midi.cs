@@ -79,6 +79,7 @@ public sealed partial class EngineChannel
                 }
 
                 writer.Bool(metronome.Enabled);
+                writer.Bool(metronome.AudioClick);
                 break;
             case Nudge nudge:
                 writer.Int64(nudge.Amount);
@@ -269,7 +270,7 @@ public sealed partial class EngineChannel
                     MetronomeSpec? click = reader.Bool()
                         ? new MetronomeSpec(reader.Int32In(0, EngineLimits.MaxSlots - 1), reader.ByteUpTo(15), reader.ByteUpTo(127), reader.ByteUpTo(127), reader.ByteUpTo(127), reader.ByteUpTo(127), reader.NonNegative())
                         : null;
-                    return new SetMetronome(click, reader.Bool());
+                    return new SetMetronome(click, reader.Bool(), reader.Bool());
                 }
 
             case EngineMessageType.Panic:

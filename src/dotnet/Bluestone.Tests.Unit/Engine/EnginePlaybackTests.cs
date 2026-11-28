@@ -94,7 +94,7 @@ public sealed class EnginePlaybackTests : IAsyncDisposable
         Client.Connected(first, restarted: false);
         _playback.Load(PlaybackPlan.Empty(TempoMap.Constant(Resolution, Tempo.Default)));
         _playback.SetLoop(new LoopRegion(Tick.Zero, new Tick(960)));
-        _playback.SetMetronome(new MetronomeClick(0), enabled: true);
+        _playback.SetMetronome(null, enabled: true, audioClick: true);
         _playback.SetThru(Guid.NewGuid());
         _playback.Seek(new Tick(480));
         Client.Received(first, new TransportStatus(true, 500, 2, 0, new AnchorSpec(true, 1, 0, 1, 0, 960), default, Applied: 2));
@@ -110,6 +110,7 @@ public sealed class EnginePlaybackTests : IAsyncDisposable
         Assert.Equal(
             [typeof(SetSlots), typeof(LoadPlan), typeof(SetLoop), typeof(SetMetronome), typeof(SetThru), typeof(SetInputs), typeof(TransportSeek)],
             second.Sent.Select(m => m.GetType()));
+        Assert.Equal(new SetMetronome(null, Enabled: true, AudioClick: true), second.Sent[3]);
         Assert.Equal(new TransportSeek(500, 3), second.Sent[^1]);
         Assert.True(File.Exists(((LoadPlan)second.Sent[1]).Path));
         Assert.Equal(TransportState.Stopped, _playback.State);

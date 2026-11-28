@@ -18,7 +18,7 @@ using Bluestone.Signal;
 
 namespace Bluestone.Application.Sessions;
 
-/// <summary>When the metronome clicks. Count-ins always click when a metronome output is available.</summary>
+/// <summary>When the audio metronome clicks. Count-ins click whenever the metronome is on.</summary>
 public enum MetronomeMode
 {
     Off,
@@ -28,12 +28,7 @@ public enum MetronomeMode
 
 /// <summary>Metronome preferences.</summary>
 /// <param name="Mode">When beats click during playback.</param>
-/// <param name="Output">The endpoint to click on; <see langword="null"/> uses the selected track's output.</param>
-public sealed record MetronomeSettings(MetronomeMode Mode = MetronomeMode.WhileRecording, EndpointId? Output = null)
-{
-    /// <summary>The click's notes, velocities, and channel (the slot is assigned by the controller).</summary>
-    public MetronomeClick Sound { get; init; } = new(0);
-}
+public sealed record MetronomeSettings(MetronomeMode Mode = MetronomeMode.WhileRecording);
 
 /// <summary>How a take is recorded.</summary>
 /// <param name="CountInBars">Bars to count in before recording from a stop; 0 for none.</param>
@@ -78,7 +73,7 @@ public sealed class PlaybackController : IAsyncDisposable
     private readonly IMonotonicClock _clock;
     private long _takeWraps;
 
-    // Orders output changes and metronome slot assignments into the engine, which run on different threads.
+    // Orders output-slot changes and metronome settings sent to the engine.
     private readonly Lock _engineGate = new();
 
     /// <param name="session">The project being played.</param>
@@ -215,14 +210,7 @@ public sealed class PlaybackController : IAsyncDisposable
             Routing = prepared;
             var problems = ImmutableArray.CreateBuilder<string>();
 
-            // The metronome may click on an output no track uses; it gets a slot of its own.
             var slots = prepared.Slots;
-            var metronomeEndpoint = MetronomeEndpoint();
-            if (metronomeEndpoint is { } clickOn && !slots.Contains(clickOn))
-            {
-                slots = slots.Add(clickOn);
-            }
-
             var stale = _slots.Any(id => !_open.TryGetValue(id, out var output) || output.State != EndpointState.Open);
             if (stale || !slots.SequenceEqual(_slots))
             {
@@ -366,7 +354,7 @@ public sealed class PlaybackController : IAsyncDisposable
         ApplyThru();
     }
 
-    /// <summary>Changes the metronome. Takes effect on the next <see cref="RefreshAsync"/> when its output changes.</summary>
+    /// <summary>Changes the metronome; the setting takes effect when the engine applies the queued update.</summary>
     public void SetMetronome(MetronomeSettings settings)
     {
         _metronome = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -641,25 +629,12 @@ public sealed class PlaybackController : IAsyncDisposable
             .Where(e => !playing.Any(o => o.Id.Provider == e.Id.Provider && string.Equals(o.DisplayName, e.DisplayName, StringComparison.Ordinal)))
             .Select(e => e.Id)];
 
-    /// <summary>The metronome's endpoint: the one chosen, or else the recording or thru track's live output.</summary>
-    private EndpointId? MetronomeEndpoint()
-    {
-        if (_metronome.Output is { } chosen)
-        {
-            return chosen;
-        }
-
-        var track = Recorder.RecordingTrack ?? _thruTrack;
-        return track is { } id && LiveRouteOf(id) is { } route ? route.Endpoint.Id : null;
-    }
-
     private void ApplyMetronome()
     {
         var enabled = _metronome.Mode == MetronomeMode.Always || (_metronome.Mode == MetronomeMode.WhileRecording && Recorder.IsRecording);
         lock (_engineGate)
         {
-            var slot = MetronomeEndpoint() is { } endpoint ? _slots.IndexOf(endpoint) : -1;
-            Transport.SetMetronome(slot >= 0 ? _metronome.Sound with { Slot = slot } : null, enabled);
+            Transport.SetMetronome(null, enabled, audioClick: _metronome.Mode != MetronomeMode.Off);
         }
     }
 

@@ -109,6 +109,12 @@ public sealed partial class AudioViewModel : ObservableObject
             : () => _listDevices().Select(device => device.Host).Distinct(StringComparer.Ordinal).ToArray());
         var savedSettingsExist = File.Exists(store.Path);
         var settings = store.Load();
+        if (!savedSettingsExist)
+        {
+            settings = settings with { Enabled = true };
+            store.Save(settings);
+        }
+
         _sampleRate = settings.SampleRate;
         _bufferFrames = settings.BufferFrames;
         // The queue shown is the one in use: the engine's own (0 by default, ADR 0044) when the engine renders.
@@ -119,11 +125,6 @@ public sealed partial class AudioViewModel : ObservableObject
         _lowLatencyMonitoring = settings.LowLatencyMonitoring;
         var initialDevices = _listDevices();
         var selectedHost = settings.Host;
-        if (selectedHost is null && !savedSettingsExist && OperatingSystem.IsWindows() && initialDevices.Any(device => device.Host == "ASIO"))
-        {
-            selectedHost = "ASIO";
-        }
-
         LoadDevices(selectedHost, settings.DeviceId, initialDevices);
         _audio.Changed += (_, _) => _dispatcher.Post(UpdateStatus);
         UpdateStatus();

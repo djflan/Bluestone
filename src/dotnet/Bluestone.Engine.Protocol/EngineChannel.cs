@@ -8,7 +8,9 @@ namespace Bluestone.Engine.Protocol;
 public static class EngineLimits
 {
     /// <summary>Bumped on any incompatible change; both sides must speak the same version.</summary>
-    public const int Version = 12;
+    public const int Version = 13;
+
+    public static bool IsCompatible(int version) => version == Version;
 
     /// <summary>The highest mixer-meter display mode value in the wire protocol.</summary>
     public const byte MaxMixerMeterMode = 5;

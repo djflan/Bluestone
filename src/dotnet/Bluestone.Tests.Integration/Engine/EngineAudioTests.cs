@@ -14,6 +14,7 @@ using Bluestone.Domain.Sequencing;
 using Bluestone.Domain.Time;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
+using Bluestone.Playback;
 using Bluestone.Plugins;
 using Bluestone.Profiles;
 using Bluestone.Signal;
@@ -94,6 +95,27 @@ public sealed class EngineAudioTests
         var same = expected.AsSpan().CommonPrefixLength(rendered);
         Assert.True(same == expected.Length && rendered.Length == expected.Length,
             $"The restarted engine's render differs from frame {same / 2} (block {same / 2 / Block}): expected {expected.ElementAtOrDefault(same)}, got {rendered.ElementAtOrDefault(same)}; telemetry {rig.Audio.Telemetry}.");
+    }
+
+    [Fact]
+    public async Task AudioMetronome_IsRenderedByTheEngineAudioCallback()
+    {
+        await using var host = new PluginTestHost();
+        await using var rig = await Rig.StartAsync(host);
+        var withoutClick = await rig.RenderInEngineAsync();
+
+        rig.Transport.SetMetronome(null, enabled: true, audioClick: true);
+        var sequence = rig.Session.Project.Sequence;
+        var countIn = CountIn.Bars(sequence.TempoMap, sequence.MeterMap, Tick.Zero, 5);
+        Assert.True(rig.Transport.Play(Tick.Zero, countIn));
+        await WaitUntilAsync(() => rig.Transport.State == TransportState.Playing, Patience, "the engine transport to start");
+
+        var withClick = await rig.RenderInEngineAsync();
+        var compareSamples = Rate * 3 / 5 * 2;
+        var difference = withoutClick.Take(compareSamples)
+            .Zip(withClick.Take(compareSamples))
+            .Max(samples => MathF.Abs(samples.First - samples.Second));
+        Assert.True(difference > 0.01f, $"Expected the engine audio callback to mix a metronome click; maximum difference was {difference:0.000}.");
     }
 
     [Fact]
@@ -205,6 +227,8 @@ public sealed class EngineAudioTests
         public EngineSupervisor Supervisor { get; }
 
         public EngineAudio Audio { get; }
+
+        public IPlaybackTransport Transport => _controller.Transport;
 
         public PluginDeviceHost Devices { get; }
 

@@ -53,6 +53,7 @@ internal sealed class AudioHost : IDisposable
     private readonly Lock _gate = new();
     private readonly PluginRegistry _plugins;
     private readonly LiveMeter _meter;
+    private readonly EngineAudioClickSource _audioClick;
     private readonly List<string> _attachProblems = [];
     private readonly Lock _queues = new();
     private readonly Queue<EngineMessage> _work = new();
@@ -96,6 +97,7 @@ internal sealed class AudioHost : IDisposable
         _plugins = plugins ?? new PluginRegistry(restarted);
         _meter = meter ?? new LiveMeter();
         _playback = playback;
+        _audioClick = new EngineAudioClickSource(playback);
         _backend = backend;
         _test = test;
         _timeline = new EngineTimeline(playback);
@@ -421,7 +423,7 @@ internal sealed class AudioHost : IDisposable
         Close();
         var rate = output.SampleRate;
         var block = AudioBlockSize.For(output.Status.DeviceBufferFrames, wanted.BufferFrames, wanted.MaxBlockFrames);
-        var engine = new AudioEngine(rate, block, streamFromDisk: !_test)
+        var engine = new AudioEngine(rate, block, streamFromDisk: !_test, audioClick: _audioClick)
         {
             TestTone = wanted.TestTone ? new ToneNode(440, 0.125) : null,
             CollectBudgetShare = CollectShare,
@@ -854,6 +856,21 @@ internal sealed class AudioHost : IDisposable
 
             position = new TimelinePosition(song.SongTime.TotalSeconds, song.LoopStart.TotalSeconds, song.LoopEnd.TotalSeconds, song.BeatsPerMinute);
             return true;
+        }
+    }
+
+    private sealed class EngineAudioClickSource(IAudioMetronome metronome) : IAudioClickSource
+    {
+        public bool TryGetClick(TimeSpan from, TimeSpan until, out AudioClickEvent click)
+        {
+            if (metronome.TryGetAudioClick(from, until, out var scheduled))
+            {
+                click = new AudioClickEvent(scheduled.Timestamp, scheduled.Downbeat);
+                return true;
+            }
+
+            click = default;
+            return false;
         }
     }
 
