@@ -15,6 +15,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
 {
     private readonly float[] _master;
     private readonly float[] _tone;
+    private readonly AudioClickRenderer? _audioClick;
     private int _pending;
     private readonly DiskStreamer? _streamer;
     private readonly HashSet<IStreamedSource> _serviced = [];
@@ -25,7 +26,8 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
     /// <param name="sampleRate">The device's rate in Hz; graphs and sources are built for it.</param>
     /// <param name="blockFrames">The largest block nodes see (plugin instances must accept this many frames).</param>
     /// <param name="streamFromDisk">Start the disk-streamer thread. Off for deterministic tests, which call <see cref="ServiceStreams"/>.</param>
-    public AudioEngine(int sampleRate, int blockFrames = 256, bool streamFromDisk = true)
+    /// <param name="audioClick">The transport's lock-free metronome source, or null.</param>
+    public AudioEngine(int sampleRate, int blockFrames = 256, bool streamFromDisk = true, IAudioClickSource? audioClick = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(sampleRate, 1000);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(blockFrames);
@@ -33,6 +35,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
         BlockFrames = blockFrames;
         _master = new float[2 * blockFrames];
         _tone = new float[2 * blockFrames];
+        _audioClick = audioClick is null ? null : new AudioClickRenderer(audioClick);
         _graph = AudioGraph.Silent(blockFrames);
         _graph.PrepareMeters(sampleRate);
         _streamer = streamFromDisk ? new DiskStreamer(this) : null;
@@ -162,7 +165,7 @@ public sealed class AudioEngine : IAudioRenderer, IDisposable
 
         try
         {
-            graph.Render(context, master);
+            graph.Render(context, master, _audioClick);
         }
         finally
         {

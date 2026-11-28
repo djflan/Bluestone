@@ -350,15 +350,9 @@
             <ComboBoxItem Content="1 bar" />
             <ComboBoxItem Content="2 bars" />
           </ComboBox>
-          <TextBlock Grid.Row="3" Text="Click on" Classes="label" />
-          <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding MetronomeOutputs}" SelectedItem="{Binding MetronomeOutput}" HorizontalAlignment="Stretch" AutomationProperties.Name="Metronome output"
-                    ToolTip.Tip="Where the metronome clicks (General MIDI wood blocks on channel 10).">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:OutputOption">
-                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
+          <TextBlock Grid.Row="3" Text="Click" Classes="label" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Classes="secondary" FontSize="{StaticResource FontSize.Small}" Text="Audio click routed through Master"
+                     TextWrapping="Wrap" AutomationProperties.Name="Metronome click routing" />
           <CheckBox Grid.Row="4" Grid.Column="1" Content="Click while playing" IsChecked="{Binding ClickWhilePlaying}" />
           <CheckBox Grid.Row="5" Grid.Column="1" Content="MIDI thru" IsChecked="{Binding IsThruEnabled}"
                     ToolTip.Tip="Play what you hear through the armed or selected track's output." />

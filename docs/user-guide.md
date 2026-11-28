@@ -101,7 +101,7 @@ The event list (D) shows every event on the track with editable position, channe
 
 ## Record MIDI
 
-Arm a track with its record key, or record into the selected track, then press R. From a stop, Bluestone begins recording, after a count-in when **Pre** is lit in the transport bar. During playback, R punches in and out. Space stops and adds the take as one undo step.
+Arm a track with its record key, or record into the selected track, then press R. From a stop, Bluestone begins recording, after a count-in when **Pre** is lit in the transport bar. With the metronome enabled, count-in and metronome beats are audio clicks routed through Master; keep audio running and Master audible to hear them. The metronome does not send MIDI. **Click while playing** enables ordinary clicks during playback outside recording. During playback, R punches in and out. Space stops and adds the take as one undo step.
 
 Takes can merge with or replace existing material from **Recording ▸ Takes** in the inspector. With looping enabled, every pass is merged. MIDI thru plays the armed or selected track's output. External controllers can record on macOS (Core MIDI) and Windows (WinMM); MIDI input on Linux is not implemented yet. The computer keyboard works on every platform.
 
@@ -123,7 +123,7 @@ Selecting a mixer track also selects that track in the arranger and Inspector. T
 - **External MIDI** holds the current alpha's hardware output, profile, channel, transpose, program, and initialization workflow.
 - **Connections** exposes the underlying event and audio routes for advanced work. A route can start at the track's chain input (before its devices), after any device, or at its output.
 - **Racks** manages device chains that several tracks can share.
-- **Recording** selects MIDI input, take mode, count-in, metronome output, and MIDI thru.
+- **Recording** selects MIDI input, take mode, count-in, metronome behavior, and MIDI thru. The audio click is routed through Master.
 
 Group tracks show their members beneath them. Use the group's arrow to fold or unfold them.
 
@@ -149,7 +149,9 @@ Workspace layout, open views, detached windows, locks, collapsed panels, and Bro
 
 ## Audio and plugins
 
-Open Settings with Ctrl/Cmd + ,. In **Audio**, choose the output device, sample rate, buffer, and render-ahead sizes, then start audio. **Test tone** verifies the output. Bluestone remembers the settings and whether audio should start at launch.
+Open Settings with Ctrl/Cmd + ,. On a clean first launch, Bluestone starts audio on the system default output. In **Audio**, choose the output device, sample rate, buffer, and render-ahead sizes; **Test tone** verifies the output. Bluestone remembers your saved host and device choices and whether audio should start at launch, including a saved choice to keep audio off.
+
+If no output is available, audio waits for a device; **Stop audio** cancels the wait. If audio settings cannot be read or saved, Audio Settings and Messages show a warning. Changes that cannot be saved apply only for the current session.
 
 Audio input and recording are not implemented in the current alpha. Audio clips already present in a project can play, loop, stream from disk, use gain and fades, and route through the mixer and effects.
 

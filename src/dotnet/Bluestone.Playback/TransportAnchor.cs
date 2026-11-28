@@ -6,7 +6,7 @@ namespace Bluestone.Playback;
 /// A published tick-to-time mapping of the transport: <see cref="SongTime"/> plays at clock time <see cref="Time"/>, at
 /// <see cref="Tempo"/>. <see cref="LoopStart"/> and <see cref="LoopEnd"/> are the loop playback will wrap at, or both zero.
 /// </summary>
-public readonly record struct TransportAnchor(bool Playing, TimeSpan Time, TimeSpan SongTime, TempoMap? Tempo, long LoopStart, long LoopEnd)
+public readonly record struct TransportAnchor(bool Playing, TimeSpan Time, TimeSpan SongTime, TempoMap? Tempo, long LoopStart, long LoopEnd, long ClickGeneration = 0)
 {
     /// <summary>
     /// The song position playing at <paramref name="time"/>, following loops; an input just before the current anchor
@@ -66,7 +66,7 @@ public readonly record struct TransportAnchor(bool Playing, TimeSpan Time, TimeS
         }
 
         var bpm = (song > TimeSpan.Zero ? tempo.TempoAt(tempo.TickAt(song)) : tempo.Changes[0].Tempo).BeatsPerMinute;
-        position = new SongPosition(song, loopStart, loopEnd, bpm);
+        position = new SongPosition(song, loopStart, loopEnd, bpm, anchor.ClickGeneration);
         return true;
     }
 }

@@ -7,6 +7,14 @@ namespace Bluestone.Tests.Unit.Engine;
 /// <summary>The engine's control channel (ADR 0044): every message round-trips, and anything malformed is refused as a protocol error.</summary>
 public sealed class EngineChannelTests
 {
+    [Fact]
+    public void Protocol13_RejectsThePreAudioClickProtocol()
+    {
+        Assert.Equal(13, EngineLimits.Version);
+        Assert.True(EngineLimits.IsCompatible(13));
+        Assert.False(EngineLimits.IsCompatible(12));
+    }
+
     public static TheoryData<EngineMessage> Messages() =>
     [
         new Hello(EngineLimits.Version, "0123456789ABCDEF", 4242, Restarted: true),

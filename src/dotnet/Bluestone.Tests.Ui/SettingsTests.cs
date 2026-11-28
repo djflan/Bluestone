@@ -546,6 +546,67 @@ public sealed class SettingsTests : IDisposable
     });
 
     [Fact]
+    public Task TheAudioPage_CanStopWhileWaitingForADevice() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var backend = new NoDevicesBackend();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var store = new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json"));
+        var settings = new AudioViewModel(audio, store, new ImmediateDispatcher(), backend.ListDevices);
+        app.Window.AttachAudio(settings);
+        settings.StartIfEnabled();
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var stop = AppUnderTest.Within<Button>(page, b => Equals(b.Content, "Stop audio"));
+
+        Assert.True(audio.IsWaitingForDevice);
+        Assert.True(stop.IsEffectivelyEnabled);
+        Assert.Equal("Stop audio", ControlAutomationPeer.CreatePeerForElement(stop).GetName());
+        stop.BringIntoView();
+        await app.SettleTransitionsAsync();
+        app.SaveFrame("settings-audio-waiting");
+        app.Click(stop);
+        Assert.False(audio.IsWaitingForDevice);
+        Assert.False(stop.IsEffectivelyEnabled);
+        Assert.False(store.Load().Enabled);
+    });
+
+    [Fact]
+    public Task TheAudioPage_ShowsSettingsSaveProblemsAsWarnings() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var backend = new NoDevicesBackend();
+        using var audio = new AudioPlayback(app.Playback, app.Session, _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var store = new AudioSettingsStore(Path.Combine(_directory, "audio-settings.json"));
+        Directory.CreateDirectory(store.Path + ".tmp");
+        var settings = new AudioViewModel(audio, store, new ImmediateDispatcher(), backend.ListDevices, app.ViewModel.Activities);
+        app.Window.AttachAudio(settings);
+        app.Window.ShowSettings(SettingsPage.Audio);
+        app.Settle();
+        var page = app.Window.GetVisualDescendants().OfType<AudioSettingsPage>().Single(p => p.IsEffectivelyVisible);
+        var warning = AppUnderTest.Within<TextBlock>(page, text => text.Text?.StartsWith("Audio settings could not be saved", StringComparison.Ordinal) == true);
+
+        Assert.True(warning.IsEffectivelyVisible);
+        Assert.Contains("warning", warning.Classes);
+        Assert.Contains("Audio settings could not be saved", ControlAutomationPeer.CreatePeerForElement(warning).GetName(), StringComparison.Ordinal);
+        Assert.Contains(app.ViewModel.Messages, message => message.Severity == MessageSeverity.Warning
+            && message.Source == "Audio"
+            && message.Text.Contains("Audio settings could not be saved", StringComparison.Ordinal));
+        warning.BringIntoView();
+        await app.SettleTransitionsAsync();
+        app.SaveFrame("settings-audio-save-warning");
+    });
+
+    private sealed class NoDevicesBackend : IAudioBackend
+    {
+        public IReadOnlyList<AudioDeviceInfo> ListDevices() => [];
+
+        public IAudioOutput Open(IAudioRenderer renderer, AudioStreamRequest request) =>
+            throw new AudioDeviceException("The device is not connected.");
+    }
+
+    [Fact]
     public Task ChangingTheAudioDevice_KeepsTheRateAndBufferChoicesSelected_WithoutBindingErrors() => HeadlessApp.RunAsync(async () =>
     {
         await using var app = await AppUnderTest.OpenAsync();

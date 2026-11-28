@@ -59,7 +59,7 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
     private SetSlots _slots = new([]);
     private LoadPlan? _plan;
     private SetLoop _loop = new(false, 0, 0);
-    private SetMetronome _metronome = new(null, false);
+    private SetMetronome _metronome = new(null, false, false);
     private SetThru _thru = new(null);
     private Mirror _mirror = Mirror.Stopped(0);
     private long _position;
@@ -219,9 +219,10 @@ public sealed class EnginePlayback : IPlaybackTransport, IEngineClient, ILiveRem
 
     public void SetLoop(LoopRegion? loop) => Send(_loop = loop is null ? new SetLoop(false, 0, 0) : new SetLoop(true, loop.Start.Value, loop.End.Value));
 
-    public void SetMetronome(MetronomeClick? click, bool enabled) => Send(_metronome = new SetMetronome(
+    public void SetMetronome(MetronomeClick? click, bool enabled, bool audioClick = false) => Send(_metronome = new SetMetronome(
         click is null ? null : new MetronomeSpec(click.Slot, (byte)click.Channel.Index, click.AccentNote.Value, click.AccentVelocity.Value, click.BeatNote.Value, click.BeatVelocity.Value, click.Length.Ticks),
-        enabled));
+        enabled,
+        audioClick));
 
     public void Panic() => Send(new Panic());
 

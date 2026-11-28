@@ -42,6 +42,12 @@ public interface IPlaybackTransport
     /// <summary>The song time heard at a clock time (see <see cref="PlaybackEngine.TryGetSongTimeAt"/>). Any thread.</summary>
     bool TryGetSongTimeAt(TimeSpan time, out SongPosition position);
 
+    /// <summary>
+    /// Gets the song time for an audio block. An implementation with an audio metronome pins its snapshot for that
+    /// block; the default uses the ordinary song-time reader. Single audio reader.
+    /// </summary>
+    bool TryGetAudioSongTimeAt(TimeSpan time, out SongPosition position) => TryGetSongTimeAt(time, out position);
+
     void Load(PlaybackPlan plan);
 
     void SetOutputs(IReadOnlyList<IMidiOutput?> outputs);
@@ -57,7 +63,7 @@ public interface IPlaybackTransport
     [SuppressMessage("Naming", "CA1716", Justification = "PlaybackEngine's name; Bluestone is C# only.")]
     void SetLoop(LoopRegion? loop);
 
-    void SetMetronome(MetronomeClick? click, bool enabled);
+    void SetMetronome(MetronomeClick? click, bool enabled, bool audioClick = false);
 
     void Panic();
 

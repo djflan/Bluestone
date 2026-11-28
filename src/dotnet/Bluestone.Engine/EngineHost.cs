@@ -39,7 +39,7 @@ internal static class EngineHost
         try
         {
             await channel.WriteAsync(new Hello(EngineLimits.Version, token, Environment.ProcessId, restarted), stop.Token).ConfigureAwait(false);
-            if (await channel.ReadAsync(stop.Token).ConfigureAwait(false) is not Welcome { Version: EngineLimits.Version })
+            if (await channel.ReadAsync(stop.Token).ConfigureAwait(false) is not Welcome welcome || !EngineLimits.IsCompatible(welcome.Version))
             {
                 await Console.Error.WriteLineAsync("Bluestone did not accept the engine.").ConfigureAwait(false);
                 return 4;

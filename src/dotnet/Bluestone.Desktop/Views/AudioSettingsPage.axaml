@@ -74,7 +74,7 @@
                 ToolTip.Tip="Open the device with these settings and save them" AutomationProperties.Name="Start audio" />
         <Button Classes="primary" Content="Restart with these settings" Command="{Binding StartCommand}" IsVisible="{Binding IsRunning}"
                 ToolTip.Tip="Reopen the device with the settings above and save them" AutomationProperties.Name="Restart audio with these settings" />
-        <Button Classes="raised" Content="Stop audio" Command="{Binding StopCommand}" IsEnabled="{Binding IsRunning}" AutomationProperties.Name="Stop audio" />
+        <Button Classes="raised" Content="Stop audio" Command="{Binding StopCommand}" IsEnabled="{Binding CanStopAudio}" AutomationProperties.Name="Stop audio" />
         <CheckBox Content="Test tone" IsChecked="{Binding TestTone}" VerticalAlignment="Center" AutomationProperties.Name="Test tone"
                   ToolTip.Tip="A 440 Hz tone at −18 dBFS through the open device" />
       </StackPanel>
@@ -83,7 +83,7 @@
       <TextBlock Text="{Binding Health}" Classes="settingHint" Classes.warning="{Binding HasDropouts}" TextWrapping="Wrap"
                  IsVisible="{Binding Health.Length}" AutomationProperties.Name="Audio dropouts" />
       <TextBlock Text="{Binding Latency}" Classes="secondary" TextWrapping="Wrap" />
-      <TextBlock Text="{Binding Problems}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding Problems.Length}" />
+      <TextBlock Text="{Binding Problems}" Classes="settingHint warning" TextWrapping="Wrap" IsVisible="{Binding Problems.Length}" />
     </StackPanel>
   </StackPanel>
 </UserControl>

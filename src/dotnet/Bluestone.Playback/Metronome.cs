@@ -5,10 +5,12 @@ using Bluestone.Domain.Time;
 namespace Bluestone.Playback;
 
 /// <summary>
-/// How the engine sounds the metronome: a short note on every beat, sent to one output slot.
+/// A MIDI metronome sound: a short note on every beat, sent to one output slot.
 /// Downbeats use <see cref="AccentNote"/>; other beats use <see cref="BeatNote"/>.
 /// </summary>
-/// <remarks>The defaults are General MIDI percussion on channel 10: high and low wood block.</remarks>
+/// <remarks>
+/// The legacy MIDI-click defaults are General MIDI percussion on channel 10: high and low wood block.
+/// </remarks>
 public sealed record MetronomeClick(int Slot)
 {
     public MidiChannel Channel { get; init; } = MidiChannel.FromNumber(10);
@@ -27,6 +29,23 @@ public sealed record MetronomeClick(int Slot)
 
 /// <summary>A count-in click, relative to the moment playback was requested.</summary>
 public readonly record struct CountInClick(TimeSpan Offset, bool Downbeat);
+
+/// <summary>An audio metronome click at an absolute monotonic-clock time.</summary>
+public readonly record struct AudioMetronomeClick(TimeSpan Timestamp, bool Downbeat);
+
+/// <summary>Lock-free audio-thread access to the playback engine's next click.</summary>
+public interface IAudioMetronome
+{
+    /// <summary>Finds the first click in <c>[from, until)</c>.</summary>
+    bool TryGetAudioClick(TimeSpan from, TimeSpan until, out AudioMetronomeClick click);
+
+    /// <summary>Finds the first click for a transport generation and reports when its snapshot has not caught up.</summary>
+    bool TryGetAudioClick(TimeSpan from, TimeSpan until, long clickGeneration, out AudioMetronomeClick click, out bool ready)
+    {
+        ready = true;
+        return TryGetAudioClick(from, until, out click);
+    }
+}
 
 /// <summary>
 /// A pre-roll before playback starts: the transport waits <see cref="Duration"/>, sounding

@@ -530,7 +530,7 @@ public sealed class EngineSupervisor : IAsyncDisposable
                 throw new EngineProtocolException("The engine did not begin with Hello.");
             }
 
-            if (hello.Version != EngineLimits.Version)
+            if (!EngineLimits.IsCompatible(hello.Version))
             {
                 throw new EngineProtocolException($"The engine speaks protocol version {hello.Version}; Bluestone speaks {EngineLimits.Version}.");
             }

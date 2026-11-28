@@ -168,7 +168,7 @@ public sealed class RecordingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Recording_ClicksTheMetronomeOnTheTracksOutput()
+    public async Task Recording_UsesTheAudioMetronomeWithoutSendingMidiClicks()
     {
         var track = AddTrack(_synth);
         await _controller.RefreshAsync(Ct);
@@ -176,8 +176,11 @@ public sealed class RecordingTests : IAsyncDisposable
         await _controller.RecordAsync(track.Id, new RecordOptions(CountInBars: 1), Ct);
         RunTo(2600);
 
-        // Four count-in clicks, then the downbeat and the second beat of bar 1 (channel 10).
-        Assert.Equal(6, _synth.Sent.Count(m => m.Bytes[0] == 0x99));
+        Assert.DoesNotContain(_synth.Sent, message => message.Bytes[0] == 0x99);
+        Assert.True(((IAudioMetronome)_controller.Engine).TryGetAudioClick(
+            Origin,
+            Origin + TimeSpan.FromSeconds(1),
+            out _));
     }
 
     [Fact]

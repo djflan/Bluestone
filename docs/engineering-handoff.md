@@ -154,6 +154,29 @@ says so.
 34. **Format 5 separates a loop's range from whether it loops** (ADR 0039): disabling a loop never deletes it, and
     format 4 files migrate as enabled arranger loops. Clip-loop repeats are produced at plan time, never on the
     real-time thread, within a per-clip and per-sequence event bound; edits beyond it are refused, not truncated.
+35. **Usability-pass product decisions (owner, 2026-11-27).** Answers to the questions from a musician-advocate
+    usability pass of `main` at `bc50b70`. The first-session audio choices are implemented; the remaining work and
+    deferred decisions are recorded in §7, item 17.
+    - **Metronome:** the implemented default click is audio rendered through Master, so it sounds in a plugin-only
+      project when audio and Master are audible. MIDI-click options (port, notes, channel) are deferred.
+    - **First launch:** Bluestone starts the system default audio output on a clean install. Saved host/device choices
+      and a saved choice to keep audio off remain authoritative.
+    - **MIDI import:** dropping a `.mid` file or choosing **File ▸ Import MIDI** adds its contents to the current
+      project. Replacing the project is only the explicit **File ▸ Import MIDI ▸ Replace Project**.
+    - **Hardware in the Browser:** not added ahead of the unified hardware device ([roadmap](roadmap.md#2-hardware-as-a-first-class-device));
+      no placeholder "External MIDI instrument" item.
+    - **Plugin parameters:** show the plugin's own value text. Use the parameter page a plugin exposes when it has
+      one (for example CLAP remote controls), else plugin order. Users can choose and arrange the parameters shown,
+      saved per plugin.
+    - **README mixer screenshot:** a staged mockup is acceptable until a real session with many channels can be
+      captured, then it is replaced.
+    - **Built-in instruments:** a few very basic ones, in line with [roadmap §4](roadmap.md#4-a-small-complete-native-device-contract).
+    - **Audio Units:** undecided and out of scope for now.
+    - **Track input and arming work like Bitwig Studio:** each track chooses its own note input, several tracks can be
+      armed at once, and input monitoring follows arm by default. Check the details against Bitwig's documentation when
+      designing.
+    - **Recording preferences** (input, thru, metronome, count-in, take mode) are app-wide settings that persist
+      across launches, unless a compelling per-project case appears.
 
 ## 5. Regression net
 
@@ -366,3 +389,22 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
     - The raw-color lint doesn't catch named colors (`Colors.White`, `Brushes.Black`) in code.
     - Gradients and the MIDI color saved in `display-settings.json` by earlier builds aren't carried into the theme
       (owner decision: the shipped defaults equal the maintainer's saved values).
+17. **Usability pass (2026-11-27, decision 35):**
+    - **Implemented:** the audio metronome/count-in click is routed through Master; a clean first launch starts on the
+      system default output. Saved host/device choices and a saved audio-off setting remain authoritative.
+    - **Known limitation:** if the first heard audio block arrives more than 200 ms after the scheduled first count-in
+      click, that click may be missed. Automated late-block coverage is synthetic; physical startup timing is unverified.
+    - **Not built (decided):** MIDI import that adds to the project, with **Replace Project** as the explicit command;
+      plugin value text, exposed parameter pages, and
+      per-plugin parameter choice; Arpeggiator value labels (Rate as note values, Pattern by name, Gate as 0–100%);
+      Bitwig-style per-track input, multi-arm, and arm-following monitoring; recording preferences persisted as app-wide
+      settings (per project only if a compelling case appears); a few basic built-in instruments.
+    - **Deferred by decision:** MIDI-click options (output port, notes, and channel); hardware in the Browser until the
+      unified hardware device; Audio Units; a real many-channel capture for the README mixer screenshot.
+    - Found but not yet decided or scheduled: plain-language Audio Settings (render-ahead hint, buffer in ms) and an
+      output channel-pair picker; editable plugin folders; File ▸ Open Recent; all panel toggles under View; clearer
+      status-bar wording ("MIDI outs: 1", timing statistics in a tooltip); limiting which tracks **Use for all tracks**
+      rewrites (it also changes plugin tracks), or confirming first; test plugins labeled as tests and removed from
+      Suggested; missing devices shown by name with a badge instead of brackets; the BARS label over elapsed time; a
+      neutral Panic glyph; the empty loop well's "– + –"; a rebindable computer-keyboard toggle; and a notice when a
+      MIDI port disappears.

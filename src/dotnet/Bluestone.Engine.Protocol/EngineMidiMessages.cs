@@ -79,8 +79,8 @@ public sealed record SetLoop(bool Active, long Start, long End) : EngineMessage
 /// <summary>The metronome's sound: the slot it clicks on, its channel (0–15), notes and velocities, and each click's length in clock ticks.</summary>
 public readonly record struct MetronomeSpec(int Slot, byte Channel, byte AccentNote, byte AccentVelocity, byte BeatNote, byte BeatVelocity, long Length);
 
-/// <summary>Bluestone → engine: the metronome, or none, and whether beats click while playing.</summary>
-public sealed record SetMetronome(MetronomeSpec? Click, bool Enabled) : EngineMessage
+/// <summary>Bluestone → engine: the optional MIDI sound, whether beats click while playing, and whether Master receives the audio click.</summary>
+public sealed record SetMetronome(MetronomeSpec? Click, bool Enabled, bool AudioClick) : EngineMessage
 {
     public override EngineMessageType Type => EngineMessageType.SetMetronome;
 }

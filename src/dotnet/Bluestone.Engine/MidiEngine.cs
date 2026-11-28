@@ -154,7 +154,7 @@ internal sealed class MidiEngine : IDisposable
                     Playback.SetLoop(loop.Active ? new LoopRegion(new Tick(loop.Start), new Tick(loop.End)) : null);
                     break;
                 case SetMetronome metronome:
-                    Playback.SetMetronome(metronome.Click is { } k ? Click(k) : null, metronome.Enabled);
+                    Playback.SetMetronome(metronome.Click is { } k ? Click(k) : null, metronome.Enabled, metronome.AudioClick);
                     break;
                 case Panic:
                     Playback.Panic();

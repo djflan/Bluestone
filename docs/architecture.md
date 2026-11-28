@@ -497,8 +497,30 @@ Bluestone describes the graph (`ProjectAudioGraph.Describe`) for the stream the 
 over as an `AudioGraphImage` file, with each plugin instance's block exchange; the engine realizes it off
 the real-time thread and attaches to the exchanges of workers that Bluestone still supervises
 (`AttachedPluginInstance`). `EngineAudio` mirrors the device's state, meters, and figures. The Audio
-window and the mixer read either through `IAudioPlayback`. The engine control channel is protocol 12;
-protocol-11 Engine binaries are incompatible, and the version handshake rejects a mismatched Engine.
+window and the mixer read either through `IAudioPlayback`. The engine control channel is protocol 13;
+protocol-12 Engine binaries are incompatible, and the version handshake rejects a mismatched Engine.
+
+**Implemented first-session behavior:** the default metronome click is rendered as audio on the Master
+in both local and engine-hosted modes, without a MIDI endpoint
+([ADR 0017](adr/0017-recording-and-note-editing.md)). It enters after the Master device chain and
+before the Master strip's gain, pan, mute, and meter. Playback supplies coherent beat, meter,
+tempo-map, count-in, and transport timing; audio schedules clicks against heard time rather than the
+graph-ahead position. Count-in, tempo and meter changes, seeks, and loop wraps are handled. Playback
+publishes a coherent click/timing snapshot; the audio reader makes one version-checked attempt and
+uses its last complete snapshot if publication overlaps, without spinning. Click candidate checks
+are bounded from the 200 ms late-click lookback, the block duration, and the 40 ms click duration;
+the budget is derived per block rather than capped at a fixed count. A warmed callback test confirms
+zero managed allocations. MIDI-click options are deferred.
+
+The application sends effective click state in playback-command order; the engine replays it after a
+restart while leaving transport stopped. The protocol-13 command carries the audio-click state, and
+the handshake rejects mismatched versions ([ADR 0044](adr/0044-engine-process.md)). This requires no
+project-format or plugin-protocol change.
+
+On a clean install the system-default output starts and audio is enabled. Explicitly saved audio
+on/off, device, and host choices remain authoritative. On Windows ASIO remains selectable but is not
+preemptively selected ([ADR 0046](adr/0046-windows-asio-audio-host.md)). Recording preferences are
+intended to be app-wide; their persistence is not yet implemented.
 
 ### Delay compensation
 
@@ -523,8 +545,8 @@ on a live thread for what comes later (arpeggio steps). A route that changes fir
 sounds, so nothing hangs. While live input plays a plugin instrument, the engine switches to a shorter
 render-ahead queue. With the engine process, every live route runs in the engine (ADR 0044 step 7): live notes
 into a plugin instrument are rendered in its device callback, and the monitored instrument and plugin MIDI effects run
-at pipeline depth 1. Recording captures the input before any device. The metronome and instrument setup
-go to the route's external endpoint.
+at pipeline depth 1. Recording captures the input before any device. Instrument setup continues to
+go to the route's external endpoint; the audio metronome is rendered on the Master as described above.
 
 ### Automation
 
