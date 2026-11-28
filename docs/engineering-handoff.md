@@ -154,6 +154,28 @@ says so.
 34. **Format 5 separates a loop's range from whether it loops** (ADR 0039): disabling a loop never deletes it, and
     format 4 files migrate as enabled arranger loops. Clip-loop repeats are produced at plan time, never on the
     real-time thread, within a per-clip and per-sequence event bound; edits beyond it are refused, not truncated.
+35. **Usability-pass product decisions (owner, 2026-11-27).** Answers to the questions from a musician-advocate
+    usability pass of `main` at `bc50b70`. These set direction; none is built yet (see §7, item 14).
+    - **Metronome:** the default click is audio that Bluestone renders on the master output, so it sounds in a
+      plugin-only project. MIDI-click options (port, notes, channel) are deferred.
+    - **First launch:** Bluestone starts the system default audio output. A saved choice to keep audio off is still
+      respected.
+    - **MIDI import:** dropping a `.mid` file or choosing **File ▸ Import MIDI** adds its contents to the current
+      project. Replacing the project is only the explicit **File ▸ Import MIDI ▸ Replace Project**.
+    - **Hardware in the Browser:** not added ahead of the unified hardware device ([roadmap](roadmap.md#2-hardware-as-a-first-class-device));
+      no placeholder "External MIDI instrument" item.
+    - **Plugin parameters:** show the plugin's own value text. Use the parameter page a plugin exposes when it has
+      one (for example CLAP remote controls), else plugin order. Users can choose and arrange the parameters shown,
+      saved per plugin.
+    - **README mixer screenshot:** a staged mockup is acceptable until a real session with many channels can be
+      captured, then it is replaced.
+    - **Built-in instruments:** a few very basic ones, in line with [roadmap §4](roadmap.md#4-a-small-complete-native-device-contract).
+    - **Audio Units:** undecided and out of scope for now.
+    - **Track input and arming work like Bitwig Studio:** each track chooses its own note input, several tracks can be
+      armed at once, and input monitoring follows arm by default. Check the details against Bitwig's documentation when
+      designing.
+    - **Recording preferences** (input, thru, metronome, count-in, take mode) are app-wide settings that persist
+      across launches, unless a compelling per-project case appears.
 
 ## 5. Regression net
 
@@ -298,6 +320,21 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
       0 bytes); no physical hardware or timing.
     - The desktop app has not been launched on any of the six RIDs; CI only publishes it.
     - Native Linux timing on either runtime ([issue 117](https://github.com/djflan/Bluestone/issues/117)).
+14. **Usability pass (2026-11-27, decision 35), not built or deferred:**
+    - Not built (decided): the audio click; starting the default output on first launch; MIDI import that adds to
+      the project, with **Replace Project** as the explicit command; plugin value text, exposed parameter pages, and
+      per-plugin parameter choice; Arpeggiator value labels (Rate as note values, Pattern by name, Gate as 0–100%);
+      Bitwig-style per-track input, multi-arm, and arm-following monitoring; persisted recording preferences; a few
+      basic built-in instruments.
+    - Deferred by decision: MIDI-click options; hardware in the Browser until the unified hardware device; Audio
+      Units; a real many-channel capture for the README mixer screenshot.
+    - Found but not yet decided or scheduled: plain-language Audio Settings (render-ahead hint, buffer in ms) and an
+      output channel-pair picker; editable plugin folders; File ▸ Open Recent; all panel toggles under View; clearer
+      status-bar wording ("MIDI outs: 1", timing statistics in a tooltip); a scope or confirmation for **Use for all
+      tracks**; test plugins labeled as tests and removed from Suggested; missing devices shown by name with a badge
+      instead of brackets; the BARS label over elapsed time; a neutral Panic glyph; the empty loop well's "– + –";
+      a rebindable computer-keyboard toggle; a notice when a MIDI port disappears; and the user guide not saying that
+      audio must be started first or that the click is MIDI-only.
     - Same-time MIDI ordering and the first-due startup error. Both appear on .NET 10 and .NET 11, so they are not
       migration regressions; they are tracked separately.
     - The Windows .NET 10 engine's GC pauses (about 312 KB promoted per gen0 collection, 1.3–3.1 ms pauses) are
