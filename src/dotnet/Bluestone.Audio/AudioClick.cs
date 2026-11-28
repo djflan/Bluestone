@@ -8,7 +8,7 @@ public readonly record struct AudioClickEvent(TimeSpan Timestamp, bool Downbeat)
 /// <summary>Lock-free source of metronome clicks for the audio callback.</summary>
 public interface IAudioClickSource
 {
-    bool TryGetClick(TimeSpan from, TimeSpan until, out AudioClickEvent click);
+    bool TryGetClick(TimeSpan from, TimeSpan until, long clickGeneration, out AudioClickEvent click, out bool ready);
 }
 
 /// <summary>
@@ -27,6 +27,7 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
     private bool _activeDownbeat;
     private TimeSpan _searchFrom;
     private TimeSpan _lastBlockStart;
+    private long _clickGeneration;
 
     public void Render(in AudioRenderContext context, StereoBuffer output)
     {
@@ -46,21 +47,33 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
             _active = false;
             _searchFrom = blockStart - LateWindow;
         }
+        else if (_clickGeneration != context.ClickGeneration)
+        {
+            _active = false;
+            _searchFrom = blockStart - LateWindow;
+        }
         else if (_searchFrom < blockStart - LateWindow)
         {
             _searchFrom = blockStart - LateWindow;
         }
 
+        _clickGeneration = context.ClickGeneration;
         _lastBlockStart = blockStart;
+
+        var hasClick = source.TryGetClick(_searchFrom, blockEnd, context.ClickGeneration, out var click, out var ready);
+        if (!ready)
+        {
+            return;
+        }
 
         if (_active && _activeStart + Duration > blockStart)
         {
             Add(_activeStart, _activeDownbeat, blockStart, context.SampleRate, output);
         }
 
-        // Each found click moves the search at least one click length on, so this is bounded by the block window.
+        // Each found click advances at least one click length; the late window bounds the work if a snapshot lags.
         var maxClicks = (int)Math.Ceiling((blockEnd - _searchFrom).TotalSeconds / Duration.TotalSeconds) + 1;
-        for (var count = 0; count < maxClicks && _searchFrom < blockEnd && source.TryGetClick(_searchFrom, blockEnd, out var click); count++)
+        for (var count = 0; count < maxClicks && _searchFrom < blockEnd && ready && hasClick; count++)
         {
             var start = click.Timestamp > blockStart ? click.Timestamp : blockStart;
             if (!_active || start >= _activeStart + Duration)
@@ -73,6 +86,12 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
 
             var next = _activeStart + Duration;
             _searchFrom = next > click.Timestamp ? next : click.Timestamp + TimeSpan.FromTicks(1);
+            hasClick = source.TryGetClick(_searchFrom, blockEnd, context.ClickGeneration, out click, out ready);
+        }
+
+        if (!ready)
+        {
+            return;
         }
 
         if (_searchFrom < blockEnd)

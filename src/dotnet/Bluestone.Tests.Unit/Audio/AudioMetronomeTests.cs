@@ -181,6 +181,56 @@ public sealed class AudioMetronomeTests
     }
 
     [Fact]
+    public void AudioClick_SeekDuringClickStartsTheNewDownbeatImmediately()
+    {
+        using var playback = new PlaybackFixture();
+        playback.Engine.SetMetronome(null, enabled: true, audioClick: true);
+        playback.Load();
+        playback.Engine.Play(Tick.Zero);
+        playback.PumpAt(0);
+
+        using var engine = new AudioEngine(Rate, 480, streamFromDisk: false, audioClick: new PlaybackAudioClickSource(playback.Engine));
+        engine.Transport.Follow(new PlaybackTimeline(playback.Engine), 0);
+        var driver = new OfflineAudioDriver(engine, serviceStreams: false) { StartTimestamp = Timestamp(Start) };
+        driver.Render(480, 480);
+
+        playback.PumpAt(10);
+        playback.Engine.Seek(Tick.Zero);
+        playback.PumpAt(10);
+        var afterSeek = driver.Render(480, 480);
+        var expected = (float)(0.32 * Math.Pow(1 - (5.0 / (Rate * 0.04)), 2) * Math.Sin(2 * Math.PI * 1760 * 5 / Rate));
+
+        Assert.Equal(expected, afterSeek[10], precision: 4);
+    }
+
+    [Fact]
+    public void AudioClick_RetainsStartupWindowUntilMatchingSnapshotIsReady()
+    {
+        var startTimestamp = Timestamp(Start);
+        var source = new DelayedClickSource(Start);
+        using var engine = new AudioEngine(Rate, Block, streamFromDisk: false, audioClick: source);
+        engine.Transport.Follow(new ClockTimeline(startTimestamp, clickGeneration: 1), 0);
+        var driver = new OfflineAudioDriver(engine, serviceStreams: false) { StartTimestamp = startTimestamp };
+
+        driver.Render(Block, Block);
+        var afterSnapshotReady = driver.Render(Block, Block);
+
+        Assert.Contains(afterSnapshotReady[..64], sample => Math.Abs(sample) > 0.1f);
+    }
+
+    [Fact]
+    public void AudioClickSource_PreservesSnapshotReadiness()
+    {
+        using var playback = new PlaybackFixture();
+        var source = new PlaybackAudioClickSource(playback.Engine);
+
+        var found = source.TryGetClick(Start, Start + TimeSpan.FromMilliseconds(10), clickGeneration: 1, out _, out var ready);
+
+        Assert.False(found);
+        Assert.False(ready);
+    }
+
+    [Fact]
     public void AudioClick_OverlappingClicksRenderTheSameAtAnyBlockSize()
     {
         using var playback = new PlaybackFixture();
@@ -267,4 +317,33 @@ public sealed class AudioMetronomeTests
     }
 
     private static long Timestamp(TimeSpan time) => (long)(time.TotalSeconds * Stopwatch.Frequency);
+
+    private sealed class ClockTimeline(long startTimestamp, long clickGeneration) : IAudioTimeline
+    {
+        public bool TryGetPosition(long timestamp, out TimelinePosition position)
+        {
+            position = new TimelinePosition(Stopwatch.GetElapsedTime(startTimestamp, timestamp).TotalSeconds, Tempo: 120, ClickGeneration: clickGeneration);
+            return true;
+        }
+    }
+
+    private sealed class DelayedClickSource(TimeSpan clickTimestamp) : IAudioClickSource
+    {
+        private bool _ready;
+
+        public bool TryGetClick(TimeSpan from, TimeSpan until, long generation, out AudioClickEvent click, out bool ready)
+        {
+            if (!_ready)
+            {
+                _ready = true;
+                click = default;
+                ready = false;
+                return false;
+            }
+
+            ready = true;
+            click = new AudioClickEvent(clickTimestamp, Downbeat: true);
+            return clickTimestamp >= from && clickTimestamp < until;
+        }
+    }
 }

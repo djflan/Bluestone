@@ -38,6 +38,13 @@ public interface IAudioMetronome
 {
     /// <summary>Finds the first click in <c>[from, until)</c>.</summary>
     bool TryGetAudioClick(TimeSpan from, TimeSpan until, out AudioMetronomeClick click);
+
+    /// <summary>Finds the first click for a transport generation and reports when its snapshot has not caught up.</summary>
+    bool TryGetAudioClick(TimeSpan from, TimeSpan until, long clickGeneration, out AudioMetronomeClick click, out bool ready)
+    {
+        ready = true;
+        return TryGetAudioClick(from, until, out click);
+    }
 }
 
 /// <summary>

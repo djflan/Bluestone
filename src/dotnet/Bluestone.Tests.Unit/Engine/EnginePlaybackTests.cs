@@ -68,7 +68,7 @@ public sealed class EnginePlaybackTests : IAsyncDisposable
                 Assert.Equal(engine.TryGetTickAt(time, out var expected), _playback.TryGetTickAt(time, out var mirrored));
                 Assert.Equal(expected, mirrored);
                 Assert.Equal(engine.TryGetSongTimeAt(time, out var expectedSong), _playback.TryGetSongTimeAt(time, out var mirroredSong));
-                Assert.Equal(expectedSong, mirroredSong);
+                Assert.Equal(expectedSong with { ClickGeneration = 0 }, mirroredSong);
                 compared++;
             }
 

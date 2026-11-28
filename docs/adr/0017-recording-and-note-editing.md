@@ -81,10 +81,13 @@ MIDI-output choice above. MIDI-click port, note, and channel options are deferre
   set when Play is applied, not when it is requested, and beat clicks never fall before the
   transport's start. The audio-side click renderer keeps state across blocks: a click already past
   when playback starts (up to 200 ms, covering render-ahead and output latency) sounds whole at the
-  first block instead of being lost, and overlapping 40 ms clicks are coalesced the same way at any
-  block size. Candidate checks are bounded by the finite block window, so dense valid tempos cannot
-  starve later clicks. A warmed callback test confirms zero managed allocations. The engine command and restart
-  contract are amended in [ADR 0044](0044-engine-process.md).
+  first block instead of being lost. A transport click generation changes on Play, Stop, and seek
+  (not on loop wrap), so a seek cuts off the prior click and reschedules the target downbeat. The
+  renderer keeps unconsumed clicks in its rolling 200 ms lookback while the audio snapshot catches
+  up with that generation. The lookback bounds candidate checks, so dense valid tempos cannot starve
+  later clicks. Overlapping 40 ms clicks are coalesced the same way at any block size. A warmed
+  callback test confirms zero managed allocations. The engine command and restart contract are
+  amended in [ADR 0044](0044-engine-process.md).
 
 The owner also chose app-wide recording preferences rather than project-owned settings. Their
 persistence remains unimplemented; this amendment does not change the project format.

@@ -69,6 +69,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
     private TimeSpan _countInStart;
     private int _countInIndex;
     private bool _audioClick;
+    private long _clickGeneration;
     private TimeSpan _audioBeatsEnabledAt;
     private int _audioMetronomeVersion;
     private AudioMetronomeSnapshot _audioMetronome;
@@ -97,7 +98,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxActiveNotes, nameof(options));
         _active = new ActiveNote[_options.MaxActiveNotes];
         _plan = _latestPlan = PlaybackPlan.Empty(initialTempo);
-        _audioMetronome = new AudioMetronomeSnapshot(_plan, default, false, false, TimeSpan.Zero, [], TimeSpan.Zero, TimeSpan.Zero);
+        _audioMetronome = new AudioMetronomeSnapshot(_plan, default, false, false, TimeSpan.Zero, [], TimeSpan.Zero, TimeSpan.Zero, _clickGeneration);
         _audioMetronomeReaderCache = _audioMetronome;
         Statistics = new TimingStatistics(_options.LateThreshold);
     }
@@ -167,14 +168,24 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
     public void SetMetronome(MetronomeClick? click, bool enabled, bool audioClick = false) => Enqueue(new MetronomeCommand(click, enabled, audioClick));
 
     public bool TryGetAudioClick(TimeSpan from, TimeSpan until, out AudioMetronomeClick click)
+        => TryGetAudioClick(from, until, clickGeneration: 0, out click, out _);
+
+    public bool TryGetAudioClick(TimeSpan from, TimeSpan until, long clickGeneration, out AudioMetronomeClick click, out bool ready)
     {
         click = default;
         if (until <= from)
         {
+            ready = true;
             return false;
         }
 
         var snapshot = ReadAudioMetronome();
+        ready = clickGeneration == 0 || snapshot.ClickGeneration == clickGeneration;
+        if (!ready)
+        {
+            return false;
+        }
+
         if (!snapshot.Configured)
         {
             return false;
@@ -469,6 +480,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
                 ResyncClicks();
                 break;
             case PlayCommand play:
+                _clickGeneration++;
                 var startAt = now + (play.CountIn?.Duration ?? TimeSpan.Zero);
                 Locate(play.Tick, play.Chase, now, startAt);
                 _countIn = play.CountIn?.Clicks ?? [];
@@ -482,6 +494,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             case SeekCommand seek:
                 if (_playing)
                 {
+                    _clickGeneration++;
                     Locate(seek.Tick, seek.Chase, now, now);
                     PublishAnchor(playing: true);
                 }
@@ -492,6 +505,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
 
                 break;
             case StopCommand:
+                _clickGeneration++;
                 if (_playing)
                 {
                     Volatile.Write(ref _positionTick, Math.Max(_immediate.AnchorTick, TickAtTime(in _immediate, now)));
@@ -634,7 +648,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         Interlocked.Increment(ref _anchorVersion);
         _previousAnchor = _anchor;
         var engaged = _loop is { } loop && _immediate.Engages(loop) ? loop : null;
-        _anchor = new TransportAnchor(playing, _immediate.AnchorTime, _immediate.AnchorSongTime, _plan.TempoMap, engaged?.Start.Value ?? 0, engaged?.End.Value ?? 0);
+        _anchor = new TransportAnchor(playing, _immediate.AnchorTime, _immediate.AnchorSongTime, _plan.TempoMap, engaged?.Start.Value ?? 0, engaged?.End.Value ?? 0, _clickGeneration);
         Interlocked.Increment(ref _anchorVersion);
     }
 
@@ -649,7 +663,8 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             _audioBeatsEnabledAt,
             _countIn,
             _countInStart,
-            _countIn.IsDefaultOrEmpty ? TimeSpan.Zero : TimeSpan.FromTicks(Volatile.Read(ref _countInUntil)));
+            _countIn.IsDefaultOrEmpty ? TimeSpan.Zero : TimeSpan.FromTicks(Volatile.Read(ref _countInUntil)),
+            _clickGeneration);
         Interlocked.Increment(ref _audioMetronomeVersion);
     }
 
@@ -1090,8 +1105,9 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         TimeSpan BeatsEnabledAt,
         ImmutableArray<CountInClick> CountIn,
         TimeSpan CountInStart,
-        TimeSpan CountInEnd);
+        TimeSpan CountInEnd,
+        long ClickGeneration);
 }
 
 /// <summary>A song position heard at some moment: song time, the engaged loop's bounds (equal when none), and the tempo there.</summary>
-public readonly record struct SongPosition(TimeSpan SongTime, TimeSpan LoopStart, TimeSpan LoopEnd, double BeatsPerMinute);
+public readonly record struct SongPosition(TimeSpan SongTime, TimeSpan LoopStart, TimeSpan LoopEnd, double BeatsPerMinute, long ClickGeneration = 0);

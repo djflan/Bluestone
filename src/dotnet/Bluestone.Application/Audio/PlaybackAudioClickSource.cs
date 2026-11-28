@@ -7,15 +7,17 @@ internal sealed class PlaybackAudioClickSource(IPlaybackTransport playback) : IA
 {
     private readonly IAudioMetronome? _metronome = playback as IAudioMetronome;
 
-    public bool TryGetClick(TimeSpan from, TimeSpan until, out AudioClickEvent click)
+    public bool TryGetClick(TimeSpan from, TimeSpan until, long clickGeneration, out AudioClickEvent click, out bool ready)
     {
-        if (_metronome is not null && _metronome.TryGetAudioClick(from, until, out var scheduled))
+        if (_metronome is null)
         {
-            click = new AudioClickEvent(scheduled.Timestamp, scheduled.Downbeat);
-            return true;
+            click = default;
+            ready = true;
+            return false;
         }
 
-        click = default;
-        return false;
+        var found = _metronome.TryGetAudioClick(from, until, clickGeneration, out var scheduled, out ready);
+        click = found ? new AudioClickEvent(scheduled.Timestamp, scheduled.Downbeat) : default;
+        return found;
     }
 }

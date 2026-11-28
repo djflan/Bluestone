@@ -854,23 +854,18 @@ internal sealed class AudioHost : IDisposable
                 return false;
             }
 
-            position = new TimelinePosition(song.SongTime.TotalSeconds, song.LoopStart.TotalSeconds, song.LoopEnd.TotalSeconds, song.BeatsPerMinute);
+            position = new TimelinePosition(song.SongTime.TotalSeconds, song.LoopStart.TotalSeconds, song.LoopEnd.TotalSeconds, song.BeatsPerMinute, song.ClickGeneration);
             return true;
         }
     }
 
     private sealed class EngineAudioClickSource(IAudioMetronome metronome) : IAudioClickSource
     {
-        public bool TryGetClick(TimeSpan from, TimeSpan until, out AudioClickEvent click)
+        public bool TryGetClick(TimeSpan from, TimeSpan until, long clickGeneration, out AudioClickEvent click, out bool ready)
         {
-            if (metronome.TryGetAudioClick(from, until, out var scheduled))
-            {
-                click = new AudioClickEvent(scheduled.Timestamp, scheduled.Downbeat);
-                return true;
-            }
-
-            click = default;
-            return false;
+            var found = metronome.TryGetAudioClick(from, until, clickGeneration, out var scheduled, out ready);
+            click = found ? new AudioClickEvent(scheduled.Timestamp, scheduled.Downbeat) : default;
+            return found;
         }
     }
 

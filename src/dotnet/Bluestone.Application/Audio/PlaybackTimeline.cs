@@ -23,7 +23,7 @@ public sealed class PlaybackTimeline(IPlaybackTransport engine) : IAudioTimeline
             return false;
         }
 
-        position = new TimelinePosition(song.SongTime.TotalSeconds, song.LoopStart.TotalSeconds, song.LoopEnd.TotalSeconds, song.BeatsPerMinute);
+        position = new TimelinePosition(song.SongTime.TotalSeconds, song.LoopStart.TotalSeconds, song.LoopEnd.TotalSeconds, song.BeatsPerMinute, song.ClickGeneration);
         return true;
     }
 }

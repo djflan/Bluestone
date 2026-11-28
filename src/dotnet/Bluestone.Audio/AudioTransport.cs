@@ -5,7 +5,8 @@ namespace Bluestone.Audio;
 /// <param name="LoopStartSeconds">Start of the engaged loop; equal to <paramref name="LoopEndSeconds"/> when no loop is engaged.</param>
 /// <param name="LoopEndSeconds">End of the engaged loop (exclusive).</param>
 /// <param name="Tempo">Beats per minute at that position.</param>
-public readonly record struct TimelinePosition(double SongSeconds, double LoopStartSeconds = 0, double LoopEndSeconds = 0, double Tempo = 120);
+/// <param name="ClickGeneration">Changes when playback starts or seeks, but not on an ordinary loop wrap.</param>
+public readonly record struct TimelinePosition(double SongSeconds, double LoopStartSeconds = 0, double LoopEndSeconds = 0, double Tempo = 120, long ClickGeneration = 0);
 
 /// <summary>
 /// The transport the audio engine follows: the MIDI playback engine's anchors in the application. Called on the audio
@@ -46,6 +47,7 @@ public sealed class AudioTransport
     private bool _jumped = true;
     private double _tempo = 120;
     private int _compensation;
+    private long _clickGeneration;
 
     // Published for other threads.
     private long _position;
@@ -118,6 +120,7 @@ public sealed class AudioTransport
             return;
         }
 
+        _clickGeneration = position.ClickGeneration;
         var expected = (long)Math.Round(position.SongSeconds * sampleRate);
         _loopStart = (long)Math.Round(position.LoopStartSeconds * sampleRate);
         _loopEnd = (long)Math.Round(position.LoopEndSeconds * sampleRate);
@@ -160,7 +163,7 @@ public sealed class AudioTransport
         }
 
         var looping = _loopEnd > _loopStart;
-        var context = new AudioRenderContext(frames, sampleRate, _playing, _frame, _jumped, _tempo, wrapOffset, wrapOffset > 0 ? _loopStart : 0, LoopStart: looping ? _loopStart : 0, LoopEnd: looping ? _loopEnd : 0);
+        var context = new AudioRenderContext(frames, sampleRate, _playing, _frame, _jumped, _tempo, wrapOffset, wrapOffset > 0 ? _loopStart : 0, LoopStart: looping ? _loopStart : 0, LoopEnd: looping ? _loopEnd : 0, ClickGeneration: _clickGeneration);
         _jumped = false;
         return context;
     }
