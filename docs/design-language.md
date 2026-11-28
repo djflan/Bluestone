@@ -146,8 +146,14 @@ Lit things behave like real light, restrained and purposeful.
   between sibling controls; `Space.L` between groups; `Space.XL` and `Space.XXL` between sections and at page margins.
   Use the named `Inset.*` thicknesses for panel, section, header, and row padding.
 - **Standard heights:** `Height.Control` for controls, `Height.Compact` for dense rows of controls, `Height.Row` for
-  list and track rows, `Height.Header` for pane headers, `Height.Tab` for tabs, `Height.ControlBar` and
-  `Height.StatusBar` for the bars, and `Width.Rail` for the side rails.
+  list and track rows, `Height.Header` for pane headers, `Height.Tab` for tabs, `Height.EditorTabRow` for the editor
+  tab row, `Height.TopBar`, `Height.TransportBar`, `Height.ControlBar` and `Height.StatusBar` for the bars, and
+  `Width.Rail` for the side rails. Bar and header heights are always set by these keys, never as literals in a view.
+- **Hit targets.** Every clickable control is at least `Size.HitTarget` (24×24). A small key (`Size.ToolTiny`) keeps its
+  visible plate and pads its hit area around it, overhanging its bar by `Inset.HitTargetOverhang` if it must.
+- **Hideable chrome.** Chrome that a style may hide or quieten (the `GutterPanel` well via `ShowWell`, the chain
+  junction captions via `ChainJunction.ShowCaptions`, project-state, plugin-badge, and Suggested text) is shown by a
+  style class, never a local `IsVisible`, and keeps its screen-reader name.
 - **Fixed instrument geometry.** Device panels have one height (`DevicePanel.Height`) and a few widths
   (`DevicePanel.CollapsedWidth`, `DevicePanel.SmallWidth`, `DevicePanel.MediumWidth`, `DevicePanel.LargeWidth`).
   Mixer strips have one pitch (`Mixer.StripWidth`) and stack fixed bands so every strip's controls line up across the

@@ -622,13 +622,13 @@
     Text.Secondary glyphs that turn aqua with a faint, realistic glow when on; record is red. Values sit in recessed wells.
   -->
   <Style Selector="Border.topBar">
-    <Setter Property="Height" Value="46" />
+    <Setter Property="Height" Value="{StaticResource Height.TopBar}" />
     <Setter Property="Background" Value="{StaticResource Surface.Chrome}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
   </Style>
   <Style Selector="Border.transportBar">
-    <Setter Property="Height" Value="56" />
+    <Setter Property="Height" Value="{StaticResource Height.TransportBar}" />
     <Setter Property="Background" Value="{StaticResource Surface.Chrome}" />
     <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
     <Setter Property="BorderThickness" Value="0,1,0,0" />
@@ -643,6 +643,26 @@
     <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
     <Setter Property="Foreground" Value="{StaticResource Text.Muted}" />
     <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <!-- Shown by a style, not a local binding, so a later style can still hide it. -->
+  <Style Selector="TextBlock.projectState.dirty">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+  <!-- The status bar: what is connected, what Bluestone is doing, and how playback is keeping time. -->
+  <Style Selector="Border.statusBar">
+    <Setter Property="Height" Value="{StaticResource Height.StatusBar}" />
+    <Setter Property="Background" Value="{StaticResource Surface.Chrome}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Line.Divider}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+  <!-- The lower pane's tab row, inside the header's rules. -->
+  <Style Selector="Grid.editorTabRow">
+    <Setter Property="Height" Value="{StaticResource Height.EditorTabRow}" />
+  </Style>
+  <!-- The arrangement header's "Tracks". -->
+  <Style Selector="TextBlock.trackListTitle">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
   </Style>
   <Style Selector="controls|GutterPanel.toolGutter, controls|GutterPanel.transport">
     <Setter Property="Padding" Value="3" />
@@ -1565,8 +1585,8 @@
     <Setter Property="Height" Value="22" />
   </Style>
   <Style Selector="Button.tool.tiny, ToggleButton.tool.tiny">
-    <Setter Property="Width" Value="18" />
-    <Setter Property="Height" Value="18" />
+    <Setter Property="Width" Value="{StaticResource Size.ToolTiny}" />
+    <Setter Property="Height" Value="{StaticResource Size.ToolTiny}" />
   </Style>
   <Style Selector="Button.tool.tiny PathIcon, ToggleButton.tool.tiny PathIcon">
     <Setter Property="Width" Value="10" />
@@ -1636,6 +1656,10 @@
   <Style Selector="Border.chainNode.output">
     <Setter Property="Width" Value="{StaticResource DevicePanel.OutWidth}" />
     <Setter Property="Margin" Value="6,0,0,0" />
+  </Style>
+  <!-- The Out card's title row, as tall as a device's header so the cards line up. -->
+  <Style Selector="Border.outHeader">
+    <Setter Property="Height" Value="{StaticResource DevicePanel.HeaderHeight}" />
   </Style>
   <Style Selector="TextBlock.outTitle">
     <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
@@ -1730,6 +1754,12 @@
   <Style Selector="controls|ChainJunction">
     <Setter Property="LampRelease" Value="{StaticResource Motion.LampRelease}" />
     <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="CaptionFontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="CaptionForeground" Value="{StaticResource Text.Secondary}" />
+  </Style>
+  <!-- Device cards share one header height, so a style can change it for every card at once. -->
+  <Style Selector="controls|DeviceCardPanel">
+    <Setter Property="HeaderHeight" Value="{StaticResource DevicePanel.HeaderHeight}" />
   </Style>
   <Style Selector="Border.insertionMarker">
     <Setter Property="Width" Value="3" />
@@ -2075,6 +2105,48 @@
     <Setter Property="Height" Value="{StaticResource DevicePanel.FooterHeight}" />
     <Setter Property="Margin" Value="8,0,4,0" />
   </Style>
+  <!--
+    The footer's editor keys keep their tiny plates and glyphs but pad their targets out to the hit-target floor. The
+    negative margin lets the taller target overhang the footer by a pixel instead of making the footer (and the card)
+    taller. The key's own background stays transparent (still hit) at every state; the hover, pressed and checked fill
+    moves to the 18 px plate inside it (Border.hitPlate), so the visible key is the size it always was.
+  -->
+  <Style Selector="Grid.deviceFooter Button.tool.tiny, Grid.deviceFooter ToggleButton.tool.tiny">
+    <Setter Property="Width" Value="{StaticResource Size.HitTarget}" />
+    <Setter Property="Height" Value="{StaticResource Size.HitTarget}" />
+    <Setter Property="Margin" Value="{StaticResource Inset.HitTargetOverhang}" />
+  </Style>
+  <Style Selector="Grid.deviceFooter Button.tool.tiny /template/ ContentPresenter, Grid.deviceFooter ToggleButton.tool.tiny /template/ ContentPresenter,
+                   Grid.deviceFooter Button.tool.tiny:pointerover /template/ ContentPresenter, Grid.deviceFooter ToggleButton.tool.tiny:pointerover /template/ ContentPresenter,
+                   Grid.deviceFooter Button.tool.tiny:pressed /template/ ContentPresenter, Grid.deviceFooter ToggleButton.tool.tiny:pressed /template/ ContentPresenter,
+                   Grid.deviceFooter ToggleButton.tool.tiny:checked /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Grid.deviceFooter Border.hitPlate">
+    <Setter Property="Width" Value="{StaticResource Size.ToolTiny}" />
+    <Setter Property="Height" Value="{StaticResource Size.ToolTiny}" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Grid.deviceFooter Button.tool.tiny:pointerover Border.hitPlate, Grid.deviceFooter ToggleButton.tool.tiny:pointerover Border.hitPlate">
+    <Setter Property="Background" Value="{StaticResource State.Hover}" />
+  </Style>
+  <Style Selector="Grid.deviceFooter Button.tool.tiny:pressed Border.hitPlate, Grid.deviceFooter ToggleButton.tool.tiny:pressed Border.hitPlate">
+    <Setter Property="Background" Value="{StaticResource State.Pressed}" />
+  </Style>
+  <Style Selector="Grid.deviceFooter ToggleButton.tool.tiny:checked Border.hitPlate">
+    <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+  </Style>
+  <Style Selector="Grid.deviceFooter Button.tool.tiny:disabled Border.hitPlate">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <!-- The plugin's format badge: shown by a style, not a local binding, so a later style can still hide it. -->
+  <Style Selector="Grid.deviceFooter Border.badge">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="Grid.deviceFooter Border.badge.plugin">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
   <Style Selector="Button.collapsedName">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
@@ -2170,6 +2242,13 @@
     <Setter Property="Margin" Value="6,0,0,0" />
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Background" Value="{StaticResource State.SelectedSubtle}" />
+  </Style>
+  <!-- Shown by a style, not a local binding, so a later style can still hide it. -->
+  <Style Selector="Border.suggested">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="Border.suggested.recommended">
+    <Setter Property="IsVisible" Value="True" />
   </Style>
   <Style Selector="Border.suggested > TextBlock">
     <Setter Property="FontSize" Value="{StaticResource FontSize.Micro}" />

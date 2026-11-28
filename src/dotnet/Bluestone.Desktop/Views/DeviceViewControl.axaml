@@ -216,7 +216,7 @@
 
                         <Grid Grid.Row="2" Classes="deviceFooter" ColumnDefinitions="*,Auto">
                           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" ClipToBounds="True">
-                            <Border Classes="badge" IsVisible="{Binding IsPlugin}" ToolTip.Tip="{Binding Hosting}">
+                            <Border Classes="badge" Classes.plugin="{Binding IsPlugin}" ToolTip.Tip="{Binding Hosting}">
                               <TextBlock Text="{Binding Format}" />
                             </Border>
                             <TextBlock Classes="micro" Text="{Binding MoreParametersText}" IsVisible="{Binding HasMoreParameters}" />
@@ -225,16 +225,16 @@
                             <!-- The open editor window: pinned (when editors follow the selection), and where its keys go. -->
                             <ToggleButton Classes="tool tiny" IsChecked="{Binding IsEditorPinned, Mode=OneWay}" Command="{Binding ToggleEditorPinnedCommand}"
                                           IsVisible="{Binding CanPinEditor}" ToolTip.Tip="{Binding PinTip}" AutomationProperties.Name="Pin plugin editor">
-                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Pin}" />
+                              <Border Classes="hitPlate"><PathIcon Classes="stroke" Data="{StaticResource Icon.Pin}" /></Border>
                             </ToggleButton>
                             <ToggleButton Classes="tool tiny" IsChecked="{Binding EditorKeysToBluestone, Mode=OneWay}" Command="{Binding ToggleEditorKeysCommand}"
                                           IsVisible="{Binding IsEditorOpen}" IsEnabled="{Binding CanRouteEditorKeys}" ToolTip.Tip="{Binding KeysTip}"
                                           ToolTip.ShowOnDisabled="True" AutomationProperties.Name="Send editor keys to Bluestone">
-                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" />
+                              <Border Classes="hitPlate"><PathIcon Classes="stroke" Data="{StaticResource Icon.Keyboard}" /></Border>
                             </ToggleButton>
                             <Button Classes="tool tiny" Classes.editorHidden="{Binding IsEditorHidden}" Command="{Binding OpenEditorCommand}" IsVisible="{Binding CanOpenEditor}"
                                     ToolTip.Tip="Open the plugin's editor (or bring it forward)" AutomationProperties.Name="Open plugin editor">
-                              <PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" />
+                              <Border Classes="hitPlate"><PathIcon Classes="stroke" Data="{StaticResource Icon.Editor}" /></Border>
                             </Button>
                           </StackPanel>
                         </Grid>
@@ -286,8 +286,10 @@
           <!-- Output boundary: the Out card, what leaves the chain for the track's destination. -->
           <Border Classes="chainNode output" ToolTip.Tip="{Binding OutputDetail, StringFormat='Chain output: everything the chain passes on, to {0}'}" AutomationProperties.Name="Chain output">
             <controls:DeviceCardPanel>
-              <Grid RowDefinitions="32,*,Auto">
-                <TextBlock Text="Out" Classes="outTitle" />
+              <Grid RowDefinitions="Auto,*,Auto">
+                <Border Classes="outHeader">
+                  <TextBlock Text="Out" Classes="outTitle" />
+                </Border>
                 <controls:ChainOutMeter Grid.Row="1" Classes="outMeter" Signal="{Binding OutputJunction}" LevelStyle="{Binding Display.LevelStyle}" AutomationProperties.Name="Chain output level" />
                 <TextBlock Grid.Row="2" x:Name="OutputText" Text="{Binding OutputText}" Classes="nodeDetail" Classes.unrouted="{Binding !IsRouted}" />
               </Grid>

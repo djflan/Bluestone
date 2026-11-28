@@ -45,6 +45,18 @@ public sealed class ChainJunction : Control, ICustomHitTest
     /// <summary>What the ladder shows (Settings ▸ Display): the average level with the peak held, or the peak alone.</summary>
     public static readonly StyledProperty<JunctionLevelStyle> LevelStyleProperty = AvaloniaProperty.Register<ChainJunction, JunctionLevelStyle>(nameof(LevelStyle), JunctionLevelStyle.Peak);
 
+    /// <summary>
+    /// Whether the painted captions ("MIDI" under the port, <see cref="Caption"/> under the ladder) are drawn. Hidden, the
+    /// port glyph and the chevron say the same, and the tooltip and screen-reader text still name what passes.
+    /// </summary>
+    public static readonly StyledProperty<bool> ShowCaptionsProperty = AvaloniaProperty.Register<ChainJunction, bool>(nameof(ShowCaptions), true);
+
+    /// <summary>The captions' size; the theme sets it from the type ramp.</summary>
+    public static readonly StyledProperty<double> CaptionFontSizeProperty = AvaloniaProperty.Register<ChainJunction, double>(nameof(CaptionFontSize), 10);
+
+    /// <summary>The unlit captions' color (a lit "MIDI" takes the MIDI light's color); the theme sets it.</summary>
+    public static readonly StyledProperty<IBrush?> CaptionForegroundProperty = AvaloniaProperty.Register<ChainJunction, IBrush?>(nameof(CaptionForeground));
+
     internal const double IconY = 14;
     internal const double IconSize = 15;
     internal const double LadderTop = 44;
@@ -70,7 +82,8 @@ public sealed class ChainJunction : Control, ICustomHitTest
 
     static ChainJunction()
     {
-        AffectsRender<ChainJunction>(SignalProperty, IsQuietProperty, InsertCommandProperty, CaptionProperty, IsCompactProperty);
+        AffectsRender<ChainJunction>(SignalProperty, IsQuietProperty, InsertCommandProperty, CaptionProperty, IsCompactProperty, ShowCaptionsProperty,
+            CaptionFontSizeProperty, CaptionForegroundProperty);
         AffectsMeasure<ChainJunction>(IsCompactProperty);
         FocusableProperty.OverrideDefaultValue<ChainJunction>(false);
         ClipToBoundsProperty.OverrideDefaultValue<ChainJunction>(false);
@@ -130,6 +143,15 @@ public sealed class ChainJunction : Control, ICustomHitTest
     public TimeSpan LampRelease { get => GetValue(LampReleaseProperty); set => SetValue(LampReleaseProperty, value); }
 
     public JunctionLevelStyle LevelStyle { get => GetValue(LevelStyleProperty); set => SetValue(LevelStyleProperty, value); }
+
+    public bool ShowCaptions { get => GetValue(ShowCaptionsProperty); set => SetValue(ShowCaptionsProperty, value); }
+
+    public double CaptionFontSize { get => GetValue(CaptionFontSizeProperty); set => SetValue(CaptionFontSizeProperty, value); }
+
+    public IBrush? CaptionForeground { get => GetValue(CaptionForegroundProperty); set => SetValue(CaptionForegroundProperty, value); }
+
+    /// <summary>The "MIDI" caption as last drawn (null until drawn, or while the captions are hidden); for tests.</summary>
+    internal FormattedText? DrawnMidiCaption { get; private set; }
 
     /// <summary>The ladder showing the signal here.</summary>
     internal LedLadderMeter Ladder => _ladder;
@@ -218,6 +240,12 @@ public sealed class ChainJunction : Control, ICustomHitTest
         else if (change.Property == LampReleaseProperty)
         {
             _midi.FadeMs = LampRelease.TotalMilliseconds;
+        }
+        else if (change.Property == CaptionFontSizeProperty || change.Property == CaptionForegroundProperty || change.Property == CaptionProperty)
+        {
+            _midiCaption = null;
+            _midiCaptionLit = null;
+            _caption = null;
         }
     }
 
@@ -414,11 +442,16 @@ public sealed class ChainJunction : Control, ICustomHitTest
             context.DrawGeometry(null, pen, MidiPort);
         }
 
-        var lit = glow > 0.5;
-        var caption = lit
-            ? _midiCaptionLit ??= Text("MIDI", LedColours.MidiCaptionBrush, 7.5)
-            : _midiCaption ??= Text("MIDI", Palette.TextMuted, 7.5);
-        context.DrawText(caption, new Point(center - Math.Round(caption.Width / 2), IconY + 10));
+        DrawnMidiCaption = null;
+        if (ShowCaptions)
+        {
+            var lit = glow > 0.5;
+            var caption = lit
+                ? _midiCaptionLit ??= Text("MIDI", LedColours.MidiCaptionBrush, CaptionFontSize)
+                : _midiCaption ??= Text("MIDI", CaptionBrush, CaptionFontSize);
+            context.DrawText(caption, new Point(center - Math.Round(caption.Width / 2), CaptionTop));
+            DrawnMidiCaption = caption;
+        }
 
         DrawTapAndPlus(context, signal);
         var ladder = LadderRect;
@@ -428,9 +461,9 @@ public sealed class ChainJunction : Control, ICustomHitTest
             return;
         }
 
-        if (Caption is { Length: > 0 } text)
+        if (ShowCaptions && Caption is { Length: > 0 } text)
         {
-            _caption ??= Text(text.ToUpperInvariant(), Palette.TextMuted, 8);
+            _caption ??= Text(text.ToUpperInvariant(), CaptionBrush, CaptionFontSize);
             context.DrawText(_caption, new Point(center - Math.Round(_caption.Width / 2), ladder.Bottom + 5));
         }
         else
@@ -468,7 +501,19 @@ public sealed class ChainJunction : Control, ICustomHitTest
         }
     }
 
-    private static FormattedText Text(string text, Color color, double size) => Text(text, ConsolePaint.Brush(color), size);
+    private IBrush CaptionBrush => CaptionForeground ?? ConsolePaint.Brush(Palette.TextSecondary);
+
+    // The "MIDI" caption sits midway between the port glyph's foot and the routed tap's well, whatever its size.
+    private double CaptionTop
+    {
+        get
+        {
+            var glyphFoot = IconY + (6.5 * IconSize / 16) + 1;
+            var tapTop = LadderTop - RoutedSize - 1 - 1.5;
+            var height = _midiCaption?.Height ?? CaptionFontSize * 1.2;
+            return Math.Round(((glyphFoot + tapTop) / 2) - (height / 2));
+        }
+    }
 
     private static FormattedText Text(string text, IBrush brush, double size) =>
         new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, ConsolePaint.Typeface("Font.Ui", FontWeight.SemiBold), size, brush);

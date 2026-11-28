@@ -393,6 +393,8 @@
   <Thickness x:Key="Inset.SettingsPopover">0,8,38,16</Thickness>
   <!-- A focus ring drawn outside its control, clear of the control's own edge (a check box's box); the extra right inset keeps label glyphs off the ring. -->
   <Thickness x:Key="Inset.FocusRingOutset">-3,-3,-6,-3</Thickness>
+  <!-- A hit target (Size.HitTarget) in a band DevicePanel.FooterHeight tall overhangs it this much, top and bottom. -->
+  <Thickness x:Key="Inset.HitTargetOverhang">0,-1</Thickness>
   <Thickness x:Key="Inset.SettingsPointer">0,-6,14,0</Thickness>
   <Thickness x:Key="Inset.MixerTop">0,4,0,0</Thickness>
   <Thickness x:Key="Inset.MixerTrailing">0,0,0,4</Thickness>
@@ -431,7 +433,15 @@
   <x:Double x:Key="Height.Tab">28</x:Double>
   <x:Double x:Key="Height.ControlBar">50</x:Double>
   <x:Double x:Key="Height.StatusBar">22</x:Double>
+  <!-- The workspace's own bars: the top bar, the transport bar, and the lower pane's tab row (inside its rules). -->
+  <x:Double x:Key="Height.TopBar">46</x:Double>
+  <x:Double x:Key="Height.TransportBar">56</x:Double>
+  <x:Double x:Key="Height.EditorTabRow">32</x:Double>
   <x:Double x:Key="Height.Row">26</x:Double>
+  <!-- The smallest hit target (WCAG 2.5.8): a smaller glyph keeps its size and pads its target out to this. -->
+  <x:Double x:Key="Size.HitTarget">24</x:Double>
+  <!-- The tiny tool key (a card's header and footer glyphs): its visible plate, inside any larger hit target. -->
+  <x:Double x:Key="Size.ToolTiny">18</x:Double>
   <x:Double x:Key="Width.Rail">30</x:Double>
   <x:Double x:Key="Width.Handle">5</x:Double>
   <x:Double x:Key="Width.SettingsNav">152</x:Double>

@@ -48,7 +48,8 @@
                 <TextBlock Classes="itemName" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                 <TextBlock Classes="itemDetail" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" />
               </StackPanel>
-              <Border Grid.Column="2" Classes="suggested" IsVisible="{Binding IsRecommended}" ToolTip.Tip="Suggested for this chain">
+              <Border Grid.Column="2" Classes="suggested" Classes.recommended="{Binding IsRecommended}" ToolTip.Tip="Suggested for this chain"
+                      AutomationProperties.Name="Suggested for this chain">
                 <TextBlock Text="Suggested" />
               </Border>
             </Grid>
@@ -65,7 +66,7 @@
 
     <Border Grid.Row="3" Classes="browserFooter">
       <Grid ColumnDefinitions="Auto,*,Auto" Margin="{StaticResource Inset.BrowserLeading}">
-        <Ellipse Classes="targetDot" Classes.on="{Binding HasTarget}" />
+        <Ellipse x:Name="TargetDot" Classes="targetDot" Classes.on="{Binding HasTarget}" AutomationProperties.Name="{Binding TargetText, StringFormat='Insert target: {0}'}" />
         <TextBlock Grid.Column="1" Classes="caption" Text="{Binding TargetText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                    ToolTip.Tip="Where Return or a double-click puts the selected item. Drag a device onto any Device View to choose the exact place." />
         <Button x:Name="ActionButton" Grid.Column="2" Classes="raised compact" Content="{Binding ActionText}" Command="{Binding InsertCommand}"

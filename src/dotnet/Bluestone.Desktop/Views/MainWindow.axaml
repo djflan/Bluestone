@@ -51,7 +51,7 @@
       <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,0">
         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,18,0">
           <TextBlock Classes="projectTitle" Text="{Binding ProjectName}" />
-          <TextBlock Classes="projectState" Text="edited" IsVisible="{Binding IsDirty}" />
+          <TextBlock Classes="projectState" Classes.dirty="{Binding IsDirty}" Text="edited" AutomationProperties.Name="Unsaved changes" />
         </StackPanel>
         <StackPanel x:Name="WorkspaceTools" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <controls:GutterPanel Classes="toolGutter">
@@ -155,7 +155,7 @@
           <Border x:Name="TrackViewHeader" Grid.ColumnSpan="2" Classes="header">
             <Grid ColumnDefinitions="252,*,Auto">
               <StackPanel Orientation="Horizontal" Spacing="2" Margin="8,0" VerticalAlignment="Center">
-                <TextBlock Text="Tracks" Classes="title" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBlock Text="Tracks" Classes="title trackListTitle" VerticalAlignment="Center" Margin="0,0,8,0" />
                 <Button Classes="tool" Command="{Binding AddTrackCommand}" ToolTip.Tip="New track (Ctrl/Cmd+T)" AutomationProperties.Name="New track">
                   <PathIcon Classes="stroke" Data="{StaticResource Icon.Plus}" Width="13" Height="13" />
                 </Button>
@@ -392,7 +392,7 @@
 
         <!-- Lower pane header: tabs and the active editor's tools -->
         <Border x:Name="EditorHeader" Grid.Row="2" Classes="header" BorderThickness="0,1,0,1">
-          <Grid ColumnDefinitions="Auto,*,Auto" Height="32">
+          <Grid ColumnDefinitions="Auto,*,Auto" Classes="editorTabRow">
             <controls:GutterPanel Classes="tabGutter" Margin="14,0,0,0">
             <StackPanel Orientation="Horizontal">
               <!-- Docked Device Views, each its own tab; "+" opens another that follows the selection. -->
@@ -752,7 +752,8 @@
 
           <!-- MIDI input activity: the IN glyph lights while notes arrive. -->
           <StackPanel VerticalAlignment="Center" Spacing="3" ToolTip.Tip="MIDI input activity">
-            <controls:LedFade x:Name="InputActivityLamp" FadeDuration="{StaticResource Motion.LampRelease}" IsLit="{Binding HasInputActivity}" HorizontalAlignment="Center">
+            <controls:LedFade x:Name="InputActivityLamp" FadeDuration="{StaticResource Motion.LampRelease}" IsLit="{Binding HasInputActivity}" HorizontalAlignment="Center"
+                              AutomationProperties.Name="MIDI input activity">
               <Ellipse Width="7" Height="7" Fill="{StaticResource Transport.InputIdle}" />
               <Ellipse Width="7" Height="7" Fill="{StaticResource Transport.InputActive}" />
             </controls:LedFade>
@@ -805,11 +806,13 @@
     </Border>
 
     <!-- Status bar -->
-    <Border Grid.Row="3" Background="{StaticResource Surface.Chrome}" BorderBrush="{StaticResource Line.Divider}" BorderThickness="0,1,0,0" Height="22">
+    <Border x:Name="StatusBar" Grid.Row="3" Classes="statusBar">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,0">
-        <TextBlock Text="{Binding OutputsText}" Classes="muted" VerticalAlignment="Center" />
-        <TextBlock Grid.Column="1" Classes="muted" VerticalAlignment="Center" Margin="16,0,0,0"
-                   Text="{Binding SelectedInput.Name, StringFormat='MIDI in: {0}', FallbackValue=''}" />
+        <TextBlock x:Name="OutputsStatus" Text="{Binding OutputsText}" Classes="muted statusOutputs" VerticalAlignment="Center"
+                   AutomationProperties.Name="{Binding OutputsText, StringFormat='MIDI outputs: {0}'}" />
+        <TextBlock x:Name="InputStatus" Grid.Column="1" Classes="muted statusInput" VerticalAlignment="Center" Margin="16,0,0,0"
+                   Text="{Binding SelectedInput.Name, StringFormat='MIDI in: {0}', FallbackValue=''}"
+                   AutomationProperties.Name="{Binding SelectedInput.Name, StringFormat='MIDI input: {0}', FallbackValue='No MIDI input'}" />
         <!-- The status line: what Bluestone is doing now, otherwise the latest message. Opens Messages, which keeps the history. -->
         <Button x:Name="StatusLine" Grid.Column="2" Classes="ghost" Margin="12,0" Padding="4,0" MinHeight="0" Height="20"
                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalAlignment="Center"
