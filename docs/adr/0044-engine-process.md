@@ -106,11 +106,11 @@ and project format do not need a version change for this decision.
 The application sends the effective metronome state through the playback control path, in playback
 command order before a subsequent Play or Record start. Playback publishes timing and click state as
 a coherent snapshot for the audio renderer. The callback makes a single version-checked read and
-uses its last complete snapshot if publication overlaps; it does not spin. Click rendering is capped
-at 32 candidates per block, and a warmed callback test confirms zero managed allocations. A
-restarted engine receives the latest metronome state again with the other playback state; the
-transport remains stopped. Device reopen and graph replacement do not discard the requested click
-state.
+uses its last complete snapshot if publication overlaps; it does not spin. Click candidate checks are bounded from the 200 ms late-click lookback, the block duration, and the
+40 ms click duration; the budget is derived per block rather than capped at a fixed count. A warmed
+callback test confirms zero managed allocations. A restarted engine receives the latest metronome
+state again with the other playback state; the transport remains stopped. Device reopen and graph
+replacement do not discard the requested click state.
 
 Coverage includes command round-tripping, rejection of protocol 12, restart replay, and local audio
 rendering/timing on the Master. No new hardware timing measurement is claimed by this amendment.

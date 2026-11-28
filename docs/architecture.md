@@ -507,9 +507,10 @@ before the Master strip's gain, pan, mute, and meter. Playback supplies coherent
 tempo-map, count-in, and transport timing; audio schedules clicks against heard time rather than the
 graph-ahead position. Count-in, tempo and meter changes, seeks, and loop wraps are handled. Playback
 publishes a coherent click/timing snapshot; the audio reader makes one version-checked attempt and
-uses its last complete snapshot if publication overlaps, without spinning. Rendering considers at
-most 32 click candidates per block, and a warmed callback test confirms zero managed allocations.
-MIDI-click options are deferred.
+uses its last complete snapshot if publication overlaps, without spinning. Click candidate checks
+are bounded from the 200 ms late-click lookback, the block duration, and the 40 ms click duration;
+the budget is derived per block rather than capped at a fixed count. A warmed callback test confirms
+zero managed allocations. MIDI-click options are deferred.
 
 The application sends effective click state in playback-command order; the engine replays it after a
 restart while leaving transport stopped. The protocol-13 command carries the audio-click state, and
