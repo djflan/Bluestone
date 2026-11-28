@@ -848,7 +848,7 @@ internal sealed class AudioHost : IDisposable
     {
         public bool TryGetPosition(long timestamp, out TimelinePosition position)
         {
-            if (!playback.TryGetSongTimeAt(Stopwatch.GetElapsedTime(0, timestamp), out var song))
+            if (!playback.TryGetAudioSongTimeAt(Stopwatch.GetElapsedTime(0, timestamp), out var song))
             {
                 position = default;
                 return false;

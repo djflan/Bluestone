@@ -26,8 +26,10 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
     private TimeSpan _activeStart;
     private bool _activeDownbeat;
     private TimeSpan _searchFrom;
+    private TimeSpan _nextAllowed;
     private TimeSpan _lastBlockStart;
     private long _clickGeneration;
+    private bool _startPending;
 
     public void Render(in AudioRenderContext context, StereoBuffer output)
     {
@@ -46,15 +48,22 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
             _running = true;
             _active = false;
             _searchFrom = blockStart - LateWindow;
+            _nextAllowed = TimeSpan.MinValue;
+            _startPending = true;
         }
         else if (_clickGeneration != context.ClickGeneration)
         {
             _active = false;
             _searchFrom = blockStart - LateWindow;
+            _nextAllowed = TimeSpan.MinValue;
+            _startPending = true;
         }
-        else if (_searchFrom < blockStart - LateWindow)
+        else
         {
-            _searchFrom = blockStart - LateWindow;
+            // Revisit only the part of the preceding timeline whose click could still sound in this block.
+            _searchFrom = Min(_searchFrom, blockStart - Duration);
+            _searchFrom = Max(_searchFrom, blockStart - LateWindow);
+            _searchFrom = Max(_searchFrom, _nextAllowed);
         }
 
         _clickGeneration = context.ClickGeneration;
@@ -75,7 +84,7 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
         var maxClicks = (int)Math.Ceiling((blockEnd - _searchFrom).TotalSeconds / Duration.TotalSeconds) + 1;
         for (var count = 0; count < maxClicks && _searchFrom < blockEnd && ready && hasClick; count++)
         {
-            var start = click.Timestamp > blockStart ? click.Timestamp : blockStart;
+            var start = _startPending && click.Timestamp < blockStart ? blockStart : click.Timestamp;
             if (!_active || start >= _activeStart + Duration)
             {
                 _active = true;
@@ -85,6 +94,7 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
             }
 
             var next = _activeStart + Duration;
+            _nextAllowed = next;
             _searchFrom = next > click.Timestamp ? next : click.Timestamp + TimeSpan.FromTicks(1);
             hasClick = source.TryGetClick(_searchFrom, blockEnd, context.ClickGeneration, out click, out ready);
         }
@@ -98,7 +108,13 @@ internal sealed class AudioClickRenderer(IAudioClickSource source)
         {
             _searchFrom = blockEnd;
         }
+
+        _startPending = false;
     }
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a <= b ? a : b;
+
+    private static TimeSpan Max(TimeSpan a, TimeSpan b) => a >= b ? a : b;
 
     private static void Add(TimeSpan timestamp, bool downbeat, TimeSpan blockStart, int sampleRate, StereoBuffer output)
     {

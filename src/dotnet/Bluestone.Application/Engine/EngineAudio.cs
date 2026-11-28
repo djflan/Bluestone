@@ -57,7 +57,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
     private long _firstGraphOfStream; // graphs described before this id were for an earlier stream or engine
     private bool _testTone;
     private long _request;
-    private long _startRequest;
+    private long _deviceRequest;
     private AudioDeviceStatus? _status;
     private (int Rate, int Block) _described;
     private AudioFormat _preparedFormat;
@@ -133,7 +133,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         {
             lock (_gate)
             {
-                return _wanted is not null && _link is not null && (_status is null || _status.Request < _startRequest);
+                return _wanted is not null && _link is not null && (_status is null || _status.Request < _deviceRequest);
             }
         }
     }
@@ -159,7 +159,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         {
             lock (_gate)
             {
-                var deviceKnown = _link is not null && _status is not null && _status.Request >= _startRequest;
+                var deviceKnown = _link is not null && _status is not null && _status.Request >= _deviceRequest;
                 var running = deviceKnown && _status!.State is AudioDeviceState.Running or AudioDeviceState.Fallback;
                 if (_wanted is null
                     || (running && _answeredGraph > 0 && _answeredGraph >= Interlocked.Read(ref _nextGraph))
@@ -263,7 +263,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         {
             _wanted = settings;
             var message = SetAudio(settings);
-            _startRequest = message.Request;
+            _deviceRequest = message.Request;
             _link?.Send(message);
         }
 
@@ -276,7 +276,9 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         lock (_gate)
         {
             _wanted = null;
-            _link?.Send(new SetAudio(++_request, false, null, 0, 0, 0, _options.MaxBlockFrames, false));
+            var message = new SetAudio(++_request, false, null, 0, 0, 0, _options.MaxBlockFrames, false);
+            _deviceRequest = message.Request;
+            _link?.Send(message);
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
@@ -485,7 +487,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
             {
                 // The graph follows once the engine reports the stream it opened.
                 var message = SetAudio(wanted);
-                _startRequest = message.Request;
+                _deviceRequest = message.Request;
                 link.Send(message);
             }
         }
@@ -580,7 +582,7 @@ public sealed class EngineAudio : IAudioPlayback, IEngineClient
         AudioFormat? prepare = null;
         lock (_gate)
         {
-            if (!ReferenceEquals(link, _link))
+            if (!ReferenceEquals(link, _link) || status.Request < _deviceRequest)
             {
                 return;
             }

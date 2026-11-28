@@ -1,6 +1,9 @@
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
+using Avalonia.Media;
+using Avalonia.VisualTree;
 using Bluestone.Application.Editing;
 using Bluestone.Application.Plugins;
 using Bluestone.Application.Sessions;
@@ -48,6 +51,35 @@ public sealed class InspectorTests
             button.IsEffectivelyVisible && AutomationProperties.GetName(button) == "Mixer");
         Assert.True(File.Exists(app.SaveFrame("inspector")));
     });
+
+    [Fact]
+    public Task RecordingSection_MakesTheClickRoutingReadableAndAccessible() => HeadlessApp.RunAsync(async () =>
+    {
+        await using var app = await AppUnderTest.OpenAsync();
+        var section = app.Find<Expander>("RecordingSection");
+        section.IsExpanded = true;
+        await app.SettleTransitionsAsync();
+        var routing = AppUnderTest.Within<TextBlock>(section, text => text.Text == "Audio click routed through Master");
+        var pane = routing.GetVisualAncestors().OfType<Border>().First(border => border.Classes.Contains("pane"));
+        var foreground = Assert.IsAssignableFrom<ISolidColorBrush>(routing.Foreground).Color;
+        var background = Assert.IsAssignableFrom<ISolidColorBrush>(pane.Background).Color;
+
+        Assert.Equal(routing.Text, ControlAutomationPeer.CreatePeerForElement(routing).GetName());
+        var contrast = (Luminance(foreground) + 0.05) / (Luminance(background) + 0.05);
+        Assert.True(contrast >= 4.5, $"Routing text contrast is {contrast:0.00}:1.");
+        app.SaveFrame("inspector-recording-audio-click");
+    });
+
+    private static double Luminance(Color color)
+    {
+        static double Linear(byte component)
+        {
+            var value = component / 255.0;
+            return value <= 0.04045 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+
+        return (0.2126 * Linear(color.R)) + (0.7152 * Linear(color.G)) + (0.0722 * Linear(color.B));
+    }
 
     [Fact]
     public Task NewRack_LocksTheDeviceViewToTheRack_AndBackToTheTrack_ByMouse() => HeadlessApp.RunAsync(async () =>

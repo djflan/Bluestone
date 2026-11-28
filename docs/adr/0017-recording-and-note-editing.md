@@ -88,6 +88,9 @@ MIDI-output choice above. MIDI-click port, note, and channel options are deferre
   later clicks. Overlapping 40 ms clicks are coalesced the same way at any block size. A warmed
   callback test confirms zero managed allocations. The engine command and restart contract are
   amended in [ADR 0044](0044-engine-process.md).
+  The first count-in click can still be missed if the first heard audio block arrives more than
+  200 ms after its scheduled time. Automated late-block coverage is synthetic; startup latency and
+  click timing have not been measured on physical audio hardware.
 
 The owner also chose app-wide recording preferences rather than project-owned settings. Their
 persistence remains unimplemented; this amendment does not change the project format.

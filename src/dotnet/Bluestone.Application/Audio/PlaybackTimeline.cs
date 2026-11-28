@@ -17,7 +17,7 @@ public sealed class PlaybackTimeline(IPlaybackTransport engine) : IAudioTimeline
 
     public bool TryGetPosition(long timestamp, out TimelinePosition position)
     {
-        if (!_engine.TryGetSongTimeAt(Stopwatch.GetElapsedTime(0, timestamp), out var song))
+        if (!_engine.TryGetAudioSongTimeAt(Stopwatch.GetElapsedTime(0, timestamp), out var song))
         {
             position = default;
             return false;

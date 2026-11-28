@@ -23,8 +23,9 @@ The owner chose to start the system default audio output on first launch
 ([engineering handoff, decision 35](../engineering-handoff.md)). This replaces the clean-first-run
 ASIO preference that this amendment supersedes. ASIO remains selectable, and saved host, device,
 and audio on/off choices remain honored. An unavailable chosen device continues to use the existing
-fallback and waiting behavior. This does not change ASIO build, licensing, or driver lifecycle
-requirements.
+fallback and waiting behavior, which can be stopped in Audio Settings. Unreadable settings are not
+treated as a first run; save failures are reported while the selected audio state remains in effect
+for the session. This does not change ASIO build, licensing, or driver lifecycle requirements.
 
 ## Consequences
 

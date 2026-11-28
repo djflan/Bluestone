@@ -72,15 +72,29 @@ public sealed class AudioSettingsStore(string path)
 
     public string Path { get; } = path ?? throw new ArgumentNullException(nameof(path));
 
-    public AudioSettings Load()
+    public AudioSettings Load() => LoadWithStatus().Settings;
+
+    /// <summary>Distinguishes a missing file from an unreadable one, which must not be treated as a first run.</summary>
+    public (AudioSettings Settings, bool IsMissing, string? Problem) LoadWithStatus()
     {
         try
         {
-            return File.Exists(Path) ? JsonSerializer.Deserialize<AudioSettings>(File.ReadAllText(Path), Options) ?? new AudioSettings() : new AudioSettings();
+            var settings = JsonSerializer.Deserialize<AudioSettings>(File.ReadAllText(Path), Options);
+            return settings is null
+                ? (new AudioSettings(), false, "The file contains no audio settings.")
+                : (settings, false, null);
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
+        catch (FileNotFoundException)
         {
-            return new AudioSettings();
+            return (new AudioSettings(), true, null);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return (new AudioSettings(), true, null);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException or ArgumentException or System.Security.SecurityException)
+        {
+            return (new AudioSettings(), false, ex.Message);
         }
     }
 

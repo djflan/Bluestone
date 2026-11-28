@@ -45,6 +45,8 @@ public sealed partial class AudioViewModel : ObservableObject
     private bool _loadingDevices;
     private RunningActivity? _waiting;
     private RunningActivity? _opening;
+    private bool? _unsavedEnabled;
+    private string? _settingsProblem;
 
     [ObservableProperty]
     private AudioDeviceOption? _device;
@@ -107,12 +109,15 @@ public sealed partial class AudioViewModel : ObservableObject
         _listHosts = listHosts ?? (listDevices is null
             ? () => AudioDevices.ListHosts()
             : () => _listDevices().Select(device => device.Host).Distinct(StringComparer.Ordinal).ToArray());
-        var savedSettingsExist = File.Exists(store.Path);
-        var settings = store.Load();
-        if (!savedSettingsExist)
+        var (settings, isMissing, problem) = store.LoadWithStatus();
+        if (problem is not null)
+        {
+            ReportSettingsProblem("Reading audio settings…", $"Audio settings could not be read: {problem} Audio remains off until you start it.");
+        }
+        else if (isMissing)
         {
             settings = settings with { Enabled = true };
-            store.Save(settings);
+            SaveSettings(settings);
         }
 
         _sampleRate = settings.SampleRate;
@@ -173,6 +178,8 @@ public sealed partial class AudioViewModel : ObservableObject
 
     public bool IsRunning => _audio.IsRunning;
 
+    public bool CanStopAudio => _audio.IsRunning || _audio.IsStarting || _audio.IsWaitingForDevice;
+
     public bool IsAsioHost => Host?.Name == "ASIO";
 
     /// <summary>
@@ -214,13 +221,13 @@ public sealed partial class AudioViewModel : ObservableObject
         ? new(IsRunning, Device?.Id, SampleRate, BufferFrames, _otherQueuedFrames, _otherLiveQueuedFrames, LowLatencyMonitoring) { Host = Host?.Name, EngineQueuedFrames = QueuedFrames, EngineLiveQueuedFrames = LiveQueuedFrames }
         : new(IsRunning, Device?.Id, SampleRate, BufferFrames, QueuedFrames, LiveQueuedFrames, LowLatencyMonitoring) { Host = Host?.Name, EngineQueuedFrames = _otherQueuedFrames, EngineLiveQueuedFrames = _otherLiveQueuedFrames };
 
-    /// <summary>Whether the saved settings say audio was on, so <see cref="StartIfEnabled"/> will open a device.</summary>
-    public bool IsEnabledInSettings => _store.Load().Enabled;
+    /// <summary>Whether audio should start, including a change that could not yet be saved.</summary>
+    public bool IsEnabledInSettings => _unsavedEnabled ?? _store.Load().Enabled;
 
     /// <summary>Opens the device the saved settings name, when they say audio was on. For start-up.</summary>
     public void StartIfEnabled()
     {
-        if (_store.Load().Enabled)
+        if (IsEnabledInSettings)
         {
             Open();
         }
@@ -327,8 +334,29 @@ public sealed partial class AudioViewModel : ObservableObject
 
         // Waiting for an unplugged device, or for the engine to open it, still counts as on: it opens when it can, also
         // after a restart.
-        _store.Save(Settings with { Enabled = started || _audio.IsWaitingForDevice || _audio.IsStarting });
+        SaveSettings(Settings with { Enabled = started || _audio.IsWaitingForDevice || _audio.IsStarting });
         UpdateStatus();
+    }
+
+    private void SaveSettings(AudioSettings settings)
+    {
+        try
+        {
+            _store.Save(settings);
+            _unsavedEnabled = null;
+            _settingsProblem = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException or System.Security.SecurityException)
+        {
+            _unsavedEnabled = settings.Enabled;
+            ReportSettingsProblem("Saving audio settings…", $"Audio settings could not be saved: {ex.Message} Changes apply for this session only.");
+        }
+    }
+
+    private void ReportSettingsProblem(string operation, string problem)
+    {
+        _settingsProblem = problem;
+        _activities?.Begin("Audio", operation).CompleteWithWarning(problem);
     }
 
     // Opens the device as an activity: Messages records "Audio is on: …" or why it did not open. When the engine opens it,
@@ -368,7 +396,7 @@ public sealed partial class AudioViewModel : ObservableObject
         _opening?.Complete("Audio is off.");
         _opening = null;
         _audio.Stop();
-        _store.Save(Settings with { Enabled = false });
+        SaveSettings(Settings with { Enabled = false });
         UpdateStatus();
     }
 
@@ -495,6 +523,7 @@ public sealed partial class AudioViewModel : ObservableObject
     private void UpdateStatus()
     {
         OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(CanStopAudio));
         OnPropertyChanged(nameof(CanRefreshDevices));
         if (_audio.Stream is null)
         {
@@ -535,6 +564,11 @@ public sealed partial class AudioViewModel : ObservableObject
         }
 
         Problems = string.Join(Environment.NewLine, _audio.GraphProblems);
+        if (_settingsProblem is { } settingsProblem)
+        {
+            Problems = string.IsNullOrEmpty(Problems) ? settingsProblem : $"{Problems}{Environment.NewLine}{settingsProblem}";
+        }
+
         EndOpening();
 
         // A lost device is something Bluestone is doing: waiting for it to come back. The status line shows it until it

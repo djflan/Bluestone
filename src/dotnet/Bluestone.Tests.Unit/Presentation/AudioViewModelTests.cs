@@ -132,6 +132,103 @@ public sealed class AudioViewModelTests : IDisposable
     }
 
     [Fact]
+    public void FirstRun_WhenSettingsCannotBeSaved_StillStartsAndReportsTheProblem()
+    {
+        Directory.CreateDirectory(_directory);
+        Directory.CreateDirectory(Store.Path + ".tmp");
+        var backend = new AudioPlaybackRecoveryTests.FakeBackend();
+        using var audio = new AudioPlayback(_playback, new ProjectSession(), _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var activities = new ActivityLog();
+        var ended = new List<ActivityEndedEventArgs>();
+        activities.Ended += (_, e) => ended.Add(e);
+
+        var vm = new AudioViewModel(audio, Store, new Immediate(), backend.ListDevices, activities);
+
+        Assert.True(vm.IsEnabledInSettings);
+        Assert.Contains("Audio settings could not be saved", vm.Problems, StringComparison.Ordinal);
+        Assert.Equal(ActivityOutcome.Warning, Assert.Single(ended).Outcome);
+        vm.StartIfEnabled();
+        Assert.True(audio.IsWaitingForDevice);
+
+        vm.StopCommand.Execute(null);
+        Assert.False(audio.IsWaitingForDevice);
+        Assert.False(vm.IsEnabledInSettings);
+
+        Directory.Delete(Store.Path + ".tmp");
+        vm.StartCommand.Execute(null);
+        Assert.True(Store.Load().Enabled);
+        Assert.Empty(vm.Problems);
+        vm.StopCommand.Execute(null);
+        Assert.False(Store.Load().Enabled);
+    }
+
+    [Fact]
+    public void FirstRun_WhenTheSettingsDirectoryCannotBeCreated_KeepsTheEnabledIntent()
+    {
+        Directory.CreateDirectory(_directory);
+        var parent = Path.Combine(_directory, "not-a-directory");
+        File.WriteAllText(parent, "occupied");
+        var store = new AudioSettingsStore(Path.Combine(parent, "audio-settings.json"));
+
+        var vm = new AudioViewModel(_audio, store, new Immediate(), () => []);
+
+        Assert.True(vm.IsEnabledInSettings);
+        Assert.Contains("Audio settings could not be saved", vm.Problems, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FailedSave_KeepsTheNewAudioIntentUntilItCanBePersisted(bool previouslyEnabled)
+    {
+        Store.Save(new AudioSettings(Enabled: previouslyEnabled));
+        Directory.CreateDirectory(Store.Path + ".tmp");
+        var backend = new AudioPlaybackRecoveryTests.FakeBackend();
+        using var audio = new AudioPlayback(_playback, new ProjectSession(), _ => null, backend: backend, checkInterval: Timeout.InfiniteTimeSpan);
+        var vm = new AudioViewModel(audio, Store, new Immediate(), backend.ListDevices);
+
+        if (previouslyEnabled)
+        {
+            vm.StopCommand.Execute(null);
+        }
+        else
+        {
+            vm.StartCommand.Execute(null);
+        }
+
+        Assert.Equal(!previouslyEnabled, vm.IsEnabledInSettings);
+        Assert.Equal(previouslyEnabled, Store.Load().Enabled);
+        Assert.Contains("Audio settings could not be saved", vm.Problems, StringComparison.Ordinal);
+
+        Directory.Delete(Store.Path + ".tmp");
+        if (previouslyEnabled)
+        {
+            vm.StopCommand.Execute(null);
+        }
+        else
+        {
+            vm.StartCommand.Execute(null);
+        }
+
+        Assert.Equal(!previouslyEnabled, Store.Load().Enabled);
+        Assert.Empty(vm.Problems);
+    }
+
+    [Fact]
+    public void UnreadableSettings_AreNotTreatedAsAFirstRun()
+    {
+        Directory.CreateDirectory(Store.Path);
+
+        var vm = new AudioViewModel(_audio, Store, new Immediate(), () => []);
+        vm.StartIfEnabled();
+
+        Assert.False(vm.IsEnabledInSettings);
+        Assert.False(_audio.IsWaitingForDevice);
+        Assert.Contains("Audio settings could not be read", vm.Problems, StringComparison.Ordinal);
+        Assert.False(File.Exists(Store.Path + ".tmp"));
+    }
+
+    [Fact]
     public void ExistingSystemDefaultSettings_StayOnWASAPIWhenASIOIsInstalled()
     {
         Store.Save(new AudioSettings());

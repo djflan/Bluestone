@@ -351,7 +351,7 @@
             <ComboBoxItem Content="2 bars" />
           </ComboBox>
           <TextBlock Grid.Row="3" Text="Click" Classes="label" />
-          <TextBlock Grid.Row="3" Grid.Column="1" Classes="muted" Text="Audio click routed through Master"
+          <TextBlock Grid.Row="3" Grid.Column="1" Classes="secondary" FontSize="{StaticResource FontSize.Small}" Text="Audio click routed through Master"
                      TextWrapping="Wrap" AutomationProperties.Name="Metronome click routing" />
           <CheckBox Grid.Row="4" Grid.Column="1" Content="Click while playing" IsChecked="{Binding ClickWhilePlaying}" />
           <CheckBox Grid.Row="5" Grid.Column="1" Content="MIDI thru" IsChecked="{Binding IsThruEnabled}"

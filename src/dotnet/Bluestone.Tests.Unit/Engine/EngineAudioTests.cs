@@ -7,6 +7,7 @@ using Bluestone.Domain.Mixing;
 using Bluestone.Engine.Protocol;
 using Bluestone.Midi.Endpoints;
 using Bluestone.Midi.Timing;
+using Bluestone.Presentation;
 using Bluestone.Profiles;
 
 namespace Bluestone.Tests.Unit.Engine;
@@ -100,11 +101,42 @@ public sealed class EngineAudioTests : IAsyncDisposable
         // An answer to an earlier request does not end the start.
         Client.Received(link, new AudioDeviceStatus(0, AudioDeviceState.Off, null, 0, 0, 0, 0, null));
         Assert.True(_audio.IsStarting);
+        Assert.Equal(1, changes);
 
         Client.Received(link, new AudioDeviceStatus(link.Sent.OfType<SetAudio>().Last().Request, AudioDeviceState.Waiting, "No device.", 0, 0, 0, 0, null));
         Assert.False(_audio.IsStarting);
         Assert.True(_audio.IsWaitingForDevice);
-        Assert.True(changes >= 3);
+        Assert.Equal(2, changes);
+    }
+
+    [Fact]
+    public void AudioSettings_CanCancelAnEngineStartBeforeItAnswers()
+    {
+        var link = new RecordingLink();
+        Client.Connected(link, restarted: false);
+        var store = new AudioSettingsStore(Path.Combine(_graphs, "audio-settings.json"));
+        var settings = new AudioViewModel(_audio, store, new ImmediateDispatcher(), () => []);
+        settings.StartIfEnabled();
+
+        Assert.True(_audio.IsStarting);
+        Assert.True(settings.CanStopAudio);
+        var start = Assert.IsType<SetAudio>(link.Sent[^1]);
+        settings.StopCommand.Execute(null);
+
+        var stop = Assert.IsType<SetAudio>(link.Sent[^1]);
+        Assert.False(stop.Enabled);
+        Assert.False(settings.CanStopAudio);
+        Assert.False(store.Load().Enabled);
+        Client.Received(link, new AudioDeviceStatus(start.Request, AudioDeviceState.Running, null, 48_000, 2, 256, 0, null));
+        Assert.False(_audio.IsRunning);
+        Assert.False(settings.CanStopAudio);
+        Assert.Equal("Audio is off.", settings.Status);
+        Client.Received(link, new AudioDeviceStatus(stop.Request, AudioDeviceState.Off, null, 0, 0, 0, 0, null));
+        Assert.False(settings.CanStopAudio);
+        Client.Disconnected(link);
+        var restarted = new RecordingLink();
+        Client.Connected(restarted, restarted: true);
+        Assert.Empty(restarted.Sent.OfType<SetAudio>());
     }
 
     [Fact]
@@ -293,6 +325,13 @@ public sealed class EngineAudioTests : IAsyncDisposable
             Assert.True(DateTime.UtcNow < until, "Timed out.");
             await Task.Delay(10, TestContext.Current.CancellationToken);
         }
+    }
+
+    private sealed class ImmediateDispatcher : IUiDispatcher
+    {
+        public bool CheckAccess() => true;
+
+        public void Post(Action action) => action();
     }
 
     private sealed class RecordingLink : IEngineLink

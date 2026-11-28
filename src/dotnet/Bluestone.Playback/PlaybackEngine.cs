@@ -71,9 +71,18 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
     private bool _audioClick;
     private long _clickGeneration;
     private TimeSpan _audioBeatsEnabledAt;
+    private long _audioNudgeTicks;
     private int _audioMetronomeVersion;
     private AudioMetronomeSnapshot _audioMetronome;
+
+    // Audio-thread state. The snapshot is pinned for the whole block, including every click lookup.
     private AudioMetronomeSnapshot _audioMetronomeReaderCache;
+    private AudioMetronomeSnapshot _audioBlockSnapshot;
+    private bool _audioBlockPinned;
+    private TimeSpan _audioBlockTime;
+    private TimeSpan _audioBlockEnd = TimeSpan.MinValue;
+    private TimeSpan _audioBeatBoundary = TimeSpan.MinValue;
+    private TimeSpan _audioCountInBoundary = TimeSpan.MinValue;
 
     // The immediate cursor's tick-to-time mapping, published for input timestamping (seqlock).
     private int _anchorVersion;
@@ -98,7 +107,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxActiveNotes, nameof(options));
         _active = new ActiveNote[_options.MaxActiveNotes];
         _plan = _latestPlan = PlaybackPlan.Empty(initialTempo);
-        _audioMetronome = new AudioMetronomeSnapshot(_plan, default, false, false, TimeSpan.Zero, [], TimeSpan.Zero, TimeSpan.Zero, _clickGeneration);
+        _audioMetronome = new AudioMetronomeSnapshot(_plan, default, false, false, TimeSpan.Zero, [], TimeSpan.Zero, _clickGeneration, 0);
         _audioMetronomeReaderCache = _audioMetronome;
         Statistics = new TimingStatistics(_options.LateThreshold);
     }
@@ -175,15 +184,26 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         click = default;
         if (until <= from)
         {
+            if (clickGeneration != 0 && _audioBlockPinned && _audioBlockSnapshot.ClickGeneration == clickGeneration)
+            {
+                _audioBlockEnd = Max(_audioBlockEnd, until);
+            }
+
             ready = true;
             return false;
         }
 
-        var snapshot = ReadAudioMetronome();
+        var audioBlock = clickGeneration != 0 && _audioBlockPinned;
+        var snapshot = audioBlock ? _audioBlockSnapshot : ReadAudioMetronome();
         ready = clickGeneration == 0 || snapshot.ClickGeneration == clickGeneration;
         if (!ready)
         {
             return false;
+        }
+
+        if (audioBlock)
+        {
+            _audioBlockEnd = Max(_audioBlockEnd, until);
         }
 
         if (!snapshot.Configured)
@@ -191,11 +211,24 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             return false;
         }
 
+        var countInFrom = audioBlock ? Max(from, _audioCountInBoundary) : from;
+        var beatFrom = audioBlock ? Max(from, _audioBeatBoundary) : from;
+        return FindAudioClick(snapshot, countInFrom, beatFrom, until, out click);
+    }
+
+    private static bool FindAudioClick(
+        in AudioMetronomeSnapshot snapshot,
+        TimeSpan countInFrom,
+        TimeSpan beatFrom,
+        TimeSpan until,
+        out AudioMetronomeClick click)
+    {
+        click = default;
         var found = false;
         foreach (var countIn in snapshot.CountIn)
         {
             var timestamp = snapshot.CountInStart + countIn.Offset;
-            if (timestamp >= from && timestamp < until && (!found || timestamp < click.Timestamp))
+            if (timestamp >= countInFrom && timestamp < until && (!found || timestamp < click.Timestamp))
             {
                 click = new AudioMetronomeClick(timestamp, countIn.Downbeat);
                 found = true;
@@ -207,7 +240,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             return found;
         }
 
-        var searchFrom = Max(Max(from, snapshot.Anchor.Time), snapshot.CountInEnd, snapshot.BeatsEnabledAt);
+        var searchFrom = Max(beatFrom, snapshot.Anchor.Time, snapshot.BeatsEnabledAt);
         if (searchFrom >= until || !TransportAnchor.TryGetSongTimeAt(snapshot.Anchor, searchFrom, out var song))
         {
             return found;
@@ -276,13 +309,52 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
     /// <summary>
     /// The song time heard at a clock time, for the audio engine (ADR 0032): like <see cref="TryGetTickAt"/>, but in song
     /// time (not rounded to ticks), with loop wraps applied, and before the start position during a count-in (negative
-    /// before the song's start). Lock-free and allocation-free; safe on an audio thread.
+    /// before the song's start). Lock-free and allocation-free. Audio callbacks use
+    /// <see cref="TryGetAudioSongTimeAt"/> instead, which never waits for a concurrent publication.
     /// </summary>
     /// <returns>False when the transport is stopped.</returns>
     public bool TryGetSongTimeAt(TimeSpan time, out SongPosition position)
     {
         ReadAnchors(out var current, out _, out _);
         return TransportAnchor.TryGetSongTimeAt(current, time, out position);
+    }
+
+    /// <summary>
+    /// Reads one bounded, coherent snapshot for an audio block and its click lookups. Single audio reader.
+    /// If publication overlaps the read, the last complete snapshot is used without waiting.
+    /// </summary>
+    public bool TryGetAudioSongTimeAt(TimeSpan time, out SongPosition position)
+    {
+        var snapshot = ReadAudioMetronome();
+        if (!_audioBlockPinned || snapshot.ClickGeneration != _audioBlockSnapshot.ClickGeneration || time <= _audioBlockTime)
+        {
+            _audioBeatBoundary = TimeSpan.MinValue;
+            _audioCountInBoundary = TimeSpan.MinValue;
+        }
+        else
+        {
+            // Previously rendered beat boundaries follow nudges; count-in clicks stay at their original clock times.
+            var delta = unchecked(snapshot.NudgeTicks - _audioBlockSnapshot.NudgeTicks);
+            _audioBeatBoundary = Max(ShiftBoundary(_audioBeatBoundary, delta), ShiftBoundary(_audioBlockEnd, delta));
+            _audioCountInBoundary = Max(_audioCountInBoundary, _audioBlockEnd);
+        }
+
+        _audioBlockSnapshot = snapshot;
+        _audioBlockPinned = true;
+        _audioBlockTime = time;
+        _audioBlockEnd = TimeSpan.MinValue;
+        return TransportAnchor.TryGetSongTimeAt(snapshot.Anchor, time, out position);
+    }
+
+    private static TimeSpan ShiftBoundary(TimeSpan boundary, long nudgeTicks)
+    {
+        if (boundary == TimeSpan.MinValue || nudgeTicks == 0)
+        {
+            return boundary;
+        }
+
+        var shifted = (Int128)boundary.Ticks - nudgeTicks;
+        return TimeSpan.FromTicks((long)Int128.Clamp(shifted, long.MinValue, long.MaxValue));
     }
 
     /// <summary>
@@ -544,6 +616,7 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             case NudgeCommand nudge when _playing:
                 _immediate.AnchorTime -= nudge.Amount;
                 _scheduled.AnchorTime -= nudge.Amount;
+                _audioNudgeTicks = unchecked(_audioNudgeTicks + nudge.Amount.Ticks);
                 PublishAnchor(playing: true);
                 break;
         }
@@ -663,8 +736,8 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
             _audioBeatsEnabledAt,
             _countIn,
             _countInStart,
-            _countIn.IsDefaultOrEmpty ? TimeSpan.Zero : TimeSpan.FromTicks(Volatile.Read(ref _countInUntil)),
-            _clickGeneration);
+            _clickGeneration,
+            _audioNudgeTicks);
         Interlocked.Increment(ref _audioMetronomeVersion);
     }
 
@@ -1105,8 +1178,8 @@ public sealed class PlaybackEngine : IPlaybackTransport, IAudioMetronome, IDispo
         TimeSpan BeatsEnabledAt,
         ImmutableArray<CountInClick> CountIn,
         TimeSpan CountInStart,
-        TimeSpan CountInEnd,
-        long ClickGeneration);
+        long ClickGeneration,
+        long NudgeTicks);
 }
 
 /// <summary>A song position heard at some moment: song time, the engaged loop's bounds (equal when none), and the tempo there.</summary>

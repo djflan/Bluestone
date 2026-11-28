@@ -392,6 +392,8 @@ known gaps, but it is not priority order. Use [release-1.0.md](release-1.0.md) f
 17. **Usability pass (2026-11-27, decision 35):**
     - **Implemented:** the audio metronome/count-in click is routed through Master; a clean first launch starts on the
       system default output. Saved host/device choices and a saved audio-off setting remain authoritative.
+    - **Known limitation:** if the first heard audio block arrives more than 200 ms after the scheduled first count-in
+      click, that click may be missed. Automated late-block coverage is synthetic; physical startup timing is unverified.
     - **Not built (decided):** MIDI import that adds to the project, with **Replace Project** as the explicit command;
       plugin value text, exposed parameter pages, and
       per-plugin parameter choice; Arpeggiator value labels (Rate as note values, Pattern by name, Gate as 0–100%);
